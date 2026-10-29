@@ -1,5 +1,5 @@
-import type { QuestView } from "../game/quest-tracker.ts";
-import { h, icon, iconButton } from "./dom.ts";
+import { type QuestView, questSummary } from "../game/quest-tracker.ts";
+import { h, icon } from "./dom.ts";
 import { Sheet } from "./sheet.ts";
 
 function questRow(view: QuestView): HTMLLIElement {
@@ -19,18 +19,21 @@ function questRow(view: QuestView): HTMLLIElement {
   );
 }
 
-// The top-left daily quest button; its sheet lists today's quests and how far each one has come.
+// The strip under the hall name sums up today's quests; its sheet lists each one and how far it has come.
 export class QuestPanel {
-  readonly button: HTMLButtonElement;
+  readonly button = h("button", "quest-strip hidden");
   private readonly sheet: Sheet;
-  private readonly badge = h("span", "badge quest-badge hidden");
+  private readonly title = h("span", "quest-strip-title");
+  private readonly line = h("span", "quest-strip-line");
   private readonly list = h("ul", "quest-list");
   private lastKey = "";
 
   constructor(host: HTMLElement) {
-    this.button = iconButton("quest", "오늘의 퀘스트", () => this.sheet.toggle(), "icon-button quest-button");
+    this.button.type = "button";
     this.button.setAttribute("aria-haspopup", "dialog");
-    this.button.append(this.badge);
+    this.button.setAttribute("aria-label", "오늘의 퀘스트 자세히 보기");
+    this.button.append(this.title, this.line);
+    this.button.addEventListener("click", () => this.sheet.toggle());
 
     this.sheet = new Sheet(host, "오늘의 퀘스트");
     this.sheet.body.append(this.list, h("p", "fine-print", "새 퀘스트는 한국 시간 자정에 나와요"));
@@ -40,9 +43,10 @@ export class QuestPanel {
     const key = views.map((view) => `${view.text}|${view.target}|${view.count}`).join(";");
     if (key === this.lastKey) return;
     this.lastKey = key;
-    const done = views.filter((view) => view.done).length;
-    this.badge.textContent = `${done}/${views.length}`;
-    this.badge.classList.toggle("hidden", views.length === 0);
+    const summary = questSummary(views);
+    this.button.classList.toggle("hidden", summary === null);
+    this.title.textContent = summary?.title ?? "";
+    this.line.textContent = summary?.line ?? "";
     this.list.replaceChildren(...views.map(questRow));
   }
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CHANT_MS, CUSHION_COUNT, KST_OFFSET_MS, type Quest, dailyQuests, questDay } from "@dongjane/shared";
-import { QuestTracker } from "../src/game/quest-tracker.ts";
+import { QuestTracker, type QuestView, questSummary } from "../src/game/quest-tracker.ts";
 import { loadQuestProgress } from "../src/storage.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -188,5 +188,38 @@ describe("QuestTracker", () => {
     expect(counts(new QuestTracker())).toEqual([0, 0, 0]);
     storage.set("dongjane:quests", JSON.stringify({ day: DAY_NUMBER, counts: { [PLACE.id]: 999, [ANYWHERE.id]: "x" } }));
     expect(counts(new QuestTracker())).toEqual([PLACE.target, 0, 0]);
+  });
+});
+
+describe("questSummary", () => {
+  const view = (text: string, count: number, target: number): QuestView => ({ text, target, count, done: count >= target });
+
+  it("leads with the first unfinished quest and the finished tally", () => {
+    const summary = questSummary([view("첫째", 3, 3), view("둘째", 2, 5), view("셋째", 0, 2)]);
+    expect(summary).toEqual({ title: "오늘의 퀘스트 1/3", line: "둘째 · 2/5" });
+  });
+
+  it("formats the line as text · count/target", () => {
+    expect(questSummary([view("방석 어디에서든 절 8번 하기", 0, 8)])).toEqual({
+      title: "오늘의 퀘스트 0/1",
+      line: "방석 어디에서든 절 8번 하기 · 0/8",
+    });
+  });
+
+  it("says everything is done once every quest is", () => {
+    expect(questSummary([view("첫째", 3, 3), view("둘째", 5, 5)])).toEqual({
+      title: "오늘의 퀘스트 2/2",
+      line: "오늘의 퀘스트를 모두 끝냈어요",
+    });
+  });
+
+  it("has nothing to show without quests", () => {
+    expect(questSummary([])).toBeNull();
+  });
+
+  it("follows a tracker's view", () => {
+    const tracker = new QuestTracker();
+    const [place] = dailyQuests(DAY_NUMBER);
+    expect(questSummary(tracker.view(NOON))).toEqual({ title: "오늘의 퀘스트 0/3", line: `${place!.text} · 0/${place!.target}` });
   });
 });

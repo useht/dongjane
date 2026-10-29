@@ -89,7 +89,7 @@ export class Hud {
       onOpenSettings: () => handlers.onOpenSettings(),
     });
     this.quests = new QuestPanel(host);
-    const top = h("div", "topbar", h("div", "topbar-start", this.hallButton, this.quests.button), this.clock.button);
+    const top = h("div", "topbar", h("div", "topbar-start", h("div", "hall-stack", this.hallButton, this.quests.button)), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");

@@ -13,6 +13,16 @@ export interface QuestClock {
   chant: { startsAt: number; durationMs: number };
 }
 
+export function questSummary(views: readonly QuestView[]): { title: string; line: string } | null {
+  if (views.length === 0) return null;
+  const done = views.filter((view) => view.done).length;
+  const next = views.find((view) => !view.done);
+  return {
+    title: `오늘의 퀘스트 ${done}/${views.length}`,
+    line: next ? `${next.text} · ${next.count}/${next.target}` : "오늘의 퀘스트를 모두 끝냈어요",
+  };
+}
+
 // Counts completed bows of the self monk from server state only, so inputs the server rejected never advance a quest.
 export class QuestTracker {
   private saved: QuestProgress | null = loadQuestProgress();
