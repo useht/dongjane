@@ -328,7 +328,7 @@ export class App {
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
+        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId });
       }
     });
     this.lastViews = views;
