@@ -161,6 +161,7 @@ export class App {
       },
       this.settingsPanel.root,
     );
+    this.hud.setReduceMotion(this.settings.reduceMotion);
     this.hud.setCollection(this.bows);
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
@@ -546,6 +547,7 @@ export class App {
     saveSettings(next);
     this.settingsPanel.sync(next);
     this.hud.setSoundOn(next.sound);
+    this.hud.setReduceMotion(next.reduceMotion);
     this.world.setReduceMotion(next.reduceMotion);
     this.applyAudio();
   }

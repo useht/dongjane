@@ -589,8 +589,15 @@ button:disabled {
 }
 
 .bow-button svg,
-.bow-button img {
+.bow-button > img,
+.bow-icon {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.55)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.4));
+}
+
+.bow-icon {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .bow-button svg {
@@ -615,6 +622,21 @@ button:disabled {
 
 .action-button.active:active {
   background: rgba(255, 255, 255, 0.16);
+}
+
+/* The beads turn like a rosary being counted while chanting; the wrapper keeps the drop shadow from turning with them. */
+.action-button.active .bow-icon img {
+  animation: bead-turn 5s linear infinite;
+}
+
+.reduce-motion .action-button.active .bow-icon img {
+  animation: none;
+}
+
+@keyframes bead-turn {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .stand-button {

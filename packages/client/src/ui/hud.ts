@@ -234,7 +234,7 @@ export class Hud {
     this.actionButton.classList.toggle("active", this.selfChanting);
     if (action && item !== null) {
       const label = action === "knock" ? "목탁치기" : this.selfChanting ? "염불 그만두기" : "염불하기";
-      this.actionButton.replaceChildren(itemImage(item));
+      this.actionButton.replaceChildren(h("span", "bow-icon", itemImage(item)));
       this.actionButton.setAttribute("aria-label", label);
       this.actionButton.title = label;
       if (action === "chant") this.actionButton.setAttribute("aria-pressed", String(this.selfChanting));
@@ -305,6 +305,10 @@ export class Hud {
 
   setSoundOn(on: boolean): void {
     this.phone.setSoundOn(on);
+  }
+
+  setReduceMotion(on: boolean): void {
+    this.root.classList.toggle("reduce-motion", on);
   }
 
   toast(text: string): void {
