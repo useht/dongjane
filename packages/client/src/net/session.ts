@@ -111,6 +111,18 @@ export class HallSession {
     this.send(MSG.emote, { id });
   }
 
+  knock(): void {
+    this.send(MSG.knock, {});
+  }
+
+  chant(on: boolean): void {
+    this.send(MSG.chant, { on });
+  }
+
+  equip(item: number): void {
+    this.send(MSG.equip, { item });
+  }
+
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

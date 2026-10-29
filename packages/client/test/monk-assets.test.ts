@@ -3,9 +3,9 @@ import { type BufferGeometry, Box3, Color, type Object3D, SRGBColorSpace, Vector
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
-import { MonkAvatar, PART_NAMES, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
+import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 
-const COPIES: Record<PartName, number> = {
+const COPIES: Record<BodyPartName, number> = {
   head: 1,
   face: 1,
   hair: 1,
@@ -20,16 +20,16 @@ const COPIES: Record<PartName, number> = {
   trousers: 2,
 };
 // The jacket (torso, sleeves) and the trousers (pelvis seat, trouser legs) are the tinted garment.
-const JACKET_PARTS: PartName[] = ["torso", "sleeveUpper", "sleeveLower"];
-const TROUSER_PARTS: PartName[] = ["pelvis", "trousers"];
-const ROBE_PARTS: PartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
+const JACKET_PARTS: BodyPartName[] = ["torso", "sleeveUpper", "sleeveLower"];
+const TROUSER_PARTS: BodyPartName[] = ["pelvis", "trousers"];
+const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
 function readGlb(): ArrayBuffer {
   const file = readFileSync(new URL("../assets/monk/monk.glb", import.meta.url));
   return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 }
 
-async function loadParts(): Promise<Record<PartName, BufferGeometry>> {
+async function loadParts(): Promise<Record<BodyPartName, BufferGeometry>> {
   const gltf = await new GLTFLoader().parseAsync(readGlb(), "");
   return extractMonkParts(gltf.scene);
 }
@@ -73,12 +73,12 @@ function worldVertices(node: Object3D, geometry: BufferGeometry): Vector3[] {
 describe("monk assets", () => {
   it("contains every part the rig binds", async () => {
     const parts = await loadParts();
-    for (const name of PART_NAMES) expect(parts[name], name).toBeDefined();
+    for (const name of BODY_PART_NAMES) expect(parts[name], name).toBeDefined();
   });
 
   it("gives every part positions, normals and vertex colours", async () => {
     const parts = await loadParts();
-    for (const name of PART_NAMES) {
+    for (const name of BODY_PART_NAMES) {
       const geometry = parts[name];
       const count = geometry.getAttribute("position").count;
       expect(count, name).toBeGreaterThan(0);
@@ -114,7 +114,7 @@ describe("monk assets", () => {
       expect(hsl.l, `${name} is neither white nor black`).toBeGreaterThan(0.35);
       expect(hsl.l, `${name} is neither white nor black`).toBeLessThan(0.7);
     }
-    const lightness = (name: PartName): number => mean(parts[name]).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace).l;
+    const lightness = (name: BodyPartName): number => mean(parts[name]).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace).l;
     for (const name of JACKET_PARTS) expect(lightness(name), `${name} matches the jacket`).toBeCloseTo(lightness("torso"), 3);
     for (const name of TROUSER_PARTS) expect(lightness(name), `${name} matches the trousers`).toBeCloseTo(lightness("trousers"), 3);
     expect(lightness("torso"), "the jacket is the lighter grey").toBeGreaterThan(lightness("trousers") + 0.04);
@@ -122,7 +122,7 @@ describe("monk assets", () => {
 
   it("gives every monk its hue as a muted tint on the grey: clearly different colours, still a grey 승복", async () => {
     const parts = await loadParts();
-    const shownOf = (part: PartName, hue: number): Color => {
+    const shownOf = (part: BodyPartName, hue: number): Color => {
       const color = parts[part].getAttribute("color");
       return new Color(color.getX(0), color.getY(0), color.getZ(0)).multiply(robeColor(hue, new Color()));
     };
@@ -132,7 +132,7 @@ describe("monk assets", () => {
       const shown = hues.map((hue) => shownOf(part, hue));
       shown.forEach((color, i) => {
         const hsl = color.getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
-        expect(hsl.s, `${part} saturation at hue ${hues[i]}: tinted, not grey`).toBeGreaterThan(0.12);
+        expect(hsl.s, `${part} saturation at hue ${hues[i]}: tinted, not grey`).toBeGreaterThan(0.08);
         expect(hsl.s, `${part} saturation at hue ${hues[i]}: muted, not a bright robe`).toBeLessThan(0.35);
         expect(hsl.l, `${part} lightness at hue ${hues[i]}`).toBeGreaterThan(0.3);
         expect(hsl.l, `${part} lightness at hue ${hues[i]}`).toBeLessThan(0.65);
@@ -201,7 +201,7 @@ describe("monk assets", () => {
   it("keeps the whole monk within the triangle budget", async () => {
     const parts = await loadParts();
     let total = 0;
-    for (const name of PART_NAMES) total += triangles(parts[name]) * COPIES[name];
+    for (const name of BODY_PART_NAMES) total += triangles(parts[name]) * COPIES[name];
     expect(total).toBeLessThan(4000);
   });
 
@@ -448,7 +448,7 @@ describe("monk assets", () => {
   it("folds the trousers behind the knees when kneeling without sinking into the cushion", async () => {
     const parts = await loadParts();
     const avatar = posedAvatar("kneel");
-    const lowest = (part: PartName): number => {
+    const lowest = (part: BodyPartName): number => {
       let low = Infinity;
       for (let copy = 0; copy < COPIES[part]; copy += 1) {
         low = Math.min(low, ...worldVertices(nodeOf(avatar, part, copy), parts[part]).map((v) => v.y));

@@ -11,6 +11,7 @@ import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
+import { KnockTracker } from "./knock-tracker.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { JumpTracker } from "./jump-tracker.ts";
 import type { MonkAssets } from "./monk-assets.ts";
@@ -32,6 +33,9 @@ export interface MonkView {
   bowCount: number;
   emote: number;
   emoteSeq: number;
+  knockSeq: number;
+  chanting: boolean;
+  item: number;
   jumpSeq: number;
 }
 
@@ -68,6 +72,8 @@ export class World {
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
   readonly emotes = new EmoteTracker();
+  private readonly knocks = new KnockTracker();
+  private readonly remoteKnockers: MonkView[] = [];
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
@@ -204,9 +210,12 @@ export class World {
     this.selfPrediction = display;
   }
 
-  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): void {
+  // Returns the other monks who struck their wooden fish since the last call (the array is reused); the caller plays the sound.
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): readonly MonkView[] {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
+    const remoteKnockers = this.remoteKnockers;
+    remoteKnockers.length = 0;
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
@@ -241,6 +250,13 @@ export class World {
       entry.targetYaw = view.yaw;
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      entry.avatar.chanting = view.chanting;
+      entry.avatar.item = view.item;
+      // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
+      if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
+        entry.avatar.knock(nowMs);
+        remoteKnockers.push(view);
+      }
       if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
@@ -248,6 +264,12 @@ export class World {
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+    return remoteKnockers;
+  }
+
+  // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.
+  knock(monkId: string, nowMs: number): void {
+    this.entries.get(monkId)?.avatar.knock(nowMs);
   }
 
   // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
@@ -262,6 +284,7 @@ export class World {
 
   clear(): void {
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
+    this.knocks.reset();
     this.selfId = null;
     this.selfPrediction = null;
     this.clock.reset();
@@ -313,6 +336,7 @@ export class World {
     entry.avatar.dispose();
     this.entries.delete(id);
     this.emotes.forget(id);
+    this.knocks.forget(id);
     this.jumps.forget(id);
   }
 

@@ -1,10 +1,11 @@
-import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Vector3 } from "three";
-import { BOW_MS, JUMP_MS } from "@dongjane/shared";
+import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
+import { BOW_MS, ITEM_CHANT, ITEM_MOKT, JUMP_MS } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
 import type { MonkAssets } from "./monk-assets.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
-export const PART_NAMES = [
+// The body parts come from the baked monk.glb; the held items (mokt, beads) are built in monk-items.ts.
+export const BODY_PART_NAMES = [
   "head",
   "face",
   "hair",
@@ -18,6 +19,10 @@ export const PART_NAMES = [
   "leg",
   "trousers",
 ] as const;
+export const ITEM_PART_NAMES = ["mokt", "beads"] as const;
+export const PART_NAMES = [...BODY_PART_NAMES, ...ITEM_PART_NAMES] as const;
+export type BodyPartName = (typeof BODY_PART_NAMES)[number];
+export type ItemPartName = (typeof ITEM_PART_NAMES)[number];
 export type PartName = (typeof PART_NAMES)[number];
 
 const PART_COPIES: Record<PartName, number> = {
@@ -33,6 +38,8 @@ const PART_COPIES: Record<PartName, number> = {
   foot: 2,
   leg: 2,
   trousers: 2,
+  mokt: 1,
+  beads: 1,
 };
 
 // The jacket (torso, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
@@ -63,12 +70,22 @@ const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
 const CUSHION_TOP = rig.cushionTop;
 const HEAD_TOP_OFFSET = rig.crownY;
 const EMOTE_ANCHOR_Y = rig.crownY + 0.04;
+const BEAD_RING_CENTER = { y: -0.105, z: 0.01 };
+const BEADS_TURN_RATE = 1;
+const KNOCK_MS = 220;
+const KNOCK_REDUCED_SHARE = 0.3;
+const CHANT_NOD_HZ = 0.8;
+const CHANT_NOD = 0.06;
+const CHANT_SWAY_HZ = 0.4;
+const CHANT_SWAY = 0.025;
 const HOP_HEIGHT = 0.35;
+const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
 
 interface Binding {
   part: PartName;
   copy: number;
   node: Object3D;
+  item?: number;
 }
 
 export class MonkAvatar {
@@ -81,6 +98,8 @@ export class MonkAvatar {
   mode = "stand";
   modeSince = 0;
   slot = -1;
+  chanting = false;
+  item = 0;
 
   private readonly hips = new Object3D();
   private readonly pelvisNode = new Object3D();
@@ -89,11 +108,15 @@ export class MonkAvatar {
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
+  private readonly beadsNode = new Object3D();
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly legs: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private chantMix = 0;
+  private beadTurn = 0;
+  private knockAt = Number.NEGATIVE_INFINITY;
   private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
 
@@ -118,9 +141,11 @@ export class MonkAvatar {
       elbow.add(hand);
       (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
+    this.beadsNode.position.set(0, BEAD_RING_CENTER.y, BEAD_RING_CENTER.z);
+    (this.handNodes[0] as Object3D).add(this.beadsNode);
 
-    const bind = (part: PartName, node: Object3D, copy = 0): void => {
-      this.bindings.push({ part, copy, node });
+    const bind = (part: PartName, node: Object3D, copy = 0, item?: number): void => {
+      this.bindings.push({ part, copy, node, item });
     };
     bind("head", this.headNode);
     bind("face", this.headNode);
@@ -136,12 +161,18 @@ export class MonkAvatar {
       bind("leg", this.legs[side] as Object3D, side);
       bind("trousers", this.legs[side] as Object3D, side);
     }
+    bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
+    bind("beads", this.beadsNode, 0, ITEM_CHANT);
   }
 
   setMode(mode: string, nowMs: number): void {
     if (mode === this.mode) return;
     this.mode = mode;
     this.modeSince = nowMs;
+  }
+
+  knock(nowMs: number): void {
+    this.knockAt = nowMs;
   }
 
   hop(nowMs: number): void {
@@ -166,6 +197,12 @@ export class MonkAvatar {
     const swingBack = Math.sin(this.phase + Math.PI);
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
+    this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
+    const chant = this.chantMix * kneel;
+    this.beadTurn = reduceMotion ? 0 : (this.beadTurn + dt * BEADS_TURN_RATE * chant) % (Math.PI * 2);
+    this.beadsNode.rotation.z = this.beadTurn;
+    const knockProgress = (nowMs - this.knockAt) / KNOCK_MS;
+    const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
     this.root.position.y = this.liftedBy * kneel + hop;
@@ -180,7 +217,8 @@ export class MonkAvatar {
     this.pelvisNode.position.y = KNEEL_PELVIS_LIFT * kneel;
 
     this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
-    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk;
+    this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
+    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -205,11 +243,12 @@ export class MonkAvatar {
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;
-      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel);
+      const strike = side === 1 ? knock * prayMix : 0;
+      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel) + strike * 0.12;
       shoulder.rotation.y = prayY * prayMix;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
-      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel);
+      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.55;
       elbow.rotation.y = prayTwist * prayMix;
 
       const foot = this.feet[side] as Object3D;
@@ -319,9 +358,10 @@ export class MonkPool {
 
   flush(): void {
     for (const avatar of this.avatars) {
-      for (const { part, copy, node } of avatar.bindings) {
+      for (const { part, copy, node, item } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
-        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, node.matrixWorld);
+        const held = item === undefined || item === avatar.item;
+        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, held ? node.matrixWorld : HIDDEN_MATRIX);
       }
     }
     for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;

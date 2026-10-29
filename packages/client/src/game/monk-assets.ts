@@ -3,7 +3,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import monkUrl from "../../assets/monk/monk.glb?url";
 import monkRig from "../../assets/monk/monk-rig.json";
-import { PART_NAMES, type PartName } from "./monk-model.ts";
+import { buildItemGeometries } from "./monk-items.ts";
+import { BODY_PART_NAMES, type BodyPartName, type PartName } from "./monk-model.ts";
 
 export { monkRig };
 
@@ -29,7 +30,7 @@ function materialColor(material: Material | Material[]): Color {
   return (first as { color?: Color } | undefined)?.color ?? new Color(1, 1, 1);
 }
 
-function bakePiece(mesh: Mesh, part: PartName): BufferGeometry {
+function bakePiece(mesh: Mesh, part: BodyPartName): BufferGeometry {
   const source = mesh.geometry;
   const position = source.getAttribute("position");
   const normal = source.getAttribute("normal");
@@ -53,10 +54,10 @@ function bakePiece(mesh: Mesh, part: PartName): BufferGeometry {
 }
 
 // Bakes every named part of the loaded scene into its pivot-local frame (node transforms applied).
-export function extractMonkParts(scene: Object3D): Record<PartName, BufferGeometry> {
+export function extractMonkParts(scene: Object3D): Record<BodyPartName, BufferGeometry> {
   scene.updateMatrixWorld(true);
-  const parts = {} as Record<PartName, BufferGeometry>;
-  for (const part of PART_NAMES) {
+  const parts = {} as Record<BodyPartName, BufferGeometry>;
+  for (const part of BODY_PART_NAMES) {
     const node = scene.getObjectByName(part);
     if (!node) throw new Error(`monk model is missing the "${part}" part`);
     const pieces: BufferGeometry[] = [];
@@ -74,5 +75,5 @@ export function extractMonkParts(scene: Object3D): Record<PartName, BufferGeomet
 
 export async function loadMonkAssets(url: string = monkUrl): Promise<MonkAssets> {
   const gltf = await new GLTFLoader().loadAsync(url);
-  return { parts: extractMonkParts(gltf.scene), rig: monkRig };
+  return { parts: { ...extractMonkParts(gltf.scene), ...buildItemGeometries() }, rig: monkRig };
 }
