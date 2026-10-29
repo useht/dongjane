@@ -7,8 +7,6 @@ export interface Profile {
 export interface Settings {
   ambientVolume: number;
   effectVolume: number;
-  sound: boolean;
-  wind: boolean;
   reduceMotion: boolean;
 }
 
@@ -58,7 +56,7 @@ export function newHue(): number {
 export function defaultSettings(): Settings {
   const prefersReduced =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return { ambientVolume: 0.7, effectVolume: 0.7, sound: true, wind: true, reduceMotion: prefersReduced };
+  return { ambientVolume: 0.7, effectVolume: 0.7, reduceMotion: prefersReduced };
 }
 
 function volumeOr(value: unknown, fallback: number): number {
@@ -71,11 +69,12 @@ export function loadSettings(): Settings {
   if (typeof data !== "object" || data === null) return base;
   const raw = data as Record<string, unknown>;
   const legacyVolume = volumeOr(raw.volume, base.ambientVolume);
+  // The removed sound/wind switches are now plain volume 0; honour them so a muted player stays muted.
+  const muted = raw.sound === false;
+  const windOff = raw.wind === false;
   return {
-    ambientVolume: volumeOr(raw.ambientVolume, legacyVolume),
-    effectVolume: volumeOr(raw.effectVolume, legacyVolume),
-    sound: typeof raw.sound === "boolean" ? raw.sound : base.sound,
-    wind: typeof raw.wind === "boolean" ? raw.wind : base.wind,
+    ambientVolume: muted || windOff ? 0 : volumeOr(raw.ambientVolume, legacyVolume),
+    effectVolume: muted ? 0 : volumeOr(raw.effectVolume, legacyVolume),
     reduceMotion: typeof raw.reduceMotion === "boolean" ? raw.reduceMotion : base.reduceMotion,
   };
 }

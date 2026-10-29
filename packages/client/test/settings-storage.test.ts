@@ -15,11 +15,24 @@ describe("loadSettings volumes", () => {
   });
 
   it("carries a legacy single volume over to both channels", () => {
-    stubSettings({ volume: 0.4, sound: false });
+    stubSettings({ volume: 0.4 });
     const settings = loadSettings();
     expect(settings.ambientVolume).toBe(0.4);
     expect(settings.effectVolume).toBe(0.4);
-    expect(settings.sound).toBe(false);
+  });
+
+  it("turns a legacy sound-off switch into zero volume on both channels", () => {
+    stubSettings({ volume: 0.4, sound: false });
+    const settings = loadSettings();
+    expect(settings.ambientVolume).toBe(0);
+    expect(settings.effectVolume).toBe(0);
+  });
+
+  it("turns a legacy wind-off switch into zero background volume only", () => {
+    stubSettings({ ambientVolume: 0.5, effectVolume: 0.5, wind: false });
+    const settings = loadSettings();
+    expect(settings.ambientVolume).toBe(0);
+    expect(settings.effectVolume).toBe(0.5);
   });
 
   it("keeps separate background and effect volumes", () => {
