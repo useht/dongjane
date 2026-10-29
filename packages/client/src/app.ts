@@ -76,7 +76,8 @@ export class App {
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
-  private readonly soloAction = { label: "혼자 법당에서 쉬기", run: () => void this.enterSolo() };
+  private inSolo = false;
+  private soloReturnHall: number | null = null;
 
   constructor() {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
@@ -138,6 +139,7 @@ export class App {
     if (!profile) return;
     const token = ++this.joinToken;
     this.lost = false;
+    this.inSolo = false;
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
 
@@ -149,7 +151,8 @@ export class App {
     this.hud.setLink("online");
     this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
 
-    const retry = { label: "다시 시도", run: () => void this.enter(requested ?? (this.currentHall || null)) };
+    const returnHall = requested ?? (this.currentHall || null);
+    const retry = { label: "다시 시도", run: () => void this.enter(returnHall) };
 
     let busyFailures = 0;
     let transportFailures = 0;
@@ -161,7 +164,7 @@ export class App {
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
-        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction]);
+        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction(returnHall)]);
         return;
       }
       if (token !== this.joinToken) return;
@@ -200,7 +203,7 @@ export class App {
         }
         const delay = JOIN_RETRY_DELAYS_MS[transportFailures];
         if (delay === undefined) {
-          this.showUnreachable([retry, this.soloAction]);
+          this.showUnreachable([retry, this.soloAction(returnHall)]);
           return;
         }
         transportFailures += 1;
@@ -222,12 +225,18 @@ export class App {
     return this.profile;
   }
 
-  private async enterSolo(): Promise<void> {
+  private soloAction(returnHall: number | null): { label: string; run(): void } {
+    return { label: "혼자 법당에서 쉬기", run: () => void this.enterSolo(returnHall) };
+  }
+
+  private async enterSolo(returnHall: number | null): Promise<void> {
     const profile = this.ensureProfile();
     const token = ++this.joinToken;
     this.lost = false;
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
+    this.inSolo = true;
+    this.soloReturnHall = returnHall;
 
     this.world.clear();
     this.bowWatch.reset();
@@ -351,7 +360,7 @@ export class App {
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
-      this.soloAction,
+      this.soloAction(this.currentHall || null),
     ]);
   }
 
@@ -447,20 +456,23 @@ export class App {
     };
   }
 
-  private async refreshHalls(): Promise<void> {
+  private async refreshHalls(): Promise<boolean> {
     try {
       this.halls = await fetchHalls(this.base, undefined, undefined, (serverTime) =>
         this.world.seedServerTime(serverTime, performance.now()),
       );
       if (this.currentHall) this.hud.setHalls(this.halls, this.currentHall);
+      return true;
     } catch {
       // the list keeps its last known counts; joining reports a real failure
+      return false;
     }
   }
 
   private async pollHalls(): Promise<void> {
     if (document.visibilityState !== "visible" || !this.session) return;
-    await this.refreshHalls();
+    const reachable = await this.refreshHalls();
+    if (reachable && this.inSolo) void this.enter(this.soloReturnHall);
   }
 
   private async copyInvite(): Promise<void> {

@@ -447,13 +447,6 @@ button:disabled {
   will-change: transform;
 }
 
-.key-hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-}
-
 .stats {
   position: absolute;
   left: calc(var(--safe-left) + 10px);
@@ -918,10 +911,6 @@ noscript {
 
   .toasts {
     bottom: calc(var(--safe-bottom) + 138px);
-  }
-
-  .key-hint {
-    display: none;
   }
 }
 
