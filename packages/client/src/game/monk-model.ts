@@ -15,6 +15,7 @@ export const PART_NAMES = [
   "sleeveLower",
   "hand",
   "foot",
+  "leg",
 ] as const;
 export type PartName = (typeof PART_NAMES)[number];
 
@@ -29,6 +30,7 @@ const PART_COPIES: Record<PartName, number> = {
   sleeveLower: 2,
   hand: 2,
   foot: 2,
+  leg: 2,
 };
 
 const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
@@ -48,6 +50,8 @@ const FOOT_FORWARD = rig.footForward;
 const FOOT_KNEEL_Z = rig.footKneelZ;
 const FOOT_KNEEL_Y = rig.footKneelY;
 const FOOT_KNEEL_TILT = rig.footKneelTilt;
+const LEG_TOP_DROP = rig.legTopDrop;
+const LEG_LENGTH = rig.legLength;
 const KNEEL_SKIRT_GROW = rig.kneelSkirtGrow;
 const KNEEL_SKIRT_SCALE_Y = rig.kneelSkirtScaleY;
 const KNEEL_SKIRT_LIFT = rig.kneelSkirtLift;
@@ -80,6 +84,7 @@ export class MonkAvatar {
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
+  private readonly legs: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
@@ -90,7 +95,7 @@ export class MonkAvatar {
     this.hue = hue;
     this.isSelf = isSelf;
 
-    this.root.add(this.hips, this.feet[0], this.feet[1]);
+    this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
     this.hips.add(this.skirtNode, this.torsoNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
@@ -121,6 +126,7 @@ export class MonkAvatar {
       bind("sleeveLower", this.elbows[side] as Object3D, side);
       bind("hand", this.handNodes[side] as Object3D, side);
       bind("foot", this.feet[side] as Object3D, side);
+      bind("leg", this.legs[side] as Object3D, side);
     }
   }
 
@@ -192,6 +198,15 @@ export class MonkAvatar {
       foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel;
       foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
       foot.rotation.x = kneel * FOOT_KNEEL_TILT;
+
+      // The leg hangs from a pivot inside the skirt and is stretched to the ankle, so it follows strides, bobbing and the folded kneel.
+      const leg = this.legs[side] as Object3D;
+      const topY = this.hips.position.y - LEG_TOP_DROP;
+      const reachY = foot.position.y - topY;
+      const reachZ = foot.position.z - this.hips.position.z;
+      leg.position.set(sign * FOOT_X, topY, this.hips.position.z);
+      leg.rotation.x = Math.atan2(-reachZ, -reachY);
+      leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
     }
 
     this.root.updateMatrixWorld(true);

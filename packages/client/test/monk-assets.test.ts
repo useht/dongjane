@@ -16,6 +16,7 @@ const COPIES: Record<PartName, number> = {
   sleeveLower: 2,
   hand: 2,
   foot: 2,
+  leg: 2,
 };
 const ROBE_PARTS: PartName[] = ["skirt", "torso", "sleeveUpper", "sleeveLower"];
 
@@ -31,6 +32,16 @@ async function loadParts(): Promise<Record<PartName, BufferGeometry>> {
 
 function bounds(geometry: BufferGeometry): Box3 {
   return new Box3().setFromBufferAttribute(geometry.getAttribute("position") as never);
+}
+
+// The chin is the lowest point of the jaw: the lowest head vertex in front of the neck stub (toward -Z).
+function chinY(head: BufferGeometry): number {
+  const position = head.getAttribute("position");
+  let lowest = Infinity;
+  for (let i = 0; i < position.count; i += 1) {
+    if (position.getZ(i) < -0.07) lowest = Math.min(lowest, position.getY(i));
+  }
+  return lowest;
 }
 
 function triangles(geometry: BufferGeometry): number {
@@ -99,7 +110,7 @@ describe("monk assets", () => {
 
   it("stays mirror-symmetric where one geometry serves both sides", async () => {
     const parts = await loadParts();
-    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot"] as const) {
+    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot", "leg"] as const) {
       const box = bounds(parts[name]);
       expect(box.min.x, name).toBeCloseTo(-box.max.x, 4);
     }
@@ -138,13 +149,15 @@ describe("monk assets", () => {
       "footKneelZ",
       "footKneelY",
       "footKneelTilt",
+      "legTopDrop",
+      "legLength",
       "kneelSkirtGrow",
       "kneelSkirtScaleY",
-      "kneelSkirtLift",
       "cushionTop",
     ] as const) {
       expect(monkRig[key], key).toBeGreaterThan(0);
     }
+    expect(monkRig.kneelSkirtLift).toBeGreaterThanOrEqual(0);
   });
 
   it("keeps the rig pivots consistent with the geometry hung on them", async () => {
@@ -175,40 +188,78 @@ describe("monk assets", () => {
   it("keeps the chibi proportions measured from docs/reference/images.jpg (in head heights, H = crown to chin)", async () => {
     const parts = await loadParts();
     const head = bounds(parts.head);
-    const H = monkRig.headHeight;
-    const standingCrown = monkRig.hipStand + monkRig.neckY + monkRig.crownY;
-    const kneelingCrown = monkRig.cushionTop + monkRig.hipKneel + monkRig.neckY + monkRig.crownY;
+    const foot = bounds(parts.foot);
+    const crown = head.max.y;
+    const chin = chinY(parts.head);
+    const H = crown - chin;
+    expect(H, "head height").toBeCloseTo(monkRig.headHeight, 2);
 
-    expect((head.max.x - head.min.x) / H, "head width incl. ears").toBeGreaterThan(0.8);
-    expect((head.max.x - head.min.x) / H, "head width incl. ears").toBeLessThan(1.0);
-    expect(standingCrown / H, "standing height").toBeGreaterThan(3.0);
-    expect(standingCrown / H, "standing height").toBeLessThan(3.5);
-    expect((monkRig.neckY + monkRig.chinY) / H, "chin to hip").toBeGreaterThan(0.6);
-    expect((monkRig.neckY + monkRig.chinY) / H, "chin to hip").toBeLessThan(0.8);
-    expect(monkRig.hipStand / H, "hip to sole").toBeGreaterThan(1.3);
-    expect(monkRig.hipStand / H, "hip to sole").toBeLessThan(1.9);
+    // Everything below is read off the meshes: head, neck pivot (top of the torso), hip pivot and the sole of the foot.
+    const crownWorld = monkRig.hipStand + monkRig.neckY + crown;
+    const chinWorld = monkRig.hipStand + monkRig.neckY + chin;
+    const soleWorld = monkRig.footY + foot.min.y;
+    expect(soleWorld, "sole on the ground").toBeCloseTo(0, 2);
+
+    expect(Math.abs((crownWorld - soleWorld) / H - 3.18), "standing height").toBeLessThanOrEqual(0.05);
+    expect(Math.abs((chinWorld - monkRig.hipStand) / H - 0.68), "chin to hip").toBeLessThanOrEqual(0.03);
+    expect(Math.abs((monkRig.hipStand - soleWorld) / H - 1.5), "hip to sole").toBeLessThanOrEqual(0.05);
+    expect(Math.abs((head.max.x - head.min.x) / H - 0.86), "head width incl. ears").toBeLessThanOrEqual(0.03);
     expect((monkRig.shoulderX * 2) / H, "shoulder joints").toBeLessThan(0.7);
 
     // Same overall size as the first version of the monk, so cameras, labels and the cushion keep working.
-    expect(standingCrown).toBeGreaterThan(1.168 * 0.85);
-    expect(standingCrown).toBeLessThan(1.168 * 1.15);
+    const kneelingCrown = monkRig.cushionTop + monkRig.hipKneel + monkRig.neckY + crown;
+    expect(crownWorld).toBeGreaterThan(1.168 * 0.85);
+    expect(crownWorld).toBeLessThan(1.168 * 1.15);
     expect(kneelingCrown).toBeGreaterThan(1.098 * 0.85);
     expect(kneelingCrown).toBeLessThan(1.098 * 1.15);
   });
 
-  it("keeps the hem off the ground, clear of the cushion, and the sock tips out from under it", async () => {
+  it("shows the cream socks: the hem is high above the sole, the foot sits below it and a leg bridges the gap", async () => {
+    const parts = await loadParts();
+    const H = monkRig.headHeight;
+    const skirt = bounds(parts.skirt);
+    const foot = bounds(parts.foot);
+    const leg = bounds(parts.leg);
+
+    const hem = monkRig.hipStand + skirt.min.y;
+    const sole = monkRig.footY + foot.min.y;
+    const footTop = monkRig.footY + foot.max.y;
+    expect((hem - sole) / H, "sock gap between hem and sole").toBeGreaterThanOrEqual(0.5);
+    expect(Math.abs((hem - sole) / H - 0.83), "sock gap between hem and sole").toBeLessThanOrEqual(0.05);
+    expect(footTop, "the foot stays below the hem").toBeLessThan(hem);
+
+    // The leg hangs from a pivot inside the skirt and reaches down to the foot, so no gap shows between hem and sole.
+    const legTop = monkRig.hipStand - monkRig.legTopDrop + leg.max.y;
+    const legBottom = monkRig.hipStand - monkRig.legTopDrop + leg.min.y;
+    expect(legTop, "the leg top is hidden inside the skirt").toBeGreaterThan(hem);
+    expect(legBottom, "the leg reaches the foot").toBeLessThanOrEqual(footTop);
+    expect(monkRig.legLength).toBeCloseTo(monkRig.hipStand - monkRig.legTopDrop - monkRig.footY, 3);
+  });
+
+  it("keeps the hair slot free of geometry above the scalp (the head reads as shaved)", async () => {
+    const parts = await loadParts();
+    const head = bounds(parts.head);
+    const hair = bounds(parts.hair);
+    expect(hair.max.y, "nothing in the hair slot reaches the crown").toBeLessThan(head.max.y - 0.05);
+    expect(hair.min.x).toBeGreaterThanOrEqual(head.min.x);
+    expect(hair.max.x).toBeLessThanOrEqual(head.max.x);
+    expect(hair.min.z).toBeGreaterThanOrEqual(head.min.z);
+    expect(hair.max.z).toBeLessThanOrEqual(head.max.z);
+    expect(triangles(parts.hair)).toBeLessThan(20);
+  });
+
+  it("keeps the hem off the ground and clear of the cushion, with the toes showing past it", async () => {
     const parts = await loadParts();
     const skirt = bounds(parts.skirt);
     const foot = bounds(parts.foot);
 
     const hemStanding = monkRig.hipStand + skirt.min.y;
-    expect(hemStanding).toBeGreaterThanOrEqual(0);
-    expect(hemStanding).toBeLessThan(0.1);
+    expect(hemStanding).toBeGreaterThan(0.25);
+    expect(hemStanding).toBeLessThan(0.35);
     const hemKneeling = monkRig.cushionTop + monkRig.hipKneel + monkRig.kneelSkirtLift + skirt.min.y * monkRig.kneelSkirtScaleY;
     expect(hemKneeling).toBeGreaterThanOrEqual(monkRig.cushionTop);
+    expect(hemKneeling - monkRig.cushionTop, "the kneeling hem rests on the cushion").toBeLessThan(0.02);
 
-    // Standing, the toe tip (toward -Z) pokes out past the front of the skirt so the cream sock reads.
-    expect(-monkRig.footForward + foot.min.z).toBeLessThan(skirt.min.z - 0.02);
     // Kneeling, the foot is turned over behind the hip: its top rests on the cushion, the toes show past the back hem.
     expect(monkRig.footKneelY - foot.max.y).toBeGreaterThanOrEqual(0);
     expect(monkRig.footKneelZ - foot.min.z).toBeGreaterThan(skirt.max.z * (1 + monkRig.kneelSkirtGrow) + 0.02);

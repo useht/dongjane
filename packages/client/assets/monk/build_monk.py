@@ -13,10 +13,14 @@ Writes next to this script:
 and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo).
 
 Parts (one mesh object each, named exactly like the slot in monk-model.ts), each built in the local frame of its pivot:
-    head, face, hair, torso, skirt, trim, sleeveUpper, sleeveLower, hand, foot
-sleeveUpper, sleeveLower, hand and foot are mirror-symmetric about x = 0 because one geometry serves both sides.
-The head is shaved: "hair" is only the three ordination dots on the crown, and the scalp shade is a smooth vertex-colour
-gradient on the head itself (no cap mesh, so there is no edge to show).
+    head, face, hair, torso, skirt, trim, sleeveUpper, sleeveLower, hand, foot, leg
+sleeveUpper, sleeveLower, hand, foot and leg are mirror-symmetric about x = 0 because one geometry serves both sides.
+The head is shaved: the scalp shade is a smooth vertex-colour gradient on the head itself (no cap mesh, so there is no
+edge to show). "hair" stays as a swappable slot but holds only a tiny scalp-coloured core buried inside the skull, so
+nothing sits above the scalp until a hairstyle is dropped in.
+The robe stops 0.83 H above the sole (a short hem, as in the reference); the "leg" part (skin calf + cream knee sock with a
+folded cuff) fills the gap down to the foot. It hangs from a pivot inside the skirt, and monk-model.ts stretches it from
+that pivot to the ankle every frame, so it follows strides, bobbing and the folded kneeling feet.
 Robe parts (torso, skirt, sleeveUpper, sleeveLower) stay white; the game tints them per monk.
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
@@ -29,7 +33,8 @@ H = hair top to chin = 66 px (y 37 to 103). Measured, in H:
     shoulder breadth, outer, arms down  0.72 .. 0.76
     chin to waist (top of the skirt)    0.68     (a very short torso)
     waist to sole                       1.50
-    waist width 0.33 .. 0.40, chest 0.55, skirt hem width 0.83 (hem 0.41 below the waist)
+    hem above the sole                  0.83     (bare calves and socks below the skirt)
+    waist width 0.33 .. 0.40, chest 0.55, skirt hem width 0.83
     foot width 0.30, foot centres 0.19 either side of the middle, hand width 0.20
 (An earlier version used a seated stone Buddha photo; its statue ratios, shoulders 1.55 H and chin to hip 1.40 H, are gone.)
 """
@@ -51,12 +56,12 @@ from mathutils.bvhtree import BVHTree
 # CONFIG - change numbers here and rebuild. Lengths are scene units (1 unit = the game's world unit).
 # ----------------------------------------------------------------------------------------------------------------------
 
-HEAD_H = 0.36  # hair/crown to chin; the unit of every ratio below. Standing crown = 3.18 H, kneeling on the cushion 2.8 H.
+HEAD_H = 0.36  # crown to chin (the lowest jaw vertex); the unit of every ratio below. Standing crown = 3.18 H, kneeling on the cushion 2.8 H.
 
 RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
     "head_width": 0.86,  # skull plus ears (face 0.64, with the side locks 0.82)
     "head_depth": 0.84,
-    "shoulder_breadth": 0.85,  # outer edge to outer edge, sleeves included (0.72 .. 0.76 measured, puffed sleeves add a bit)
+    "shoulder_breadth": 0.80,  # outer edge to outer edge, sleeves included (0.72 .. 0.76 measured, puffed sleeves add a bit)
     "neck": 0.07,  # chin down to the base of the neck (chibi: almost none)
     "chin_to_hip": 0.68,  # chin down to the hip pivot (waist belt sits just above it)
     "waist_to_sole": 1.50,  # hip pivot height when standing
@@ -65,20 +70,27 @@ RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
 RIG = {  # pivots and lengths the animation code uses
     "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
     "hipKneel": 0.27,
-    "skirtDrop": 0.50,  # hem 0.04 above the ground
+    "skirtDrop": 0.24,  # hem 0.30 (= 0.83 H) above the ground, so calves and socks show below it
     "shoulderX": 0.095,
     "shoulderDrop": 0.045,  # shoulder joint below the neck base
     "upperArm": 0.08,
     "foreArm": 0.06,
     "footX": 0.07,
     "footY": 0.042,
-    "footForward": 0.11,  # standing: the foot pivot sits this far in front of the hip so the sock tip clears the hem
-    "footKneelZ": 0.20,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
+    "footForward": 0.03,  # standing: the ankle sits this far in front of the hip, the toes reach a hand further
+    "footKneelZ": 0.17,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
     "footKneelTilt": pi,
+    "legTopDrop": 0.10,  # the leg's top pivot hangs this far below the hip pivot, inside the skirt
     "kneelSkirtGrow": 0.45,  # kneeling spreads the skirt sideways ...
-    "kneelSkirtScaleY": 0.54,  # ... and shortens it
-    "kneelSkirtLift": 0.01,
+    "kneelSkirtScaleY": 1.1,  # ... and stretches it a little so the hem rests on the cushion
+    "kneelSkirtLift": 0.0,
     "cushionTop": 0.13,
+}
+RIG["legLength"] = round(RIG["hipStand"] - RIG["legTopDrop"] - RIG["footY"], 4)  # top pivot down to the ankle pivot, standing
+
+LEG = {
+    "sock_top": 0.192,  # the cuff's top edge above the ankle pivot (0.234 above the ground)
+    "radius": 0.0295,
 }
 
 FACE_K = HEAD_H / 0.32  # the face was drawn for a 0.32 head; every absolute size in it scales with the head
@@ -106,13 +118,13 @@ FACE = {  # heights are fractions of HEAD_H above the chin, x is a distance from
     "ear_out": fk(0.012),  # how far an ear sticks out of the skull
 }
 
-HAIR = {  # shaved head: no hair mesh at all, the scalp of the head part just turns a shade darker toward the crown
+HAIR = {  # shaved head: the scalp of the head part just turns a shade darker toward the crown
     "scalp_tint": True,
     "hairline_front_f": 0.72,  # fractions of the head height above the chin where the tint starts to fade in
     "hairline_side_f": 0.62,
     "hairline_back_f": 0.42,
     "fade": 0.75,  # latitude (radians) over which skin turns into full scalp colour
-    "crown_marks": True,  # three tiny ordination dots, the only geometry of the "hair" part
+    "core_radius": 0.012,  # the hair slot's placeholder: a tiny scalp-coloured blob buried in the middle of the skull
 }
 
 OUTFIT = {
@@ -128,16 +140,15 @@ PALETTE = {  # sRGB hex
     "robe": 0xFFFFFF,  # white on purpose: tinted at runtime
     "gold": 0xC99A3A,
     "cream": 0xF6ECD2,
-    "sock": 0xF4EEE0,
+    "sock": 0xFAF5E8,
     "eye": 0x2B1A12,
     "cheek": 0xF0948A,
     "mouth": 0x9A4A3C,
     "nose": 0xE8AE8C,
     "scalp": 0xDDB693,
-    "mark": 0xA67F60,
 }
 
-SEGMENTS = {"head": 20, "torso": 20, "skirt": 24, "belt": 24, "sleeve": 12, "hand": 10, "foot": 10}
+SEGMENTS = {"head": 20, "torso": 20, "skirt": 24, "belt": 24, "sleeve": 12, "hand": 10, "foot": 10, "leg": 8}
 
 PREVIEW_HUE = 150  # degrees, only used for the preview renders
 PREVIEW_SIZE = (480, 640)
@@ -153,10 +164,12 @@ NECK_Y = TORSO_H
 SHOULDER_Y = TORSO_H - RIG["shoulderDrop"]
 SHOULDER_R = RATIO["shoulder_breadth"] * H / 2 - RIG["shoulderX"]  # sleeve radius at the shoulder joint
 
-CHIN_Z = NECK_LEN  # head frame: origin at the base of the neck
+CHIN_Z = NECK_LEN  # head frame: origin at the base of the neck. The lowest ring of the skull (the jaw) sits exactly here
 CROWN_Z = NECK_LEN + H
-SKULL_A = H / 2
-SKULL_ZC = CHIN_Z + SKULL_A
+JAW_LAT0 = radians(-62)  # the skull is cut off at this latitude; that ring is the chin, and a flat disc closes it
+SKULL_A = H / (1 - sin(JAW_LAT0))  # half height, so that the chin ring is at CHIN_Z and the crown pole at CROWN_Z
+SKULL_ZC = CROWN_Z - SKULL_A
+JAW_FRONT = 0.07  # head vertices this far in front of the neck axis belong to the jaw (the neck column ends at 0.05)
 SKULL_RX = (RATIO["head_width"] * H - 2 * FACE["ear_out"]) / 2
 SKULL_RY = RATIO["head_depth"] * H / 2
 SKULL_CY = fk(0.02)  # the skull sits a little forward of the neck, which also keeps the face and hair on the front side
@@ -164,9 +177,9 @@ SKULL_CY = fk(0.02)  # the skull sits a little forward of the neck, which also k
 COLOR_LAYER = "Col"
 HERE = os.path.dirname(os.path.abspath(__file__))
 PREVIEW_DIR = os.environ.get("MONK_PREVIEW_DIR") or os.path.join(tempfile.gettempdir(), "monk-preview")
-PART_ORDER = ["head", "face", "hair", "torso", "skirt", "trim", "sleeveUpper", "sleeveLower", "hand", "foot"]
-SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot"]
-COPIES = {"sleeveUpper": 2, "sleeveLower": 2, "hand": 2, "foot": 2}
+PART_ORDER = ["head", "face", "hair", "torso", "skirt", "trim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg"]
+SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot", "leg"]
+COPIES = {"sleeveUpper": 2, "sleeveLower": 2, "hand": 2, "foot": 2, "leg": 2}
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Helpers
@@ -340,9 +353,10 @@ def face_z(fraction):
 
 def hairline(a):
     """Latitude where the scalp tint starts, around the head (a = azimuth, 0 = right ear, pi/2 = forehead)."""
-    t_front = math.asin((HAIR["hairline_front_f"] - 0.5) * 2)
-    t_side = math.asin((HAIR["hairline_side_f"] - 0.5) * 2)
-    t_back = math.asin((HAIR["hairline_back_f"] - 0.5) * 2)
+    t_front, t_side, t_back = (
+        math.asin(clamp((face_z(HAIR[key]) - SKULL_ZC) / SKULL_A, -1.0, 1.0))
+        for key in ("hairline_front_f", "hairline_side_f", "hairline_back_f")
+    )
     s = sin(a)
     return lerp(t_side, t_front, s**1.4) if s > 0 else lerp(t_side, t_back, -s)
 
@@ -362,12 +376,13 @@ def build_head():
     p.tint = scalp_tint
     n = SEGMENTS["head"]
     lats = 12
+    top = radians(75)
     rings = []
-    for i in range(1, lats):
-        t = -pi / 2 + pi * i / lats
+    for i in range(lats):
+        t = JAW_LAT0 + (top - JAW_LAT0) * i / (lats - 1)
         z, rx, ry = skull_at(t)
         rings.append(ring_xy(0.0, SKULL_CY, z, rx, ry, n))
-    p.loft(rings, "skin", cap_first=Vector((0.0, SKULL_CY, CHIN_Z)), cap_last=Vector((0.0, SKULL_CY, CROWN_Z)))
+    p.loft(rings, "skin", cap_first=True, cap_last=Vector((0.0, SKULL_CY, CROWN_Z)))
 
     neck = [ring_xy(0.0, 0.004, z, r, r, 12) for z, r in ((-0.025, 0.046), (0.0, 0.043), (CHIN_Z + 0.02, 0.042))]
     p.loft(neck, "skin")
@@ -444,12 +459,11 @@ def mouth_rings(p, rings):
 
 
 def build_hair():
+    """The head is shaved, so the slot is empty: a tiny scalp-coloured blob in the middle of the skull keeps the part (and
+    the loader's contract) alive without drawing a single visible triangle. A hairstyle replaces it."""
     p = Part("hair")
-    if HAIR["crown_marks"]:
-        for x, y in ((-fk(0.03), SKULL_CY + fk(0.012)), (fk(0.03), SKULL_CY + fk(0.012)), (0.0, SKULL_CY - fk(0.032))):
-            q = 1 - (x / SKULL_RX) ** 2 - ((y - SKULL_CY) / SKULL_RY) ** 2
-            z = SKULL_ZC + SKULL_A * sqrt(max(q, 0.0)) + 0.0005
-            p.ellipsoid(Vector((x, y, z)), fk(0.0085, 0.0085, 0.0035), "mark", u=8, v=4)
+    r = HAIR["core_radius"]
+    p.ellipsoid(Vector((0.0, SKULL_CY, SKULL_ZC)), (r, r, r), "scalp", u=4, v=2)
     return p.to_object()
 
 
@@ -528,15 +542,15 @@ def build_skirt():
     n = SEGMENTS["skirt"]
     drop = RIG["skirtDrop"]
     folds = 6
-    hem_w, hem_d, waist_w, waist_d = 0.176, 0.168, 0.084, 0.072
+    hem_w, hem_d, waist_w, waist_d = 0.150, 0.142, 0.084, 0.072  # hem 0.83 H wide, like the reference's flared skirt
     stations = [  # z, half-width, half-depth, fold amplitude
         (-drop, hem_w, hem_d, 0.0),
-        (-drop + 0.004, hem_w + 0.0065, hem_d + 0.0065, 0.0),
-        (-drop + 0.014, hem_w + 0.0055, hem_d + 0.0055, 0.006),
-        (-0.84 * drop, 0.173, 0.164, 0.0055),
-        (-0.60 * drop, 0.162, 0.152, 0.005),
-        (-0.32 * drop, 0.135, 0.124, 0.004),
-        (-0.10 * drop, 0.102, 0.090, 0.002),
+        (-drop + 0.004, hem_w + 0.0055, hem_d + 0.0055, 0.0),
+        (-drop + 0.012, hem_w + 0.0045, hem_d + 0.0045, 0.005),
+        (-0.80 * drop, 0.148, 0.140, 0.0045),
+        (-0.56 * drop, 0.137, 0.129, 0.004),
+        (-0.32 * drop, 0.118, 0.110, 0.003),
+        (-0.10 * drop, 0.096, 0.084, 0.002),
         (0.0, waist_w, waist_d, 0.0),
     ]
     rings = []
@@ -547,8 +561,8 @@ def build_skirt():
             wob = 1 + amp * cos(folds * a) / max(w, 1e-6) * 3
             ring.append(Vector((w * wob * cos(a), d * wob * sin(a), z)))
         rings.append(ring)
-    inner = ring_xy(0.0, 0.0, -drop + 0.01, hem_w - 0.016, hem_d - 0.016, n)
-    p.loft([inner] + rings, "robe")
+    inner = ring_xy(0.0, 0.0, -drop + 0.008, hem_w - 0.016, hem_d - 0.016, n)
+    p.loft([inner] + rings, "robe", cap_last=True)  # a lid at the waist, so the kneeling skirt never shows a see-through slit
     return p.to_object()
 
 
@@ -743,6 +757,34 @@ def build_foot():
     return p.to_object()
 
 
+def build_leg():
+    """Bare calf under a cream knee sock with a folded cuff. Frame: origin at the top pivot (inside the skirt, legTopDrop below
+    the hip), the leg hangs toward -Z for legLength down to the ankle pivot. monk-model.ts stretches it from the hip to the
+    ankle every frame, so only its length changes (cuff and sock stay round, never sheared)."""
+    p = Part("leg")
+    n = SEGMENTS["leg"]
+    length = RIG["legLength"]
+    r = LEG["radius"]
+    cuff = LEG["sock_top"]
+
+    def ring(above_ankle, radius):
+        return ring_xy(0.0, 0.0, -length + above_ankle, radius, radius, n)
+
+    sock = [  # the bottom end hides inside the foot's instep
+        ring(-0.004, r * 0.9),
+        ring(0.03, r * 0.97),
+        ring(0.12, r * 1.03),
+        ring(cuff - 0.036, r * 1.06),
+        ring(cuff - 0.030, r * 1.20),
+        ring(cuff - 0.005, r * 1.20),
+        ring(cuff, r * 1.08),
+    ]
+    p.loft(sock, "sock", cap_first=True, cap_last=True)
+    calf = [ring(cuff - 0.012, r * 0.95), ring(0.25, r * 0.97), ring(length - 0.03, r * 1.0), ring(length - 0.008, r * 0.9)]
+    p.loft(calf, "skin", cap_last=True)
+    return p.to_object()
+
+
 def foot_top():
     rings, heel, toe = foot_geometry()
     return max(max(v.z for ring in rings for v in ring), heel.z, toe.z)
@@ -762,6 +804,7 @@ BUILDERS = {
     "sleeveLower": build_sleeve_lower,
     "hand": build_hand,
     "foot": build_foot,
+    "leg": build_leg,
 }
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -841,6 +884,50 @@ def report_parts(parts):
     return total
 
 
+def check_proportions(parts):
+    """Measures the finished meshes (not the config numbers) against the reference, in head heights where H is the crown
+    to the lowest jaw vertex, and fails the build when a ratio drifts."""
+    head = [v.co for v in parts["head"].data.vertices]
+    crown = max(v.z for v in head)
+    chin = min(v.z for v in head if v.y > JAW_FRONT)  # Blender +Y is the face side
+    size = crown - chin
+    skirt_bottom = min(v.co.z for v in parts["skirt"].data.vertices)
+    foot = [v.co.z for v in parts["foot"].data.vertices]
+    leg = [v.co.z for v in parts["leg"].data.vertices]
+    hip, neck = RIG["hipStand"], NECK_Y
+    sole = RIG["footY"] + min(foot)
+    hem = hip + skirt_bottom
+    measured = {
+        "H (crown to chin, m)": (size, HEAD_H, 0.002),
+        "standing height / H": ((hip + neck + crown - sole) / size, 3.18, 0.05),
+        "chin to hip / H": ((neck + chin) / size, 0.68, 0.03),
+        "hip to sole / H": ((hip - sole) / size, 1.50, 0.05),
+        "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, 0.86, 0.03),
+        "hem above sole / H": ((hem - sole) / size, 0.83, 0.05),
+    }
+    for label, (value, want, tol) in measured.items():
+        print("MEASURED %-24s %.4f (want %.4f +- %.3f)" % (label, value, want, tol))
+        assert abs(value - want) <= tol, "%s is %.4f, wanted %.4f +- %.3f" % (label, value, want, tol)
+    foot_top_y = RIG["footY"] + max(foot)
+    assert foot_top_y < hem, "the foot must stay below the hem so the socks show"
+    leg_top, leg_bottom = hip - RIG["legTopDrop"] + max(leg), hip - RIG["legTopDrop"] + min(leg)
+    assert leg_top > hem and leg_bottom < foot_top_y, "the leg must bridge the hem and the foot"
+    print("MEASURED hair top above head crown: %.4f" % (max(v.co.z for v in parts["hair"].data.vertices) - crown))
+
+
+def check_kneel_clearance(parts):
+    """Nothing may sink into the cushion when kneeling, and the hem must rest on it."""
+    cushion = RIG["cushionTop"]
+    lowest = {}
+    for part, matrices in pose_matrices(1.0, cushion).items():
+        mesh = parts[part].data
+        lowest[part] = min((m @ v.co).z for m in matrices for v in mesh.vertices)
+    for part, z in lowest.items():
+        print("KNEEL lowest %-12s %.4f above the cushion" % (part, z - cushion))
+        assert z >= cushion - 0.0005, "%s sinks %.4f into the cushion" % (part, cushion - z)
+    assert lowest["skirt"] - cushion < 0.02, "the kneeling hem hovers over the cushion"
+
+
 def rig_dict():
     return {
         "_source": "packages/client/assets/monk/build_monk.py",
@@ -862,6 +949,8 @@ def rig_dict():
         "footKneelZ": RIG["footKneelZ"],
         "footKneelY": RIG["footKneelY"],
         "footKneelTilt": round(RIG["footKneelTilt"], 5),
+        "legTopDrop": RIG["legTopDrop"],
+        "legLength": RIG["legLength"],
         "kneelSkirtGrow": RIG["kneelSkirtGrow"],
         "kneelSkirtScaleY": RIG["kneelSkirtScaleY"],
         "kneelSkirtLift": RIG["kneelSkirtLift"],
@@ -898,8 +987,9 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.Translation(Vector(pos)) @ euler_matrix(rot) @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
-def pose_matrices(kneel, cushion):
-    """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose."""
+def pose_matrices(kneel, cushion, stride=0.0):
+    """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
+    stride (-1 .. 1) swings the feet like the walk cycle does, so the stretched legs can be checked."""
     lift = cushion * kneel
     hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), 0))
     grow = 1 + RIG["kneelSkirtGrow"] * kneel
@@ -907,7 +997,7 @@ def pose_matrices(kneel, cushion):
     torso = hips
     head = torso @ tmat((0, NECK_Y, 0))
     out = {"head": [head], "face": [head], "hair": [head], "skirt": [skirt], "torso": [torso], "trim": [torso]}
-    for key in ("sleeveUpper", "sleeveLower", "hand", "foot"):
+    for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg"):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
@@ -915,8 +1005,16 @@ def pose_matrices(kneel, cushion):
         elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (lerp(0.22, 1.95, kneel), 0, 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
         foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel)
-        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel)
+        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * sign * 0.2
         foot = tmat((sign * RIG["footX"], foot_y, foot_z), (RIG["footKneelTilt"] * kneel, 0, 0))
+        top_y = hips.translation.y - RIG["legTopDrop"]
+        reach_y, reach_z = foot_y - top_y, foot_z - hips.translation.z
+        leg = tmat(
+            (sign * RIG["footX"], top_y, hips.translation.z),
+            (atan2(-reach_z, -reach_y), 0, 0),
+            (1, sqrt(reach_y**2 + reach_z**2) / RIG["legLength"], 1),
+        )
+        out["leg"].append(leg)
         out["sleeveUpper"].append(shoulder)
         out["sleeveLower"].append(elbow)
         out["hand"].append(hand)
@@ -929,9 +1027,9 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
-def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["cushionTop"]):
+def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["cushionTop"], stride=0.0):
     coll = new_collection(name)
-    mats = pose_matrices(kneel, cushion)
+    mats = pose_matrices(kneel, cushion, stride)
     robe = {"torso", "skirt", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
@@ -1002,19 +1100,23 @@ def render_previews(parts):
     os.makedirs(PREVIEW_DIR, exist_ok=True)
     cam = setup_preview_scene()
     standing = build_pose("preview_standing", parts, 0.0, PREVIEW_HUE)
+    walking = build_pose("preview_walking", parts, 0.0, PREVIEW_HUE, stride=0.85)
     kneeling = build_pose("preview_kneeling", parts, 1.0, PREVIEW_HUE)
     for coll in list(bpy.data.collections):
         coll.hide_render = coll.name.startswith("monk_")
-    kneeling.hide_render = True
+    walking.hide_render = kneeling.hide_render = True
     mid = (0, 0, 0.58)
     for name, az in (("monk_front", 0), ("monk_side", 90), ("monk_back", 180), ("monk_three_quarter", 38)):
         render_view(cam, name, az, mid, 1.45)
     standing.hide_render = True
+    walking.hide_render = False
+    render_view(cam, "monk_walk_side", 90, mid, 1.45)
+    walking.hide_render = True
     kneeling.hide_render = False
     kmid = (0, 0, 0.56)
     for name, az in (("monk_kneel_front", 0), ("monk_kneel_three_quarter", 38), ("monk_kneel_side", 90)):
         render_view(cam, name, az, kmid, 1.45)
-    for coll in (standing, kneeling):
+    for coll in (standing, walking, kneeling):
         for obj in list(coll.objects):
             bpy.data.objects.remove(obj)
         bpy.data.collections.remove(coll)
@@ -1031,6 +1133,8 @@ def main():
         parts_coll.objects.link(obj)
         parts[name] = obj
     total = report_parts(parts)
+    check_proportions(parts)
+    check_kneel_clearance(parts)
 
     glb = os.path.join(HERE, "monk.glb")
     export_glb(parts_coll, glb)
