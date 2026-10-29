@@ -1,6 +1,5 @@
 import type { Settings } from "../storage.ts";
 import { h } from "./dom.ts";
-import { Sheet } from "./sheet.ts";
 
 export interface SettingsHandlers {
   onChange(settings: Settings): void;
@@ -14,8 +13,9 @@ function toggleRow(label: string, hint: string, checked: boolean, onChange: (val
   return h("label", "row toggle", h("span", "row-text", h("strong", "", label), h("small", "", hint)), input, h("span", "switch"));
 }
 
-export class SettingsSheet {
-  readonly sheet: Sheet;
+// The settings rows; the phone's settings app shows `root`.
+export class SettingsPanel {
+  readonly root = h("div", "settings-app");
   private readonly ambientVolume = h("input");
   private readonly effectVolume = h("input");
   private readonly sound: HTMLInputElement;
@@ -24,12 +24,10 @@ export class SettingsSheet {
   private current: Settings;
 
   constructor(
-    host: HTMLElement,
     initial: Settings,
     private readonly handlers: SettingsHandlers,
   ) {
     this.current = { ...initial };
-    this.sheet = new Sheet(host, "설정");
 
     for (const slider of [this.ambientVolume, this.effectVolume]) {
       slider.type = "range";
@@ -53,7 +51,7 @@ export class SettingsSheet {
     this.wind = windRow.querySelector("input") as HTMLInputElement;
     this.reduce = reduceRow.querySelector("input") as HTMLInputElement;
 
-    this.sheet.body.append(ambientRow, effectRow, soundRow, windRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
+    this.root.append(ambientRow, effectRow, soundRow, windRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
     this.sync(initial);
   }
 

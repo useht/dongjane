@@ -30,6 +30,8 @@ export interface MonkView {
   yaw: number;
   mode: string;
   cushionId: number;
+  npc: boolean;
+  bowCount: number;
   emote: number;
   emoteSeq: number;
 }
@@ -149,6 +151,18 @@ export class World {
   get selfPosition(): { x: number; z: number } | null {
     const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
     return entry ? { x: entry.x, z: entry.z } : null;
+  }
+
+  displayedPosition(id: string, out: { x: number; z: number }): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    out.x = entry.x;
+    out.z = entry.z;
+    return true;
+  }
+
+  headTopOf(id: string): number | null {
+    return this.entries.get(id)?.avatar.headTopY() ?? null;
   }
 
   get currentStats(): WorldStats {

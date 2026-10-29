@@ -19,6 +19,7 @@ export interface QuestProgress {
 
 const PROFILE_KEY = "dongjane:profile";
 const SETTINGS_KEY = "dongjane:settings";
+const COLLECTION_KEY = "dongjane:collection";
 const QUESTS_KEY = "dongjane:quests";
 
 function readJson(key: string): unknown {
@@ -81,6 +82,18 @@ export function loadSettings(): Settings {
 
 export function saveSettings(settings: Settings): void {
   writeJson(SETTINGS_KEY, settings);
+}
+
+export function loadBows(): number {
+  const data = readJson(COLLECTION_KEY);
+  if (typeof data !== "object" || data === null) return 0;
+  const { bows } = data as Record<string, unknown>;
+  if (typeof bows !== "number" || !Number.isFinite(bows)) return 0;
+  return Math.max(0, Math.floor(bows));
+}
+
+export function saveBows(bows: number): void {
+  writeJson(COLLECTION_KEY, { bows });
 }
 
 export function loadQuestProgress(): QuestProgress | null {

@@ -5,7 +5,8 @@ import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
 import { EmotePicker } from "./emote-picker.ts";
-import { type ChantStatus, modeLabel } from "./format.ts";
+import { type ChantStatus, describeSky, modeLabel } from "./format.ts";
+import { Phone } from "./phone.ts";
 import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
 
@@ -31,7 +32,6 @@ export interface HudHandlers {
   onEmote(emote: number): void;
   onInvite(): void;
   onToggleSound(): void;
-  onOpenSettings(): void;
   onCancelReturn(): void;
   onReturnNow(): void;
 }
@@ -47,6 +47,7 @@ export class Hud {
   private readonly hallLabel = h("span", "hall-label", "법당");
   private readonly hallCount = h("span", "hall-count", "");
   private readonly clock: ClockWidget;
+  private readonly phone: Phone;
   private readonly quests: QuestPanel;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
@@ -59,7 +60,6 @@ export class Hud {
   private readonly standButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
-  private readonly visitorSheet: Sheet;
   private readonly emotePicker: EmotePicker;
   private readonly hallList = h("ul", "list");
   private readonly hallInput = h("input", "name-input");
@@ -67,12 +67,14 @@ export class Hud {
   private halls: HallInfo[] = [];
   private currentHall = 0;
   private visitorKey = "";
+  private lastSky = "";
   private lastSelf = "";
   private lastChant = "";
 
   constructor(
     host: HTMLElement,
     private readonly handlers: HudHandlers,
+    settings: HTMLElement,
   ) {
     this.hallButton.type = "button";
     this.hallButton.append(icon("hall"), this.hallLabel, this.hallCount);
@@ -82,12 +84,12 @@ export class Hud {
       if (this.hallSheet.isOpen) handlers.onOpenHalls();
     });
 
-    this.clock = new ClockWidget(host, {
-      onOpenVisitors: () => this.visitorSheet.open(),
-      onInvite: () => handlers.onInvite(),
-      onToggleSound: () => handlers.onToggleSound(),
-      onOpenSettings: () => handlers.onOpenSettings(),
-    });
+    this.phone = new Phone(
+      host,
+      { onInvite: () => handlers.onInvite(), onToggleSound: () => handlers.onToggleSound() },
+      { visitors: this.visitorList, settings },
+    );
+    this.clock = new ClockWidget(() => this.phone.toggle());
     this.quests = new QuestPanel(host);
     const top = h("div", "topbar", h("div", "topbar-start", h("div", "hall-stack", this.hallButton, this.quests.button)), this.clock.button);
 
@@ -119,11 +121,6 @@ export class Hud {
       hallForm,
       button("이 법당 초대 링크 복사", "primary wide", () => handlers.onInvite()),
     );
-    this.visitorSheet = new Sheet(host, "함께 있는 동자승");
-    this.visitorSheet.body.append(
-      this.visitorList,
-      button("초대 링크 복사", "primary wide", () => handlers.onInvite()),
-    );
 
     this.linkBanner.setAttribute("role", "status");
     this.linkBanner.append(this.linkText, this.linkAction);
@@ -133,6 +130,7 @@ export class Hud {
 
     this.renderHalls();
     this.setSelf({ mode: "stand", cushionId: -1 });
+    this.setSky(null);
   }
 
   closeSheets(): boolean {
@@ -149,7 +147,7 @@ export class Hud {
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
-    this.clock.setVisitorCount(rows.length);
+    this.phone.setVisitorCount(rows.length);
     const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
@@ -199,7 +197,16 @@ export class Hud {
   }
 
   setSky(sky: SkyState | null): void {
-    this.clock.setSky(sky);
+    const view = describeSky(sky);
+    const key = `${view.time}|${view.weather}|${view.note}|${view.icon}`;
+    if (key === this.lastSky) return;
+    this.lastSky = key;
+    this.clock.setSky(view);
+    this.phone.setSky(view);
+  }
+
+  setCollection(bows: number): void {
+    this.phone.collection.setBows(bows);
   }
 
   setQuests(views: readonly QuestView[]): void {
@@ -222,7 +229,7 @@ export class Hud {
   }
 
   setSoundOn(on: boolean): void {
-    this.clock.setSoundOn(on);
+    this.phone.setSoundOn(on);
   }
 
   toast(text: string): void {
