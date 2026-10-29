@@ -1,11 +1,11 @@
-import { type HallInfo, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
+import { type HallInfo, type SeatResponse, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { floorDirection, KeyboardInput } from "./game/input.ts";
 import { type MonkView, World } from "./game/world.ts";
-import { chooseHall, fetchHalls, loadHalls } from "./net/halls.ts";
+import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, saveProfile, saveSettings } from "./storage.ts";
@@ -137,9 +137,9 @@ export class App {
     let busyFailures = 0;
     let transportFailures = 0;
     while (busyFailures < ENTER_ATTEMPTS) {
-      let halls: HallInfo[];
+      let seat: SeatResponse;
       try {
-        halls = await loadHalls(this.base, {
+        seat = await requestSeat(this.base, requested, {
           isCancelled: () => token !== this.joinToken,
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
@@ -148,19 +148,12 @@ export class App {
         return;
       }
       if (token !== this.joinToken) return;
-      this.halls = halls;
-
-      const choice = chooseHall(halls, requested);
-      if (!choice) {
-        this.overlay.problem("모든 법당이 가득 찼어요", "조금 뒤에 다시 들러 주세요.", [retry]);
-        return;
-      }
 
       try {
         const session = await HallSession.join(
           this.base,
-          choice.roomId,
-          choice.hall,
+          seat.roomId,
+          seat.hall,
           { name: profile.name, hue: profile.hue },
           {
             onState: (state) => {
@@ -169,13 +162,18 @@ export class App {
             onLink: (link) => {
               if (token === this.joinToken) this.handleLink(link);
             },
+            onRelocate: (hall) => {
+              if (token !== this.joinToken) return;
+              this.hud.toast(`법당이 합쳐져서 ${hallName(hall)}으로 옮겨 드려요`);
+              void this.enter(hall);
+            },
           },
         );
         if (token !== this.joinToken) {
           void session.leave();
           return;
         }
-        this.attach(session, choice.hall, choice.fellBack ? requested : null);
+        this.attach(session, seat.hall, seat.fellBack ? requested : null);
         return;
       } catch (error) {
         if (token !== this.joinToken) return;
@@ -205,6 +203,7 @@ export class App {
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
     this.hud.setHalls(this.halls, hall);
+    void this.refreshHalls();
 
     const url = new URL(window.location.href);
     url.searchParams.set("hall", String(hall));
@@ -212,7 +211,7 @@ export class App {
 
     this.overlay.hide();
     if (fellBackFrom !== null) {
-      this.hud.toast(`${hallName(fellBackFrom)}이 가득 차서 ${hallName(hall)}으로 모셨어요`);
+      this.hud.toast(`${hallName(fellBackFrom)}에 들어갈 수 없어서 ${hallName(hall)}으로 모셨어요`);
     }
     this.handleState(session.state);
   }

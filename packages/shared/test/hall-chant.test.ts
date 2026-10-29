@@ -3,57 +3,50 @@ import {
   CHANT_EVERY_MS,
   CHANT_MS,
   HALL_CAPACITY,
+  HALL_SPARE_AT,
   chantAt,
   chantEndsAt,
   chantLabel,
   chantPhase,
-  emptyHall,
   isHallFullError,
   isValidHall,
   parseHallParam,
-  pickHall,
-  type HallInfo,
+  parseSeatRequest,
 } from "../src/index.ts";
 
-const info = (hall: number, clients: number, roomId: string | null = `r${hall}`): HallInfo => ({
-  hall,
-  roomId,
-  clients,
-  capacity: HALL_CAPACITY,
-  full: clients >= HALL_CAPACITY,
-});
-
-describe("hall selection", () => {
-  it("prefers the hall with the most free room", () => {
-    expect(pickHall([info(1, 10), info(2, 3), info(3, 7)])).toBe(2);
-  });
-
-  it("skips full halls and halls without a room", () => {
-    expect(pickHall([info(1, HALL_CAPACITY), info(2, 29), info(3, 0, null)])).toBe(2);
-    expect(pickHall([info(1, HALL_CAPACITY)])).toBeNull();
-    expect(pickHall([])).toBeNull();
-  });
-
-  it("breaks ties toward the lowest hall number", () => {
-    expect(pickHall([info(4, 2), info(5, 2)])).toBe(4);
+describe("hall numbers", () => {
+  it("keeps a hall at most a dozen visitors and opens the next at ten", () => {
+    expect(HALL_CAPACITY).toBe(12);
+    expect(HALL_SPARE_AT).toBe(10);
   });
 
   it("parses the ?hall= parameter strictly", () => {
     expect(parseHallParam("3")).toBe(3);
-    expect(parseHallParam("8")).toBe(8);
+    expect(parseHallParam("25")).toBe(25);
     expect(parseHallParam("0")).toBeNull();
-    expect(parseHallParam("9")).toBeNull();
+    expect(parseHallParam("-1")).toBeNull();
     expect(parseHallParam("2abc")).toBeNull();
+    expect(parseHallParam("12345")).toBeNull();
     expect(parseHallParam("")).toBeNull();
     expect(parseHallParam(null)).toBeNull();
     expect(isValidHall(1.5)).toBe(false);
+    expect(isValidHall("2")).toBe(false);
+    expect(isValidHall(1)).toBe(true);
+  });
+
+  it("reads a seat request and treats anything unusable as no preference", () => {
+    expect(parseSeatRequest({ hall: 4 })).toEqual({ hall: 4 });
+    expect(parseSeatRequest({ hall: null })).toEqual({ hall: null });
+    expect(parseSeatRequest({ hall: 0 })).toEqual({ hall: null });
+    expect(parseSeatRequest({ hall: "4" })).toEqual({ hall: null });
+    expect(parseSeatRequest(undefined)).toEqual({ hall: null });
+    expect(parseSeatRequest("4")).toEqual({ hall: null });
   });
 
   it("recognizes full-hall errors from the matchmaker", () => {
     expect(isHallFullError(new Error('room "abc" is locked'))).toBe(true);
     expect(isHallFullError(new Error('"abc" is already full.'))).toBe(true);
     expect(isHallFullError(new Error("network down"))).toBe(false);
-    expect(emptyHall(2)).toEqual({ hall: 2, roomId: null, clients: 0, capacity: HALL_CAPACITY, full: false });
   });
 });
 

@@ -582,6 +582,10 @@ button:disabled {
   padding: 0;
 }
 
+.hall-go {
+  margin-bottom: 12px;
+}
+
 .name-input {
   flex: 1;
   min-width: 0;
