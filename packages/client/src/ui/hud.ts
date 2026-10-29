@@ -1,9 +1,11 @@
 import { type HallInfo, type SkyState, hallName, seatLabel } from "@dongjane/shared";
 import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
+import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
 import { type ChantStatus, modeLabel } from "./format.ts";
+import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
@@ -40,6 +42,7 @@ export class Hud {
   private readonly hallLabel = h("span", "hall-label", "법당");
   private readonly hallCount = h("span", "hall-count", "");
   private readonly clock: ClockWidget;
+  private readonly quests: QuestPanel;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
   private readonly toasts = h("div", "toasts");
@@ -78,7 +81,8 @@ export class Hud {
       onToggleSound: () => handlers.onToggleSound(),
       onOpenSettings: () => handlers.onOpenSettings(),
     });
-    const top = h("div", "topbar", this.hallButton, this.clock.button);
+    this.quests = new QuestPanel(host);
+    const top = h("div", "topbar", h("div", "topbar-start", this.hallButton, this.quests.button), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
@@ -199,6 +203,10 @@ export class Hud {
 
   setSky(sky: SkyState | null): void {
     this.clock.setSky(sky);
+  }
+
+  setQuests(views: readonly QuestView[]): void {
+    this.quests.setQuests(views);
   }
 
   setSolo(): void {
