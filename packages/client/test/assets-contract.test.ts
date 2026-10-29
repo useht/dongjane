@@ -4,12 +4,39 @@ import { CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
 import { BUDDHA_MESHES, BUDGET, HALL_MESHES, HALL_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
 import { HALL_LAYOUT } from "../src/game/hall-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
+import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";
 
 const MODELS = new URL("../src/assets/models/", import.meta.url);
 const TOLERANCE = 0.03;
+const COLOR_TOLERANCE = 0.004;
 
 const textured: readonly string[] = TEXTURED;
+
+type MaterialToken = keyof typeof THEME.material;
+
+function channels(hex: string): [number, number, number] {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+// Same conversion as srgb_to_linear in blender/common.py.
+function linearOf(hex: string): [number, number, number] {
+  const [r, g, b] = channels(hex).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return [r as number, g as number, b as number];
+}
+
+function vertexCount(glb: Glb, name: string, target: readonly number[]): number {
+  const { values, size, count } = colors(glb, name);
+  let found = 0;
+  for (let i = 0; i < count; i += 1) {
+    if (target.every((channel, c) => Math.abs((values[i * size + c] as number) - channel) <= COLOR_TOLERANCE)) found += 1;
+  }
+  return found;
+}
 
 function expectContract(glb: Glb, names: readonly string[]): GlbNode[] {
   expect(glb.version).toBe(2);
@@ -76,13 +103,16 @@ describe("monk.glb", () => {
     expect(torso.max[1]).toBeGreaterThanOrEqual(MONK_RIG.NECK_Y - TOLERANCE);
 
     const head = part("head").positions;
-    expect(head.min[1]).toBeGreaterThanOrEqual(-0.05);
+    expect(head.min[1]).toBeGreaterThanOrEqual(-2 * TOLERANCE);
     expect(head.min[1]).toBeLessThanOrEqual(TOLERANCE);
-    expect(head.max[1]).toBeGreaterThan(0.38);
+    expect(head.max[1]).toBeGreaterThan(MONK_RIG.NECK_Y);
+    expect(MONK_RIG.HIP_STAND + MONK_RIG.NECK_Y + head.max[1], "a standing head stays under its nameplate").toBeLessThan(MONK_RIG.NAME_HEIGHT);
 
     const upper = part("sleeveUpper").positions;
+    const capRise = MONK_RIG.NECK_Y - MONK_RIG.SHOULDER_Y;
     expect(Math.abs(upper.min[1] + MONK_RIG.UPPER_ARM)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(upper.max[1] - 0.09)).toBeLessThanOrEqual(TOLERANCE);
+    expect(upper.max[1], "the shoulder cap rises to about the neck line").toBeGreaterThanOrEqual(capRise);
+    expect(upper.max[1], "the shoulder cap rises to about the neck line").toBeLessThanOrEqual(capRise + 2 * TOLERANCE);
 
     const lower = part("sleeveLower").positions;
     expect(Math.abs(lower.max[1])).toBeLessThanOrEqual(TOLERANCE);
@@ -109,6 +139,10 @@ describe("monk.glb", () => {
       expect(Math.max(...values), `${name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
     }
   });
+
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, { head: "skin", hand: "skin", face: "brow", trim: "collar", foot: "sandalCord" });
+  });
 });
 
 function byName(nodes: readonly GlbNode[]): (name: string) => GlbNode {
@@ -119,11 +153,20 @@ function byName(nodes: readonly GlbNode[]): (name: string) => GlbNode {
   };
 }
 
-function expectLinearColors(glb: Glb, nodes: readonly GlbNode[]): void {
+// A token a mesh is built from must show up as its linear value and never as its sRGB spelling.
+function expectLinearColors(glb: Glb, nodes: readonly GlbNode[], signatures: Readonly<Record<string, MaterialToken>>): void {
   for (const node of nodes.filter((candidate) => !textured.includes(candidate.name))) {
     const { values } = colors(glb, node.name);
     expect(Math.min(...values), `${node.name} darkest`).toBeGreaterThanOrEqual(0);
     expect(Math.max(...values), `${node.name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
+  }
+  for (const [name, token] of Object.entries(signatures)) {
+    const hex = THEME.material[token as MaterialToken];
+    const linear = linearOf(hex);
+    const srgb = channels(hex).map((channel) => channel / 255);
+    expect(Math.max(...linear.map((channel, c) => Math.abs(channel - (srgb[c] as number)))), `${token} tells linear from sRGB`).toBeGreaterThan(0.05);
+    expect(vertexCount(glb, name, linear), `${name} carries ${token} in linear light`).toBeGreaterThan(0);
+    expect(vertexCount(glb, name, srgb), `${name} never carries ${token} as sRGB`).toBe(0);
   }
 }
 
@@ -158,8 +201,8 @@ describe("buddha.glb", () => {
     expect(mesh("glow").positions.max[2]).toBeLessThan(0);
   });
 
-  it("keeps the vertex colours linear and in range", () => {
-    expectLinearColors(glb, nodes);
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, { figure: "buddhaGold", halo: "buddhaGoldPale", lotus: "petal" });
   });
 });
 
@@ -193,7 +236,7 @@ describe("hall.glb", () => {
     near(max[0], HALL_HALF_WIDTH);
     near(min[1], 0);
     near(max[1], HEIGHT);
-    expect(Math.abs(min[2] - BACK_Z)).toBeLessThanOrEqual(0.1);
+    near(min[2], BACK_Z);
   });
 
   it("keeps everything indoors under the roof", () => {
@@ -213,8 +256,15 @@ describe("hall.glb", () => {
     }
   });
 
-  it("keeps the vertex colours linear and in range", () => {
-    expectLinearColors(glb, nodes);
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, {
+      structure: "lacquer",
+      beams: "dancheongGreen",
+      lanterns: "lanternCoral",
+      paper: "paper",
+      cushionBody: "cushion",
+      outdoor: "pine",
+    });
   });
 });
 

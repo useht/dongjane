@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { BufferGeometry, Group, Mesh, MeshStandardMaterial, Texture } from "three";
+import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BUDDHA_MESHES, HALL_MESHES, MONK_PARTS, TEXTURED } from "../src/assets/contract.ts";
@@ -90,23 +90,40 @@ describe("loadGameAssets", () => {
     expect(hall.cushionBody.geometry.hasAttribute("color")).toBe(true);
   });
 
-  it("releases the geometries and textures it owns", async () => {
+  it("releases the geometries, materials and textures it owns", async () => {
     const assets = await loadGameAssets(diskLoader());
     let geometries = 0;
     let textures = 0;
+    const owned = new Set<Material>();
+    const released = new Set<Material>();
     for (const meshes of Object.values(assets.models) as Array<Record<string, Mesh>>) {
       for (const mesh of Object.values(meshes)) {
         mesh.geometry.addEventListener("dispose", () => (geometries += 1));
         if (textured.includes(mesh.name)) textureOf(mesh).addEventListener("dispose", () => (textures += 1));
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+          owned.add(material);
+          material.addEventListener("dispose", () => released.add(material));
+        }
       }
     }
     assets.dispose();
     expect(geometries).toBe(MONK_PARTS.length + HALL_MESHES.length + BUDDHA_MESHES.length);
     expect(textures).toBe(TEXTURED.length);
+    expect(owned.size).toBeGreaterThan(0);
+    expect(released).toEqual(owned);
   });
 
-  it("fails loudly when a model cannot be fetched", async () => {
-    const broken: ModelLoader = { loadAsync: () => Promise.reject(new Error("offline")) };
-    await expect(loadGameAssets(broken)).rejects.toThrow("offline");
+  it("names the model that fails to load and keeps the cause", async () => {
+    const disk = diskLoader();
+    const broken: ModelLoader = {
+      loadAsync: (url) => (url === MODELS.hall ? Promise.reject(new Error("offline")) : disk.loadAsync(url)),
+    };
+    const failure = await loadGameAssets(broken).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("hall.glb: could not be loaded");
+    expect(((failure as Error).cause as Error).message).toBe("offline");
   });
 });

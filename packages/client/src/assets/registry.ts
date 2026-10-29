@@ -64,7 +64,9 @@ function disposeMeshes(meshes: Readonly<Record<string, Mesh>>): void {
 
 export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Promise<GameAssets> {
   const load = async <K extends ModelKey>(key: K): Promise<ModelMeshes<K>> => {
-    const { scene } = await loader.loadAsync(MODELS[key]);
+    const { scene } = await loader.loadAsync(MODELS[key]).catch((cause: unknown) => {
+      throw new Error(`${key}.glb: could not be loaded`, { cause });
+    });
     return collectMeshes(scene, key);
   };
   const [monk, hall, buddha] = await Promise.all([load("monk"), load("hall"), load("buddha")]);
