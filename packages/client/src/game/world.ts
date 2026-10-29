@@ -10,7 +10,7 @@ import {
   Scene,
   WebGLRenderer,
 } from "three";
-import { lerpAngle, SPAWN_POINT } from "@dongjane/shared";
+import { lerpAngle, MAT_COUNT, SPAWN_POINT } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
@@ -217,7 +217,7 @@ export class World {
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < 8; id += 1) this.landscape.setOccupied(id, occupied.has(id));
+    for (let id = 0; id < MAT_COUNT; id += 1) this.landscape.setOccupied(id, occupied.has(id));
   }
 
   clear(): void {

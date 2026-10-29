@@ -3,7 +3,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   BOW_MS,
   CHANT_MS,
+  MAT_COUNT,
+  MAT_SPOTS,
   WORLDS_PATH,
+  WORLD_BOUNDS,
   WORLD_CAPACITY,
   WORLD_SPARE_AT,
   MSG,
@@ -262,15 +265,15 @@ describe("two clients in one world", () => {
     expect(seenByB.slot).toBe(1);
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
-    expect(b.state.mats.size).toBe(8);
+    expect(b.state.mats.size).toBe(MAT_COUNT);
 
-    a.send("sit", { matId: 7 });
-    await waitFor(() => seenByB.matId === 7, "B sees A claim mat 7", 1000);
-    expect(b.state.mats.get("7")?.occupantId).toBe(a.sessionId);
+    a.send("sit", { matId: 11 });
+    await waitFor(() => seenByB.matId === 11, "B sees A claim mat 11", 1000);
+    expect(b.state.mats.get("11")?.occupantId).toBe(a.sessionId);
     await waitFor(() => seenByB.mode === "walk", "B sees A walking", 1000);
     await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 6000);
-    expect(seenByB.x).toBeCloseTo(3, 1);
-    expect(seenByB.z).toBeCloseTo(1.2, 1);
+    expect(seenByB.x).toBeCloseTo(MAT_SPOTS[11]!.x, 1);
+    expect(seenByB.z).toBeCloseTo(MAT_SPOTS[11]!.z, 1);
 
     const sentAt = Date.now();
     a.send("bow", { times: 1 });
@@ -281,6 +284,24 @@ describe("two clients in one world", () => {
     expect(seenByB.mode).toBe("kneel");
     expect(a.state.monks.get(a.sessionId)?.bowCount).toBe(1);
   });
+
+  it("seats a full world of twelve visitors on twelve different mats", async () => {
+    const crowd = await rig.fill(1, WORLD_CAPACITY);
+    const watcher = crowd[0]!;
+    await waitFor(() => watcher.state.monks.size === WORLD_CAPACITY, "everyone is in view", 3000);
+
+    crowd.forEach((room, index) => room.send("sit", { matId: index }));
+    await waitFor(
+      () => [...watcher.state.monks.values()].filter((monk) => monk.mode === "kneel").length === WORLD_CAPACITY,
+      "all twelve kneel",
+      9000,
+    );
+
+    const mats = new Set([...watcher.state.monks.values()].map((monk) => monk.matId));
+    expect(mats.size).toBe(WORLD_CAPACITY);
+    expect([...mats].sort((a, b) => a - b)).toEqual(Array.from({ length: MAT_COUNT }, (_, id) => id));
+    for (const mat of watcher.state.mats.values()) expect(mat.occupantId).not.toBe("");
+  }, 20_000);
 
   it("performs 삼배 as three bows visible to the other client", async () => {
     const a = await rig.enter(1);
@@ -408,9 +429,13 @@ describe("hardening", () => {
 
     a.send("move", { x: 1e9, z: -1e9 });
     await waitFor(() => monk.mode === "walk", "valid move accepted");
-    await waitFor(() => monk.x > 4.9 && monk.z < -2.9, "clamped to the walkable corner", 8000);
-    expect(monk.x).toBeLessThanOrEqual(5);
-    expect(monk.z).toBeGreaterThanOrEqual(-3);
+    await waitFor(
+      () => monk.x > WORLD_BOUNDS.maxX - 0.1 && monk.z < WORLD_BOUNDS.minZ + 0.1,
+      "clamped to the walkable corner",
+      8000,
+    );
+    expect(monk.x).toBeLessThanOrEqual(WORLD_BOUNDS.maxX);
+    expect(monk.z).toBeGreaterThanOrEqual(WORLD_BOUNDS.minZ);
   }, 15_000);
 
   it("keeps serving a client after a message flood passes the rate window", async () => {

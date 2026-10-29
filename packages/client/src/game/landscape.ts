@@ -30,11 +30,11 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { BUDDHA_Z, MAT_SPOTS } from "@dongjane/shared";
+import { MAT_SPOTS } from "@dongjane/shared";
 import { type ModelMeshes, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
-import { ALTAR_TOP, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
+import { ALTAR_TOP, BUDDHA_Z, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { flameGlowTexture, mulberry32 } from "./textures.ts";
 
 export interface LandscapeQuality {

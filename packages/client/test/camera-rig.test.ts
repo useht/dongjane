@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
-import { BUDDHA_Z, SPAWN_POINT } from "@dongjane/shared";
+import { SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas } from "../src/game/camera-rig.ts";
-import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
+import { BUDDHA_Z, LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
 

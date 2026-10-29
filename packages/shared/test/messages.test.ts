@@ -15,8 +15,8 @@ describe("message parsers", () => {
 
   it("accepts only integer mat ids 0..7", () => {
     expect(parseSit({ matId: 0 })).toEqual({ matId: 0 });
-    expect(parseSit({ matId: 7 })).toEqual({ matId: 7 });
-    expect(parseSit({ matId: 8 })).toBeNull();
+    expect(parseSit({ matId: 11 })).toEqual({ matId: 11 });
+    expect(parseSit({ matId: 12 })).toBeNull();
     expect(parseSit({ matId: -1 })).toBeNull();
     expect(parseSit({ matId: 2.5 })).toBeNull();
     expect(parseSit({ matId: Number.NaN })).toBeNull();

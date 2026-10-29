@@ -1,8 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { MAT_SPOTS, LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH } from "@dongjane/shared";
+import { MAT_SPOTS } from "@dongjane/shared";
 import { BUDDHA_MESHES, BUDGET, WORLD_MESHES, WORLD_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
-import { LANDSCAPE_LAYOUT } from "../src/game/landscape-layout.ts";
+import { LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH, LANDSCAPE_LAYOUT } from "../src/game/landscape-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";

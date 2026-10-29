@@ -1,6 +1,7 @@
-import { BUDDHA_Z, LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH } from "@dongjane/shared";
-
 // Plain numbers about the world that the runtime and the world.glb build both need.
+export const BUDDHA_Z = -5;
+export const LANDSCAPE_HALF_WIDTH = 7;
+export const LANDSCAPE_FRONT_Z = 8;
 export const WALL_X = LANDSCAPE_HALF_WIDTH;
 export const BACK_Z = -7.5;
 export const HEIGHT = 6;

@@ -4,11 +4,13 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
+  MAT_COUNT,
   MAT_SPOTS,
   SPAWN_POINT,
   TICK_MS,
-  WALK_BOUNDS,
   WALK_SPEED,
+  WORLD_BOUNDS,
+  WORLD_CAPACITY,
 } from "@dongjane/shared";
 import { TempleSim } from "../src/sim.ts";
 
@@ -54,8 +56,9 @@ beforeEach(() => {
 });
 
 describe("join and movement", () => {
-  it("creates eight free mats and spawns monks standing at the entrance", () => {
-    expect(h.sim.state.mats.size).toBe(8);
+  it("creates twelve free mats and spawns monks standing at the entrance", () => {
+    expect(h.sim.state.mats.size).toBe(MAT_COUNT);
+    expect(MAT_COUNT).toBe(12);
     h.sim.join("a", 120);
     const a = h.monk("a");
     expect(a.mode).toBe("stand");
@@ -82,8 +85,8 @@ describe("join and movement", () => {
     h.sim.join("a", 0);
     h.sim.move("a", 500, -500);
     h.advance(20_000);
-    expect(h.monk("a").x).toBeCloseTo(WALK_BOUNDS.maxX, 4);
-    expect(h.monk("a").z).toBeCloseTo(WALK_BOUNDS.minZ, 4);
+    expect(h.monk("a").x).toBeCloseTo(WORLD_BOUNDS.maxX, 4);
+    expect(h.monk("a").z).toBeCloseTo(WORLD_BOUNDS.minZ, 4);
   });
 
   it("ignores non-finite targets and unknown ids", () => {
@@ -96,7 +99,7 @@ describe("join and movement", () => {
 });
 
 describe("mats", () => {
-  it("claims a mat, walks over, and kneels facing the Buddha", () => {
+  it("claims a mat, walks over, and kneels facing Gatbawi", () => {
     h.sim.join("a", 0);
     expect(h.sim.sit("a", 5)).toBe(true);
     expect(h.mat(5).occupantId).toBe("a");
@@ -110,6 +113,33 @@ describe("mats", () => {
     expect(h.monk("a").matId).toBe(5);
   });
 
+  it("seats a full world of twelve visitors, each kneeling on a mat of their own", () => {
+    for (let slot = 1; slot <= WORLD_CAPACITY; slot += 1) {
+      const monk = h.sim.join(`v${slot}`, slot * 20);
+      expect(monk.slot).toBe(slot);
+      expect(h.sim.sit(`v${slot}`, slot - 1)).toBe(true);
+    }
+    h.advance(12_000);
+
+    const claimed = new Set<number>();
+    for (let slot = 1; slot <= WORLD_CAPACITY; slot += 1) {
+      const monk = h.monk(`v${slot}`);
+      const spot = MAT_SPOTS[slot - 1]!;
+      expect(monk.mode).toBe("kneel");
+      expect(monk.yaw).toBe(0);
+      expect(monk.x).toBeCloseTo(spot.x, 4);
+      expect(monk.z).toBeCloseTo(spot.z, 4);
+      claimed.add(monk.matId);
+      expect(h.mat(monk.matId).occupantId).toBe(`v${slot}`);
+    }
+    expect(claimed.size).toBe(WORLD_CAPACITY);
+    expect([...h.sim.state.mats.values()].every((mat) => mat.occupantId !== "")).toBe(true);
+
+    h.sim.join("late", 0);
+    for (let id = 0; id < MAT_COUNT; id += 1) expect(h.sim.sit("late", id)).toBe(false);
+    expect(h.monk("late").matId).toBe(-1);
+  });
+
   it("gives a contested mat to exactly one monk", () => {
     h.sim.join("a", 0);
     h.sim.join("b", 0);
@@ -121,7 +151,7 @@ describe("mats", () => {
 
   it("rejects invalid mat ids", () => {
     h.sim.join("a", 0);
-    expect(h.sim.sit("a", 8)).toBe(false);
+    expect(h.sim.sit("a", MAT_COUNT)).toBe(false);
     expect(h.sim.sit("a", -1)).toBe(false);
     expect(h.sim.sit("a", 1.5)).toBe(false);
   });
