@@ -149,15 +149,22 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
       await this.lock();
       this.broadcast(MSG.relocate, { hall: target } satisfies RelocateMessage);
       this.clock.setTimeout(() => {
-        if (this.population > 0) {
-          this.disconnect().catch((error: unknown) => logger.error("closing merged hall failed", error));
-        }
+        if (this.population === 0) return;
+        this.disconnect().catch(async (error: unknown) => {
+          logger.error("closing merged hall failed", error);
+          await this.abortDrain();
+          this.directory?.changed();
+        });
       }, this.relocationGraceMs);
     } catch (error) {
-      this.drainTarget = null;
-      await this.unlock().catch(() => undefined);
+      await this.abortDrain();
       throw error;
     }
+  }
+
+  private async abortDrain(): Promise<void> {
+    this.drainTarget = null;
+    await this.unlock().catch(() => undefined);
   }
 
   private sendRelocation(client: Client): void {

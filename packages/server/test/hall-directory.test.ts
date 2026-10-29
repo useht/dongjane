@@ -119,12 +119,13 @@ describe("planHalls", () => {
       expect(planHalls([snap(1, HALL_CAPACITY - 1), snap(2, 1)]).relocation).toEqual({ source: 2, target: 1 });
     });
 
-    it("counts only visitors when judging a target, not seats still waiting", () => {
+    it("needs a visitor already inside the target and room that counts seats still waiting", () => {
       expect(planHalls([snap(1, 1), snap(2, 0, { pending: 1 })]).relocation).toBeNull();
-      expect(planHalls([snap(1, HALL_CAPACITY - 1, { pending: 1 }), snap(2, 1)]).relocation).toEqual({
+      expect(planHalls([snap(1, HALL_CAPACITY - 2, { pending: 1 }), snap(2, 1)]).relocation).toEqual({
         source: 2,
         target: 1,
       });
+      expect(planHalls([snap(1, HALL_CAPACITY - 1, { pending: 1 }), snap(2, 1)]).relocation).toBeNull();
     });
 
     it("merges the higher of two lone halls into the lower one", () => {

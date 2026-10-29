@@ -46,7 +46,7 @@ function planRelocation(active: readonly HallSnapshot[]): HallPlan["relocation"]
   const lone = active.filter((info) => info.clients === 1 && info.pending === 0).sort(byHall).reverse();
   for (const source of lone) {
     const target = active
-      .filter((info) => info.hall !== source.hall && info.clients >= 1 && info.clients < HALL_CAPACITY)
+      .filter((info) => info.hall !== source.hall && info.clients >= 1 && load(info) < HALL_CAPACITY)
       .sort(byHall)[0];
     if (target) return { source: source.hall, target: target.hall };
   }

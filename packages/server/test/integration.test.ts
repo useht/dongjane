@@ -205,6 +205,43 @@ describe("merging halls", () => {
     }
   }, 20_000);
 
+  it("holds a lone visitor back while the last free place in the other hall is a seat waiting to be used", async () => {
+    await rig.fill(1, HALL_CAPACITY - 1);
+    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+    await rig.seat(1);
+    const lone = await rig.enter(2);
+    const relocations: number[] = [];
+    lone.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+
+    await sleep(500);
+    expect(relocations).toEqual([]);
+    expect(lone.connection.isOpen).toBe(true);
+
+    await waitFor(() => relocations.length > 0, "relocation once the seat lapses", 4000);
+    expect(relocations).toEqual([1]);
+  }, 20_000);
+
+  it("offers the merge again when closing the hall fails after the grace period", async () => {
+    const { crowd, lone, relocations } = await loneVisitorInHall2();
+    let left = false;
+    lone.onLeave(() => {
+      left = true;
+    });
+    const disconnect = vi.spyOn(HallRoom.prototype, "disconnect").mockRejectedValueOnce(new Error("disconnect failed"));
+    const reported = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await crowd[0]!.leave(true);
+      await waitFor(() => reported.mock.calls.length > 0, "failure reported", 4000);
+      expect(disconnect).toHaveBeenCalledTimes(1);
+
+      await waitFor(() => relocations.length >= 2, "relocation notice sent again", 4000);
+      await waitFor(() => left, "server closes the merged hall on the retry", 4000, 25);
+    } finally {
+      disconnect.mockRestore();
+      reported.mockRestore();
+    }
+  }, 20_000);
+
   it("closes the hall on a visitor who does not follow the relocation notice", async () => {
     const { crowd, lone } = await loneVisitorInHall2();
     let left = false;
