@@ -1,15 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  BOW_COOLDOWN_MS,
-  BOW_MS,
-  CHANT_EVERY_MS,
-  CHANT_MS,
-  CUSHION_SPOTS,
-  SPAWN_POINT,
-  TICK_MS,
-  WALK_BOUNDS,
-  WALK_SPEED,
-} from "@dongjane/shared";
+import { BOW_COOLDOWN_MS, BOW_MS, CHANT_EVERY_MS, CHANT_MS, TICK_MS, WALK_SPEED } from "../src/constants.ts";
+import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
 
 const T0 = 1_800_000_000_000;

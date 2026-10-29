@@ -6,6 +6,7 @@ import {
   MSG,
   RECONNECT_SECONDS,
   TICK_MS,
+  TempleSim,
   type RelocateMessage,
   type TempleState,
   hallName,
@@ -17,7 +18,6 @@ import {
   randomHue,
 } from "@dongjane/shared";
 import { type DirectoryRoom, type HallDirectory, RELOCATION_GRACE_MS } from "./hall-directory.ts";
-import { TempleSim } from "./sim.ts";
 
 export interface HallCreateOptions {
   hall: number;

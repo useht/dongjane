@@ -202,6 +202,16 @@ export class Hud {
     }
   }
 
+  setSolo(): void {
+    this.halls = [];
+    this.currentHall = 0;
+    this.hallLabel.textContent = "혼자 있는 법당";
+    this.hallCount.textContent = "";
+    this.renderHalls();
+    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요";
+    this.linkBanner.classList.remove("hidden");
+  }
+
   setSoundOn(on: boolean): void {
     this.soundOn = on;
     const name: IconName = on ? "soundOn" : "soundOff";

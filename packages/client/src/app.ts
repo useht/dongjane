@@ -18,6 +18,7 @@ import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
+import { SoloSession } from "./net/solo.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
@@ -62,7 +63,7 @@ export class App {
   private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
-  private session: HallSession | null = null;
+  private session: HallSession | SoloSession | null = null;
   private halls: HallInfo[] = [];
   private currentHall = 0;
   private joinToken = 0;
@@ -75,6 +76,7 @@ export class App {
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
+  private readonly soloAction = { label: "혼자 법당에서 쉬기", run: () => void this.enterSolo() };
 
   constructor() {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
@@ -123,10 +125,7 @@ export class App {
   }
 
   async start(): Promise<void> {
-    if (!this.profile) {
-      this.profile = { hue: newHue() };
-      saveProfile(this.profile);
-    }
+    this.ensureProfile();
     this.world.setIdleSpin(false);
     const requested = parseHallParam(this.params.get("hall"));
     await this.enter(requested);
@@ -161,7 +160,7 @@ export class App {
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
-        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry]);
+        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction]);
         return;
       }
       if (token !== this.joinToken) return;
@@ -200,7 +199,7 @@ export class App {
         }
         const delay = JOIN_RETRY_DELAYS_MS[transportFailures];
         if (delay === undefined) {
-          this.showUnreachable([retry]);
+          this.showUnreachable([retry, this.soloAction]);
           return;
         }
         transportFailures += 1;
@@ -212,6 +211,42 @@ export class App {
     if (token === this.joinToken) {
       this.overlay.problem("법당에 들어가지 못했어요", "법당이 바쁜 것 같아요. 잠시 뒤 다시 시도해 주세요.", [retry]);
     }
+  }
+
+  private ensureProfile(): Profile {
+    if (!this.profile) {
+      this.profile = { hue: newHue() };
+      saveProfile(this.profile);
+    }
+    return this.profile;
+  }
+
+  private async enterSolo(): Promise<void> {
+    const profile = this.ensureProfile();
+    const token = ++this.joinToken;
+    this.lost = false;
+    await this.leaveCurrent();
+    if (token !== this.joinToken) return;
+
+    this.world.clear();
+    this.bowWatch.reset();
+    this.self = null;
+    this.prediction.cancel();
+    this.cushionOwners.clear();
+
+    const session = new SoloSession(profile.hue, {
+      onState: (state) => {
+        if (token === this.joinToken) this.handleState(state);
+      },
+    });
+    this.session = session;
+    this.currentHall = 0;
+    this.world.selfId = session.sessionId;
+    this.world.resetCamera();
+    this.world.seedServerTime(Date.now(), performance.now());
+    this.hud.setSolo();
+    this.overlay.hide();
+    this.handleState(session.state);
   }
 
   private attach(session: HallSession, hall: number, fellBackFrom: number | null): void {
@@ -315,6 +350,7 @@ export class App {
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
+      this.soloAction,
     ]);
   }
 
