@@ -5,6 +5,7 @@ import {
   CHANT_EVERY_MS,
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
+  KNOCK_COOLDOWN_MS,
   TICK_MS,
   WALK_SPEED,
 } from "../src/constants.ts";
@@ -353,6 +354,130 @@ describe("emoticons", () => {
     const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(6);
     for (const npc of npcs) expect(npc.emoteSeq).toBe(0);
+  });
+});
+
+describe("wooden fish", () => {
+  it("rejects a knock unless the monk is kneeling on a cushion", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.sit("a", 0);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.sim.knock("ghost")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+  });
+
+  it("counts a knock from a seated monk without touching mode or seat", () => {
+    h.seat("a", 2);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.monk("a").knockSeq).toBe(1);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("a").cushionId).toBe(2);
+  });
+
+  it("rejects a second knock inside the cooldown and accepts one once it has passed", () => {
+    h.seat("a", 0);
+    expect(h.sim.knock("a")).toBe(true);
+    h.advance(KNOCK_COOLDOWN_MS - TICK_MS);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(1);
+    h.advance(TICK_MS);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.monk("a").knockSeq).toBe(2);
+  });
+
+  it("keeps the knock cooldown per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.sim.knock("b")).toBe(true);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("b").knockSeq).toBe(1);
+  });
+
+  it("rejects a knock and a chant while the monk is mid-bow", () => {
+    h.seat("a", 0);
+    expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe("bow");
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.sim.chant("a", true)).toBe(false);
+  });
+
+  it("starts every monk silent", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("chants only while seated", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").chanting).toBe(false);
+    h.sim.sit("a", 0);
+    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").chanting).toBe(false);
+    h.advance(8000);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    expect(h.sim.chant("ghost", true)).toBe(false);
+  });
+
+  it("stops chanting when the monk stands up", () => {
+    h.seat("a", 0);
+    h.sim.chant("a", true);
+    expect(h.sim.stand("a")).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("stops chanting when the monk walks away", () => {
+    h.seat("a", 0);
+    h.sim.chant("a", true);
+    expect(h.sim.move("a", 0, 4)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    h.advance(8000);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("stops chanting when the monk moves to another cushion", () => {
+    h.seat("a", 0);
+    h.sim.chant("a", true);
+    expect(h.sim.sit("a", 1)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    h.advance(8000);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("keeps chanting when the monk asks for the cushion it already holds", () => {
+    h.seat("a", 0);
+    h.sim.chant("a", true);
+    expect(h.sim.sit("a", 0)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("keeps chanting per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    h.sim.chant("a", true);
+    expect(h.monk("b").chanting).toBe(false);
+    h.sim.stand("b");
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("never makes npc monks knock or chant", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    for (const npc of [...sim.state.monks.values()].filter((monk) => monk.npc)) {
+      expect(npc.knockSeq).toBe(0);
+      expect(npc.chanting).toBe(false);
+    }
   });
 });
 

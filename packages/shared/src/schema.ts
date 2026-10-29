@@ -15,6 +15,8 @@ export const Monk = schema(
     emote: t.uint8().default(0),
     emoteSeq: t.uint32().default(0),
     npc: t.boolean().default(false),
+    knockSeq: t.uint32().default(0),
+    chanting: t.boolean().default(false),
   },
   "Monk",
 );

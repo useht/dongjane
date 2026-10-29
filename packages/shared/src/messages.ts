@@ -9,6 +9,8 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   emote: "emote",
+  knock: "knock",
+  chant: "chant",
   relocate: "relocate",
 } as const;
 
@@ -27,12 +29,18 @@ export interface BowMessage {
 export interface EmoteMessage {
   id: number;
 }
+export type KnockMessage = Record<string, never>;
+export interface ChantMessage {
+  on: boolean;
+}
 export interface ClientToServerMessages {
   move: MoveMessage;
   sit: SitMessage;
   stand: StandMessage;
   bow: BowMessage;
   emote: EmoteMessage;
+  knock: KnockMessage;
+  chant: ChantMessage;
 }
 
 export interface RelocateMessage {
@@ -77,6 +85,11 @@ export function parseBow(payload: unknown): BowMessage | null {
 export function parseEmote(payload: unknown): EmoteMessage | null {
   if (!isRecord(payload) || !isValidEmote(payload.id)) return null;
   return { id: payload.id };
+}
+
+export function parseChant(payload: unknown): ChantMessage | null {
+  if (!isRecord(payload) || typeof payload.on !== "boolean") return null;
+  return { on: payload.on };
 }
 
 export function parseRelocate(payload: unknown): RelocateMessage | null {

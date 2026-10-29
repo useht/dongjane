@@ -8,6 +8,7 @@ import {
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
   HALL_CAPACITY,
+  KNOCK_COOLDOWN_MS,
   WALK_SPEED,
 } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
@@ -30,6 +31,7 @@ interface Runtime {
   nextBowAt: number;
   lastBowEndedAt: number;
   nextEmoteAt: number;
+  nextKnockAt: number;
   brain: NpcBrain | null;
 }
 
@@ -106,6 +108,7 @@ export class TempleSim {
       nextBowAt: 0,
       lastBowEndedAt: 0,
       nextEmoteAt: 0,
+      nextKnockAt: 0,
       brain: null,
     });
     return monk;
@@ -185,6 +188,27 @@ export class TempleSim {
     return true;
   }
 
+  knock(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || !this.isSeated(monk)) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextKnockAt) return false;
+
+    monk.knockSeq += 1;
+    runtime.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    return true;
+  }
+
+  chant(id: string, on: boolean): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || !this.isSeated(monk)) return false;
+    monk.chanting = on;
+    return true;
+  }
+
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
@@ -258,6 +282,7 @@ export class TempleSim {
       nextBowAt: 0,
       lastBowEndedAt: 0,
       nextEmoteAt: 0,
+      nextKnockAt: 0,
       brain: createNpcBrain(persona ?? generatePersona(random), random, this.clock()),
     });
   }
@@ -331,7 +356,12 @@ export class TempleSim {
     }
   }
 
+  private isSeated(monk: Monk): boolean {
+    return monk.mode === "kneel" && monk.cushionId >= 0;
+  }
+
   private releaseSeat(monk: Monk): void {
+    monk.chanting = false;
     const runtime = this.runtimes.get(monk.id);
     if (runtime) {
       runtime.bowsLeft = 0;

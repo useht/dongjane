@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMOTE_COUNT, isValidEmote, parseBow, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
+import { EMOTE_COUNT, isValidEmote, parseBow, parseChant, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -57,6 +57,19 @@ describe("message parsers", () => {
     expect(parseEmote([3])).toBeNull();
     expect(isValidEmote(7)).toBe(true);
     expect(isValidEmote(8)).toBe(false);
+  });
+
+  it("accepts only a boolean chanting flag in an object payload", () => {
+    expect(parseChant({ on: true })).toEqual({ on: true });
+    expect(parseChant({ on: false })).toEqual({ on: false });
+    expect(parseChant({ on: true, extra: 1 })).toEqual({ on: true });
+    for (const on of [1, 0, "true", "false", null, undefined, [true], {}]) expect(parseChant({ on })).toBeNull();
+    expect(parseChant({})).toBeNull();
+    expect(parseChant(true)).toBeNull();
+    expect(parseChant(null)).toBeNull();
+    expect(parseChant(undefined)).toBeNull();
+    expect(parseChant([true])).toBeNull();
+    expect(parseChant("on")).toBeNull();
   });
 
   it("accepts only a positive integer hall to relocate to", () => {
