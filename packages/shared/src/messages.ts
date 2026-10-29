@@ -1,6 +1,6 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
-import { isValidHall } from "./hall.ts";
-import { CUSHION_COUNT } from "./layout.ts";
+import { isValidWorld } from "./world.ts";
+import { MAT_COUNT } from "./layout.ts";
 
 export const MSG = {
   move: "move",
@@ -15,7 +15,7 @@ export interface MoveMessage {
   z: number;
 }
 export interface SitMessage {
-  cushionId: number;
+  matId: number;
 }
 export type StandMessage = Record<string, never>;
 export interface BowMessage {
@@ -29,7 +29,7 @@ export interface ClientToServerMessages {
 }
 
 export interface RelocateMessage {
-  hall: number;
+  world: number;
 }
 
 export interface JoinOptions {
@@ -50,10 +50,10 @@ export function parseMove(payload: unknown): MoveMessage | null {
 }
 
 export function parseSit(payload: unknown): SitMessage | null {
-  if (!isRecord(payload) || !finite(payload.cushionId)) return null;
-  const id = payload.cushionId;
-  if (!Number.isInteger(id) || id < 0 || id >= CUSHION_COUNT) return null;
-  return { cushionId: id };
+  if (!isRecord(payload) || !finite(payload.matId)) return null;
+  const id = payload.matId;
+  if (!Number.isInteger(id) || id < 0 || id >= MAT_COUNT) return null;
+  return { matId: id };
 }
 
 export function parseBow(payload: unknown): BowMessage | null {
@@ -64,6 +64,6 @@ export function parseBow(payload: unknown): BowMessage | null {
 }
 
 export function parseRelocate(payload: unknown): RelocateMessage | null {
-  if (!isRecord(payload) || !isValidHall(payload.hall)) return null;
-  return { hall: payload.hall };
+  if (!isRecord(payload) || !isValidWorld(payload.world)) return null;
+  return { world: payload.world };
 }

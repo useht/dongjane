@@ -5,16 +5,16 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
-  CUSHION_SPOTS,
-  Cushion,
-  HALL_CAPACITY,
+  MAT_SPOTS,
+  Mat,
+  WORLD_CAPACITY,
   Monk,
   SPAWN_POINT,
   TempleState,
   WALK_SPEED,
   chantAt,
   chantEndsAt,
-  cushionSpot,
+  matSpot,
   resolveWalkable,
   yawFromDirection,
 } from "@dongjane/shared";
@@ -22,7 +22,7 @@ import {
 interface Target {
   x: number;
   z: number;
-  cushionId: number;
+  matId: number;
 }
 
 interface Runtime {
@@ -55,8 +55,8 @@ export class TempleSim {
     this.chantEveryMs = options.chantEveryMs ?? CHANT_EVERY_MS;
     this.chantMs = options.chantMs ?? CHANT_MS;
 
-    for (const spot of CUSHION_SPOTS) {
-      this.state.cushions.set(String(spot.id), new Cushion({ id: spot.id, occupantId: "" }));
+    for (const spot of MAT_SPOTS) {
+      this.state.mats.set(String(spot.id), new Mat({ id: spot.id, occupantId: "" }));
     }
     this.updateChant();
   }
@@ -65,7 +65,7 @@ export class TempleSim {
     const taken = new Set<number>();
     for (const other of this.state.monks.values()) taken.add(other.slot);
     let slot = 1;
-    while (slot <= HALL_CAPACITY && taken.has(slot)) slot += 1;
+    while (slot <= WORLD_CAPACITY && taken.has(slot)) slot += 1;
     const monk = new Monk({
       id,
       slot,
@@ -74,7 +74,7 @@ export class TempleSim {
       z: SPAWN_POINT.z,
       yaw: 0,
       mode: "stand",
-      cushionId: -1,
+      matId: -1,
       bowCount: 0,
     });
     this.state.monks.set(id, monk);
@@ -96,23 +96,23 @@ export class TempleSim {
 
     this.releaseSeat(monk);
     const point = resolveWalkable(x, z);
-    this.startWalk(monk, runtime, { x: point.x, z: point.z, cushionId: -1 });
+    this.startWalk(monk, runtime, { x: point.x, z: point.z, matId: -1 });
     return true;
   }
 
-  sit(id: string, cushionId: number): boolean {
+  sit(id: string, matId: number): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    const spot = cushionSpot(cushionId);
-    const cushion = this.state.cushions.get(String(cushionId));
-    if (!monk || !runtime || !spot || !cushion) return false;
-    if (monk.cushionId === cushionId) return true;
-    if (cushion.occupantId !== "") return false;
+    const spot = matSpot(matId);
+    const mat = this.state.mats.get(String(matId));
+    if (!monk || !runtime || !spot || !mat) return false;
+    if (monk.matId === matId) return true;
+    if (mat.occupantId !== "") return false;
 
     this.releaseSeat(monk);
-    cushion.occupantId = id;
-    monk.cushionId = cushionId;
-    this.startWalk(monk, runtime, { x: spot.x, z: spot.z, cushionId });
+    mat.occupantId = id;
+    monk.matId = matId;
+    this.startWalk(monk, runtime, { x: spot.x, z: spot.z, matId });
     return true;
   }
 
@@ -131,7 +131,7 @@ export class TempleSim {
     const runtime = this.runtimes.get(id);
     if (!monk || !runtime) return false;
     if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return false;
-    if (monk.mode !== "kneel" || monk.cushionId < 0 || runtime.bowsLeft > 0) return false;
+    if (monk.mode !== "kneel" || monk.matId < 0 || runtime.bowsLeft > 0) return false;
 
     const now = this.clock();
     if (now < runtime.lastBowEndedAt + BOW_COOLDOWN_MS) return false;
@@ -221,7 +221,7 @@ export class TempleSim {
     }
     monk.x = target.x;
     monk.z = target.z;
-    if (target.cushionId >= 0 && monk.cushionId === target.cushionId) {
+    if (target.matId >= 0 && monk.matId === target.matId) {
       monk.yaw = 0;
       monk.mode = "kneel";
     } else {
@@ -235,10 +235,10 @@ export class TempleSim {
       runtime.bowsLeft = 0;
       runtime.target = null;
     }
-    if (monk.cushionId >= 0) {
-      const cushion = this.state.cushions.get(String(monk.cushionId));
-      if (cushion && cushion.occupantId === monk.id) cushion.occupantId = "";
-      monk.cushionId = -1;
+    if (monk.matId >= 0) {
+      const mat = this.state.mats.get(String(monk.matId));
+      if (mat && mat.occupantId === monk.id) mat.occupantId = "";
+      monk.matId = -1;
     }
   }
 }

@@ -11,23 +11,23 @@ import {
 } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import {
-  HALLS_PATH,
+  WORLDS_PATH,
   ROOM_NAME,
   SEAT_PATH,
-  type HallListResponse,
+  type WorldListResponse,
   parseSeatRequest,
 } from "@dongjane/shared";
-import { HallDirectory, HallsBusyError } from "./hall-directory.ts";
-import { HallRoom, hallHost } from "./hall-room.ts";
+import { WorldDirectory, WorldsBusyError } from "./world-directory.ts";
+import { WorldRoom, worldHost } from "./world-room.ts";
 import { createStaticHandler } from "./static.ts";
 
 export interface GameServerOptions {
   port?: number;
   hostname?: string;
   reconnectSeconds?: number;
-  /** How long a handed-out seat keeps its hall alive while the client connects. */
+  /** How long a handed-out seat keeps its world alive while the client connects. */
   seatReservationMs?: number;
-  /** How long a hall being merged waits for its visitors to move before it closes. */
+  /** How long a world being merged waits for its visitors to move before it closes. */
   relocationGraceMs?: number;
   handleSignals?: boolean;
   greet?: boolean;
@@ -47,43 +47,43 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 
-function createHallEndpoints(directory: HallDirectory) {
-  const hallsEndpoint = createEndpoint(HALLS_PATH, { method: "GET" }, async () => {
-    const body: HallListResponse = { halls: directory.list() };
+function createWorldEndpoints(directory: WorldDirectory) {
+  const worldsEndpoint = createEndpoint(WORLDS_PATH, { method: "GET" }, async () => {
+    const body: WorldListResponse = { worlds: directory.list() };
     return json(body);
   });
 
   const seatEndpoint = createEndpoint(SEAT_PATH, { method: "POST" }, async (ctx) => {
     try {
-      return json(await directory.seat(parseSeatRequest(ctx.body as unknown).hall));
+      return json(await directory.seat(parseSeatRequest(ctx.body as unknown).world));
     } catch (error) {
-      if (error instanceof HallsBusyError) return json({ error: "busy" }, 503);
+      if (error instanceof WorldsBusyError) return json({ error: "busy" }, 503);
       throw error;
     }
   });
 
-  return { hallsEndpoint, seatEndpoint };
+  return { worldsEndpoint, seatEndpoint };
 }
 
 export async function startGameServer(options: GameServerOptions = {}): Promise<GameServer> {
-  hallHost.key = randomBytes(16).toString("hex");
-  const directory = new HallDirectory({
-    create: (hall) =>
+  worldHost.key = randomBytes(16).toString("hex");
+  const directory = new WorldDirectory({
+    create: (world) =>
       matchMaker.createRoom(ROOM_NAME, {
-        hall,
-        key: hallHost.key,
+        world,
+        key: worldHost.key,
         reconnectSeconds: options.reconnectSeconds,
         relocationGraceMs: options.relocationGraceMs,
       }),
-    onError: (error) => logger.error("hall directory failed", error),
+    onError: (error) => logger.error("world directory failed", error),
     reservationMs: options.seatReservationMs,
   });
-  hallHost.directory = directory;
+  worldHost.directory = directory;
 
   const clientDir = options.clientDir;
   const server = defineServer({
-    rooms: { [ROOM_NAME]: defineRoom(HallRoom) },
-    routes: createRouter(createHallEndpoints(directory), { openapi: { disabled: true } }),
+    rooms: { [ROOM_NAME]: defineRoom(WorldRoom) },
+    routes: createRouter(createWorldEndpoints(directory), { openapi: { disabled: true } }),
     transport: new WebSocketTransport(),
     gracefullyShutdown: options.handleSignals ?? false,
     greet: options.greet ?? false,

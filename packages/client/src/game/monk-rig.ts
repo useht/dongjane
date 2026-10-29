@@ -13,7 +13,7 @@ export const UPPER_ARM = 0.18;
 export const FORE_ARM = 0.16;
 export const FOOT_X = 0.085;
 export const FOOT_Y = 0.045;
-export const CUSHION_TOP = 0.13;
+export const MAT_TOP = 0.13;
 
 export const MONK_RIG = {
   HIP_STAND,
@@ -27,7 +27,7 @@ export const MONK_RIG = {
   FORE_ARM,
   FOOT_X,
   FOOT_Y,
-  CUSHION_TOP,
+  MAT_TOP,
 } as const;
 
 // Instances per monk: arms and feet are drawn twice from one mesh.

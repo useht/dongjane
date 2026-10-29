@@ -9,21 +9,21 @@ export const Monk = schema(
     z: t.float32().default(0),
     yaw: t.float32().default(0),
     mode: t.string().default("stand"),
-    cushionId: t.int8().default(-1),
+    matId: t.int8().default(-1),
     bowCount: t.uint32().default(0),
   },
   "Monk",
 );
 export type Monk = SchemaType<typeof Monk>;
 
-export const Cushion = schema(
+export const Mat = schema(
   {
     id: t.uint8().default(0),
     occupantId: t.string().default(""),
   },
-  "Cushion",
+  "Mat",
 );
-export type Cushion = SchemaType<typeof Cushion>;
+export type Mat = SchemaType<typeof Mat>;
 
 export const Chant = schema(
   {
@@ -38,7 +38,7 @@ export type Chant = SchemaType<typeof Chant>;
 export const TempleState = schema(
   {
     monks: t.map(Monk),
-    cushions: t.map(Cushion),
+    mats: t.map(Mat),
     chant: t.ref(Chant).default(() => new Chant()),
   },
   "TempleState",

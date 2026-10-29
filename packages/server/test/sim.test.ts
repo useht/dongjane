@@ -4,7 +4,7 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
-  CUSHION_SPOTS,
+  MAT_SPOTS,
   SPAWN_POINT,
   TICK_MS,
   WALK_BOUNDS,
@@ -28,9 +28,9 @@ class Harness {
     }
   }
 
-  seat(id: string, cushionId: number): void {
+  seat(id: string, matId: number): void {
     this.sim.join(id, 10);
-    expect(this.sim.sit(id, cushionId)).toBe(true);
+    expect(this.sim.sit(id, matId)).toBe(true);
     this.advance(8000);
     expect(this.sim.state.monks.get(id)?.mode).toBe("kneel");
   }
@@ -41,10 +41,10 @@ class Harness {
     return monk;
   }
 
-  cushion(id: number) {
-    const cushion = this.sim.state.cushions.get(String(id));
-    if (!cushion) throw new Error(`no cushion ${id}`);
-    return cushion;
+  mat(id: number) {
+    const mat = this.sim.state.mats.get(String(id));
+    if (!mat) throw new Error(`no mat ${id}`);
+    return mat;
   }
 }
 
@@ -54,13 +54,13 @@ beforeEach(() => {
 });
 
 describe("join and movement", () => {
-  it("creates eight free cushions and spawns monks standing at the entrance", () => {
-    expect(h.sim.state.cushions.size).toBe(8);
+  it("creates eight free mats and spawns monks standing at the entrance", () => {
+    expect(h.sim.state.mats.size).toBe(8);
     h.sim.join("a", 120);
     const a = h.monk("a");
     expect(a.mode).toBe("stand");
     expect(a.z).toBe(SPAWN_POINT.z);
-    expect(a.cushionId).toBe(-1);
+    expect(a.matId).toBe(-1);
     expect(a.bowCount).toBe(0);
     expect(a.hue).toBe(120);
   });
@@ -95,81 +95,81 @@ describe("join and movement", () => {
   });
 });
 
-describe("cushions", () => {
-  it("claims a cushion, walks over, and kneels facing the Buddha", () => {
+describe("mats", () => {
+  it("claims a mat, walks over, and kneels facing the Buddha", () => {
     h.sim.join("a", 0);
     expect(h.sim.sit("a", 5)).toBe(true);
-    expect(h.cushion(5).occupantId).toBe("a");
+    expect(h.mat(5).occupantId).toBe("a");
     expect(h.monk("a").mode).toBe("walk");
     h.advance(8000);
-    const spot = CUSHION_SPOTS[5]!;
+    const spot = MAT_SPOTS[5]!;
     expect(h.monk("a").mode).toBe("kneel");
     expect(h.monk("a").x).toBeCloseTo(spot.x, 4);
     expect(h.monk("a").z).toBeCloseTo(spot.z, 4);
     expect(h.monk("a").yaw).toBe(0);
-    expect(h.monk("a").cushionId).toBe(5);
+    expect(h.monk("a").matId).toBe(5);
   });
 
-  it("gives a contested cushion to exactly one monk", () => {
+  it("gives a contested mat to exactly one monk", () => {
     h.sim.join("a", 0);
     h.sim.join("b", 0);
     const results = [h.sim.sit("a", 2), h.sim.sit("b", 2)];
     expect(results).toEqual([true, false]);
-    expect(h.cushion(2).occupantId).toBe("a");
-    expect(h.monk("b").cushionId).toBe(-1);
+    expect(h.mat(2).occupantId).toBe("a");
+    expect(h.monk("b").matId).toBe(-1);
   });
 
-  it("rejects invalid cushion ids", () => {
+  it("rejects invalid mat ids", () => {
     h.sim.join("a", 0);
     expect(h.sim.sit("a", 8)).toBe(false);
     expect(h.sim.sit("a", -1)).toBe(false);
     expect(h.sim.sit("a", 1.5)).toBe(false);
   });
 
-  it("frees the old cushion when moving to another", () => {
+  it("frees the old mat when moving to another", () => {
     h.seat("a", 0);
     expect(h.sim.sit("a", 1)).toBe(true);
-    expect(h.cushion(0).occupantId).toBe("");
-    expect(h.cushion(1).occupantId).toBe("a");
+    expect(h.mat(0).occupantId).toBe("");
+    expect(h.mat(1).occupantId).toBe("a");
   });
 
-  it("frees the cushion on stand", () => {
+  it("frees the mat on stand", () => {
     h.seat("a", 3);
     expect(h.sim.stand("a")).toBe(true);
-    expect(h.cushion(3).occupantId).toBe("");
+    expect(h.mat(3).occupantId).toBe("");
     expect(h.monk("a").mode).toBe("stand");
-    expect(h.monk("a").cushionId).toBe(-1);
+    expect(h.monk("a").matId).toBe(-1);
     h.sim.join("b", 0);
     expect(h.sim.sit("b", 3)).toBe(true);
   });
 
-  it("frees the cushion when the monk walks away", () => {
+  it("frees the mat when the monk walks away", () => {
     h.seat("a", 4);
     h.sim.move("a", 0, 4);
-    expect(h.cushion(4).occupantId).toBe("");
-    expect(h.monk("a").cushionId).toBe(-1);
+    expect(h.mat(4).occupantId).toBe("");
+    expect(h.monk("a").matId).toBe(-1);
     expect(h.monk("a").mode).toBe("walk");
   });
 
-  it("frees the cushion when the monk leaves, even mid-walk", () => {
+  it("frees the mat when the monk leaves, even mid-walk", () => {
     h.sim.join("a", 0);
     h.sim.sit("a", 6);
     h.advance(300);
     h.sim.leave("a");
-    expect(h.cushion(6).occupantId).toBe("");
+    expect(h.mat(6).occupantId).toBe("");
     expect(h.sim.state.monks.size).toBe(0);
   });
 
-  it("never leaves two cushions owned by one monk or two monks on one cushion", () => {
+  it("never leaves two mats owned by one monk or two monks on one mat", () => {
     for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
     for (let round = 0; round < 6; round += 1) {
       for (let i = 0; i < 12; i += 1) h.sim.sit(`m${i}`, (i + round * 3) % 8);
       h.advance(500);
       const owners = new Map<string, number>();
-      for (const [, cushion] of h.sim.state.cushions) {
-        if (cushion.occupantId === "") continue;
-        owners.set(cushion.occupantId, (owners.get(cushion.occupantId) ?? 0) + 1);
-        expect(h.monk(cushion.occupantId).cushionId).toBe(cushion.id);
+      for (const [, mat] of h.sim.state.mats) {
+        if (mat.occupantId === "") continue;
+        owners.set(mat.occupantId, (owners.get(mat.occupantId) ?? 0) + 1);
+        expect(h.monk(mat.occupantId).matId).toBe(mat.id);
       }
       for (const count of owners.values()) expect(count).toBe(1);
     }
@@ -177,7 +177,7 @@ describe("cushions", () => {
 });
 
 describe("bowing", () => {
-  it("rejects bows unless kneeling on a cushion", () => {
+  it("rejects bows unless kneeling on a mat", () => {
     h.sim.join("a", 0);
     expect(h.sim.bow("a", 1)).toBe(false);
     h.sim.sit("a", 0);
@@ -278,7 +278,7 @@ describe("seat numbers", () => {
     expect(h.monk("d").slot).toBe(2);
   });
 
-  it("numbers a full hall 1 through its capacity", () => {
+  it("numbers a full world 1 through its capacity", () => {
     for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
     const slots = Array.from(h.sim.state.monks.values(), (monk) => monk.slot).sort((x, y) => x - y);
     expect(slots).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);

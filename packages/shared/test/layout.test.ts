@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUSHION_COUNT,
-  CUSHION_SPOTS,
+  MAT_COUNT,
+  MAT_SPOTS,
   WALK_BOUNDS,
-  cushionSpot,
-  hallName,
+  matSpot,
+  worldName,
   lerpAngle,
   resolveWalkable,
   wrapAngle,
@@ -12,23 +12,23 @@ import {
 } from "../src/index.ts";
 
 describe("layout", () => {
-  it("defines eight cushions in two rows of four, all inside the walkable rect", () => {
-    expect(CUSHION_COUNT).toBe(8);
-    expect(new Set(CUSHION_SPOTS.map((spot) => spot.id)).size).toBe(8);
-    expect(new Set(CUSHION_SPOTS.map((spot) => spot.z))).toEqual(new Set([-1.2, 1.2]));
-    expect(CUSHION_SPOTS.filter((spot) => spot.z === -1.2).map((spot) => spot.x)).toEqual([-3, -1, 1, 3]);
-    for (const spot of CUSHION_SPOTS) {
+  it("defines eight mats in two rows of four, all inside the walkable rect", () => {
+    expect(MAT_COUNT).toBe(8);
+    expect(new Set(MAT_SPOTS.map((spot) => spot.id)).size).toBe(8);
+    expect(new Set(MAT_SPOTS.map((spot) => spot.z))).toEqual(new Set([-1.2, 1.2]));
+    expect(MAT_SPOTS.filter((spot) => spot.z === -1.2).map((spot) => spot.x)).toEqual([-3, -1, 1, 3]);
+    for (const spot of MAT_SPOTS) {
       expect(resolveWalkable(spot.x, spot.z)).toEqual({ x: spot.x, z: spot.z });
     }
   });
 
-  it("looks up cushions by id and rejects bad ids", () => {
-    expect(cushionSpot(0)).toEqual({ id: 0, x: -3, z: -1.2 });
-    expect(cushionSpot(7)).toEqual({ id: 7, x: 3, z: 1.2 });
-    expect(cushionSpot(8)).toBeUndefined();
-    expect(cushionSpot(-1)).toBeUndefined();
-    expect(cushionSpot(1.5)).toBeUndefined();
-    expect(cushionSpot(Number.NaN)).toBeUndefined();
+  it("looks up mats by id and rejects bad ids", () => {
+    expect(matSpot(0)).toEqual({ id: 0, x: -3, z: -1.2 });
+    expect(matSpot(7)).toEqual({ id: 7, x: 3, z: 1.2 });
+    expect(matSpot(8)).toBeUndefined();
+    expect(matSpot(-1)).toBeUndefined();
+    expect(matSpot(1.5)).toBeUndefined();
+    expect(matSpot(Number.NaN)).toBeUndefined();
   });
 
   it("clamps points to the walkable rect", () => {
@@ -37,8 +37,8 @@ describe("layout", () => {
     expect(resolveWalkable(1, 2)).toEqual({ x: 1, z: 2 });
   });
 
-  it("names halls in Korean", () => {
-    expect(hallName(3)).toBe("3번 법당");
+  it("names worlds in Korean", () => {
+    expect(worldName(3)).toBe("3번 월드");
   });
 
   it("faces yaw 0 toward the Buddha at -z", () => {

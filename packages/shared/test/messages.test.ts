@@ -13,14 +13,14 @@ describe("message parsers", () => {
     expect(parseMove(7)).toBeNull();
   });
 
-  it("accepts only integer cushion ids 0..7", () => {
-    expect(parseSit({ cushionId: 0 })).toEqual({ cushionId: 0 });
-    expect(parseSit({ cushionId: 7 })).toEqual({ cushionId: 7 });
-    expect(parseSit({ cushionId: 8 })).toBeNull();
-    expect(parseSit({ cushionId: -1 })).toBeNull();
-    expect(parseSit({ cushionId: 2.5 })).toBeNull();
-    expect(parseSit({ cushionId: Number.NaN })).toBeNull();
-    expect(parseSit({ cushionId: "3" })).toBeNull();
+  it("accepts only integer mat ids 0..7", () => {
+    expect(parseSit({ matId: 0 })).toEqual({ matId: 0 });
+    expect(parseSit({ matId: 7 })).toEqual({ matId: 7 });
+    expect(parseSit({ matId: 8 })).toBeNull();
+    expect(parseSit({ matId: -1 })).toBeNull();
+    expect(parseSit({ matId: 2.5 })).toBeNull();
+    expect(parseSit({ matId: Number.NaN })).toBeNull();
+    expect(parseSit({ matId: "3" })).toBeNull();
     expect(parseSit(undefined)).toBeNull();
   });
 
@@ -34,11 +34,11 @@ describe("message parsers", () => {
     expect(parseBow({})).toBeNull();
   });
 
-  it("accepts only a positive integer hall to relocate to", () => {
-    expect(parseRelocate({ hall: 3 })).toEqual({ hall: 3 });
-    expect(parseRelocate({ hall: 0 })).toBeNull();
-    expect(parseRelocate({ hall: 1.5 })).toBeNull();
-    expect(parseRelocate({ hall: "3" })).toBeNull();
+  it("accepts only a positive integer world to relocate to", () => {
+    expect(parseRelocate({ world: 3 })).toEqual({ world: 3 });
+    expect(parseRelocate({ world: 0 })).toBeNull();
+    expect(parseRelocate({ world: 1.5 })).toBeNull();
+    expect(parseRelocate({ world: "3" })).toBeNull();
     expect(parseRelocate({})).toBeNull();
     expect(parseRelocate(null)).toBeNull();
   });

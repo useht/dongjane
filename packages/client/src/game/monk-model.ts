@@ -11,7 +11,7 @@ import { BOW_MS } from "@dongjane/shared";
 import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
 import type { ModelMeshes } from "../assets/registry.ts";
 import {
-  CUSHION_TOP,
+  MAT_TOP,
   FOOT_X,
   FOOT_Y,
   FORE_ARM,
@@ -111,7 +111,7 @@ export class MonkAvatar {
     this.pose.update(this.mode, dt, !reduceMotion);
     const kneel = this.pose.kneel;
     const walk = this.pose.walk;
-    this.liftedBy = approach(this.liftedBy, this.mode === "stand" || this.mode === "walk" ? 0 : CUSHION_TOP, dt, reduceMotion ? 1000 : 10);
+    this.liftedBy = approach(this.liftedBy, this.mode === "stand" || this.mode === "walk" ? 0 : MAT_TOP, dt, reduceMotion ? 1000 : 10);
 
     if (this.mode === "walk") this.phase += dt * Math.min(speed, 3.5) * 4.4;
     const swing = Math.sin(this.phase);

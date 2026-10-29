@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HALLS_PATH, type HallListResponse } from "@dongjane/shared";
+import { WORLDS_PATH, type WorldListResponse } from "@dongjane/shared";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { TestRig } from "./helpers.ts";
 
@@ -29,7 +29,7 @@ afterAll(async () => {
 
 describe("client static serving", () => {
   it("serves index.html at the root instead of the Colyseus banner", async () => {
-    const response = await fetch(`${base}/?hall=2`);
+    const response = await fetch(`${base}/?world=2`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("no-cache");
@@ -58,15 +58,15 @@ describe("client static serving", () => {
     expect(response.status).toBe(404);
   });
 
-  it("keeps the hall list and matchmaking working on the same origin", async () => {
-    const empty = (await (await fetch(`${base}${HALLS_PATH}`)).json()) as HallListResponse;
-    expect(empty.halls).toEqual([]);
+  it("keeps the world list and matchmaking working on the same origin", async () => {
+    const empty = (await (await fetch(`${base}${WORLDS_PATH}`)).json()) as WorldListResponse;
+    expect(empty.worlds).toEqual([]);
 
     const rig = new TestRig(game.port);
     const room = await rig.enter(1);
-    const body = (await (await fetch(`${base}${HALLS_PATH}`)).json()) as HallListResponse;
-    expect(body.halls).toHaveLength(1);
-    expect(room.roomId).toBe(body.halls[0]!.roomId);
+    const body = (await (await fetch(`${base}${WORLDS_PATH}`)).json()) as WorldListResponse;
+    expect(body.worlds).toHaveLength(1);
+    expect(room.roomId).toBe(body.worlds[0]!.roomId);
     await rig.closeAll();
   });
 });

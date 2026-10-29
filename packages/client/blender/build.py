@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import buddha  # noqa: E402
 import common  # noqa: E402
 import flat_textures  # noqa: E402
-import hall  # noqa: E402
+import world  # noqa: E402
 import monk  # noqa: E402
 
 
@@ -28,7 +28,7 @@ def main():
         common.reset_scene()
         buddha.build(inputs, args.out)
         common.reset_scene()
-        hall.build(inputs, args.out, pictures)
+        world.build(inputs, args.out, pictures)
 
 
 main()

@@ -37,7 +37,7 @@ export default defineConfig({
       manifest: {
         name: "동자네",
         short_name: "동자네",
-        description: "작은 동자승이 되어 함께 절하고 쉬어가는 포근한 법당",
+        description: "갓바위 앞에서 함께 절하고 쉬어가는 포근한 월드",
         lang: "ko",
         start_url: "/",
         scope: "/",

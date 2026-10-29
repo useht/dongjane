@@ -1,9 +1,9 @@
 import { type MonkMode, chantEndsAt, chantPhase } from "@dongjane/shared";
 
-export function modeLabel(mode: string, cushionId: number): string {
+export function modeLabel(mode: string, matId: number): string {
   switch (mode as MonkMode) {
     case "walk":
-      return cushionId >= 0 ? "방석으로 가는 중" : "걷는 중";
+      return matId >= 0 ? "돗자리로 가는 중" : "걷는 중";
     case "kneel":
       return "앉아 있어요";
     case "bow":

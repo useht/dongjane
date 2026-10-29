@@ -3,7 +3,7 @@ import { ICON_NAMES, iconMarkup } from "../src/ui/icons.ts";
 
 describe("ui icons", () => {
   it("registers the eight hud icons", () => {
-    expect([...ICON_NAMES].sort()).toEqual(["close", "gear", "hall", "link", "people", "sit", "soundOff", "soundOn"]);
+    expect([...ICON_NAMES].sort()).toEqual(["close", "gear", "link", "people", "sit", "soundOff", "soundOn", "world"]);
   });
 
   it("draws every icon as a 24px stroke that follows the text colour", () => {
@@ -17,6 +17,6 @@ describe("ui icons", () => {
   });
 
   it("sizes the icon on request", () => {
-    expect(iconMarkup("hall", 16)).toContain('width="16" height="16"');
+    expect(iconMarkup("world", 16)).toContain('width="16" height="16"');
   });
 });

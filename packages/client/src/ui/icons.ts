@@ -1,6 +1,6 @@
 // Inline 24px stroke icons. They draw with currentColor, so a theme token on the parent is all they need.
 const PATHS = {
-  hall: '<path d="M3 10.5 12 4l9 6.5M5.5 9.5V19h13V9.5M9.5 19v-5h5v5"/>',
+  world: '<path d="M3 10.5 12 4l9 6.5M5.5 9.5V19h13V9.5M9.5 19v-5h5v5"/>',
   people:
     '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.4-3.2 2.6-5 5.5-5s5.1 1.8 5.5 5"/><circle cx="17" cy="9.5" r="2.4"/><path d="M16.5 14.2c2.4-.2 4 1.2 4.4 3.8"/>',
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/>',

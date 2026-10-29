@@ -1,9 +1,9 @@
 {
   "blender": "Blender 5.2.3 LTS",
-  "inputsHash": "f426186a351ced1463ec6a3022c4f4ac0ac32f4b79845447fee5fe3e8317e8a7",
+  "inputsHash": "29c1cb173cf7afcad1de4bcfacf866173a3d9322f12a1997cba551480fa4e695",
   "outputs": {
     "buddha.glb": "73067cc52df4b2fa1c3b25b1e9ead53fe329f76f83b5a9ff3b8a9e7c7585d266",
-    "hall.glb": "abdf266d33c277d4697ca1ef9aca23e88449a142b3cd69bcb5983b5649f55b06",
-    "monk.glb": "35f20d0e6122449fc22f1e3d09646a0f7f3d62e677ec1b72e007c30fb29bfe31"
+    "monk.glb": "35f20d0e6122449fc22f1e3d09646a0f7f3d62e677ec1b72e007c30fb29bfe31",
+    "world.glb": "3e26a76a6a70a6357df7240bf3f68d71dfaca0661d54ee2161554d862d38f3ab"
   }
 }

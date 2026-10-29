@@ -39,7 +39,7 @@ export class SettingsSheet {
     const volumeRow = h("div", "row", h("span", "row-text", h("strong", "", "소리 크기")), this.volume);
 
     const soundRow = toggleRow("소리", "종소리와 절하는 소리", initial.sound, (sound) => this.update({ sound }));
-    const windRow = toggleRow("바람 소리", "법당 밖에서 부는 잔잔한 바람", initial.wind, (wind) => this.update({ wind }));
+    const windRow = toggleRow("바람 소리", "월드에 부는 잔잔한 바람", initial.wind, (wind) => this.update({ wind }));
     const reduceRow = toggleRow("움직임 줄이기", "카메라 흔들림과 부드러운 절 동작을 꺼요", initial.reduceMotion, (reduceMotion) =>
       this.update({ reduceMotion }),
     );

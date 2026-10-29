@@ -1,7 +1,7 @@
-"""The five flat textures of the hall, painted in Blender and handed to hall.py as PNG files.
+"""The five flat textures of the world, painted in Blender and handed to world.py as PNG files.
 
 floor, sky and sunbeams are Cycles bakes of procedural node trees; backdrop (the mural) and
-cushionTop are flat Workbench renders of vertex-coloured 2D geometry. Everything is deterministic:
+matTop are flat Workbench renders of vertex-coloured 2D geometry. Everything is deterministic:
 fixed seeds, no clock, no random module. The exporter turns the PNGs into JPEG once, inside the glb.
 """
 
@@ -23,8 +23,8 @@ SKY_METERS = (70.0, 16.0)
 BEAM_SIZE = (64, 256)
 MURAL_SIZE = (2048, 1024)
 MURAL_METERS = (14.0, 6.0)
-CUSHION_PIXELS = 256
-CUSHION_METERS = 0.8
+MAT_PIXELS = 256
+MAT_METERS = 0.8
 
 
 class Nodes:
@@ -489,20 +489,20 @@ def mural(mat, path):
     render_flat(canvas, MURAL_SIZE, width_m, (0.0, frame_height / 2), path)
 
 
-def cushion(mat, path):
-    base, stitch, petal = rgb(mat["cushionTop"]), rgb(mat["cushionStitch"]), rgb(mat["cushionPetal"])
-    half = CUSHION_METERS / 2
-    canvas = Canvas("cushionTop")
+def mat_top_paint(mat, path):
+    base, stitch, petal = rgb(mat["matTop"]), rgb(mat["matStitch"]), rgb(mat["matPetal"])
+    half = MAT_METERS / 2
+    canvas = Canvas("matTop")
     canvas.rect(-half, -half, half, half, base)
     step = 0.0125
-    for k in range(int(CUSHION_METERS / step) + 1):
+    for k in range(int(MAT_METERS / step) + 1):
         offset = -half + k * step
         canvas.rect(-half, offset, half, offset + step * 0.45, scaled(base, 0.93 + 0.04 * ((k * 7) % 3) / 2))
         canvas.rect(offset, -half, offset + step * 0.45, half, scaled(base, 1.05 - 0.04 * ((k * 5) % 3) / 2))
     canvas.circle(0.0, 0.0, 0.336, 0.02, stitch)
     lotus(canvas, 0.0, 0.0, 0.272, 8, petal, stitch, 0.012)
     canvas.disc(0.0, 0.0, 0.03, stitch, segments=24)
-    render_flat(canvas, (CUSHION_PIXELS, CUSHION_PIXELS), CUSHION_METERS, (0.0, 0.0), path)
+    render_flat(canvas, (MAT_PIXELS, MAT_PIXELS), MAT_METERS, (0.0, 0.0), path)
 
 
 def build(inputs, out_dir):
@@ -513,7 +513,7 @@ def build(inputs, out_dir):
         "sky": lambda path: bake_emission("sky", SKY_SIZE, sky_paint(scene_tokens), path),
         "sunbeams": lambda path: bake_emission("sunbeams", BEAM_SIZE, beam_paint(scene_tokens), path),
         "backdrop": lambda path: mural(mat, path),
-        "cushionTop": lambda path: cushion(mat, path),
+        "matTop": lambda path: mat_top_paint(mat, path),
     }
     names = inputs["names"]["TEXTURED"]
     if sorted(painters) != sorted(names):

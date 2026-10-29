@@ -1,8 +1,8 @@
-"""hall.glb: the prayer hall, the garden seen through its window, and the cushion prototypes.
+"""world.glb: the prayer world, the garden seen through its window, and the mat prototypes.
 
 Everything is drawn in the game's own coordinates (Y up, +Z toward the viewer) through a Part whose
 frame is GAME. Inside `part.placed(...)` a door bay is drawn in its own frame: x along the wall,
-y up, z into the hall. Walls, beams and pillars are subdivided so the baked occlusion has vertices
+y up, z into the world. Walls, beams and pillars are subdivided so the baked occlusion has vertices
 to land on; faces nobody can see are never built.
 """
 
@@ -35,24 +35,24 @@ LANTERN_Z = (-3.2, 0.8, 4.8)
 SKY_DISTANCE = 32.0
 SKY_CENTER_Y = 5.5
 GARDEN_WALL_X = 9.3
-CUSHION_RADIUS = 0.4
+MAT_RADIUS = 0.4
 
 
 class Plan:
-    """What the hall follows from the game, with the palette already in linear colour."""
+    """What the world follows from the game, with the palette already in linear colour."""
 
     def __init__(self, inputs):
-        layout, hall = inputs["layout"], inputs["hall"]
-        self.half = layout["HALL_HALF_WIDTH"]
-        self.front = layout["HALL_FRONT_Z"]
+        layout, world = inputs["layout"], inputs["world"]
+        self.half = layout["LANDSCAPE_HALF_WIDTH"]
+        self.front = layout["LANDSCAPE_FRONT_Z"]
         self.buddha = layout["BUDDHA_Z"]
-        self.wall = hall["WALL_X"]
-        self.back = hall["BACK_Z"]
-        self.height = hall["HEIGHT"]
-        self.altar_top = hall["ALTAR_TOP"]
-        self.candles = hall["CANDLE_SPOTS"]
-        self.sun = Vector(hall["SUN_POSITION"])
-        self.target = Vector(hall["SUN_TARGET"])
+        self.wall = world["WALL_X"]
+        self.back = world["BACK_Z"]
+        self.height = world["HEIGHT"]
+        self.altar_top = world["ALTAR_TOP"]
+        self.candles = world["CANDLE_SPOTS"]
+        self.sun = Vector(world["SUN_POSITION"])
+        self.target = Vector(world["SUN_TARGET"])
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         self.scene = inputs["scene"]
         self.purlins = (-self.wall + 0.45, -3.4, 0.0, 3.4, self.wall - 0.45)
@@ -130,7 +130,7 @@ def walls(part, plan):
     top = SILL + OPENING
 
     # Doors hide the left wall between its corner strips. The right wall stays whole behind its
-    # doors because the sun must not reach the hall through anything but the window.
+    # doors because the sun must not reach the world through anything but the window.
     for z0, z1 in ((back, side_lo), (side_hi, front)):
         panel(part, (-wall, 0.0, z0), (0.0, height, 0.0), (0.0, 0.0, z1 - z0), plaster)
     for z0, z1, y0, y1 in (
@@ -398,28 +398,28 @@ def sunbeams(plan):
     return part
 
 
-def cushion_body(plan):
-    part = Part("cushionBody")
-    base = plan.c["cushion"]
+def mat_body(plan):
+    part = Part("matBody")
+    base = plan.c["mat"]
     profile = ((0.46, 0.0), (0.465, 0.03), (0.46, 0.07), (0.435, 0.11), (0.42, 0.12), (0.0, 0.12))
     part.lathe(profile, 20, lambda co: scaled(base, 0.78 + 0.22 * co.z / 0.12))
     return part
 
 
-def cushion_top(plan):
-    part = Part("cushionTop")
+def mat_top(plan):
+    part = Part("matTop")
     rim, crown = 0.122, 0.15
-    part.radial((0.0, 0.0, rim), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), CUSHION_RADIUS, 3, 20, WHITE, uv=lambda co: (co.x / (2 * CUSHION_RADIUS) + 0.5, co.y / (2 * CUSHION_RADIUS) + 0.5))
+    part.radial((0.0, 0.0, rim), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), MAT_RADIUS, 3, 20, WHITE, uv=lambda co: (co.x / (2 * MAT_RADIUS) + 0.5, co.y / (2 * MAT_RADIUS) + 0.5))
     for vert in part.bm.verts:
-        vert.co.z = rim + (crown - rim) * (1.0 - (math.hypot(vert.co.x, vert.co.y) / CUSHION_RADIUS) ** 2)
+        vert.co.z = rim + (crown - rim) * (1.0 - (math.hypot(vert.co.x, vert.co.y) / MAT_RADIUS) ** 2)
     return part
 
 
 def build(inputs, out_dir, pictures):
     plan = Plan(inputs)
     if (2 * plan.half, plan.height) != flat_textures.MURAL_METERS:
-        raise RuntimeError(f"the mural is painted for {flat_textures.MURAL_METERS} m, the hall wall is {2 * plan.half} x {plan.height} m")
-    solid = common.vertex_color_material("hall")
+        raise RuntimeError(f"the mural is painted for {flat_textures.MURAL_METERS} m, the world wall is {2 * plan.half} x {plan.height} m")
+    solid = common.vertex_color_material("world")
 
     def textured(name, part):
         return part.build(common.image_material(name, pictures[name], repeat=name == "floor"), crease=False)
@@ -437,11 +437,11 @@ def build(inputs, out_dir, pictures):
     objects["lanterns"] = lanterns(plan).build(solid)
     objects["sky"] = textured("sky", sky(plan))
     objects["sunbeams"] = textured("sunbeams", sunbeams(plan))
-    objects["cushionBody"] = cushion_body(plan).build(solid)
-    objects["cushionTop"] = textured("cushionTop", cushion_top(plan))
+    objects["matBody"] = mat_body(plan).build(solid)
+    objects["matTop"] = textured("matTop", mat_top(plan))
 
-    names = inputs["names"]["HALL_MESHES"]
+    names = inputs["names"]["WORLD_MESHES"]
     if sorted(objects) != sorted(names):
-        raise RuntimeError(f"hall meshes {sorted(objects)} differ from the contract {sorted(names)}")
-    common.export_glb([objects[name] for name in names], os.path.join(out_dir, "hall.glb"))
-    print("hall triangles:", {name: sum(len(p.vertices) - 2 for p in obj.data.polygons) for name, obj in objects.items()})
+        raise RuntimeError(f"world meshes {sorted(objects)} differ from the contract {sorted(names)}")
+    common.export_glb([objects[name] for name in names], os.path.join(out_dir, "world.glb"))
+    print("world triangles:", {name: sum(len(p.vertices) - 2 for p in obj.data.polygons) for name, obj in objects.items()})

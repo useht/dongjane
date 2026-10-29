@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
 import { BUDDHA_Z, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas } from "../src/game/camera-rig.ts";
-import { HALL_BOUNDS } from "../src/game/hall-layout.ts";
+import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
 
@@ -28,7 +28,7 @@ describe("maxDistanceInside", () => {
 describe("CameraRig", () => {
   const make = (): CameraRig => new CameraRig(new PerspectiveCamera(), box);
 
-  it("keeps the camera inside the hall bounds near a wall", () => {
+  it("keeps the camera inside the world bounds near a wall", () => {
     const rig = make();
     rig.follow(0, 6.5, 1, true);
     rig.update(0.016);
@@ -94,7 +94,7 @@ describe("lift", () => {
 describe("projectToCanvas", () => {
   const framed = (hudTop: number, hudBottom: number): { camera: PerspectiveCamera; rig: CameraRig } => {
     const camera = new PerspectiveCamera();
-    const rig = new CameraRig(camera, HALL_BOUNDS);
+    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
     rig.reduceMotion = true;
     configureCamera(camera, rig, 800, 600, hudTop, hudBottom);
     rig.follow(0, 3, 0, true);
@@ -146,7 +146,7 @@ const SCREENS: ReadonlyArray<readonly [string, number, number, number, number]> 
 describe("default framing", () => {
   it.each(SCREENS)("keeps the halo, altar and monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
     const camera = new PerspectiveCamera();
-    const rig = new CameraRig(camera, HALL_BOUNDS);
+    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
     rig.reduceMotion = true;
     configureCamera(camera, rig, width, height, top, bottom);
     expect(rig.pitch).toBe(DEFAULT_VIEW.pitch);

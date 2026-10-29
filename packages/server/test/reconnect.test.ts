@@ -1,5 +1,5 @@
 import { CloseCode } from "@colyseus/sdk";
-import { HALL_CAPACITY, MSG, TempleState } from "@dongjane/shared";
+import { WORLD_CAPACITY, MSG, TempleState } from "@dongjane/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { TestRig, eventually, sleep, waitFor } from "./helpers.ts";
@@ -16,7 +16,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await rig.closeAll();
-  await eventually(() => rig.halls(), (halls) => halls.length === 0, "every hall closed", RECONNECT_SECONDS * 1000 + 3000);
+  await eventually(() => rig.worlds(), (worlds) => worlds.length === 0, "every world closed", RECONNECT_SECONDS * 1000 + 3000);
 });
 
 afterAll(async () => {
@@ -25,9 +25,9 @@ afterAll(async () => {
 });
 
 describe("reconnection window", () => {
-  it("tells a visitor who comes back into a hall that is being merged to move on", async () => {
-    const crowd = await rig.fill(1, HALL_CAPACITY);
-    await eventually(() => rig.halls(), (halls) => halls.some((info) => info.hall === 2), "hall 2 opened");
+  it("tells a visitor who comes back into a world that is being merged to move on", async () => {
+    const crowd = await rig.fill(1, WORLD_CAPACITY);
+    await eventually(() => rig.worlds(), (worlds) => worlds.some((info) => info.world === 2), "world 2 opened");
     const lone = await rig.enter(2);
     const token = lone.reconnectionToken;
     lone.reconnection.enabled = false;
@@ -35,17 +35,17 @@ describe("reconnection window", () => {
     await sleep(200);
 
     await crowd[0]!.leave(true);
-    await eventually(() => rig.halls(), (halls) => halls.every((info) => info.hall !== 2), "hall 2 hidden while merging");
+    await eventually(() => rig.worlds(), (worlds) => worlds.every((info) => info.world !== 2), "world 2 hidden while merging");
 
     const back = await rig.client.reconnect(token, TempleState);
     rig.rooms.push(back);
     const relocations: number[] = [];
-    back.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+    back.onMessage(MSG.relocate, (message: { world: number }) => relocations.push(message.world));
     await waitFor(() => relocations.length > 0, "relocation notice after reconnecting", 3000);
     expect(relocations).toEqual([1]);
   }, 20_000);
 
-  it("keeps a hall open while its only visitor is reconnecting", async () => {
+  it("keeps a world open while its only visitor is reconnecting", async () => {
     const a = await rig.enter(1);
     const sessionId = a.sessionId;
     let reconnected = false;
@@ -55,17 +55,17 @@ describe("reconnection window", () => {
     a.connection.close(CloseCode.MAY_TRY_RECONNECT);
 
     await sleep(400);
-    expect((await rig.hall(1)).clients).toBe(1);
+    expect((await rig.world(1)).clients).toBe(1);
 
     await waitFor(() => reconnected, "client reconnects", 5000);
     expect(a.sessionId).toBe(sessionId);
-    expect((await rig.hall(1)).clients).toBe(1);
+    expect((await rig.world(1)).clients).toBe(1);
   }, 20_000);
 
   it("keeps the seat and identity when the socket drops and comes back in time", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { cushionId: 7 });
+    a.send("sit", { matId: 7 });
     await waitFor(() => b.state.monks.get(a.sessionId)?.mode === "kneel", "A kneels", 6000);
 
     const sessionId = a.sessionId;
@@ -78,17 +78,17 @@ describe("reconnection window", () => {
     await waitFor(() => reconnected, "client reconnects", 5000);
     expect(a.sessionId).toBe(sessionId);
     expect(b.state.monks.has(sessionId)).toBe(true);
-    expect(b.state.cushions.get("7")?.occupantId).toBe(sessionId);
+    expect(b.state.mats.get("7")?.occupantId).toBe(sessionId);
 
     a.send("bow", { times: 1 });
     await waitFor(() => b.state.monks.get(sessionId)?.mode === "bow", "bow works after reconnect", 1500);
   }, 20_000);
 
-  it("keeps the monk visible to others during the window, then removes it and frees the cushion", async () => {
+  it("keeps the monk visible to others during the window, then removes it and frees the mat", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { cushionId: 1 });
-    await waitFor(() => b.state.cushions.get("1")?.occupantId === a.sessionId, "A claims");
+    a.send("sit", { matId: 1 });
+    await waitFor(() => b.state.mats.get("1")?.occupantId === a.sessionId, "A claims");
     const sessionId = a.sessionId;
 
     a.reconnection.enabled = false;
@@ -98,8 +98,8 @@ describe("reconnection window", () => {
     expect(b.state.monks.has(sessionId)).toBe(true);
 
     await waitFor(() => !b.state.monks.has(sessionId), "dropped monk removed", RECONNECT_SECONDS * 1000 + 2500, 50);
-    expect(b.state.cushions.get("1")?.occupantId).toBe("");
-    const hall = await eventually(() => rig.hall(1), (info) => info.clients === 1, "client count back to 1");
-    expect(hall.full).toBe(false);
+    expect(b.state.mats.get("1")?.occupantId).toBe("");
+    const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "client count back to 1");
+    expect(world.full).toBe(false);
   }, 20_000);
 });

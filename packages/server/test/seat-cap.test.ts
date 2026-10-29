@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HALLS_PATH, SEAT_PATH, type HallListResponse, type SeatResponse } from "@dongjane/shared";
-import { MAX_PENDING_SEATS } from "../src/hall-directory.ts";
+import { WORLDS_PATH, SEAT_PATH, type WorldListResponse, type SeatResponse } from "@dongjane/shared";
+import { MAX_PENDING_SEATS } from "../src/world-directory.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
 
 let game: GameServer;
@@ -17,7 +17,7 @@ const requestSeat = () =>
   fetch(`http://127.0.0.1:${game.port}${SEAT_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ hall: null }),
+    body: JSON.stringify({ world: null }),
   });
 
 describe("seat cap", () => {
@@ -28,13 +28,13 @@ describe("seat cap", () => {
       expect(response.status).toBe(200);
       granted.push((await response.json()) as SeatResponse);
     }
-    expect(new Set(granted.map((seat) => seat.hall)).size).toBeGreaterThan(1);
+    expect(new Set(granted.map((seat) => seat.world)).size).toBeGreaterThan(1);
 
     const refused = await requestSeat();
     expect(refused.status).toBe(503);
     expect(await refused.json()).toEqual({ error: "busy" });
 
-    const list = (await (await fetch(`http://127.0.0.1:${game.port}${HALLS_PATH}`)).json()) as HallListResponse;
-    expect(list.halls.every((info) => info.clients === 0)).toBe(true);
+    const list = (await (await fetch(`http://127.0.0.1:${game.port}${WORLDS_PATH}`)).json()) as WorldListResponse;
+    expect(list.worlds.every((info) => info.clients === 0)).toBe(true);
   }, 60_000);
 });

@@ -30,14 +30,14 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { BUDDHA_Z, CUSHION_SPOTS } from "@dongjane/shared";
+import { BUDDHA_Z, MAT_SPOTS } from "@dongjane/shared";
 import { type ModelMeshes, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
-import { ALTAR_TOP, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./hall-layout.ts";
+import { ALTAR_TOP, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { flameGlowTexture, mulberry32 } from "./textures.ts";
 
-export interface HallQuality {
+export interface LandscapeQuality {
   shadows: boolean;
   shadowMapSize: number;
   dust: number;
@@ -91,7 +91,7 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   return target.texture;
 }
 
-export class Hall {
+export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
 
@@ -101,8 +101,8 @@ export class Hall {
   private readonly flames: InstancedMesh;
   private readonly dust: Points;
   private readonly dustSeeds: Float32Array;
-  private readonly cushionBody: InstancedMesh;
-  private readonly cushionTop: InstancedMesh;
+  private readonly matBody: InstancedMesh;
+  private readonly matTop: InstancedMesh;
   private readonly glow: Texture;
   private readonly materials: Material[] = [];
   private readonly occupied = new Set<number>();
@@ -112,9 +112,9 @@ export class Hall {
   private readonly tmpPos = new Vector3();
   private readonly tint = new Color();
 
-  constructor(renderer: WebGLRenderer, quality: HallQuality, meshes: ModelMeshes<"hall">, buddha: ModelMeshes<"buddha">) {
+  constructor(renderer: WebGLRenderer, quality: LandscapeQuality, meshes: ModelMeshes<"world">, buddha: ModelMeshes<"buddha">) {
     const { scene: palette } = THEME;
-    this.group.name = "hall";
+    this.group.name = "landscape";
     this.environment = buildEnvironment(renderer);
     this.buddha = buildBuddha(buddha, this.environment);
     const { anisotropy } = quality;
@@ -152,8 +152,8 @@ export class Hall {
 
     const floorMap = textureOf(meshes.floor);
     const backdropMap = textureOf(meshes.backdrop);
-    const cushionMap = textureOf(meshes.cushionTop);
-    for (const map of [floorMap, backdropMap, cushionMap]) map.anisotropy = anisotropy;
+    const matMap = textureOf(meshes.matTop);
+    for (const map of [floorMap, backdropMap, matMap]) map.anisotropy = anisotropy;
     this.add(meshes.floor, new MeshLambertMaterial({ map: floorMap }), { receive: true });
     this.add(
       meshes.backdrop,
@@ -178,9 +178,9 @@ export class Hall {
     this.buddha.group.position.set(0, ALTAR_TOP, BUDDHA_Z - 0.5);
     this.group.add(this.buddha.group);
 
-    this.cushionBody = this.instance(meshes.cushionBody, lit(), "cushion-body", { cast: true, receive: true });
-    this.cushionTop = this.instance(meshes.cushionTop, new MeshLambertMaterial({ map: cushionMap }), "cushion-top", { receive: true });
-    this.placeCushions();
+    this.matBody = this.instance(meshes.matBody, lit(), "mat-body", { cast: true, receive: true });
+    this.matTop = this.instance(meshes.matTop, new MeshLambertMaterial({ map: matMap }), "mat-top", { receive: true });
+    this.placeMats();
 
     this.glow = flameGlowTexture();
     this.flames = this.buildCandles();
@@ -223,8 +223,8 @@ export class Hall {
   }
 
   private instance(source: Mesh, material: Material, name: string, shadows: Shadows): InstancedMesh {
-    const mesh = new InstancedMesh(source.geometry, material, CUSHION_SPOTS.length);
-    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(CUSHION_SPOTS.length * 3).fill(1), 3);
+    const mesh = new InstancedMesh(source.geometry, material, MAT_SPOTS.length);
+    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAT_SPOTS.length * 3).fill(1), 3);
     mesh.instanceColor.setUsage(DynamicDrawUsage);
     mesh.castShadow = shadows.cast ?? false;
     mesh.receiveShadow = shadows.receive ?? false;
@@ -235,12 +235,12 @@ export class Hall {
     return mesh;
   }
 
-  private placeCushions(): void {
+  private placeMats(): void {
     const m = new Matrix4();
-    for (const spot of CUSHION_SPOTS) {
+    for (const spot of MAT_SPOTS) {
       m.makeTranslation(spot.x, 0, spot.z);
-      this.cushionBody.setMatrixAt(spot.id, m);
-      this.cushionTop.setMatrixAt(spot.id, m);
+      this.matBody.setMatrixAt(spot.id, m);
+      this.matTop.setMatrixAt(spot.id, m);
     }
   }
 
@@ -254,14 +254,14 @@ export class Hall {
     return flames;
   }
 
-  setOccupied(cushionId: number, occupied: boolean): void {
-    if (cushionId < 0 || cushionId >= CUSHION_SPOTS.length) return;
-    if (occupied === this.occupied.has(cushionId)) return;
-    if (occupied) this.occupied.add(cushionId);
-    else this.occupied.delete(cushionId);
+  setOccupied(matId: number, occupied: boolean): void {
+    if (matId < 0 || matId >= MAT_SPOTS.length) return;
+    if (occupied === this.occupied.has(matId)) return;
+    if (occupied) this.occupied.add(matId);
+    else this.occupied.delete(matId);
     this.tint.setScalar(occupied ? 0.55 : 1);
-    for (const mesh of [this.cushionBody, this.cushionTop]) {
-      mesh.setColorAt(cushionId, this.tint);
+    for (const mesh of [this.matBody, this.matTop]) {
+      mesh.setColorAt(matId, this.tint);
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
   }
@@ -303,12 +303,12 @@ export class Hall {
     attribute.needsUpdate = true;
   }
 
-  // The geometries and textures that came with the glb belong to the loaded assets; only what the hall made is released here.
+  // The geometries and textures that came with the glb belong to the loaded assets; only what the landscape made is released here.
   dispose(): void {
     for (const material of this.materials) material.dispose();
     this.flames.geometry.dispose();
     this.dust.geometry.dispose();
-    for (const mesh of [this.flames, this.cushionBody, this.cushionTop]) mesh.dispose();
+    for (const mesh of [this.flames, this.matBody, this.matTop]) mesh.dispose();
     this.glow.dispose();
     this.buddha.dispose();
     this.environment.dispose();

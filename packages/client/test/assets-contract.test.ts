@@ -1,8 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
-import { BUDDHA_MESHES, BUDGET, HALL_MESHES, HALL_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
-import { HALL_LAYOUT } from "../src/game/hall-layout.ts";
+import { MAT_SPOTS, LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH } from "@dongjane/shared";
+import { BUDDHA_MESHES, BUDGET, WORLD_MESHES, WORLD_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
+import { LANDSCAPE_LAYOUT } from "../src/game/landscape-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";
@@ -185,7 +185,7 @@ describe("buddha.glb", () => {
     }
   });
 
-  it("sits on its lotus, facing +Z into the hall", () => {
+  it("sits on its lotus, facing +Z into the world", () => {
     const figure = mesh("figure").positions;
     const lotus = mesh("lotus").positions;
     expect(Math.abs(lotus.max[1])).toBeLessThanOrEqual(0.3);
@@ -205,34 +205,34 @@ describe("buddha.glb", () => {
   });
 });
 
-describe("hall.glb", () => {
-  const glb = loadGlb(new URL("hall.glb", MODELS));
-  const nodes = expectContract(glb, HALL_MESHES);
+describe("world.glb", () => {
+  const glb = loadGlb(new URL("world.glb", MODELS));
+  const nodes = expectContract(glb, WORLD_MESHES);
   const mesh = byName(nodes);
-  const { BACK_Z, HEIGHT } = HALL_LAYOUT;
+  const { BACK_Z, HEIGHT } = LANDSCAPE_LAYOUT;
   const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
 
-  it("stays inside its size budget, counting every cushion the game draws", () => {
-    const prototypes: readonly string[] = HALL_PROTOTYPES;
-    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? CUSHION_SPOTS.length : 1), 0);
-    expect(triangles).toBeLessThanOrEqual(BUDGET.hall.tris);
-    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.hall.bytes);
+  it("stays inside its size budget, counting every mat the game draws", () => {
+    const prototypes: readonly string[] = WORLD_PROTOTYPES;
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? MAT_SPOTS.length : 1), 0);
+    expect(triangles).toBeLessThanOrEqual(BUDGET.world.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.world.bytes);
   });
 
   it("lays the floor over exactly the room the server lets players walk in", () => {
     const { min, max } = mesh("floor").positions;
-    near(min[0], -HALL_HALF_WIDTH);
-    near(max[0], HALL_HALF_WIDTH);
+    near(min[0], -LANDSCAPE_HALF_WIDTH);
+    near(max[0], LANDSCAPE_HALF_WIDTH);
     near(min[2], BACK_Z);
-    near(max[2], HALL_FRONT_Z);
+    near(max[2], LANDSCAPE_FRONT_Z);
     near(min[1], 0);
     near(max[1], 0);
   });
 
   it("hangs the mural across the whole back wall", () => {
     const { min, max } = mesh("backdrop").positions;
-    near(min[0], -HALL_HALF_WIDTH);
-    near(max[0], HALL_HALF_WIDTH);
+    near(min[0], -LANDSCAPE_HALF_WIDTH);
+    near(max[0], LANDSCAPE_HALF_WIDTH);
     near(min[1], 0);
     near(max[1], HEIGHT);
     near(min[2], BACK_Z);
@@ -245,8 +245,8 @@ describe("hall.glb", () => {
     }
   });
 
-  it("authors the cushion prototypes at the origin, ready to be instanced", () => {
-    for (const name of HALL_PROTOTYPES) {
+  it("authors the mat prototypes at the origin, ready to be instanced", () => {
+    for (const name of WORLD_PROTOTYPES) {
       const { min, max } = mesh(name).positions;
       expect(Math.abs((min[0] + max[0]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
       expect(Math.abs((min[2] + max[2]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
@@ -261,7 +261,7 @@ describe("hall.glb", () => {
       beams: "dancheongGreen",
       lanterns: "lanternCoral",
       paper: "paper",
-      cushionBody: "cushion",
+      matBody: "mat",
       outdoor: "pine",
     });
   });

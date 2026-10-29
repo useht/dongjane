@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BUDDHA_MESHES, HALL_MESHES, MONK_PARTS, TEXTURED } from "../src/assets/contract.ts";
+import { BUDDHA_MESHES, WORLD_MESHES, MONK_PARTS, TEXTURED } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { monk: MONK_PARTS, hall: HALL_MESHES, buddha: BUDDHA_MESHES } as const;
+const NAMES = { monk: MONK_PARTS, world: WORLD_MESHES, buddha: BUDDHA_MESHES } as const;
 const textured: readonly string[] = TEXTURED;
 
 function group(names: readonly string[], withMap = true): Group {
@@ -47,12 +47,12 @@ describe("collectMeshes", () => {
   });
 
   it("names the model and the mesh that is missing", () => {
-    const root = group(HALL_MESHES.filter((name) => name !== "sky"));
-    expect(() => collectMeshes(root, "hall")).toThrow('hall.glb: missing mesh "sky"');
+    const root = group(WORLD_MESHES.filter((name) => name !== "sky"));
+    expect(() => collectMeshes(root, "world")).toThrow('world.glb: missing mesh "sky"');
   });
 
   it("rejects a textured mesh that lost its texture", () => {
-    expect(() => collectMeshes(group(HALL_MESHES, false), "hall")).toThrow(/has no texture/);
+    expect(() => collectMeshes(group(WORLD_MESHES, false), "world")).toThrow(/has no texture/);
   });
 });
 
@@ -66,7 +66,7 @@ describe("textureOf", () => {
 
 describe("loadGameAssets", () => {
   it("serves one glb per model", () => {
-    expect(Object.keys(MODELS).sort()).toEqual(["buddha", "hall", "monk"]);
+    expect(Object.keys(MODELS).sort()).toEqual(["buddha", "monk", "world"]);
     for (const url of Object.values(MODELS)) expect(url).toMatch(/\.glb$/);
   });
 
@@ -84,10 +84,10 @@ describe("loadGameAssets", () => {
     }
   });
 
-  it("gives the hall's cushion prototypes a texture only on the top", async () => {
-    const { hall } = (await loadGameAssets(diskLoader())).models;
-    expect(textureOf(hall.cushionTop)).toBeInstanceOf(Texture);
-    expect(hall.cushionBody.geometry.hasAttribute("color")).toBe(true);
+  it("gives the world's mat prototypes a texture only on the top", async () => {
+    const { world } = (await loadGameAssets(diskLoader())).models;
+    expect(textureOf(world.matTop)).toBeInstanceOf(Texture);
+    expect(world.matBody.geometry.hasAttribute("color")).toBe(true);
   });
 
   it("releases the geometries, materials and textures it owns", async () => {
@@ -107,7 +107,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries).toBe(MONK_PARTS.length + HALL_MESHES.length + BUDDHA_MESHES.length);
+    expect(geometries).toBe(MONK_PARTS.length + WORLD_MESHES.length + BUDDHA_MESHES.length);
     expect(textures).toBe(TEXTURED.length);
     expect(owned.size).toBeGreaterThan(0);
     expect(released).toEqual(owned);
@@ -116,14 +116,14 @@ describe("loadGameAssets", () => {
   it("names the model that fails to load and keeps the cause", async () => {
     const disk = diskLoader();
     const broken: ModelLoader = {
-      loadAsync: (url) => (url === MODELS.hall ? Promise.reject(new Error("offline")) : disk.loadAsync(url)),
+      loadAsync: (url) => (url === MODELS.world ? Promise.reject(new Error("offline")) : disk.loadAsync(url)),
     };
     const failure = await loadGameAssets(broken).then(
       () => null,
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(Error);
-    expect((failure as Error).message).toBe("hall.glb: could not be loaded");
+    expect((failure as Error).message).toBe("world.glb: could not be loaded");
     expect(((failure as Error).cause as Error).message).toBe("offline");
   });
 });

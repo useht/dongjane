@@ -1,4 +1,4 @@
-import { CUSHION_SPOTS, type HallInfo, type SeatResponse, type TempleState, hallName, parseHallParam, seatLabel } from "@dongjane/shared";
+import { MAT_SPOTS, type WorldInfo, type SeatResponse, type TempleState, worldName, parseWorldParam, seatLabel } from "@dongjane/shared";
 import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
@@ -6,9 +6,9 @@ import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { type MonkView, World } from "./game/world.ts";
-import { fetchHalls, requestSeat } from "./net/halls.ts";
+import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
-import { HallSession, JoinError, type LinkState } from "./net/session.ts";
+import { WorldSession, JoinError, type LinkState } from "./net/session.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
@@ -23,7 +23,7 @@ const MOVE_REACH = 1.6;
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
 const CHANT_TICK_MS = 250;
-const HALL_POLL_MS = 10_000;
+const WORLD_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 
@@ -31,7 +31,7 @@ interface SelfSnapshot {
   x: number;
   z: number;
   mode: string;
-  cushionId: number;
+  matId: number;
 }
 
 export class App {
@@ -54,12 +54,12 @@ export class App {
   private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
-  private session: HallSession | null = null;
-  private halls: HallInfo[] = [];
-  private currentHall = 0;
+  private session: WorldSession | null = null;
+  private worlds: WorldInfo[] = [];
+  private currentWorld = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
-  private cushionOwners = new Map<number, string>();
+  private matOwners = new Map<number, string>();
   private lastMove = 0;
   private walking = false;
   private nextChantTick = 0;
@@ -84,8 +84,8 @@ export class App {
     this.world.setReduceMotion(this.settings.reduceMotion);
 
     this.hud = new Hud(this.ui, {
-      onSwitchHall: (hall) => void this.enter(hall),
-      onOpenHalls: () => void this.refreshHalls(),
+      onSwitchWorld: (world) => void this.enter(world),
+      onOpenWorlds: () => void this.refreshWorlds(),
       onBow: (times) => this.bow(times),
       onInvite: () => void this.copyInvite(),
       onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
@@ -120,9 +120,9 @@ export class App {
       saveProfile(this.profile);
     }
     this.world.setIdleSpin(false);
-    const requested = parseHallParam(this.params.get("hall"));
+    const requested = parseWorldParam(this.params.get("world"));
     await this.enter(requested);
-    window.setInterval(() => void this.pollHalls(), HALL_POLL_MS);
+    window.setInterval(() => void this.pollWorlds(), WORLD_POLL_MS);
   }
 
   private async enter(requested: number | null): Promise<void> {
@@ -136,11 +136,11 @@ export class App {
     this.world.clear();
     this.bowWatch.reset();
     this.self = null;
-    this.cushionOwners.clear();
+    this.matOwners.clear();
     this.hud.setLink("online");
-    this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
+    this.overlay.loading("월드로 들어가는 중이에요", "잠시만 기다려 주세요");
 
-    const retry = { label: "다시 시도", run: () => void this.enter(requested ?? (this.currentHall || null)) };
+    const retry = { label: "다시 시도", run: () => void this.enter(requested ?? (this.currentWorld || null)) };
 
     let busyFailures = 0;
     let transportFailures = 0;
@@ -158,10 +158,10 @@ export class App {
       if (token !== this.joinToken) return;
 
       try {
-        const session = await HallSession.join(
+        const session = await WorldSession.join(
           this.base,
           seat.roomId,
-          seat.hall,
+          seat.world,
           { hue: profile.hue },
           {
             onState: (state) => {
@@ -170,10 +170,10 @@ export class App {
             onLink: (link) => {
               if (token === this.joinToken) this.handleLink(link);
             },
-            onRelocate: (hall) => {
+            onRelocate: (world) => {
               if (token !== this.joinToken) return;
-              this.hud.toast(`법당이 합쳐져서 ${hallName(hall)}으로 옮겨 드려요`);
-              void this.enter(hall);
+              this.hud.toast(`월드가 합쳐져서 ${worldName(world)}로 옮겨 드려요`);
+              void this.enter(world);
             },
           },
         );
@@ -181,7 +181,7 @@ export class App {
           void session.leave();
           return;
         }
-        this.attach(session, seat.hall, seat.fellBack ? requested : null);
+        this.attach(session, seat.world, seat.fellBack ? requested : null);
         return;
       } catch (error) {
         if (token !== this.joinToken) return;
@@ -201,25 +201,25 @@ export class App {
       }
     }
     if (token === this.joinToken) {
-      this.overlay.problem("법당에 들어가지 못했어요", "법당이 바쁜 것 같아요. 잠시 뒤 다시 시도해 주세요.", [retry]);
+      this.overlay.problem("월드에 들어가지 못했어요", "월드가 바쁜 것 같아요. 잠시 뒤 다시 시도해 주세요.", [retry]);
     }
   }
 
-  private attach(session: HallSession, hall: number, fellBackFrom: number | null): void {
+  private attach(session: WorldSession, world: number, fellBackFrom: number | null): void {
     this.session = session;
-    this.currentHall = hall;
+    this.currentWorld = world;
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
-    this.hud.setHalls(this.halls, hall);
-    void this.refreshHalls();
+    this.hud.setWorlds(this.worlds, world);
+    void this.refreshWorlds();
 
     const url = new URL(window.location.href);
-    url.searchParams.set("hall", String(hall));
+    url.searchParams.set("world", String(world));
     window.history.replaceState(null, "", url);
 
     this.overlay.hide();
     if (fellBackFrom !== null) {
-      this.hud.toast(`${hallName(fellBackFrom)}은 없거나 비어 있거나 가득 차서 ${hallName(hall)}으로 모셨어요`);
+      this.hud.toast(`${worldName(fellBackFrom)}는 없거나 비어 있거나 가득 차서 ${worldName(world)}로 모셨어요`);
     }
     this.handleState(session.state);
   }
@@ -247,52 +247,52 @@ export class App {
         z: monk.z,
         yaw: monk.yaw,
         mode: monk.mode,
-        cushionId: monk.cushionId,
+        matId: monk.matId,
       });
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
         slot: monk.slot,
         mode: monk.mode,
-        cushionId: monk.cushionId,
+        matId: monk.matId,
         bowCount: monk.bowCount,
         isSelf: monk.id === selfId,
       });
       if (monk.id === selfId) {
-        this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
-        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
+        this.self = { x: monk.x, z: monk.z, mode: monk.mode, matId: monk.matId };
+        this.hud.setSelf({ mode: monk.mode, matId: monk.matId, bowCount: monk.bowCount });
       }
     });
     this.lastViews = views;
 
     const owners = new Map<number, string>();
     const occupied = new Set<number>();
-    state.cushions.forEach((cushion) => {
-      if (cushion.occupantId !== "") {
-        owners.set(cushion.id, cushion.occupantId);
-        occupied.add(cushion.id);
+    state.mats.forEach((mat) => {
+      if (mat.occupantId !== "") {
+        owners.set(mat.id, mat.occupantId);
+        occupied.add(mat.id);
       }
     });
-    this.cushionOwners = owners;
+    this.matOwners = owners;
 
     this.world.applyMonks(views, now);
     this.world.setOccupancy(occupied);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
-    this.syncHallCount(rows.length);
+    this.syncWorldCount(rows.length);
 
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 
-  private syncHallCount(count: number): void {
-    const info = this.halls.find((entry) => entry.hall === this.currentHall);
+  private syncWorldCount(count: number): void {
+    const info = this.worlds.find((entry) => entry.world === this.currentWorld);
     if (!info || info.clients === count) return;
     info.clients = count;
     info.full = count >= info.capacity;
-    this.hud.setHalls(this.halls, this.currentHall);
+    this.hud.setWorlds(this.worlds, this.currentWorld);
   }
 
   private handleLink(link: LinkState): void {
@@ -301,8 +301,8 @@ export class App {
     this.lost = true;
     this.session = null;
     this.world.clear();
-    this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
-      { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
+    this.overlay.problem("연결이 끊어졌어요", "월드와의 연결이 끊겼어요. 다시 들어가 볼까요?", [
+      { label: "다시 들어가기", run: () => void this.enter(this.currentWorld || null) },
     ]);
   }
 
@@ -310,7 +310,7 @@ export class App {
     if (!navigator.onLine) {
       this.overlay.problem("인터넷에 연결되어 있지 않아요", "연결을 확인한 뒤 다시 시도해 주세요.", actions);
     } else {
-      this.overlay.problem("법당 문을 열지 못했어요", "서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.", actions);
+      this.overlay.problem("월드를 열지 못했어요", "서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.", actions);
     }
   }
 
@@ -318,9 +318,9 @@ export class App {
     const session = this.session;
     if (!session) return;
     this.audio.unlock();
-    const seated = this.self && this.self.cushionId >= 0 && this.self.mode === "kneel";
+    const seated = this.self && this.self.matId >= 0 && this.self.mode === "kneel";
     if (!seated) {
-      if (this.self?.mode !== "bow") this.hud.toast("방석에 앉아야 절할 수 있어요");
+      if (this.self?.mode !== "bow") this.hud.toast("돗자리에 앉아야 절할 수 있어요");
       return;
     }
     session.bow(times);
@@ -364,10 +364,10 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && this.lost) void this.enter(this.currentHall || null);
+      if (document.visibilityState === "visible" && this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("online", () => {
-      if (this.lost) void this.enter(this.currentHall || null);
+      if (this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("pagehide", () => {
       void this.session?.leave();
@@ -391,31 +391,31 @@ export class App {
       monks: () => this.lastViews,
       self: () => this.self,
       sessionId: () => this.session?.sessionId ?? null,
-      hall: () => this.currentHall,
+      worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
     };
   }
 
-  private async refreshHalls(): Promise<void> {
+  private async refreshWorlds(): Promise<void> {
     try {
-      this.halls = await fetchHalls(this.base);
-      if (this.currentHall) this.hud.setHalls(this.halls, this.currentHall);
+      this.worlds = await fetchWorlds(this.base);
+      if (this.currentWorld) this.hud.setWorlds(this.worlds, this.currentWorld);
     } catch {
       // the list keeps its last known counts; joining reports a real failure
     }
   }
 
-  private async pollHalls(): Promise<void> {
+  private async pollWorlds(): Promise<void> {
     if (document.visibilityState !== "visible" || !this.session) return;
-    await this.refreshHalls();
+    await this.refreshWorlds();
   }
 
   private async copyInvite(): Promise<void> {
-    if (!this.currentHall) return;
+    if (!this.currentWorld) return;
     const url = new URL(window.location.href);
     url.search = "";
     url.hash = "";
-    url.searchParams.set("hall", String(this.currentHall));
+    url.searchParams.set("world", String(this.currentWorld));
     const link = url.toString();
     let copied = false;
     try {
@@ -424,7 +424,7 @@ export class App {
     } catch {
       copied = this.copyWithSelection(link);
     }
-    this.hud.toast(copied ? `${hallName(this.currentHall)} 초대 링크를 복사했어요` : link);
+    this.hud.toast(copied ? `${worldName(this.currentWorld)} 초대 링크를 복사했어요` : link);
   }
 
   private copyWithSelection(text: string): boolean {
@@ -476,12 +476,12 @@ export class App {
 
   private updateSeatHints(): void {
     const self = this.self;
-    if (!this.session || !self || self.cushionId >= 0) {
+    if (!this.session || !self || self.matId >= 0) {
       this.seatHints.hideAll();
       return;
     }
-    for (const spot of CUSHION_SPOTS) {
-      const reachable = !this.cushionOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+    for (const spot of MAT_SPOTS) {
+      const reachable = !this.matOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
       if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
         this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
       } else {

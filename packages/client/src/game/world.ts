@@ -14,8 +14,8 @@ import { lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
-import { Hall } from "./hall.ts";
-import { HALL_BOUNDS } from "./hall-layout.ts";
+import { Landscape } from "./landscape.ts";
+import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
@@ -28,7 +28,7 @@ export interface MonkView {
   z: number;
   yaw: number;
   mode: string;
-  cushionId: number;
+  matId: number;
 }
 
 export interface WorldCallbacks {
@@ -67,7 +67,7 @@ export class World {
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
-  private readonly hall: Hall;
+  private readonly landscape: Landscape;
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
@@ -109,11 +109,11 @@ export class World {
     this.scene.background = new Color(THEME.scene.background);
     this.scene.fog = new Fog(THEME.scene.fog, 16, 42);
 
-    this.hall = new Hall(this.renderer, this.quality, assets.models.hall, assets.models.buddha);
-    this.scene.add(this.hall.group);
+    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.buddha);
+    this.scene.add(this.landscape.group);
     this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
 
-    this.rig = new CameraRig(this.camera, HALL_BOUNDS);
+    this.rig = new CameraRig(this.camera, LANDSCAPE_BOUNDS);
     this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
 
     this.selfRing = new Mesh(
@@ -217,7 +217,7 @@ export class World {
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < 8; id += 1) this.hall.setOccupied(id, occupied.has(id));
+    for (let id = 0; id < 8; id += 1) this.landscape.setOccupied(id, occupied.has(id));
   }
 
   clear(): void {
@@ -253,7 +253,7 @@ export class World {
     this.resizeObserver.disconnect();
     this.clear();
     this.pool.dispose();
-    this.hall.dispose();
+    this.landscape.dispose();
     this.assets.dispose();
     this.selfRing.geometry.dispose();
     this.renderer.dispose();
@@ -313,7 +313,7 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    this.hall.update(this.time, this.camera, this.reduceMotion);
+    this.landscape.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered();
 

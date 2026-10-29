@@ -6,7 +6,7 @@ describe("modeLabel", () => {
   it("labels each state in Korean", () => {
     expect(modeLabel("stand", -1)).toBe("서 있어요");
     expect(modeLabel("walk", -1)).toBe("걷는 중");
-    expect(modeLabel("walk", 3)).toBe("방석으로 가는 중");
+    expect(modeLabel("walk", 3)).toBe("돗자리로 가는 중");
     expect(modeLabel("kneel", 3)).toBe("앉아 있어요");
     expect(modeLabel("bow", 3)).toBe("절하는 중");
   });

@@ -1,33 +1,33 @@
 import { type Client, Room, ServerError, logger } from "@colyseus/core";
 import {
   type JoinOptions,
-  HALL_CAPACITY,
+  WORLD_CAPACITY,
   MESSAGE_RATE_PER_SECOND,
   MSG,
   RECONNECT_SECONDS,
   TICK_MS,
   type RelocateMessage,
   type TempleState,
-  hallName,
-  isValidHall,
+  worldName,
+  isValidWorld,
   normalizeHue,
   parseBow,
   parseMove,
   parseSit,
   randomHue,
 } from "@dongjane/shared";
-import { type DirectoryRoom, type HallDirectory, RELOCATION_GRACE_MS } from "./hall-directory.ts";
+import { type DirectoryRoom, type WorldDirectory, RELOCATION_GRACE_MS } from "./world-directory.ts";
 import { TempleSim } from "./sim.ts";
 
-export interface HallCreateOptions {
-  hall: number;
+export interface WorldCreateOptions {
+  world: number;
   key: string;
   reconnectSeconds?: number;
   relocationGraceMs?: number;
 }
 
-export interface HallMetadata {
-  hall: number;
+export interface WorldMetadata {
+  world: number;
   name: string;
 }
 
@@ -36,10 +36,10 @@ interface Bucket {
   updatedAt: number;
 }
 
-export const hallHost: { key: string; directory: HallDirectory | null } = { key: "", directory: null };
+export const worldHost: { key: string; directory: WorldDirectory | null } = { key: "", directory: null };
 
-export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata }> implements DirectoryRoom {
-  override maxClients = HALL_CAPACITY;
+export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadata }> implements DirectoryRoom {
+  override maxClients = WORLD_CAPACITY;
   override autoDispose = false;
   override patchRate = TICK_MS;
   override maxMessagesPerSecond = MESSAGE_RATE_PER_SECOND * 4;
@@ -47,13 +47,13 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
   private sim!: TempleSim;
   private reconnectSeconds = RECONNECT_SECONDS;
   private relocationGraceMs = RELOCATION_GRACE_MS;
-  private directory: HallDirectory | null = null;
-  private hallNumber = 0;
+  private directory: WorldDirectory | null = null;
+  private worldNumber = 0;
   private drainTarget: number | null = null;
   private readonly buckets = new Map<string, Bucket>();
 
-  get hall(): number {
-    return this.hallNumber;
+  get world(): number {
+    return this.worldNumber;
   }
 
   get population(): number {
@@ -64,18 +64,18 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
     return this.drainTarget !== null;
   }
 
-  override async onCreate(options: HallCreateOptions): Promise<void> {
-    const hall = options?.hall;
-    const directory = hallHost.directory;
-    if (!directory || !isValidHall(hall) || options.key !== hallHost.key) {
-      throw new ServerError(403, "halls are created by the server only");
+  override async onCreate(options: WorldCreateOptions): Promise<void> {
+    const world = options?.world;
+    const directory = worldHost.directory;
+    if (!directory || !isValidWorld(world) || options.key !== worldHost.key) {
+      throw new ServerError(403, "worlds are created by the server only");
     }
 
     this.reconnectSeconds = options.reconnectSeconds ?? RECONNECT_SECONDS;
     this.relocationGraceMs = options.relocationGraceMs ?? RELOCATION_GRACE_MS;
     this.sim = new TempleSim();
     this.state = this.sim.state;
-    await this.setMetadata({ hall, name: hallName(hall) });
+    await this.setMetadata({ world, name: worldName(world) });
 
     this.setTimestep((deltaMs) => this.sim.tick(deltaMs), TICK_MS);
     this.scheduleChant();
@@ -88,7 +88,7 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
     this.onMessage(MSG.sit, (client, payload) => {
       if (!this.allow(client)) return;
       const message = parseSit(payload);
-      if (message) this.sim.sit(client.sessionId, message.cushionId);
+      if (message) this.sim.sit(client.sessionId, message.matId);
     });
     this.onMessage(MSG.stand, (client) => {
       if (this.allow(client)) this.sim.stand(client.sessionId);
@@ -99,7 +99,7 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
       if (message) this.sim.bow(client.sessionId, message.times);
     });
 
-    this.hallNumber = hall;
+    this.worldNumber = world;
     this.directory = directory;
     directory.register(this);
   }
@@ -138,11 +138,11 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
     this.drainTarget = target;
     try {
       await this.lock();
-      this.broadcast(MSG.relocate, { hall: target } satisfies RelocateMessage);
+      this.broadcast(MSG.relocate, { world: target } satisfies RelocateMessage);
       this.clock.setTimeout(() => {
         if (this.population === 0) return;
         this.disconnect().catch(async (error: unknown) => {
-          logger.error("closing merged hall failed", error);
+          logger.error("closing merged world failed", error);
           await this.abortDrain();
           this.directory?.changed();
         });
@@ -159,7 +159,7 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
   }
 
   private sendRelocation(client: Client): void {
-    if (this.drainTarget !== null) client.send(MSG.relocate, { hall: this.drainTarget } satisfies RelocateMessage);
+    if (this.drainTarget !== null) client.send(MSG.relocate, { world: this.drainTarget } satisfies RelocateMessage);
   }
 
   private scheduleChant(): void {

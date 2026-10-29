@@ -10,7 +10,7 @@ function showFatal(message: string): void {
   const card = document.createElement("div");
   card.className = "overlay";
   card.innerHTML = '<div class="overlay-card"><h2 class="overlay-title"></h2><p class="overlay-body"></p></div>';
-  (card.querySelector("h2") as HTMLElement).textContent = "법당 문이 열리지 않아요";
+  (card.querySelector("h2") as HTMLElement).textContent = "월드가 열리지 않아요";
   (card.querySelector("p") as HTMLElement).textContent = message;
   const retry = document.createElement("button");
   retry.className = "primary";
@@ -36,7 +36,7 @@ async function boot(): Promise<void> {
     assets = await loadGameAssets();
   } catch (error) {
     console.error(error);
-    showFatal("법당을 불러오지 못했어요. 다시 시도해 주세요.");
+    showFatal("월드를 불러오지 못했어요. 다시 시도해 주세요.");
     return;
   }
   document.getElementById("boot")?.remove();

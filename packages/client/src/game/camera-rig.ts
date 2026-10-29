@@ -38,7 +38,7 @@ export interface RigLimits {
 
 const LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 9, minPitch: 0.16, maxPitch: 1.3 };
 
-// A low, wide view from the back of the hall: the Buddha's halo, the altar and the monk all fit between the HUD bands.
+// A low, wide view from the back of the world: the Buddha's halo, the altar and the monk all fit between the HUD bands.
 export const DEFAULT_VIEW = { yaw: 0, pitch: 0.3, distance: 5.6 } as const;
 
 export interface Lens {

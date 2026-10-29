@@ -1,5 +1,5 @@
-import { type HallInfo, hallName, seatLabel } from "@dongjane/shared";
-import { checkHallEntry } from "../net/halls.ts";
+import { type WorldInfo, worldName, seatLabel } from "@dongjane/shared";
+import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
 import { button, h, iconButton, swapIcon } from "./dom.ts";
 import { type IconName, icon } from "./icons.ts";
@@ -10,20 +10,20 @@ export interface VisitorRow {
   id: string;
   slot: number;
   mode: string;
-  cushionId: number;
+  matId: number;
   bowCount: number;
   isSelf: boolean;
 }
 
 export interface SelfStatus {
   mode: string;
-  cushionId: number;
+  matId: number;
   bowCount: number;
 }
 
 export interface HudHandlers {
-  onSwitchHall(hall: number): void;
-  onOpenHalls(): void;
+  onSwitchWorld(world: number): void;
+  onOpenWorlds(): void;
   onBow(times: 1 | 3): void;
   onInvite(): void;
   onToggleSound(): void;
@@ -35,9 +35,9 @@ const TOAST_MS = 3200;
 
 export class Hud {
   readonly root = h("div", "hud");
-  private readonly hallButton = h("button", "hall-button");
-  private readonly hallLabel = h("span", "hall-label", "법당");
-  private readonly hallCount = h("span", "hall-count", "");
+  private readonly worldButton = h("button", "world-button");
+  private readonly worldLabel = h("span", "world-label", "월드");
+  private readonly worldCount = h("span", "world-count", "");
   private readonly visitorsButton: HTMLButtonElement;
   private readonly visitorBadge = h("span", "badge", "0");
   private readonly soundButton: HTMLButtonElement;
@@ -50,13 +50,13 @@ export class Hud {
   private readonly samBaeButton: HTMLButtonElement;
   private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · 3 삼배 · Esc 일어서기 · Q/E 돌리기");
   private readonly stats = h("pre", "stats hidden");
-  private readonly hallSheet: Sheet;
+  private readonly worldSheet: Sheet;
   private readonly visitorSheet: Sheet;
-  private readonly hallList = h("ul", "list");
-  private readonly hallInput = h("input", "name-input");
+  private readonly worldList = h("ul", "list");
+  private readonly worldInput = h("input", "name-input");
   private readonly visitorList = h("ul", "list");
-  private halls: HallInfo[] = [];
-  private currentHall = 0;
+  private worlds: WorldInfo[] = [];
+  private currentWorld = 0;
   private visitorKey = "";
   private lastSelf = "";
   private lastChant = "";
@@ -66,12 +66,12 @@ export class Hud {
     host: HTMLElement,
     private readonly handlers: HudHandlers,
   ) {
-    this.hallButton.type = "button";
-    this.hallButton.append(icon("hall"), this.hallLabel, this.hallCount);
-    this.hallButton.setAttribute("aria-label", "법당 바꾸기");
-    this.hallButton.addEventListener("click", () => {
-      this.hallSheet.toggle();
-      if (this.hallSheet.isOpen) handlers.onOpenHalls();
+    this.worldButton.type = "button";
+    this.worldButton.append(icon("world"), this.worldLabel, this.worldCount);
+    this.worldButton.setAttribute("aria-label", "월드 바꾸기");
+    this.worldButton.addEventListener("click", () => {
+      this.worldSheet.toggle();
+      if (this.worldSheet.isOpen) handlers.onOpenWorlds();
     });
 
     const invite = iconButton("link", "초대 링크 복사", () => handlers.onInvite());
@@ -83,7 +83,7 @@ export class Hud {
     const top = h(
       "div",
       "topbar",
-      this.hallButton,
+      this.worldButton,
       h("div", "top-actions", invite, this.visitorsButton, this.soundButton, settings),
     );
 
@@ -96,25 +96,25 @@ export class Hud {
       h("div", "bow-actions", this.samBaeButton, this.bowButton),
     );
 
-    this.hallInput.type = "text";
-    this.hallInput.inputMode = "numeric";
-    this.hallInput.maxLength = 4;
-    this.hallInput.autocomplete = "off";
-    this.hallInput.placeholder = "법당 번호";
-    this.hallInput.setAttribute("aria-label", "법당 번호");
+    this.worldInput.type = "text";
+    this.worldInput.inputMode = "numeric";
+    this.worldInput.maxLength = 4;
+    this.worldInput.autocomplete = "off";
+    this.worldInput.placeholder = "월드 번호";
+    this.worldInput.setAttribute("aria-label", "월드 번호");
     const go = h("button", "primary", "이동");
     go.type = "submit";
-    const hallForm = h("form", "row name-row hall-go", this.hallInput, go);
-    hallForm.addEventListener("submit", (event) => {
+    const worldForm = h("form", "row name-row world-go", this.worldInput, go);
+    worldForm.addEventListener("submit", (event) => {
       event.preventDefault();
-      this.submitHall();
+      this.submitWorld();
     });
 
-    this.hallSheet = new Sheet(host, "법당 고르기");
-    this.hallSheet.body.append(
-      this.hallList,
-      hallForm,
-      button("이 법당 초대 링크 복사", "primary wide", () => handlers.onInvite()),
+    this.worldSheet = new Sheet(host, "월드 고르기");
+    this.worldSheet.body.append(
+      this.worldList,
+      worldForm,
+      button("이 월드 초대 링크 복사", "primary wide", () => handlers.onInvite()),
     );
     this.visitorSheet = new Sheet(host, "함께 있는 동자승");
     this.visitorSheet.body.append(
@@ -128,26 +128,26 @@ export class Hud {
     host.append(this.root);
 
     if (window.matchMedia("(pointer: coarse)").matches) this.keyHint.hidden = true;
-    this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
+    this.renderWorlds();
+    this.setSelf({ mode: "stand", matId: -1, bowCount: 0 });
   }
 
   closeSheets(): boolean {
     return Sheet.closeOpen();
   }
 
-  setHalls(halls: HallInfo[], current: number): void {
-    this.halls = halls;
-    this.currentHall = current;
-    this.hallLabel.textContent = hallName(current);
-    const here = halls.find((info) => info.hall === current);
-    this.hallCount.textContent = here ? `${here.clients}/${here.capacity}` : "";
-    this.renderHalls();
+  setWorlds(worlds: WorldInfo[], current: number): void {
+    this.worlds = worlds;
+    this.currentWorld = current;
+    this.worldLabel.textContent = worldName(current);
+    const here = worlds.find((info) => info.world === current);
+    this.worldCount.textContent = here ? `${here.clients}/${here.capacity}` : "";
+    this.renderWorlds();
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
     this.visitorBadge.textContent = String(rows.length);
-    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
+    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.matId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
     this.visitorList.replaceChildren(
@@ -156,17 +156,17 @@ export class Hud {
           "li",
           row.isSelf ? "item self" : "item",
           h("span", "item-main", h("strong", "", seatLabel(row.slot)), row.isSelf && h("em", "", "나")),
-          h("span", "item-sub", `${modeLabel(row.mode, row.cushionId)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
+          h("span", "item-sub", `${modeLabel(row.mode, row.matId)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
         ),
       ),
     );
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}|${self.bowCount}`;
+    const key = `${self.mode}|${self.matId}|${self.bowCount}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const seated = self.matId >= 0 && (self.mode === "kneel" || self.mode === "bow");
     const bowing = self.mode === "bow";
     this.bowButton.disabled = !seated || bowing;
     this.samBaeButton.disabled = !seated || bowing;
@@ -174,10 +174,10 @@ export class Hud {
     this.statusLine.textContent = seated
       ? bowing
         ? "절하는 중이에요"
-        : "방석에 앉았어요. 절을 해 보세요"
-      : self.cushionId >= 0
-        ? "방석으로 가는 중이에요"
-        : "방석 가까이 가서 앉기 버튼을 눌러 보세요";
+        : "돗자리에 앉았어요. 절을 해 보세요"
+      : self.matId >= 0
+        ? "돗자리로 가는 중이에요"
+        : "돗자리 가까이 가서 앉기 버튼을 눌러 보세요";
   }
 
   setChant(status: ChantStatus | null): void {
@@ -227,39 +227,39 @@ export class Hud {
     if (text !== null) this.stats.textContent = text;
   }
 
-  private submitHall(): void {
-    const result = checkHallEntry(this.halls, this.currentHall, this.hallInput.value);
+  private submitWorld(): void {
+    const result = checkWorldEntry(this.worlds, this.currentWorld, this.worldInput.value);
     if (result.ok) {
-      this.hallInput.value = "";
-      this.hallSheet.close();
-      this.handlers.onSwitchHall(result.hall);
+      this.worldInput.value = "";
+      this.worldSheet.close();
+      this.handlers.onSwitchWorld(result.world);
       return;
     }
-    const target = result.hall === null ? "" : hallName(result.hall);
+    const target = result.world === null ? "" : worldName(result.world);
     const messages = {
-      invalid: "법당 번호를 숫자로 적어 주세요",
-      current: "지금 이 법당에 있어요",
+      invalid: "월드 번호를 숫자로 적어 주세요",
+      current: "지금 이 월드에 있어요",
       missing: `${target}은 아직 열려 있지 않아요`,
       full: `${target}은 가득 찼어요`,
     } as const;
     this.toast(messages[result.reason]);
   }
 
-  private renderHalls(): void {
-    this.hallList.replaceChildren(
-      ...this.halls.map((info) => {
-        const here = info.hall === this.currentHall;
+  private renderWorlds(): void {
+    this.worldList.replaceChildren(
+      ...this.worlds.map((info) => {
+        const here = info.world === this.currentWorld;
         const full = info.full && !here;
-        const pick = h("button", `hall-row${here ? " here" : ""}`);
+        const pick = h("button", `world-row${here ? " here" : ""}`);
         pick.type = "button";
         pick.disabled = here || full;
         pick.append(
-          h("strong", "", hallName(info.hall)),
-          h("span", "hall-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients}/${info.capacity}명`),
+          h("strong", "", worldName(info.world)),
+          h("span", "world-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients}/${info.capacity}명`),
         );
         pick.addEventListener("click", () => {
-          this.hallSheet.close();
-          this.handlers.onSwitchHall(info.hall);
+          this.worldSheet.close();
+          this.handlers.onSwitchWorld(info.world);
         });
         return h("li", "", pick);
       }),

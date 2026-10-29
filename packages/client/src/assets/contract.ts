@@ -7,7 +7,7 @@
 
 export const MONK_PARTS = ["head", "face", "skirt", "torso", "trim", "sleeveUpper", "sleeveLower", "hand", "foot"] as const;
 
-export const HALL_MESHES = [
+export const WORLD_MESHES = [
   "structure",
   "beams",
   "paper",
@@ -17,22 +17,22 @@ export const HALL_MESHES = [
   "outdoor",
   "sky",
   "sunbeams",
-  "cushionBody",
-  "cushionTop",
+  "matBody",
+  "matTop",
 ] as const;
 
-// Authored at the origin; the runtime instances them at the cushion spots.
-export const HALL_PROTOTYPES = ["cushionBody", "cushionTop"] as const;
+// Authored at the origin; the runtime instances them at the mat spots.
+export const WORLD_PROTOTYPES = ["matBody", "matTop"] as const;
 
 export const BUDDHA_MESHES = ["figure", "lotus", "halo", "glow"] as const;
 
 // Carry TEXCOORD_0 and a texture; every other mesh carries COLOR_0 instead.
-export const TEXTURED = ["floor", "backdrop", "sky", "sunbeams", "cushionTop"] as const;
+export const TEXTURED = ["floor", "backdrop", "sky", "sunbeams", "matTop"] as const;
 
 export const BUDGET = {
   monk: { bytes: 120_000, tris: 2_600 },
   buddha: { bytes: 450_000, tris: 25_000 },
-  hall: { bytes: 2_200_000, tris: 60_000 },
+  world: { bytes: 2_200_000, tris: 60_000 },
   totalBytes: 2_800_000,
 } as const;
 

@@ -3,16 +3,16 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   BOW_MS,
   CHANT_MS,
-  HALLS_PATH,
-  HALL_CAPACITY,
-  HALL_SPARE_AT,
+  WORLDS_PATH,
+  WORLD_CAPACITY,
+  WORLD_SPARE_AT,
   MSG,
   SEAT_PATH,
-  isHallFullError,
+  isWorldFullError,
 } from "@dongjane/shared";
-import { HallRoom } from "../src/hall-room.ts";
+import { WorldRoom } from "../src/world-room.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
-import { type HallClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
+import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
 let game: GameServer;
 let rig: TestRig;
@@ -24,7 +24,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await rig.closeAll();
-  await eventually(() => rig.halls(), (halls) => halls.length === 0, "every hall closed", 5000);
+  await eventually(() => rig.worlds(), (worlds) => worlds.length === 0, "every world closed", 5000);
 });
 
 afterAll(async () => {
@@ -32,88 +32,88 @@ afterAll(async () => {
   await game.stop();
 });
 
-describe("hall list", () => {
-  it("starts with no halls open", async () => {
-    expect(await rig.halls()).toEqual([]);
+describe("world list", () => {
+  it("starts with no worlds open", async () => {
+    expect(await rig.worlds()).toEqual([]);
   });
 
-  it("opens hall 1 for the first visitor and reflects joins in the client count", async () => {
+  it("opens world 1 for the first visitor and reflects joins in the client count", async () => {
     await rig.enter(1);
     await rig.enter(1);
-    const hall = await eventually(() => rig.hall(1), (info) => info.clients === 2, "two clients counted");
-    expect(hall.capacity).toBe(HALL_CAPACITY);
-    expect(hall.full).toBe(false);
-    expect(hall.roomId).toEqual(expect.any(String));
-    expect((await rig.halls()).map((info) => info.hall)).toEqual([1]);
+    const world = await eventually(() => rig.world(1), (info) => info.clients === 2, "two clients counted");
+    expect(world.capacity).toBe(WORLD_CAPACITY);
+    expect(world.full).toBe(false);
+    expect(world.roomId).toEqual(expect.any(String));
+    expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
   });
 
-  it("closes a hall once its last visitor leaves", async () => {
+  it("closes a world once its last visitor leaves", async () => {
     const room = await rig.enter(1);
     await room.leave(true);
-    await eventually(() => rig.halls(), (halls) => halls.length === 0, "hall 1 closed");
+    await eventually(() => rig.worlds(), (worlds) => worlds.length === 0, "world 1 closed");
   });
 });
 
 describe("seating", () => {
-  it("puts the first visitor in hall 1 whichever number they ask for", async () => {
+  it("puts the first visitor in world 1 whichever number they ask for", async () => {
     const { seat } = await rig.arrive(7);
-    expect(seat).toMatchObject({ hall: 1, fellBack: true });
+    expect(seat).toMatchObject({ world: 1, fellBack: true });
     const { seat: second } = await rig.arrive(null);
-    expect(second).toMatchObject({ hall: 1, fellBack: false });
+    expect(second).toMatchObject({ world: 1, fellBack: false });
   });
 
-  it("opens hall 2 when hall 1 reaches ten and closes it again when hall 1 falls below ten", async () => {
-    const rooms = await rig.fill(1, HALL_SPARE_AT - 1);
-    expect((await rig.halls()).map((info) => info.hall)).toEqual([1]);
+  it("opens world 2 when world 1 reaches ten and closes it again when world 1 falls below ten", async () => {
+    const rooms = await rig.fill(1, WORLD_SPARE_AT - 1);
+    expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
 
     rooms.push(await rig.enter(1));
-    const halls = await eventually(() => rig.halls(), (list) => list.length === 2, "hall 2 opened");
-    expect(halls.map((info) => [info.hall, info.clients])).toEqual([
-      [1, HALL_SPARE_AT],
+    const worlds = await eventually(() => rig.worlds(), (list) => list.length === 2, "world 2 opened");
+    expect(worlds.map((info) => [info.world, info.clients])).toEqual([
+      [1, WORLD_SPARE_AT],
       [2, 0],
     ]);
 
     await rooms[0]!.leave(true);
-    await eventually(() => rig.halls(), (list) => list.length === 1, "spare hall closed");
+    await eventually(() => rig.worlds(), (list) => list.length === 1, "spare world closed");
   }, 20_000);
 
-  it("takes visitors to the hall whose number they give and falls back to the lowest hall with room", async () => {
-    await rig.fill(1, HALL_CAPACITY);
-    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+  it("takes visitors to the world whose number they give and falls back to the lowest world with room", async () => {
+    await rig.fill(1, WORLD_CAPACITY);
+    await eventually(() => rig.worlds(), (list) => list.some((info) => info.world === 2), "world 2 opened");
     await rig.enter(2);
 
-    expect(await rig.seat(2)).toMatchObject({ hall: 2, fellBack: false });
-    expect(await rig.seat(1)).toMatchObject({ hall: 2, fellBack: true });
-    expect(await rig.seat(9)).toMatchObject({ hall: 2, fellBack: true });
-    expect(await rig.seat(null)).toMatchObject({ hall: 2, fellBack: false });
+    expect(await rig.seat(2)).toMatchObject({ world: 2, fellBack: false });
+    expect(await rig.seat(1)).toMatchObject({ world: 2, fellBack: true });
+    expect(await rig.seat(9)).toMatchObject({ world: 2, fellBack: true });
+    expect(await rig.seat(null)).toMatchObject({ world: 2, fellBack: false });
   }, 20_000);
 
-  it("seats a visitor who asks for the empty spare hall in the crowded hall and does not merge them back", async () => {
-    await rig.fill(1, HALL_SPARE_AT);
-    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+  it("seats a visitor who asks for the empty spare world in the crowded world and does not merge them back", async () => {
+    await rig.fill(1, WORLD_SPARE_AT);
+    await eventually(() => rig.worlds(), (list) => list.some((info) => info.world === 2), "world 2 opened");
 
     const { seat, room } = await rig.arrive(2);
-    expect(seat).toMatchObject({ hall: 1, fellBack: true });
+    expect(seat).toMatchObject({ world: 1, fellBack: true });
     const relocations: number[] = [];
-    room.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+    room.onMessage(MSG.relocate, (message: { world: number }) => relocations.push(message.world));
     await sleep(500);
 
     expect(relocations).toEqual([]);
     expect(room.connection.isOpen).toBe(true);
-    expect((await rig.halls()).map((info) => [info.hall, info.clients])).toEqual([
-      [1, HALL_SPARE_AT + 1],
+    expect((await rig.worlds()).map((info) => [info.world, info.clients])).toEqual([
+      [1, WORLD_SPARE_AT + 1],
       [2, 0],
     ]);
   }, 20_000);
 
-  it("treats an unusable hall number as no preference", async () => {
+  it("treats an unusable world number as no preference", async () => {
     const response = await fetch(`http://127.0.0.1:${game.port}${SEAT_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ hall: "two" }),
+      body: JSON.stringify({ world: "two" }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ hall: 1, fellBack: false });
+    expect(await response.json()).toMatchObject({ world: 1, fellBack: false });
     await rig.enter(1);
   });
 
@@ -130,69 +130,69 @@ describe("seating", () => {
     expect(preflight.status).toBeLessThan(300);
     expect(preflight.headers.get("access-control-allow-origin")).toBe(origin);
 
-    const list = await fetch(`http://127.0.0.1:${game.port}${HALLS_PATH}`, { headers: { origin } });
+    const list = await fetch(`http://127.0.0.1:${game.port}${WORLDS_PATH}`, { headers: { origin } });
     expect(list.headers.get("access-control-allow-origin")).toBe(origin);
 
     const seat = await fetch(`http://127.0.0.1:${game.port}${SEAT_PATH}`, {
       method: "POST",
       headers: { origin, "content-type": "application/json" },
-      body: JSON.stringify({ hall: null }),
+      body: JSON.stringify({ world: null }),
     });
     expect(seat.headers.get("access-control-allow-origin")).toBe(origin);
     await rig.join((await seat.json()) as Awaited<ReturnType<TestRig["seat"]>>);
   });
 });
 
-describe("merging halls", () => {
-  async function loneVisitorInHall2() {
-    const crowd = await rig.fill(1, HALL_CAPACITY);
-    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+describe("merging worlds", () => {
+  async function loneVisitorInWorld2() {
+    const crowd = await rig.fill(1, WORLD_CAPACITY);
+    await eventually(() => rig.worlds(), (list) => list.some((info) => info.world === 2), "world 2 opened");
     const lone = await rig.enter(2);
     const relocations: number[] = [];
-    lone.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
-    const before = await rig.hall(2);
+    lone.onMessage(MSG.relocate, (message: { world: number }) => relocations.push(message.world));
+    const before = await rig.world(2);
     await sleep(300);
     expect(relocations).toEqual([]);
     return { crowd, lone, relocations, before };
   }
 
-  it("leaves a lone visitor alone while no other hall has room", async () => {
-    const { lone, before } = await loneVisitorInHall2();
-    expect((await rig.hall(2)).roomId).toBe(before.roomId);
+  it("leaves a lone visitor alone while no other world has room", async () => {
+    const { lone, before } = await loneVisitorInWorld2();
+    expect((await rig.world(2)).roomId).toBe(before.roomId);
     expect(lone.connection.isOpen).toBe(true);
   }, 20_000);
 
-  it("moves a lone visitor into the other hall once it has room and closes the emptied hall", async () => {
-    const { crowd, lone, relocations, before } = await loneVisitorInHall2();
+  it("moves a lone visitor into the other world once it has room and closes the emptied world", async () => {
+    const { crowd, lone, relocations, before } = await loneVisitorInWorld2();
 
     await crowd[0]!.leave(true);
     await waitFor(() => relocations.length > 0, "relocation notice", 3000);
     expect(relocations).toEqual([1]);
 
     const seat = await rig.seat(relocations[0]!);
-    expect(seat).toMatchObject({ hall: 1, fellBack: false });
+    expect(seat).toMatchObject({ world: 1, fellBack: false });
     await lone.leave(true);
     const moved = await rig.join(seat);
-    expect(moved.state.monks.size).toBe(HALL_CAPACITY);
+    expect(moved.state.monks.size).toBe(WORLD_CAPACITY);
 
-    const halls = await eventually(
-      () => rig.halls(),
+    const worlds = await eventually(
+      () => rig.worlds(),
       (list) => list.every((info) => info.roomId !== before.roomId),
-      "emptied hall closed",
+      "emptied world closed",
       4000,
     );
-    expect(halls.find((info) => info.hall === 1)?.clients).toBe(HALL_CAPACITY);
+    expect(worlds.find((info) => info.world === 1)?.clients).toBe(WORLD_CAPACITY);
   }, 20_000);
 
-  it("offers the hand-over again after one fails and does not leave the hall stuck", async () => {
-    const { crowd, relocations } = await loneVisitorInHall2();
-    const lock = vi.spyOn(HallRoom.prototype, "lock").mockRejectedValueOnce(new Error("lock failed"));
+  it("offers the hand-over again after one fails and does not leave the world stuck", async () => {
+    const { crowd, relocations } = await loneVisitorInWorld2();
+    const lock = vi.spyOn(WorldRoom.prototype, "lock").mockRejectedValueOnce(new Error("lock failed"));
     const reported = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     try {
       await crowd[0]!.leave(true);
       await waitFor(() => reported.mock.calls.length > 0, "failure reported", 3000);
       expect(lock).toHaveBeenCalledTimes(1);
-      expect((await rig.hall(2)).clients).toBe(1);
+      expect((await rig.world(2)).clients).toBe(1);
       expect(relocations).toEqual([]);
 
       await crowd[1]!.leave(true);
@@ -204,13 +204,13 @@ describe("merging halls", () => {
     }
   }, 20_000);
 
-  it("holds a lone visitor back while the last free place in the other hall is a seat waiting to be used", async () => {
-    await rig.fill(1, HALL_CAPACITY - 1);
-    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+  it("holds a lone visitor back while the last free place in the other world is a seat waiting to be used", async () => {
+    await rig.fill(1, WORLD_CAPACITY - 1);
+    await eventually(() => rig.worlds(), (list) => list.some((info) => info.world === 2), "world 2 opened");
     await rig.seat(1);
     const lone = await rig.enter(2);
     const relocations: number[] = [];
-    lone.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+    lone.onMessage(MSG.relocate, (message: { world: number }) => relocations.push(message.world));
 
     await sleep(500);
     expect(relocations).toEqual([]);
@@ -220,13 +220,13 @@ describe("merging halls", () => {
     expect(relocations).toEqual([1]);
   }, 20_000);
 
-  it("offers the merge again when closing the hall fails after the grace period", async () => {
-    const { crowd, lone, relocations } = await loneVisitorInHall2();
+  it("offers the merge again when closing the world fails after the grace period", async () => {
+    const { crowd, lone, relocations } = await loneVisitorInWorld2();
     let left = false;
     lone.onLeave(() => {
       left = true;
     });
-    const disconnect = vi.spyOn(HallRoom.prototype, "disconnect").mockRejectedValueOnce(new Error("disconnect failed"));
+    const disconnect = vi.spyOn(WorldRoom.prototype, "disconnect").mockRejectedValueOnce(new Error("disconnect failed"));
     const reported = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     try {
       await crowd[0]!.leave(true);
@@ -234,25 +234,25 @@ describe("merging halls", () => {
       expect(disconnect).toHaveBeenCalledTimes(1);
 
       await waitFor(() => relocations.length >= 2, "relocation notice sent again", 4000);
-      await waitFor(() => left, "server closes the merged hall on the retry", 4000, 25);
+      await waitFor(() => left, "server closes the merged world on the retry", 4000, 25);
     } finally {
       disconnect.mockRestore();
       reported.mockRestore();
     }
   }, 20_000);
 
-  it("closes the hall on a visitor who does not follow the relocation notice", async () => {
-    const { crowd, lone } = await loneVisitorInHall2();
+  it("closes the world on a visitor who does not follow the relocation notice", async () => {
+    const { crowd, lone } = await loneVisitorInWorld2();
     let left = false;
     lone.onLeave(() => {
       left = true;
     });
     await crowd[0]!.leave(true);
-    await waitFor(() => left, "server closes the merged hall", 4000, 25);
+    await waitFor(() => left, "server closes the merged world", 4000, 25);
   }, 20_000);
 });
 
-describe("two clients in one hall", () => {
+describe("two clients in one world", () => {
   it("shows A sitting and bowing to B within the time budget", async () => {
     const a = await rig.enter(1, { hue: 40 });
     const b = await rig.enter(1, { hue: 200 });
@@ -262,11 +262,11 @@ describe("two clients in one hall", () => {
     expect(seenByB.slot).toBe(1);
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
-    expect(b.state.cushions.size).toBe(8);
+    expect(b.state.mats.size).toBe(8);
 
-    a.send("sit", { cushionId: 7 });
-    await waitFor(() => seenByB.cushionId === 7, "B sees A claim cushion 7", 1000);
-    expect(b.state.cushions.get("7")?.occupantId).toBe(a.sessionId);
+    a.send("sit", { matId: 7 });
+    await waitFor(() => seenByB.matId === 7, "B sees A claim mat 7", 1000);
+    expect(b.state.mats.get("7")?.occupantId).toBe(a.sessionId);
     await waitFor(() => seenByB.mode === "walk", "B sees A walking", 1000);
     await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 6000);
     expect(seenByB.x).toBeCloseTo(3, 1);
@@ -288,7 +288,7 @@ describe("two clients in one hall", () => {
     await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
     const seenByB = b.state.monks.get(a.sessionId)!;
 
-    a.send("sit", { cushionId: 6 });
+    a.send("sit", { matId: 6 });
     await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
     a.send("bow", { times: 3 });
     await waitFor(() => seenByB.mode === "bow", "first bow", 1000);
@@ -305,91 +305,91 @@ describe("two clients in one hall", () => {
     expect(monk.bowCount).toBe(0);
   });
 
-  it("removes a monk and frees the cushion when its client leaves", async () => {
+  it("removes a monk and frees the mat when its client leaves", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { cushionId: 5 });
-    await waitFor(() => b.state.cushions.get("5")?.occupantId === a.sessionId, "A holds cushion 5");
+    a.send("sit", { matId: 5 });
+    await waitFor(() => b.state.mats.get("5")?.occupantId === a.sessionId, "A holds mat 5");
     const leaverId = a.sessionId;
     await a.leave(true);
     await waitFor(() => !b.state.monks.has(leaverId), "A removed");
-    await waitFor(() => b.state.cushions.get("5")?.occupantId === "", "cushion freed");
+    await waitFor(() => b.state.mats.get("5")?.occupantId === "", "mat freed");
   });
 });
 
-describe("cushion exclusivity", () => {
-  it("gives a cushion that ten clients grab at once to exactly one of them", async () => {
+describe("mat exclusivity", () => {
+  it("gives a mat that ten clients grab at once to exactly one of them", async () => {
     const rooms = await Promise.all(Array.from({ length: 10 }, () => rig.enter(1)));
-    for (const room of rooms) room.send("sit", { cushionId: 2 });
+    for (const room of rooms) room.send("sit", { matId: 2 });
     const observer = rooms[0]!;
-    await waitFor(() => observer.state.cushions.get("2")?.occupantId !== "", "cushion claimed");
+    await waitFor(() => observer.state.mats.get("2")?.occupantId !== "", "mat claimed");
     await sleep(300);
 
-    const owners = [...observer.state.monks.values()].filter((monk) => monk.cushionId === 2);
+    const owners = [...observer.state.monks.values()].filter((monk) => monk.matId === 2);
     expect(owners).toHaveLength(1);
-    expect(observer.state.cushions.get("2")?.occupantId).toBe(owners[0]!.id);
-    const others = [...observer.state.monks.values()].filter((monk) => monk.cushionId !== 2);
+    expect(observer.state.mats.get("2")?.occupantId).toBe(owners[0]!.id);
+    const others = [...observer.state.monks.values()].filter((monk) => monk.matId !== 2);
     expect(others).toHaveLength(9);
-    for (const monk of others) expect(monk.cushionId).toBe(-1);
+    for (const monk of others) expect(monk.matId).toBe(-1);
   });
 
-  it("hands the cushion to the next monk after the owner stands", async () => {
+  it("hands the mat to the next monk after the owner stands", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { cushionId: 0 });
-    await waitFor(() => b.state.cushions.get("0")?.occupantId === a.sessionId, "A claims");
-    b.send("sit", { cushionId: 0 });
+    a.send("sit", { matId: 0 });
+    await waitFor(() => b.state.mats.get("0")?.occupantId === a.sessionId, "A claims");
+    b.send("sit", { matId: 0 });
     await sleep(200);
-    expect(b.state.cushions.get("0")?.occupantId).toBe(a.sessionId);
-    expect(b.state.monks.get(b.sessionId)?.cushionId).toBe(-1);
+    expect(b.state.mats.get("0")?.occupantId).toBe(a.sessionId);
+    expect(b.state.monks.get(b.sessionId)?.matId).toBe(-1);
 
     a.send("stand", {});
-    await waitFor(() => b.state.cushions.get("0")?.occupantId === "", "A stands, cushion freed");
-    b.send("sit", { cushionId: 0 });
-    await waitFor(() => b.state.cushions.get("0")?.occupantId === b.sessionId, "B claims");
+    await waitFor(() => b.state.mats.get("0")?.occupantId === "", "A stands, mat freed");
+    b.send("sit", { matId: 0 });
+    await waitFor(() => b.state.mats.get("0")?.occupantId === b.sessionId, "B claims");
   });
 });
 
 describe("capacity", () => {
-  it("fills a hall to 12 and seats the 13th visitor in the next hall", async () => {
-    const entered = await Promise.all(Array.from({ length: HALL_CAPACITY }, () => rig.enter(1)));
-    expect(entered).toHaveLength(HALL_CAPACITY);
+  it("fills a world to 12 and seats the 13th visitor in the next world", async () => {
+    const entered = await Promise.all(Array.from({ length: WORLD_CAPACITY }, () => rig.enter(1)));
+    expect(entered).toHaveLength(WORLD_CAPACITY);
 
-    const full = await eventually(() => rig.hall(1), (info) => info.full, "hall 1 reported full");
-    expect(full.clients).toBe(HALL_CAPACITY);
+    const full = await eventually(() => rig.world(1), (info) => info.full, "world 1 reported full");
+    expect(full.clients).toBe(WORLD_CAPACITY);
 
     const rejection = await rig.client.joinById(full.roomId, {}, undefined).then(
       () => null,
       (error: unknown) => error,
     );
     expect(rejection).not.toBeNull();
-    expect(isHallFullError(rejection)).toBe(true);
+    expect(isWorldFullError(rejection)).toBe(true);
 
     const { seat } = await rig.arrive(1);
-    expect(seat).toMatchObject({ hall: 2, fellBack: true });
-    const halls = await eventually(() => rig.halls(), (list) => list.find((info) => info.hall === 2)?.clients === 1, "hall 2 counted");
-    expect(halls.map((info) => info.hall)).toEqual([1, 2]);
-    expect(halls.filter((info) => info.full).map((info) => info.hall)).toEqual([1]);
+    expect(seat).toMatchObject({ world: 2, fellBack: true });
+    const worlds = await eventually(() => rig.worlds(), (list) => list.find((info) => info.world === 2)?.clients === 1, "world 2 counted");
+    expect(worlds.map((info) => info.world)).toEqual([1, 2]);
+    expect(worlds.filter((info) => info.full).map((info) => info.world)).toEqual([1]);
   }, 30_000);
 });
 
 describe("hardening", () => {
   it("does not let clients create rooms", async () => {
     await rig.enter(1);
-    const before = await rig.halls();
+    const before = await rig.worlds();
     const outcome = (attempt: Promise<unknown>) =>
       attempt.then(
         () => "created",
         (error: { code?: number }) => `rejected:${error.code}`,
       );
     const attempts = await Promise.all([
-      outcome(rig.client.create("hall", { hall: 1 })),
-      outcome(rig.client.create("hall", { hall: 1, key: "guess" })),
-      outcome(rig.client.create("hall", { hall: 99 })),
+      outcome(rig.client.create("world", { world: 1 })),
+      outcome(rig.client.create("world", { world: 1, key: "guess" })),
+      outcome(rig.client.create("world", { world: 99 })),
     ]);
     expect(attempts).toEqual(["rejected:403", "rejected:403", "rejected:403"]);
-    const after = await rig.halls();
-    expect(after.map((hall) => hall.roomId)).toEqual(before.map((hall) => hall.roomId));
+    const after = await rig.worlds();
+    expect(after.map((world) => world.roomId)).toEqual(before.map((world) => world.roomId));
   });
 
   it("ignores NaN and Infinity move targets", async () => {
@@ -417,7 +417,7 @@ describe("hardening", () => {
     const a = await rig.enter(1);
     for (let i = 0; i < 50; i += 1) a.send("stand");
     await sleep(1200);
-    a.send("sit", { cushionId: 0 });
+    a.send("sit", { matId: 0 });
     await waitFor(() => a.state.monks.get(a.sessionId)?.mode === "kneel", "sit accepted after the flood", 6000);
   });
 
