@@ -132,7 +132,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1 });
+    this.setSelf(null);
     this.setSky(null);
   }
 
@@ -166,15 +166,15 @@ export class Hud {
     );
   }
 
-  setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}`;
+  setSelf(self: SelfStatus | null): void {
+    const key = self ? `${self.mode}|${self.cushionId}` : "none";
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
-    const bowing = self.mode === "bow";
+    const seated = !!self && self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const bowing = self?.mode === "bow";
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
-    this.jumpButton.classList.toggle("hidden", self.cushionId >= 0);
+    this.jumpButton.classList.toggle("hidden", !self || self.cushionId >= 0);
     this.bowActions.classList.toggle("seated", seated);
   }
 

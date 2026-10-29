@@ -200,6 +200,7 @@ export class App {
     this.bowWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
+    this.hud.setSelf(null);
     this.prediction.cancel();
     this.occupiedCushions.clear();
     this.hud.setLink("online");
@@ -298,6 +299,7 @@ export class App {
     this.bowWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
+    this.hud.setSelf(null);
     this.prediction.cancel();
     this.occupiedCushions.clear();
 
