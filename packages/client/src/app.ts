@@ -417,7 +417,7 @@ export class App {
   }
 
   private applyAudio(): void {
-    this.audio.configure(this.settings.volume, this.settings.sound, this.settings.wind);
+    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume, this.settings.sound, this.settings.wind);
   }
 
   private bindAudioUnlock(): void {

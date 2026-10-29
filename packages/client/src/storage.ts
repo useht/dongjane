@@ -5,7 +5,8 @@ export interface Profile {
 }
 
 export interface Settings {
-  volume: number;
+  ambientVolume: number;
+  effectVolume: number;
   sound: boolean;
   wind: boolean;
   reduceMotion: boolean;
@@ -50,7 +51,11 @@ export function newHue(): number {
 export function defaultSettings(): Settings {
   const prefersReduced =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return { volume: 0.7, sound: true, wind: true, reduceMotion: prefersReduced };
+  return { ambientVolume: 0.7, effectVolume: 0.7, sound: true, wind: true, reduceMotion: prefersReduced };
+}
+
+function volumeOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback;
 }
 
 export function loadSettings(): Settings {
@@ -58,8 +63,10 @@ export function loadSettings(): Settings {
   const data = readJson(SETTINGS_KEY);
   if (typeof data !== "object" || data === null) return base;
   const raw = data as Record<string, unknown>;
+  const legacyVolume = volumeOr(raw.volume, base.ambientVolume);
   return {
-    volume: typeof raw.volume === "number" && Number.isFinite(raw.volume) ? Math.min(1, Math.max(0, raw.volume)) : base.volume,
+    ambientVolume: volumeOr(raw.ambientVolume, legacyVolume),
+    effectVolume: volumeOr(raw.effectVolume, legacyVolume),
     sound: typeof raw.sound === "boolean" ? raw.sound : base.sound,
     wind: typeof raw.wind === "boolean" ? raw.wind : base.wind,
     reduceMotion: typeof raw.reduceMotion === "boolean" ? raw.reduceMotion : base.reduceMotion,
