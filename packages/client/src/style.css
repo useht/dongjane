@@ -1078,7 +1078,7 @@ noscript {
 
 @media (max-height: 520px) and (orientation: landscape) {
   :root {
-    --hud-top: calc(var(--safe-top) + var(--edge) + 48px);
+    --hud-top: calc(var(--safe-top) + var(--edge) + 48px + var(--quest-drop));
     --hud-bottom: calc(var(--safe-bottom) + 96px);
     --bow-size: 72px;
   }
