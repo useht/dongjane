@@ -40,13 +40,18 @@ import {
 import { BUDDHA_Z, CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
 import { GeometryBuilder, type Placement } from "./geometry.ts";
+import { Precipitation } from "./precipitation.ts";
+import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import {
   backdropTexture,
   beamGlowTexture,
+  cloudTexture,
   cushionTexture,
+  flakeTexture,
   floorTexture,
   flameGlowTexture,
   mulberry32,
+  nightSkyTexture,
   skyTexture,
 } from "./textures.ts";
 
@@ -87,6 +92,10 @@ const CANDLE_SPOTS: ReadonlyArray<readonly [number, number]> = [
 const ALTAR_TOP = 0.62;
 const SUN_POSITION = new Vector3(14, 8, -2);
 const SUN_TARGET = new Vector3(0, 0.3, 1.5);
+const SKY_EASE_SECONDS = 1.5;
+const SKY_PLANE_SIZE: readonly [number, number] = [70, 16];
+const REDUCED_PRECIPITATION_MOTION = 0.1;
+const SKY_VISIBLE = 0.004;
 
 function buildDoorSection(width: number, window: boolean): { wood: BufferGeometry; paper: BufferGeometry | null } {
   const wood = new GeometryBuilder();
@@ -169,7 +178,13 @@ export class Hall {
 
   private readonly buddha: BuddhaPieces;
   private readonly environment: Texture;
+  private readonly hemisphere: HemisphereLight;
   private readonly candleLight: PointLight;
+  private readonly paperMaterial: MeshLambertMaterial;
+  private readonly sunbeams: Mesh;
+  private readonly nightSky: Mesh;
+  private readonly clouds: Mesh;
+  private readonly precipitation: Precipitation;
   private readonly flames: InstancedMesh;
   private readonly dust: Points;
   private readonly dustSeeds: Float32Array;
@@ -182,6 +197,9 @@ export class Hall {
   private readonly tmpPos = new Vector3();
   private readonly tint = new Color();
   private readonly textures: Texture[] = [];
+  private target: SkyLook = cloneLook(DAY_LOOK);
+  private skyKnown = false;
+  private current: SkyLook = cloneLook(DAY_LOOK);
 
   constructor(renderer: WebGLRenderer, quality: HallQuality) {
     this.group.name = "hall";
@@ -189,10 +207,14 @@ export class Hall {
     this.buddha = buildBuddha(this.environment);
     const anisotropy = quality.anisotropy;
 
-    const hemisphere = new HemisphereLight(0xffe2b4, 0x6b4a2a, 1.25);
-    this.group.add(hemisphere);
+    this.hemisphere = new HemisphereLight(
+      packRgb(DAY_LOOK.hemisphereSky),
+      packRgb(DAY_LOOK.hemisphereGround),
+      DAY_LOOK.hemisphereIntensity,
+    );
+    this.group.add(this.hemisphere);
 
-    this.sun = new DirectionalLight(0xffd8a0, 3.1);
+    this.sun = new DirectionalLight(packRgb(DAY_LOOK.sunColor), DAY_LOOK.sunIntensity);
     this.sun.position.copy(SUN_POSITION);
     this.sun.target.position.copy(SUN_TARGET);
     this.sun.castShadow = quality.shadows;
@@ -221,10 +243,13 @@ export class Hall {
     structureMesh.name = "structure";
     this.group.add(structureMesh);
 
-    const paperMesh = new Mesh(
-      structure.paper,
-      new MeshLambertMaterial({ vertexColors: true, color: 0xf7e6bd, emissive: 0xc79a55, emissiveIntensity: 0.55 }),
-    );
+    this.paperMaterial = new MeshLambertMaterial({
+      vertexColors: true,
+      color: 0xf7e6bd,
+      emissive: 0xc79a55,
+      emissiveIntensity: DAY_LOOK.paperGlow,
+    });
+    const paperMesh = new Mesh(structure.paper, this.paperMaterial);
     paperMesh.name = "paper";
     this.group.add(paperMesh);
 
@@ -247,7 +272,10 @@ export class Hall {
     this.buddha.group.position.set(0, ALTAR_TOP, BUDDHA_Z - 0.5);
     this.group.add(this.buddha.group);
 
-    this.buildOutdoors();
+    const outdoors = this.buildOutdoors();
+    this.sunbeams = outdoors.sunbeams;
+    this.nightSky = outdoors.nightSky;
+    this.clouds = outdoors.clouds;
     this.buildBeams();
 
     const cushions = this.buildCushions(anisotropy);
@@ -269,7 +297,10 @@ export class Hall {
     const dustGeometry = new BufferGeometry();
     dustGeometry.setAttribute("position", new Float32BufferAttribute(dustPositions, 3));
     const dustMap = flameGlowTexture();
-    this.textures.push(floorMap, backdropMap, dustMap);
+    const flakeMap = flakeTexture();
+    this.precipitation = new Precipitation(Math.round(quality.dust * 6), flakeMap);
+    this.group.add(this.precipitation.group);
+    this.textures.push(floorMap, backdropMap, dustMap, flakeMap);
     this.dust = new Points(
       dustGeometry,
       new PointsMaterial({
@@ -285,7 +316,7 @@ export class Hall {
     );
     this.dust.frustumCulled = false;
     this.group.add(this.dust);
-    this.update(0, null, true);
+    this.update(0, 0, null, true);
   }
 
   private buildStructure(): { opaque: BufferGeometry; paper: BufferGeometry } {
@@ -419,14 +450,33 @@ export class Hall {
     this.group.add(lanternMesh);
   }
 
-  private buildOutdoors(): void {
+  private buildOutdoors(): { sunbeams: Mesh; nightSky: Mesh; clouds: Mesh } {
     const skyMap = skyTexture();
     this.textures.push(skyMap);
-    const sky = new Mesh(new PlaneGeometry(70, 16), new MeshBasicMaterial({ map: skyMap, fog: false, toneMapped: false }));
+    const sky = new Mesh(new PlaneGeometry(...SKY_PLANE_SIZE), new MeshBasicMaterial({ map: skyMap, fog: false, toneMapped: false }));
     sky.position.set(32, 5.5, 0);
     sky.rotation.y = -Math.PI / 2;
     sky.name = "sky";
     this.group.add(sky);
+
+    const nightMap = nightSkyTexture();
+    const cloudMap = cloudTexture();
+    this.textures.push(nightMap, cloudMap);
+    const overlay = (map: Texture, x: number, order: number, name: string): Mesh => {
+      const mesh = new Mesh(
+        new PlaneGeometry(...SKY_PLANE_SIZE),
+        new MeshBasicMaterial({ map, fog: false, toneMapped: false, transparent: true, opacity: 0, depthWrite: false }),
+      );
+      mesh.position.set(x, 5.5, 0);
+      mesh.rotation.y = -Math.PI / 2;
+      mesh.renderOrder = order;
+      mesh.visible = false;
+      mesh.name = name;
+      this.group.add(mesh);
+      return mesh;
+    };
+    const nightSky = overlay(nightMap, 31.8, -2, "sky-night");
+    const clouds = overlay(cloudMap, 31.6, -1, "clouds");
 
     const ground = new Mesh(new PlaneGeometry(90, 90), new MeshLambertMaterial({ color: 0x5b7640 }));
     ground.rotation.x = -Math.PI / 2;
@@ -471,12 +521,13 @@ export class Hall {
         rays.add(plane, 0xfff0c8);
       }
     }
-    const rayMesh = new Mesh(
+    const sunbeams = new Mesh(
       rays.build(),
-      new MeshBasicMaterial({ map: beam, transparent: true, opacity: 0.32, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, vertexColors: true, fog: false }),
+      new MeshBasicMaterial({ map: beam, transparent: true, opacity: DAY_LOOK.sunbeamOpacity, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, vertexColors: true, fog: false }),
     );
-    rayMesh.name = "sunbeams";
-    this.group.add(rayMesh);
+    sunbeams.name = "sunbeams";
+    this.group.add(sunbeams);
+    return { sunbeams, nightSky, clouds };
   }
 
   private buildCushions(anisotropy: number): { body: InstancedMesh; top: InstancedMesh } {
@@ -534,7 +585,29 @@ export class Hall {
     }
   }
 
-  update(time: number, camera: Camera | null, reduceMotion: boolean): void {
+  get look(): SkyLook {
+    return this.current;
+  }
+
+  setSky(look: SkyLook): void {
+    this.target = look;
+    if (this.skyKnown) return;
+    this.skyKnown = true;
+    this.current = cloneLook(look);
+  }
+
+  update(time: number, dt: number, camera: Camera | null, reduceMotion: boolean): void {
+    if (dt > 0) easeLook(this.current, this.target, 1 - Math.exp(-dt / SKY_EASE_SECONDS));
+    const look = this.current;
+    this.applyLook(look);
+    this.precipitation.update(
+      dt,
+      reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1,
+      look.rain,
+      look.snow,
+      packRgb(look.precipTint),
+    );
+
     const flicker = reduceMotion ? 0.35 : 1;
     const base = this.tmpPos;
     for (let i = 0; i < CANDLE_SPOTS.length; i += 1) {
@@ -549,7 +622,7 @@ export class Hall {
     }
     this.flames.instanceMatrix.needsUpdate = true;
 
-    this.candleLight.intensity = 9 * (0.93 + flicker * (0.07 * Math.sin(time * 7.3) + 0.04 * Math.sin(time * 13.1 + 1)));
+    this.candleLight.intensity = 9 * look.candleBoost * (0.93 + flicker * (0.07 * Math.sin(time * 7.3) + 0.04 * Math.sin(time * 13.1 + 1)));
     this.buddha.glow.scale.setScalar(1 + (reduceMotion ? 0 : 0.015 * Math.sin(time * 0.9)));
 
     const count = this.dustSeeds.length / 4;
@@ -569,6 +642,28 @@ export class Hall {
       );
     }
     attribute.needsUpdate = true;
+  }
+
+  private applyLook(look: SkyLook): void {
+    this.hemisphere.intensity = look.hemisphereIntensity;
+    this.hemisphere.color.setHex(packRgb(look.hemisphereSky));
+    this.hemisphere.groundColor.setHex(packRgb(look.hemisphereGround));
+    this.sun.intensity = look.sunIntensity;
+    this.sun.color.setHex(packRgb(look.sunColor));
+    this.paperMaterial.emissiveIntensity = look.paperGlow;
+
+    const beams = this.sunbeams.material as MeshBasicMaterial;
+    beams.opacity = look.sunbeamOpacity;
+    this.sunbeams.visible = look.sunbeamOpacity > SKY_VISIBLE;
+
+    const night = this.nightSky.material as MeshBasicMaterial;
+    night.opacity = look.nightSky;
+    this.nightSky.visible = look.nightSky > SKY_VISIBLE;
+
+    const cloud = this.clouds.material as MeshBasicMaterial;
+    cloud.opacity = look.cloudCover;
+    cloud.color.setHex(packRgb(look.cloudTint));
+    this.clouds.visible = look.cloudCover > SKY_VISIBLE;
   }
 
   dispose(): void {

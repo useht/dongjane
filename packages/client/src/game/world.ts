@@ -10,12 +10,13 @@ import {
   Scene,
   WebGLRenderer,
 } from "three";
-import { lerpAngle, SPAWN_POINT } from "@dongjane/shared";
+import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
+import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
 import { SnapshotBuffer, type Sample } from "./snapshot.ts";
 
 export interface MonkView {
@@ -65,6 +66,8 @@ export class World {
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
+  private readonly background = new Color(packRgb(DAY_LOOK.background));
+  private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
   private readonly hall: Hall;
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
@@ -103,8 +106,8 @@ export class World {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = this.quality.shadows;
 
-    this.scene.background = new Color(0x1c120b);
-    this.scene.fog = new Fog(0x2a1a10, 16, 42);
+    this.scene.background = this.background;
+    this.scene.fog = this.fog;
 
     this.hall = new Hall(this.renderer, this.quality);
     this.scene.add(this.hall.group);
@@ -152,6 +155,10 @@ export class World {
   setReduceMotion(value: boolean): void {
     this.reduceMotion = value;
     this.rig.reduceMotion = value;
+  }
+
+  setSky(sky: SkyState): void {
+    this.hall.setSky(skyLook(sky));
   }
 
   start(): void {
@@ -267,6 +274,14 @@ export class World {
     this.entries.delete(id);
   }
 
+  private applyAtmosphere(): void {
+    const look = this.hall.look;
+    this.background.setHex(packRgb(look.background));
+    this.fog.color.setHex(packRgb(look.fogColor));
+    this.fog.near = look.fogNear;
+    this.fog.far = look.fogFar;
+  }
+
   private resize(): void {
     const width = Math.max(1, this.canvas.clientWidth);
     const height = Math.max(1, this.canvas.clientHeight);
@@ -314,7 +329,8 @@ export class World {
     this.camera.updateMatrixWorld();
     for (const entry of this.entries.values()) entry.avatar.fitPlate(this.camera);
 
-    this.hall.update(this.time, this.camera, this.reduceMotion);
+    this.hall.update(this.time, dt, this.camera, this.reduceMotion);
+    this.applyAtmosphere();
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered();
 

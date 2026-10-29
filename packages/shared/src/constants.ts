@@ -11,6 +11,8 @@ export const BOW_MAX_TIMES = 3;
 export const CHANT_EVERY_MS = 30 * 60 * 1000;
 export const CHANT_MS = 3 * 60 * 1000;
 
+export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
 export const NAME_MAX_LENGTH = 8;
 export const RECONNECT_SECONDS = 20;
 export const MESSAGE_RATE_PER_SECOND = 20;

@@ -1,12 +1,10 @@
-import { CHANT_EVERY_MS, CHANT_MS } from "./constants.ts";
+import { CHANT_EVERY_MS, CHANT_MS, KST_OFFSET_MS } from "./constants.ts";
 
 export interface ChantSchedule {
   label: string;
   startsAt: number;
   durationMs: number;
 }
-
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 export function chantLabel(startsAt: number): string {
   const kst = new Date(startsAt + KST_OFFSET_MS);

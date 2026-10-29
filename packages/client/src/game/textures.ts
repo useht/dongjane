@@ -226,6 +226,86 @@ export function skyTexture(): CanvasTexture {
   return texture;
 }
 
+export function nightSkyTexture(): CanvasTexture {
+  const width = 1024;
+  const height = 256;
+  const [canvas, ctx] = makeCanvas(width, height);
+  const g = ctx.createLinearGradient(0, 0, 0, height);
+  g.addColorStop(0, "#03050f");
+  g.addColorStop(0.55, "#0b1534");
+  g.addColorStop(1, "#1b2b58");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+
+  const rand = mulberry32(17);
+  for (let i = 0; i < 260; i += 1) {
+    const x = rand() * width;
+    const y = rand() * height * 0.85;
+    const bright = rand();
+    ctx.globalAlpha = 0.35 + bright * 0.6;
+    ctx.fillStyle = bright > 0.85 ? "#fff4d8" : "#d6e2ff";
+    const size = bright > 0.9 ? 2.4 : 1.2;
+    ctx.fillRect(x, y, size, size);
+  }
+  ctx.globalAlpha = 1;
+
+  const mx = width * 0.45;
+  const my = height * 0.34;
+  const halo = ctx.createRadialGradient(mx, my, 10, mx, my, 90);
+  halo.addColorStop(0, "rgba(220,232,255,0.45)");
+  halo.addColorStop(1, "rgba(220,232,255,0)");
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#f4f1e0";
+  ctx.beginPath();
+  ctx.arc(mx, my, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(160,168,190,0.35)";
+  for (const [dx, dy, r] of [[-6, -4, 5], [7, 5, 4], [2, -9, 3]] as const) {
+    ctx.beginPath();
+    ctx.arc(mx + dx, my + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+export function cloudTexture(): CanvasTexture {
+  const width = 1024;
+  const height = 256;
+  const [canvas, ctx] = makeCanvas(width, height);
+  const rand = mulberry32(41);
+  ctx.fillStyle = "rgba(255,255,255,0.32)";
+  ctx.fillRect(0, 0, width, height);
+  for (let i = 0; i < 110; i += 1) {
+    const x = rand() * width;
+    const y = rand() * height;
+    const radius = 28 + rand() * 70;
+    const blob = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    blob.addColorStop(0, "rgba(255,255,255,0.5)");
+    blob.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = blob;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+export function flakeTexture(): CanvasTexture {
+  const [canvas, ctx] = makeCanvas(32, 32);
+  const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 15);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.5, "rgba(255,255,255,0.7)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 32);
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
 export function cushionTexture(anisotropy: number): CanvasTexture {
   const size = 256;
   const [canvas, ctx] = makeCanvas(size, size);

@@ -1,4 +1,4 @@
-import { CUSHION_SPOTS, type HallInfo, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
+import { CUSHION_SPOTS, type HallInfo, type TempleState, hallName, parseHallParam, skyAt } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
@@ -7,6 +7,7 @@ import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { chooseHall, fetchHalls, loadHalls } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
+import { ServerClock } from "./net/server-clock.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
@@ -23,6 +24,7 @@ const MOVE_REACH = 1.6;
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
 const CHANT_TICK_MS = 250;
+const SKY_TICK_MS = 1000;
 const HALL_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
@@ -41,6 +43,7 @@ export class App {
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
   private readonly chantBell = new ChantBellScheduler();
+  private readonly serverClock = new ServerClock();
   private readonly canvas: HTMLCanvasElement;
   private readonly ui: HTMLElement;
   private readonly world: World;
@@ -63,6 +66,7 @@ export class App {
   private lastMove = 0;
   private walking = false;
   private nextChantTick = 0;
+  private nextSkyTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
@@ -113,6 +117,7 @@ export class App {
 
   async start(): Promise<void> {
     if (!this.profile) {
+      void this.refreshHalls();
       this.world.setIdleSpin(true);
       this.hud.setVisible(false);
       this.profile = await runIntro(this.ui, () => this.audio.unlock());
@@ -149,6 +154,7 @@ export class App {
       try {
         halls = await loadHalls(this.base, {
           isCancelled: () => token !== this.joinToken,
+          onServerTime: (serverTime) => this.serverClock.observe(serverTime),
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
@@ -232,6 +238,7 @@ export class App {
   }
 
   private handleState(state: TempleState): void {
+    this.serverClock.observe(state.serverTime);
     const session = this.session;
     if (!session) return;
     const now = performance.now();
@@ -403,12 +410,13 @@ export class App {
       sessionId: () => this.session?.sessionId ?? null,
       hall: () => this.currentHall,
       bellCount: () => this.audio.bellCount,
+      serverNow: () => this.serverClock.now(),
     };
   }
 
   private async refreshHalls(): Promise<void> {
     try {
-      this.halls = await fetchHalls(this.base);
+      this.halls = await fetchHalls(this.base, undefined, undefined, (serverTime) => this.serverClock.observe(serverTime));
       if (this.currentHall) this.hud.setHalls(this.halls, this.currentHall);
     } catch {
       // the list keeps its last known counts; joining reports a real failure
@@ -460,6 +468,10 @@ export class App {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
     }
+    if (nowMs >= this.nextSkyTick) {
+      this.nextSkyTick = nowMs + SKY_TICK_MS;
+      this.tickSky();
+    }
   }
 
   private driveMovement(dt: number, nowMs: number): void {
@@ -498,6 +510,11 @@ export class App {
         this.seatHints.hide(spot.id);
       }
     }
+  }
+
+  private tickSky(): void {
+    const serverNow = this.serverClock.now();
+    if (serverNow !== null) this.world.setSky(skyAt(serverNow));
   }
 
   private tickChant(): void {

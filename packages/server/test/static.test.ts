@@ -59,13 +59,18 @@ describe("client static serving", () => {
   });
 
   it("keeps the hall list and matchmaking working on the same origin", async () => {
+    const before = Date.now();
     const response = await fetch(`${base}${HALLS_PATH}`);
     const body = (await response.json()) as HallListResponse;
     expect(body.halls).toHaveLength(HALL_COUNT);
+    expect(body.serverTime).toBeGreaterThanOrEqual(before);
+    expect(body.serverTime).toBeLessThanOrEqual(Date.now());
 
     const rig = new TestRig(game.port);
     const room = await rig.enter(1, { name: "동자" });
     expect(room.roomId).toBe(body.halls[0]!.roomId);
+    expect(room.state.serverTime).toBeGreaterThan(0);
+    expect(Math.abs(room.state.serverTime - Date.now())).toBeLessThan(5000);
     await rig.closeAll();
   });
 });

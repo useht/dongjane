@@ -43,6 +43,15 @@ describe("fetchHalls", () => {
     expect(result).toEqual([hall(1, 3)]);
   });
 
+  it("hands the server time to the observer when the response carries one", async () => {
+    const seen: number[] = [];
+    await fetchHalls("http://x", respond({ halls: [hall(1, 3)], serverTime: 1_800_000_000_000 }) as typeof fetch, 6000, (time) =>
+      seen.push(time),
+    );
+    await fetchHalls("http://x", respond({ halls: [hall(1, 3)] }) as typeof fetch, 6000, (time) => seen.push(time));
+    expect(seen).toEqual([1_800_000_000_000]);
+  });
+
   it("drops entries with invalid hall numbers", async () => {
     const result = await fetchHalls("http://x", respond({ halls: [hall(1, 1), { hall: 99 }, null] }) as typeof fetch);
     expect(result.map((info) => info.hall)).toEqual([1]);

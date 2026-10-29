@@ -40,6 +40,7 @@ export const TempleState = schema(
     monks: t.map(Monk),
     cushions: t.map(Cushion),
     chant: t.ref(Chant).default(() => new Chant()),
+    serverTime: t.float64().default(0),
   },
   "TempleState",
 );

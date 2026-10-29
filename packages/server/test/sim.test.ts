@@ -278,6 +278,27 @@ describe("names", () => {
   });
 });
 
+describe("server time", () => {
+  it("starts at the clock", () => {
+    expect(h.sim.state.serverTime).toBe(T0);
+  });
+
+  it("stays put while less than a second has passed", () => {
+    h.advance(950);
+    expect(h.now).toBe(T0 + 950);
+    expect(h.sim.state.serverTime).toBe(T0);
+  });
+
+  it("catches up to the clock once a second has passed", () => {
+    h.advance(950);
+    h.advance(50);
+    expect(h.sim.state.serverTime).toBe(T0 + 1000);
+    h.advance(2500);
+    expect(h.sim.state.serverTime).toBeGreaterThanOrEqual(h.now - 1000);
+    expect(h.sim.state.serverTime).toBeLessThanOrEqual(h.now);
+  });
+});
+
 describe("chant", () => {
   it("publishes the current or next half-hour chant", () => {
     const hour = 3_600_000;

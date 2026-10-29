@@ -10,6 +10,7 @@ export interface HallInfo {
 
 export interface HallListResponse {
   halls: HallInfo[];
+  serverTime: number;
 }
 
 export function pickHall(halls: readonly HallInfo[]): number | null {

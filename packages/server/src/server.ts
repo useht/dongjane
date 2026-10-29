@@ -59,7 +59,7 @@ export async function listHalls(): Promise<HallInfo[]> {
 }
 
 const hallsEndpoint = createEndpoint(HALLS_PATH, { method: "GET" }, async () => {
-  const body: HallListResponse = { halls: await listHalls() };
+  const body: HallListResponse = { halls: await listHalls(), serverTime: Date.now() };
   return new Response(JSON.stringify(body), {
     headers: {
       "content-type": "application/json",

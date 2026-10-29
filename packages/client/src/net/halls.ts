@@ -12,6 +12,7 @@ export async function fetchHalls(
   base: string,
   fetchFn: typeof fetch = (input, init) => fetch(input, init),
   timeoutMs = 6000,
+  onServerTime?: (serverTime: number) => void,
 ): Promise<HallInfo[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -20,6 +21,7 @@ export async function fetchHalls(
     if (!response.ok) throw new HallsUnavailableError(`halls request failed with ${response.status}`);
     const body = (await response.json()) as Partial<HallListResponse>;
     if (!Array.isArray(body.halls)) throw new HallsUnavailableError("malformed hall list");
+    if (typeof body.serverTime === "number") onServerTime?.(body.serverTime);
     return body.halls.filter((info): info is HallInfo => isValidHall(info?.hall));
   } catch (error) {
     if (error instanceof HallsUnavailableError) throw error;
@@ -46,12 +48,13 @@ export interface LoadHallsOptions {
   sleep?: (ms: number) => Promise<void>;
   isCancelled?: () => boolean;
   onRetry?: (failures: number) => void;
+  onServerTime?: (serverTime: number) => void;
 }
 
 export function loadHalls(base: string, options: LoadHallsOptions = {}): Promise<HallInfo[]> {
   return withBackoff(
     async () => {
-      const halls = await fetchHalls(base, options.fetchFn, options.timeoutMs);
+      const halls = await fetchHalls(base, options.fetchFn, options.timeoutMs, options.onServerTime);
       if (!halls.some((info) => info.roomId !== null)) throw new HallsNotReadyError();
       return halls;
     },
