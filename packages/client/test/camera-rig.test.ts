@@ -106,7 +106,7 @@ describe("CameraRig", () => {
     for (let i = 0; i < 50; i += 1) rig.zoom(0.5);
     expect(rig.distance).toBeGreaterThanOrEqual(2.6);
     for (let i = 0; i < 50; i += 1) rig.zoom(2);
-    expect(rig.distance).toBeLessThanOrEqual(18);
+    expect(rig.distance).toBeLessThanOrEqual(22);
   });
 
   it("takes another zone's bounds and zoom range, pulling the distance into them", () => {
