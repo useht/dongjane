@@ -51,6 +51,8 @@ export const ARRIVAL: Spawn = { x: 0, z: 14, spread: 4 };
 // Every seat faces -z, toward Gatbawi and toward the Buddha, which is yaw 0 in yawFromDirection's convention.
 export const SEAT_YAW = 0;
 export const GATBAWI_SEAT_SIZE = { x: 1, z: 1.2 } as const;
+// How high a kneeling monk sits above the ground on a 돗자리; a 방석 is higher, and the monk's own rig says how much.
+export const GATBAWI_SEAT_TOP = 0.03;
 export const DHARMA_SEAT_SIZE = { x: 0.8, z: 0.8 } as const;
 
 export interface SeatSpot {

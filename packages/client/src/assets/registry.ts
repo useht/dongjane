@@ -1,20 +1,19 @@
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { DHARMA_MESHES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
+import { DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
 import dharmaUrl from "./models/dharma.glb?url";
 import gatbawiUrl from "./models/gatbawi.glb?url";
-import monkUrl from "./models/monk.glb?url";
 import venueUrl from "./models/venue.glb?url";
 import worldUrl from "./models/world.glb?url";
 
-export const MODELS = { monk: monkUrl, gatbawi: gatbawiUrl, world: worldUrl, venue: venueUrl, dharma: dharmaUrl } as const;
+export const MODELS = { gatbawi: gatbawiUrl, world: worldUrl, venue: venueUrl, dharma: dharmaUrl } as const;
 
 export type ModelKey = keyof typeof MODELS;
 
 // The models the first frame needs; the 법당's inside is fetched when someone is about to enter it.
 export type EagerKey = Exclude<ModelKey, "dharma">;
 
-const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES } as const;
+const NAMES = { gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES } as const;
 
 // The glTF materials are placeholders: the game builds its own and only borrows the textures.
 export type ModelMeshes<K extends ModelKey> = { readonly [Name in (typeof NAMES)[K][number]]: Mesh };
@@ -90,11 +89,11 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
     });
     return collectMeshes(scene, key);
   };
-  const [monk, gatbawi, world, venue] = await Promise.all([load("monk"), load("gatbawi"), load("world"), load("venue")]);
+  const [gatbawi, world, venue] = await Promise.all([load("gatbawi"), load("world"), load("venue")]);
   let pending: Promise<ModelMeshes<"dharma">> | null = null;
   let dharma: ModelMeshes<"dharma"> | null = null;
   return {
-    models: { monk, gatbawi, world, venue },
+    models: { gatbawi, world, venue },
     loadDharma(): Promise<ModelMeshes<"dharma">> {
       if (!pending) {
         const request = load("dharma");
@@ -111,7 +110,7 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
       return pending;
     },
     dispose(): void {
-      for (const meshes of [monk, gatbawi, world, venue]) disposeMeshes(meshes);
+      for (const meshes of [gatbawi, world, venue]) disposeMeshes(meshes);
       if (dharma) disposeMeshes(dharma);
       else void pending?.then((meshes) => disposeMeshes(meshes), () => undefined);
     },

@@ -376,6 +376,65 @@ describe("two clients in one world", () => {
     expect(seenByB.emote).toBe(2);
   });
 
+  it("shows A's held item, knocks and chanting to B only for the right item and seat, and keeps the item when A stands", async () => {
+    const a = await rig.enter(1);
+    const b = await rig.enter(1);
+    await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
+    const seenByB = b.state.monks.get(a.sessionId)!;
+    expect(seenByB.item).toBe(0);
+
+    a.send(MSG.knock, {});
+    a.send(MSG.chant, { on: true });
+    await sleep(300);
+    expect(seenByB.knockSeq).toBe(0);
+    expect(seenByB.chanting).toBe(false);
+
+    a.send(MSG.equip, { item: 9 });
+    a.send(MSG.equip, { item: "1" });
+    a.send(MSG.equip, null);
+    await sleep(300);
+    expect(seenByB.item).toBe(0);
+
+    a.send(MSG.equip, { item: 1 });
+    await waitFor(() => seenByB.item === 1, "B sees A hold the wooden fish", 1000);
+    a.send(MSG.knock, {});
+    await sleep(300);
+    expect(seenByB.knockSeq).toBe(0);
+
+    a.send(MSG.sit, { zone: "gatbawi", seatId: 6 });
+    await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
+    a.send(MSG.chant, { on: true });
+    await sleep(300);
+    expect(seenByB.chanting).toBe(false);
+
+    a.send(MSG.knock, {});
+    await waitFor(() => seenByB.knockSeq === 1, "B sees A's knock", 1000);
+    a.send(MSG.knock, {});
+    await sleep(100);
+    expect(seenByB.knockSeq).toBe(1);
+
+    a.send(MSG.equip, { item: 2 });
+    await waitFor(() => seenByB.item === 2, "B sees A hold the prayer beads", 1000);
+    a.send(MSG.chant, { on: "yes" });
+    a.send(MSG.chant, null);
+    await sleep(300);
+    expect(seenByB.chanting).toBe(false);
+    a.send(MSG.chant, { on: true });
+    await waitFor(() => seenByB.chanting, "B sees A chanting", 1000);
+
+    a.send(MSG.equip, { item: 1 });
+    await waitFor(() => seenByB.item === 1 && !seenByB.chanting, "swapping items ends the chant", 1000);
+
+    a.send(MSG.equip, { item: 2 });
+    await waitFor(() => seenByB.item === 2, "A takes the prayer beads again", 1000);
+    a.send(MSG.chant, { on: true });
+    await waitFor(() => seenByB.chanting, "B sees A chanting again", 1000);
+    a.send(MSG.stand, {});
+    await waitFor(() => !seenByB.chanting, "A's chant stops once A stands", 1000);
+    expect(seenByB.mode).toBe("stand");
+    expect(seenByB.item).toBe(2);
+  }, 20_000);
+
   it("shows A's jump to B and A while standing, and ignores a repeat inside the cooldown and a jump while seated", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);

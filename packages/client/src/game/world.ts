@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
@@ -9,7 +9,9 @@ import { EmoteTracker } from "./emote-tracker.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { JumpTracker } from "./jump-tracker.ts";
-import { MonkAvatar, MonkPool } from "./monk-model.ts";
+import { KnockTracker } from "./knock-tracker.ts";
+import type { MonkAssets } from "./monk-assets.ts";
+import { MonkAvatar, MonkPool, SEAT_TOP } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
 import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
@@ -28,6 +30,9 @@ export interface MonkView {
   bowCount: number;
   emote: number;
   emoteSeq: number;
+  knockSeq: number;
+  chanting: boolean;
+  item: number;
   jumpSeq: number;
 }
 
@@ -69,6 +74,8 @@ export class World {
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
   readonly emotes = new EmoteTracker();
+  private readonly knocks = new KnockTracker();
+  private readonly remoteKnockers: MonkView[] = [];
   selfId: string | null = null;
 
   // Where the camera is: the 법당 once the followed monk is inside its door, the open ground otherwise.
@@ -115,6 +122,7 @@ export class World {
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: WorldCallbacks,
     private readonly assets: GameAssets,
+    monkAssets: MonkAssets,
   ) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
     this.quality = detectQuality({
@@ -135,7 +143,7 @@ export class World {
 
     this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.venue);
     this.scene.add(this.landscape.group);
-    this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
+    this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
     this.rig = new CameraRig(this.camera, region.bounds, region.limits);
@@ -271,9 +279,12 @@ export class World {
     this.selfPrediction = display;
   }
 
-  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): void {
+  // Returns the other monks who struck their wooden fish since the last call (the array is reused); the caller plays the sound.
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): readonly MonkView[] {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
+    const remoteKnockers = this.remoteKnockers;
+    remoteKnockers.length = 0;
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
@@ -308,6 +319,14 @@ export class World {
       entry.targetYaw = view.yaw;
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      entry.avatar.chanting = view.chanting;
+      entry.avatar.item = view.item;
+      entry.avatar.seatTop = zoneAt(view.x, view.z) === "dharma" ? SEAT_TOP : GATBAWI_SEAT_TOP;
+      // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
+      if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
+        entry.avatar.knock(nowMs);
+        remoteKnockers.push(view);
+      }
       if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
@@ -315,6 +334,12 @@ export class World {
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+    return remoteKnockers;
+  }
+
+  // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.
+  knock(monkId: string, nowMs: number): void {
+    this.entries.get(monkId)?.avatar.knock(nowMs);
   }
 
   // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
@@ -339,6 +364,7 @@ export class World {
 
   clear(): void {
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
+    this.knocks.reset();
     this.selfId = null;
     this.selfPrediction = null;
     this.clock.reset();
@@ -413,6 +439,7 @@ export class World {
     entry.avatar.dispose();
     this.entries.delete(id);
     this.emotes.forget(id);
+    this.knocks.forget(id);
     this.jumps.forget(id);
   }
 

@@ -64,7 +64,7 @@ class Plan:
         self.plaza = layout["PLAZA"]
         self.statue_z = layout["GATBAWI_Z"]
         self.mat = layout["GATBAWI_SEAT_SIZE"]
-        self.mat_top = inputs["monk"]["MAT_TOP"]
+        self.mat_top = layout["GATBAWI_SEAT_TOP"]
         venue = inputs["venue"]
         self.stage = venue["STAGE"]
         self.stage_yaw = venue["STAGE_YAW"]
@@ -316,7 +316,7 @@ def maples(plan):
 
 
 def mat(plan):
-    """One woven mat, centred at the origin with its top at MAT_TOP; the game places fifty of them."""
+    """One woven mat, centred at the origin with its top at the seat height the game gives it; the game places fifty of them."""
     part = Part("mat", frame=GAME)
     c = plan.c
     width, depth, top = plan.mat["x"], plan.mat["z"], plan.mat_top

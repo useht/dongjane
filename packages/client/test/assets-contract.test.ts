@@ -1,9 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
-import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
+import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
 import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR } from "../src/game/dharma-layout.ts";
-import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, positions, rootNodes } from "./glb.ts";
@@ -72,78 +71,6 @@ function expectContract(glb: Glb, names: readonly string[]): GlbNode[] {
   for (const image of json.images ?? []) expect(image.mimeType).toBe("image/jpeg");
   return nodes;
 }
-
-describe("monk.glb", () => {
-  const glb = loadGlb(new URL("monk.glb", MODELS));
-  const nodes = expectContract(glb, MONK_PARTS);
-  const part = (name: MonkPart): GlbNode => {
-    const found = nodes.find((node) => node.name === name);
-    if (!found) throw new Error(`missing ${name}`);
-    return found;
-  };
-
-  it("stays inside its size budget, counting the copies the game draws", () => {
-    const triangles = nodes.reduce((sum, node) => sum + node.triangles * PART_COPIES[node.name as MonkPart], 0);
-    expect(triangles).toBeLessThanOrEqual(BUDGET.monk.tris);
-    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.monk.bytes);
-  });
-
-  it("centres every part on its own axis", () => {
-    for (const node of nodes) {
-      expect(Math.abs((node.positions.min[0] + node.positions.max[0]) / 2), node.name).toBeLessThanOrEqual(TOLERANCE);
-    }
-  });
-
-  it("puts each part's origin on its joint pivot", () => {
-    const { min: skirtMin, max: skirtMax } = part("skirt").positions;
-    expect(Math.abs(skirtMax[1])).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(skirtMin[1] + MONK_RIG.SKIRT_DROP)).toBeLessThanOrEqual(TOLERANCE);
-
-    const torso = part("torso").positions;
-    expect(Math.abs(torso.min[1])).toBeLessThanOrEqual(TOLERANCE);
-    expect(torso.max[1]).toBeGreaterThanOrEqual(MONK_RIG.NECK_Y - TOLERANCE);
-
-    const head = part("head").positions;
-    expect(head.min[1]).toBeGreaterThanOrEqual(-2 * TOLERANCE);
-    expect(head.min[1]).toBeLessThanOrEqual(TOLERANCE);
-    expect(head.max[1]).toBeGreaterThan(MONK_RIG.NECK_Y);
-
-    const upper = part("sleeveUpper").positions;
-    const capRise = MONK_RIG.NECK_Y - MONK_RIG.SHOULDER_Y;
-    expect(Math.abs(upper.min[1] + MONK_RIG.UPPER_ARM)).toBeLessThanOrEqual(TOLERANCE);
-    expect(upper.max[1], "the shoulder cap rises to about the neck line").toBeGreaterThanOrEqual(capRise);
-    expect(upper.max[1], "the shoulder cap rises to about the neck line").toBeLessThanOrEqual(capRise + 2 * TOLERANCE);
-
-    const lower = part("sleeveLower").positions;
-    expect(Math.abs(lower.max[1])).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(lower.min[1] + MONK_RIG.FORE_ARM)).toBeLessThanOrEqual(TOLERANCE);
-
-    const hand = part("hand").positions;
-    expect(Math.abs((hand.min[1] + hand.max[1]) / 2)).toBeLessThanOrEqual(TOLERANCE);
-
-    const foot = part("foot").positions;
-    expect(Math.abs(foot.min[1] + MONK_RIG.FOOT_Y)).toBeLessThanOrEqual(TOLERANCE);
-    expect(foot.min[2]).toBeLessThan(-0.05);
-  });
-
-  it("faces -Z, with the face sitting in front of the neck", () => {
-    const { min, max } = part("face").positions;
-    expect(max[2]).toBeLessThan(0);
-    expect(min[2]).toBeGreaterThan(-0.25);
-  });
-
-  it("keeps the robe near white so the per-monk tint can multiply it", () => {
-    for (const name of ["skirt", "torso", "sleeveUpper", "sleeveLower"] as const) {
-      const { values } = colors(glb, name);
-      expect(Math.min(...values), `${name} darkest`).toBeGreaterThanOrEqual(0.6);
-      expect(Math.max(...values), `${name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
-    }
-  });
-
-  it("paints vertices in linear light, never as sRGB", () => {
-    expectLinearColors(glb, nodes, { head: "skin", hand: "skin", face: "brow", trim: "collar", foot: "sandalCord" });
-  });
-});
 
 function byName(nodes: readonly GlbNode[]): (name: string) => GlbNode {
   return (name) => {
@@ -514,7 +441,7 @@ describe("dharma.glb", () => {
 
 describe("the model set", () => {
   // The glbs the game loads before its first frame; dharma.glb is fetched after it and has a budget of its own.
-  const EAGER = ["gatbawi.glb", "monk.glb", "venue.glb", "world.glb"];
+  const EAGER = ["gatbawi.glb", "venue.glb", "world.glb"];
   const LAZY = ["dharma.glb"];
 
   it("fits the total byte budget, counted in the files' actual sizes", () => {

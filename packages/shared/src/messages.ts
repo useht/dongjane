@@ -1,7 +1,8 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
-import { isValidWorld } from "./world.ts";
+import { type Item, isValidItem } from "./item.ts";
 import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
+import { isValidWorld } from "./world.ts";
 
 export const MSG = {
   move: "move",
@@ -9,6 +10,9 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   emote: "emote",
+  knock: "knock",
+  chant: "chant",
+  equip: "equip",
   jump: "jump",
   relocate: "relocate",
 } as const;
@@ -29,12 +33,22 @@ export interface BowMessage {
 export interface EmoteMessage {
   id: number;
 }
+export type KnockMessage = Record<string, never>;
+export interface ChantMessage {
+  on: boolean;
+}
+export interface EquipMessage {
+  item: Item;
+}
 export interface ClientToServerMessages {
   move: MoveMessage;
   sit: SitMessage;
   stand: StandMessage;
   bow: BowMessage;
   emote: EmoteMessage;
+  knock: KnockMessage;
+  chant: ChantMessage;
+  equip: EquipMessage;
   jump: Record<string, never>;
 }
 
@@ -80,6 +94,16 @@ export function parseBow(payload: unknown): BowMessage | null {
 export function parseEmote(payload: unknown): EmoteMessage | null {
   if (!isRecord(payload) || !isValidEmote(payload.id)) return null;
   return { id: payload.id };
+}
+
+export function parseChant(payload: unknown): ChantMessage | null {
+  if (!isRecord(payload) || typeof payload.on !== "boolean") return null;
+  return { on: payload.on };
+}
+
+export function parseEquip(payload: unknown): EquipMessage | null {
+  if (!isRecord(payload) || !isValidItem(payload.item)) return null;
+  return { item: payload.item };
 }
 
 export function parseRelocate(payload: unknown): RelocateMessage | null {

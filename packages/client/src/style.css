@@ -7,8 +7,12 @@
   --hud-edge: 16px;
   --hud-quest-drop: 46px;
   --hud-top: calc(var(--safe-top) + 100px + var(--hud-quest-drop));
-  --hud-bottom: calc(var(--safe-bottom) + 112px);
-  --hud-bow-size: 84px;
+  --hud-bottom: calc(var(--safe-bottom) + 136px);
+  /* --hud-bow-size scales the icon inside the main button; --hud-main-size is the circle around it. */
+  --hud-bow-size: 64px;
+  --hud-main-size: calc(var(--hud-bow-size) + 20px);
+  --hud-main-gap: 22px;
+  --hud-tool-size: 44px;
   font-family: var(--font);
   color-scheme: dark;
 }
@@ -175,15 +179,20 @@ button:disabled {
   gap: 8px;
 }
 
+/* Icon controls carry no disc, border or panel: just the glyph (and label) lifted off the scene by a soft shadow. */
 .world-button,
 .clock-button,
 .icon-button {
   min-height: 44px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 78%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  border: 0;
+  background: none;
   color: var(--cream);
+  text-shadow: 0 1px 1px color-mix(in srgb, black 90%, transparent), 0 1px 5px color-mix(in srgb, black 60%, transparent);
+}
+
+.world-button svg,
+.icon-button svg {
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, black 90%, transparent)) drop-shadow(0 1px 4px color-mix(in srgb, black 60%, transparent));
 }
 
 .world-button {
@@ -244,8 +253,9 @@ button:disabled {
 .icon-button:active,
 .world-button:active,
 .clock-button:active,
-.quest-strip:active {
-  background: color-mix(in srgb, var(--gold-pale) 12%, var(--panel));
+.quest-strip:active,
+.seat-hint:active {
+  opacity: 0.7;
 }
 
 .clock-button {
@@ -261,6 +271,7 @@ button:disabled {
   display: block;
   width: 40px;
   height: 40px;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, black 70%, transparent)) drop-shadow(0 1px 5px color-mix(in srgb, black 45%, transparent));
 }
 
 .badge {
@@ -287,13 +298,11 @@ button:disabled {
   max-width: min(220px, 50vw, 100%);
   min-height: 40px;
   padding: 5px 12px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  border: 0;
+  background: none;
   color: var(--cream);
   text-align: left;
+  text-shadow: 0 1px 1px color-mix(in srgb, black 90%, transparent), 0 1px 5px color-mix(in srgb, black 60%, transparent);
 }
 
 .quest-strip-title,
@@ -446,7 +455,7 @@ button:disabled {
 .toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + var(--hud-edge) + 138px);
+  bottom: calc(var(--safe-bottom) + var(--hud-edge) + 158px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -484,11 +493,101 @@ button:disabled {
 .bottom-actions {
   flex: none;
   display: flex;
+  flex-direction: column;
   align-items: flex-end;
+  gap: var(--hud-main-gap);
+}
+
+.bottom-tools {
+  display: flex;
+  gap: 10px;
 }
 
 .emote-button {
   color: var(--gold);
+}
+
+.tool-button {
+  color: var(--muted);
+  margin-right: calc((var(--hud-main-size) - var(--hud-tool-size)) / 2);
+}
+
+.tool-button.ready {
+  color: var(--gold);
+}
+
+.equip-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 0 2px;
+}
+
+.equip-row {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--cream) 6%, transparent);
+  color: var(--cream);
+}
+
+.equip-row:active {
+  background: color-mix(in srgb, var(--gold-pale) 12%, var(--panel));
+  border-color: var(--gold);
+}
+
+.equip-row.held {
+  border-color: var(--gold);
+}
+
+.equip-art {
+  display: block;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.equip-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.equip-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.6;
+}
+
+.equip-row.held .equip-check {
+  display: grid;
+}
+
+.equip-putdown {
+  color: var(--muted);
+}
+
+.equip-putdown svg {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.6;
 }
 
 .bow-actions {
@@ -496,56 +595,86 @@ button:disabled {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-left: 10px;
+  gap: var(--hud-main-gap);
+  width: var(--hud-main-size);
 }
 
-/* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
+/* Seated, the column keeps its full height so the stand-up button neither drops nor shifts while the main button hides. */
 .bow-actions.seated {
   justify-content: flex-start;
-  min-width: var(--hud-bow-size);
-  min-height: calc(var(--hud-bow-size) + 46px);
+  min-height: calc(var(--hud-main-size) + 44px + var(--hud-main-gap));
 }
 
 .bow-button {
   display: grid;
   place-items: center;
-  width: var(--hud-bow-size);
-  height: var(--hud-bow-size);
+  width: var(--hud-main-size);
+  height: var(--hud-main-size);
   padding: 0;
   border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
-  background: linear-gradient(180deg, var(--gold-pale), var(--gold-deep));
+  border: 0;
+  background: color-mix(in srgb, white 16%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
   color: var(--ink);
-  box-shadow: 0 4px 14px color-mix(in srgb, black 35%, transparent);
-  transition: transform 0.1s ease;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 35%, transparent), 0 8px 24px color-mix(in srgb, black 18%, transparent);
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .bow-button:active {
-  transform: scale(0.96);
+  background: color-mix(in srgb, white 10%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 25%, transparent), 0 4px 14px color-mix(in srgb, black 16%, transparent);
+}
+
+.bow-button svg,
+.bow-button > img,
+.bow-icon {
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, black 55%, transparent)) drop-shadow(0 2px 6px color-mix(in srgb, black 40%, transparent));
+}
+
+.bow-icon {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
 
 .bow-button svg {
-  width: calc(var(--hud-bow-size) * 0.55);
-  height: calc(var(--hud-bow-size) * 0.55);
-  stroke-width: 1.7;
+  width: calc(var(--hud-bow-size) * 0.68);
+  height: calc(var(--hud-bow-size) * 0.68);
+  color: var(--cream);
+  stroke-width: 1.3;
 }
 
-.stand-button {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
+.bow-button img {
+  display: block;
+  width: calc(var(--hud-bow-size) * 1.04);
+  height: calc(var(--hud-bow-size) * 1.04);
+  object-fit: contain;
+  pointer-events: none;
 }
 
-.stand-button::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
+.action-button.active {
+  background: color-mix(in srgb, white 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent), 0 0 14px color-mix(in srgb, var(--gold-pale) 40%, transparent), 0 8px 24px color-mix(in srgb, black 18%, transparent);
 }
 
-.stand-button svg {
-  width: 20px;
-  height: 20px;
+.action-button.active:active {
+  background: color-mix(in srgb, white 16%, transparent);
+}
+
+/* The beads turn like a rosary being counted while chanting; the wrapper keeps the drop shadow from turning with them. */
+.action-button.active .bow-icon img {
+  animation: bead-turn 5s linear infinite;
+}
+
+.reduce-motion .action-button.active .bow-icon img {
+  animation: none;
+}
+
+@keyframes bead-turn {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .seat-hints,
@@ -565,19 +694,15 @@ button:disabled {
   padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--gold-pale) 50%, transparent);
-  background: color-mix(in srgb, var(--panel) 78%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  border: 0;
+  background: transparent;
   color: var(--gold);
-  box-shadow: 0 4px 14px color-mix(in srgb, black 35%, transparent);
   pointer-events: auto;
   will-change: transform;
 }
 
-.seat-hint:active {
-  background: color-mix(in srgb, var(--gold-deep) 16%, var(--panel));
+.seat-hint svg {
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, black 90%, transparent)) drop-shadow(0 1px 4px color-mix(in srgb, black 60%, transparent));
 }
 
 .visitor-title {
@@ -1401,7 +1526,7 @@ noscript {
   }
 
   :root {
-    --hud-bow-size: 72px;
+    --hud-bow-size: 60px;
   }
 }
 
@@ -1409,7 +1534,8 @@ noscript {
   :root {
     --hud-top: calc(var(--safe-top) + var(--hud-edge) + 48px + var(--hud-quest-drop));
     --hud-bottom: calc(var(--safe-bottom) + 96px);
-    --hud-bow-size: 72px;
+    --hud-bow-size: 60px;
+    --hud-main-gap: 16px;
   }
 
   .has-install-banner {
@@ -1425,7 +1551,7 @@ noscript {
   }
 
   .toasts {
-    bottom: calc(var(--safe-bottom) + var(--hud-edge) + 126px);
+    bottom: calc(var(--safe-bottom) + var(--hud-edge) + 146px);
   }
 }
 

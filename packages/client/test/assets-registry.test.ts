@@ -2,11 +2,11 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { DHARMA_MESHES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
+import { DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
-const EAGER_KEYS = ["gatbawi", "monk", "venue", "world"];
+const NAMES = { gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
+const EAGER_KEYS = ["gatbawi", "venue", "world"];
 const textured: readonly string[] = TEXTURED;
 
 function group(names: readonly string[], withMap = true): Group {
@@ -45,10 +45,10 @@ describe("collectMeshes", () => {
   it("finds every contract mesh by name, wherever it sits in the scene", () => {
     const root = new Group();
     const nested = new Group();
-    nested.add(group(MONK_PARTS));
+    nested.add(group(GATBAWI_MESHES));
     root.add(nested);
-    const parts = collectMeshes(root, "monk");
-    for (const name of MONK_PARTS) expect(parts[name].name).toBe(name);
+    const parts = collectMeshes(root, "gatbawi");
+    for (const name of GATBAWI_MESHES) expect(parts[name].name).toBe(name);
   });
 
   it("names the model and the mesh that is missing", () => {
@@ -184,7 +184,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
+    expect(geometries.size).toBe(GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
     expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
     expect([...geometries.values()].every((times) => times === 1)).toBe(true);
     expect([...textures.values()].every((times) => times === 1)).toBe(true);

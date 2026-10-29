@@ -8,11 +8,13 @@ import {
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
+  KNOCK_COOLDOWN_MS,
   WALK_SPEED,
   WORLD_CAPACITY,
 } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
+import { ITEM_CHANT, ITEM_MOKT, isValidItem } from "./item.ts";
 import { ARRIVAL, SEAT_YAW, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yawFromDirection } from "./layout.ts";
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
@@ -37,6 +39,7 @@ interface Runtime {
   nextBowAt: number;
   lastBowEndedAt: number;
   nextEmoteAt: number;
+  nextKnockAt: number;
   nextJumpAt: number;
   brain: NpcBrain | null;
 }
@@ -210,6 +213,41 @@ export class TempleSim {
     return true;
   }
 
+  equip(id: string, item: number): boolean {
+    const monk = this.state.monks.get(id);
+    if (!monk || !isValidItem(item)) return false;
+    monk.item = item;
+    if (item !== ITEM_CHANT) monk.chanting = false;
+    return true;
+  }
+
+  knock(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || monk.item !== ITEM_MOKT || monk.mode !== "kneel" || monk.seatId < 0) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextKnockAt) return false;
+
+    monk.knockSeq += 1;
+    runtime.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    return true;
+  }
+
+  chant(id: string, on: boolean): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime) return false;
+    if (!on) {
+      monk.chanting = false;
+      return true;
+    }
+    if (monk.item !== ITEM_CHANT || monk.seatId < 0) return false;
+    if (monk.mode !== "kneel" && monk.mode !== "bow") return false;
+    monk.chanting = true;
+    return true;
+  }
+
   jump(id: string): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
@@ -289,6 +327,7 @@ export class TempleSim {
       nextBowAt: 0,
       lastBowEndedAt: 0,
       nextEmoteAt: 0,
+      nextKnockAt: 0,
       nextJumpAt: 0,
       brain,
     };
@@ -400,6 +439,7 @@ export class TempleSim {
   }
 
   private releaseSeat(monk: Monk): void {
+    monk.chanting = false;
     const runtime = this.runtimes.get(monk.id);
     if (runtime) {
       runtime.bowsLeft = 0;

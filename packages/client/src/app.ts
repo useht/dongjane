@@ -1,4 +1,8 @@
 import {
+  ITEM_CHANT,
+  ITEM_MOKT,
+  ITEM_NONE,
+  KNOCK_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
@@ -17,12 +21,15 @@ import {
 import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
+import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
 import { SutraPlayer } from "./audio/music.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
+import { heldAction, isSeated } from "./game/held-action.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
+import type { MonkAssets } from "./game/monk-assets.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
@@ -72,6 +79,8 @@ interface SelfSnapshot {
   z: number;
   mode: string;
   seatId: number;
+  chanting: boolean;
+  item: number;
 }
 
 export class App {
@@ -112,6 +121,7 @@ export class App {
   // The part of the world the camera is in, which the seat hints, the sounds and the greetings belong to.
   private zone: Zone = "gatbawi";
   private seatOwners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
+  private nextKnockAt = 0;
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
   private nextJumpAt = 0;
@@ -130,7 +140,7 @@ export class App {
     () => void this.returnToWorld(),
   );
 
-  constructor(assets: GameAssets) {
+  constructor(assets: GameAssets, monkAssets: MonkAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
     this.ui = document.getElementById("ui") as HTMLElement;
 
@@ -149,6 +159,7 @@ export class App {
         onZone: (zone) => this.setZone(zone),
       },
       assets,
+      monkAssets,
     );
     this.world.setReduceMotion(this.settings.reduceMotion);
     this.emoteBubbles = new EmoteBubbles(this.ui, this.world.emotes, (id, out) => this.world.projectEmoteAnchor(id, out));
@@ -191,13 +202,16 @@ export class App {
         onStand: () => this.stand(),
         onJump: () => this.jump(),
         onEmote: (emote) => this.session?.emote(emote),
+        onKnock: () => this.knock(),
+        onChant: (on) => this.chant(on),
+        onEquip: (item) => this.equip(item),
         onInvite: () => void this.copyInvite(),
-        onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
         onCancelReturn: () => this.holdReturn(),
         onReturnNow: () => void this.enter(this.soloReturnWorld),
       },
       this.settingsPanel.root,
     );
+    this.hud.setReduceMotion(this.settings.reduceMotion);
     this.hud.setCollection(this.bows);
     this.soundChip = new SoundChip(this.ui, () => this.stage.openTapWindow());
     this.seatHints = new SeatHints(this.ui, (id) => {
@@ -210,7 +224,7 @@ export class App {
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
-        if (this.self && this.self.seatId >= 0) this.bow();
+        if (this.self && this.self.seatId >= 0) this.act();
         else this.jump();
       },
       onStand: () => {
@@ -219,7 +233,6 @@ export class App {
     });
 
     this.applyAudio();
-    this.hud.setSoundOn(this.settings.sound);
     this.syncZoneSound();
     this.bindAudioUnlock();
     this.bindLifecycle();
@@ -422,6 +435,9 @@ export class App {
         bowCount: monk.bowCount,
         emote: monk.emote,
         emoteSeq: monk.emoteSeq,
+        knockSeq: monk.knockSeq,
+        chanting: monk.chanting,
+        item: monk.item,
         jumpSeq: monk.jumpSeq,
       });
       // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
@@ -441,9 +457,9 @@ export class App {
         isSelf: monk.id === selfId,
       });
       if (monk.id === selfId) {
-        this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId };
+        this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId });
+        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item });
         this.creditBows(monk.bowCount);
         for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone: monkZone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
@@ -462,7 +478,7 @@ export class App {
     this.seatOwners = owners;
 
     this.world.setSelfPrediction(this.prediction.display());
-    this.world.applyMonks(views, now, state.serverTime);
+    this.playKnocks(this.world.applyMonks(views, now, state.serverTime));
     for (const zone of ZONES) this.world.setOccupancy(zone, occupied[zone]);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
@@ -563,6 +579,55 @@ export class App {
     session.bow(1);
   }
 
+  // Space and the action button both land here: the held item's action when seated with one, else a bow.
+  private act(): void {
+    const action = heldAction(this.self);
+    if (action === "knock") this.knock();
+    else if (action === "chant") this.chant(!this.self?.chanting);
+    else this.bow();
+  }
+
+  private knock(): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || self.item !== ITEM_MOKT || !isSeated(self)) return;
+    const now = performance.now();
+    if (self.mode !== "kneel" || now < this.nextKnockAt) return;
+    this.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    session.knock();
+    this.world.knock(session.sessionId, now);
+    this.audio.knock();
+  }
+
+  private chant(on: boolean): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || !isSeated(self) || (on && self.item !== ITEM_CHANT)) return;
+    session.chant(on);
+  }
+
+  private equip(item: number): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    session.equip(item);
+    if (item !== ITEM_NONE && !(this.self && isSeated(this.self))) this.hud.toast("방석에 앉으면 쓸 수 있어요");
+  }
+
+  // The player's own knock already sounded on the click; only other monks' knocks reach here, quieter with distance.
+  private playKnocks(knockers: readonly MonkView[]): void {
+    const self = this.self;
+    if (!self) return;
+    for (const knocker of knockers) {
+      const gain = knockGain(Math.hypot(knocker.x - self.x, knocker.z - self.z));
+      if (gain > KNOCK_AUDIBLE_GAIN) this.audio.knock(gain);
+    }
+  }
+
   private jump(): void {
     const session = this.session;
     const now = performance.now();
@@ -582,7 +647,7 @@ export class App {
     this.settings = next;
     saveSettings(next);
     this.settingsPanel.sync(next);
-    this.hud.setSoundOn(next.sound);
+    this.hud.setReduceMotion(next.reduceMotion);
     this.world.setReduceMotion(next.reduceMotion);
     this.stage.setReduceMotion(next.reduceMotion);
     this.applyAudio();
@@ -590,8 +655,8 @@ export class App {
   }
 
   private applyAudio(): void {
-    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume, this.settings.sound, this.settings.wind);
-    this.stage.setSound(this.settings.sound, this.settings.ambientVolume);
+    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume);
+    this.stage.setSound(true, this.settings.ambientVolume);
   }
 
   private bindAudioUnlock(): void {

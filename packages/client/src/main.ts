@@ -1,6 +1,7 @@
 import "./style.css";
 import { App } from "./app.ts";
 import { type GameAssets, loadGameAssets } from "./assets/registry.ts";
+import { type MonkAssets, loadMonkAssets } from "./game/monk-assets.ts";
 import { captureInstallPrompt } from "./install.ts";
 import { registerServiceWorker } from "./pwa.ts";
 
@@ -33,8 +34,9 @@ function webglAvailable(): boolean {
 
 async function boot(): Promise<void> {
   let assets: GameAssets;
+  let monkAssets: MonkAssets;
   try {
-    assets = await loadGameAssets();
+    [assets, monkAssets] = await Promise.all([loadGameAssets(), loadMonkAssets()]);
   } catch (error) {
     console.error(error);
     showFatal("월드를 불러오지 못했어요. 다시 시도해 주세요.");
@@ -42,7 +44,7 @@ async function boot(): Promise<void> {
   }
   document.getElementById("boot")?.remove();
   try {
-    await new App(assets).start();
+    await new App(assets, monkAssets).start();
   } catch (error) {
     console.error(error);
     showFatal("예상하지 못한 문제가 생겼어요. 다시 시도해 주세요.");

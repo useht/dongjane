@@ -18,8 +18,6 @@ export class SettingsPanel {
   readonly root = h("div", "settings-app");
   private readonly ambientVolume = h("input");
   private readonly effectVolume = h("input");
-  private readonly sound: HTMLInputElement;
-  private readonly wind: HTMLInputElement;
   private readonly reduce: HTMLInputElement;
   private current: Settings;
 
@@ -42,16 +40,12 @@ export class SettingsPanel {
     const ambientRow = h("div", "row", h("span", "row-text", h("strong", "", "배경 소리 크기")), this.ambientVolume);
     const effectRow = h("div", "row", h("span", "row-text", h("strong", "", "효과음 크기")), this.effectVolume);
 
-    const soundRow = toggleRow("소리", "종소리, 무대 영상, 법당의 독경 소리", initial.sound, (sound) => this.update({ sound }));
-    const windRow = toggleRow("바람 소리", "갓바위에 부는 잔잔한 바람 (무대 영상이 들릴 땐 꺼져요)", initial.wind, (wind) => this.update({ wind }));
     const reduceRow = toggleRow("움직임 줄이기", "카메라 흔들림과 부드러운 절 동작을 꺼요", initial.reduceMotion, (reduceMotion) =>
       this.update({ reduceMotion }),
     );
-    this.sound = soundRow.querySelector("input") as HTMLInputElement;
-    this.wind = windRow.querySelector("input") as HTMLInputElement;
     this.reduce = reduceRow.querySelector("input") as HTMLInputElement;
 
-    this.root.append(ambientRow, effectRow, soundRow, windRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
+    this.root.append(ambientRow, effectRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
     this.sync(initial);
   }
 
@@ -59,8 +53,6 @@ export class SettingsPanel {
     this.current = { ...settings };
     this.ambientVolume.value = String(Math.round(settings.ambientVolume * 100));
     this.effectVolume.value = String(Math.round(settings.effectVolume * 100));
-    this.sound.checked = settings.sound;
-    this.wind.checked = settings.wind;
     this.reduce.checked = settings.reduceMotion;
   }
 
