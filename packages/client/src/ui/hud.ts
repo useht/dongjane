@@ -47,7 +47,6 @@ export class Hud {
   private readonly bowTally = h("span", "bow-tally");
   private readonly bowButton: HTMLButtonElement;
   private readonly samBaeButton: HTMLButtonElement;
-  private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · 3 삼배 · Esc 일어서기 · Q/E 돌리기");
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
   private readonly visitorSheet: Sheet;
@@ -91,7 +90,7 @@ export class Hud {
     const bottom = h(
       "div",
       "bottombar",
-      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally), this.keyHint),
+      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally)),
       h("div", "bow-actions", this.samBaeButton, this.bowButton),
     );
 
@@ -126,7 +125,6 @@ export class Hud {
     this.root.append(top, this.chantPill, this.linkBanner, this.toasts, bottom, this.stats);
     host.append(this.root);
 
-    if (window.matchMedia("(pointer: coarse)").matches) this.keyHint.hidden = true;
     this.renderHalls();
     this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
   }
@@ -208,7 +206,7 @@ export class Hud {
     this.hallLabel.textContent = "혼자 있는 법당";
     this.hallCount.textContent = "";
     this.renderHalls();
-    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요";
+    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 법당으로 다시 모셔요";
     this.linkBanner.classList.remove("hidden");
   }
 

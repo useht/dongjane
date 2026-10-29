@@ -5,7 +5,7 @@
   "effort": "xhigh",
   "permissionMode": "bypassPermissions",
   "browserTools": true,
-  "autopilot": true,
+  "autopilot": false,
   "autoCommit": true,
   "landMode": "batch-push",
   "isolation": "worktree",
