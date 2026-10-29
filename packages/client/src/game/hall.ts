@@ -15,7 +15,6 @@ import {
   Float32BufferAttribute,
   Group,
   HemisphereLight,
-  type Intersection,
   InstancedBufferAttribute,
   InstancedMesh,
   LatheGeometry,
@@ -23,7 +22,6 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
-  type Object3D,
   PMREMGenerator,
   PlaneGeometry,
   PointLight,
@@ -168,7 +166,6 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
 export class Hall {
   readonly group = new Group();
   readonly sun: DirectionalLight;
-  readonly pickables: Object3D[] = [];
 
   private readonly buddha: BuddhaPieces;
   private readonly environment: Texture;
@@ -256,7 +253,6 @@ export class Hall {
     const cushions = this.buildCushions(anisotropy);
     this.cushionBody = cushions.body;
     this.cushionTop = cushions.top;
-    this.pickables.push(this.cushionBody, this.cushionTop);
 
     this.flames = this.buildCandles();
 
@@ -524,12 +520,6 @@ export class Hall {
     flames.name = "flames";
     this.group.add(flames);
     return flames;
-  }
-
-  cushionAt(hit: Intersection): number | null {
-    if (hit.instanceId === undefined) return null;
-    if (hit.object !== this.cushionBody && hit.object !== this.cushionTop) return null;
-    return hit.instanceId < CUSHION_SPOTS.length ? hit.instanceId : null;
   }
 
   setOccupied(cushionId: number, occupied: boolean): void {

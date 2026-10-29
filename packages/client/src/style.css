@@ -4,7 +4,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --hud-top: calc(var(--safe-top) + 100px);
-  --hud-bottom: calc(var(--safe-bottom) + 132px);
+  --hud-bottom: calc(var(--safe-bottom) + 112px);
   --wood: #1c120b;
   --wood-soft: #2b1b10;
   --panel: rgba(38, 24, 14, 0.78);
@@ -237,7 +237,7 @@ button:disabled {
 .toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 138px);
+  bottom: calc(var(--safe-bottom) + 118px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -267,9 +267,16 @@ button:disabled {
   right: calc(var(--safe-right) + 10px);
   bottom: calc(var(--safe-bottom) + 12px);
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.status-stack {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 6px;
 }
 
 .status {
@@ -296,43 +303,113 @@ button:disabled {
   display: none;
 }
 
-.actions {
+.bow-actions {
+  flex: none;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
 }
 
-.action {
-  min-width: 96px;
-  min-height: 52px;
-  padding: 0 18px;
-  border-radius: 26px;
-  border: 1px solid rgba(255, 224, 160, 0.4);
-  background: linear-gradient(180deg, #ffe0a0, var(--gold-deep));
-  color: var(--ink);
-  font-size: 17px;
-  font-weight: 800;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+.bow-button,
+.triple-button {
   transition: transform 0.1s ease, opacity 0.2s ease, filter 0.2s ease;
 }
 
-.action:active:not(:disabled) {
+.bow-button:active:not(:disabled),
+.triple-button:active:not(:disabled) {
   transform: scale(0.96);
 }
 
-.action:disabled {
+.bow-button:disabled,
+.triple-button:disabled {
   opacity: 0.38;
   filter: saturate(0.5);
   box-shadow: none;
 }
 
-.action.quiet {
-  min-width: 88px;
+.bow-button {
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 224, 160, 0.4);
+  background: linear-gradient(180deg, #ffe0a0, var(--gold-deep));
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.triple-button {
+  min-width: 64px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  border: 1px solid var(--line);
   background: var(--panel);
-  color: var(--cream);
-  font-weight: 700;
-  border-color: var(--line);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
+  color: var(--cream);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.seat-hints {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.seat-hint {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 224, 160, 0.5);
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--gold);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.seat-hint:active {
+  background: rgba(70, 44, 24, 0.9);
+}
+
+.joystick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 112px;
+  height: 112px;
+  margin: -56px 0 0 -56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 224, 160, 0.35);
+  background: rgba(38, 24, 14, 0.35);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border-radius: 50%;
+  background: rgba(255, 210, 122, 0.8);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+  will-change: transform;
 }
 
 .key-hint {
@@ -836,16 +913,17 @@ noscript {
     display: none;
   }
 
-  .action {
-    min-width: 84px;
-    padding: 0 14px;
+  .bow-button {
+    width: 72px;
+    height: 72px;
+    font-size: 18px;
   }
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
   :root {
     --hud-top: calc(var(--safe-top) + 58px);
-    --hud-bottom: calc(var(--safe-bottom) + 110px);
+    --hud-bottom: calc(var(--safe-bottom) + 96px);
   }
 
   .chant-pill {
@@ -857,7 +935,13 @@ noscript {
   }
 
   .toasts {
-    bottom: calc(var(--safe-bottom) + 118px);
+    bottom: calc(var(--safe-bottom) + 104px);
+  }
+
+  .bow-button {
+    width: 72px;
+    height: 72px;
+    font-size: 18px;
   }
 
   .key-hint {
