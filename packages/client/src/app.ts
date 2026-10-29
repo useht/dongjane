@@ -32,6 +32,7 @@ import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
 import type { MonkAssets } from "./game/monk-assets.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
+import { STAGE } from "./game/venue-layout.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -59,10 +60,13 @@ import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsPanel } from "./ui/settings.ts";
 import { SoundChip } from "./ui/sound-chip.ts";
+import { StageHint } from "./ui/stage-hint.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
+import type { Quad } from "./ui/stage-quad.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
+const STAGE_HINT_REACH = 10;
 const SEAT_HINT_HEIGHT = 0.6;
 const TITLE_REACH = SEAT_HINT_REACH;
 const TITLE_GAP = 0.1;
@@ -102,6 +106,7 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly stageHint: StageHint;
   private readonly stage: StageScreen;
   private readonly soundChip: SoundChip;
   private readonly sutra: SyncedLoop;
@@ -133,6 +138,7 @@ export class App {
   private lost = false;
   private videoAudible = false;
   private stageToasted = false;
+  private playNeeded = false;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
   private returnHeld = false;
@@ -151,10 +157,12 @@ export class App {
       {
         onFrame: (dt, now) => this.frame(dt, now),
         onRendered: (nowMs) => {
+          const quad = this.stage.mounted ? this.world.screenQuad() : null;
           this.updateSeatHints();
+          this.updateStageHint(quad);
           this.updateVisitorTitles();
           this.emoteBubbles.update(nowMs);
-          if (this.stage.mounted) this.stage.place(this.world.screenQuad());
+          if (this.stage.mounted) this.stage.place(quad);
         },
         onStick: (stick) => this.joystick.set(stick),
         onZone: (zone) => this.setZone(zone),
@@ -178,6 +186,9 @@ export class App {
           this.syncZoneSound();
         },
         onTapNeeded: (needed) => this.soundChip.show(needed),
+        onPlayNeeded: (needed) => {
+          this.playNeeded = needed;
+        },
         onAudible: (audible) => {
           this.videoAudible = audible;
           this.syncZoneSound();
@@ -220,6 +231,7 @@ export class App {
       this.prediction.cancel();
       this.session?.sit(this.zone, id);
     });
+    this.stageHint = new StageHint(this.ui, () => this.stage.resume());
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
     new InstallBanner(this.ui, () => this.fitCameraToHud());
@@ -846,6 +858,17 @@ export class App {
         this.seatHints.hide(spot.id);
       }
     }
+  }
+
+  private updateStageHint(quad: Quad | null): void {
+    const at = this.session !== null && this.playNeeded && quad ? this.world.selfPosition : null;
+    if (!quad || !at || Math.hypot(at.x - STAGE.x, at.z - STAGE.z) > STAGE_HINT_REACH) {
+      this.stageHint.hide();
+      return;
+    }
+    const left = quad[3];
+    const right = quad[2];
+    this.stageHint.place((left.x + right.x) / 2, (left.y + right.y) / 2);
   }
 
   private updateVisitorTitles(): void {

@@ -9,6 +9,7 @@ const FAR_PIXELS = 20_000;
 export interface StageScreenHooks {
   onStatus(status: StageStatus, reason?: BlockReason): void;
   onTapNeeded(needed: boolean): void;
+  onPlayNeeded(needed: boolean): void;
   onAudible(audible: boolean): void;
 }
 
@@ -54,6 +55,7 @@ export class StageScreen {
           if (!needed) this.closeTapWindow();
           hooks.onTapNeeded(needed);
         },
+        playNeeded: (needed) => hooks.onPlayNeeded(needed),
         audible: (audible) => hooks.onAudible(audible),
       },
       () => performance.now(),
@@ -134,6 +136,10 @@ export class StageScreen {
 
   userGesture(): void {
     this.controller.userGesture();
+  }
+
+  resume(): void {
+    this.controller.resume();
   }
 
   setHidden(hidden: boolean): void {
