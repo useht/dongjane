@@ -35,7 +35,6 @@ export const THEME = {
     dust: "#fff0c8",
     beam: "#ffe2a0",
     beamTint: "#fff0c8",
-    marker: "#ffd98a",
     selfRing: "#ffd27a",
     nameSelf: "#ffd27a",
     nameOther: "#f4e3c0",

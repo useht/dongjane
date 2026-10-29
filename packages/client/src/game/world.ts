@@ -3,25 +3,20 @@ import {
   Color,
   DoubleSide,
   Fog,
-  Group,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
-  Plane,
-  Raycaster,
   RingGeometry,
   Scene,
-  Vector2,
-  Vector3,
   WebGLRenderer,
 } from "three";
-import { HALL_FRONT_Z, HALL_HALF_WIDTH, lerpAngle, resolveWalkable, SPAWN_POINT } from "@dongjane/shared";
+import { lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { CameraRig, DEFAULT_VIEW, configureCamera } from "./camera-rig.ts";
+import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
 import { Hall } from "./hall.ts";
 import { HALL_BOUNDS } from "./hall-layout.ts";
-import { PointerInput } from "./input.ts";
+import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import { SnapshotBuffer, type Sample } from "./snapshot.ts";
@@ -38,9 +33,9 @@ export interface MonkView {
 }
 
 export interface WorldCallbacks {
-  onPickCushion(cushionId: number): void;
-  onPickFloor(x: number, z: number): void;
   onFrame(dtSeconds: number, nowMs: number): void;
+  onRendered(): void;
+  onStick(stick: StickState | null): void;
 }
 
 export interface WorldStats {
@@ -64,7 +59,6 @@ interface Entry {
 
 const INTERPOLATION_DELAY_MS = 100;
 const MAX_MONKS = 40;
-const FLOOR_PLANE = new Plane(new Vector3(0, 1, 0), 0);
 
 export class World {
   readonly scene = new Scene();
@@ -77,20 +71,15 @@ export class World {
   private readonly hall: Hall;
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
-  private readonly raycaster = new Raycaster();
-  private readonly pointer = new Vector2();
-  private readonly hitPoint = new Vector3();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
   private readonly input: PointerInput;
   private readonly adaptive: AdaptiveScale;
-  private readonly marker: Mesh;
   private readonly selfRing: Mesh;
   private readonly resizeObserver: ResizeObserver;
   private frame = 0;
   private last = 0;
   private time = 0;
   private reduceMotion = false;
-  private markerAge = 99;
   private fpsAccumulator = 0;
   private fpsFrames = 0;
   private stats: WorldStats = { fps: 0, drawCalls: 0, triangles: 0, monks: 0, pixelRatio: 1 };
@@ -128,29 +117,21 @@ export class World {
     this.rig = new CameraRig(this.camera, HALL_BOUNDS);
     this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
 
-    this.marker = new Mesh(
-      new RingGeometry(0.16, 0.24, 28),
-      new MeshBasicMaterial({ color: THEME.scene.marker, transparent: true, opacity: 0, depthWrite: false, side: DoubleSide, fog: false }),
-    );
-    this.marker.rotation.x = -Math.PI / 2;
-    this.marker.position.y = 0.03;
     this.selfRing = new Mesh(
       new RingGeometry(0.36, 0.42, 32),
       new MeshBasicMaterial({ color: THEME.scene.selfRing, transparent: true, opacity: 0.6, depthWrite: false, side: DoubleSide, fog: false }),
     );
     this.selfRing.rotation.x = -Math.PI / 2;
     this.selfRing.visible = false;
-    const overlay = new Group();
-    overlay.add(this.marker, this.selfRing);
-    this.scene.add(overlay);
+    this.scene.add(this.selfRing);
 
     this.input = new PointerInput(canvas, {
-      onTap: (x, y) => this.pick(x, y),
       onOrbit: (dx, dy) => {
         this.idleSpin = false;
         this.rig.orbit(dx, dy);
       },
       onZoom: (factor) => this.rig.zoom(factor),
+      onStick: (stick) => this.callbacks.onStick(stick),
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -267,9 +248,8 @@ export class World {
     this.idleSpin = value;
   }
 
-  showMarker(x: number, z: number): void {
-    this.marker.position.set(x, 0.03, z);
-    this.markerAge = 0;
+  projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    return projectToCanvas(this.camera, x, y, z, this.canvas.clientWidth, this.canvas.clientHeight, out);
   }
 
   dispose(): void {
@@ -280,7 +260,6 @@ export class World {
     this.pool.dispose();
     this.hall.dispose();
     this.assets.dispose();
-    this.marker.geometry.dispose();
     this.selfRing.geometry.dispose();
     this.renderer.dispose();
   }
@@ -298,28 +277,6 @@ export class World {
     const height = Math.max(1, this.canvas.clientHeight);
     this.renderer.setSize(width, height, false);
     configureCamera(this.camera, this.rig, width, height, this.hudTop, this.hudBottom);
-  }
-
-  private pick(clientX: number, clientY: number): void {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -(((clientY - rect.top) / rect.height) * 2 - 1));
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-
-    const hits = this.raycaster.intersectObjects(this.hall.pickables, false);
-    for (const hit of hits) {
-      const id = this.hall.cushionAt(hit);
-      if (id !== null) {
-        this.callbacks.onPickCushion(id);
-        return;
-      }
-    }
-    if (!this.raycaster.ray.intersectPlane(FLOOR_PLANE, this.hitPoint)) return;
-    const { x, z } = this.hitPoint;
-    if (Math.abs(x) > HALL_HALF_WIDTH || z > HALL_FRONT_Z) return;
-    const target = resolveWalkable(x, z);
-    this.showMarker(target.x, target.z);
-    this.callbacks.onPickFloor(target.x, target.z);
   }
 
   private tick(nowMs: number): void {
@@ -362,19 +319,9 @@ export class World {
     this.camera.updateMatrixWorld();
     for (const entry of this.entries.values()) entry.avatar.fitPlate(this.camera);
 
-    this.markerAge += dt;
-    const material = this.marker.material as MeshBasicMaterial;
-    if (this.markerAge < 0.8) {
-      const t = this.markerAge / 0.8;
-      material.opacity = 0.9 * (1 - t);
-      this.marker.scale.setScalar(0.7 + t * 0.9);
-      this.marker.visible = true;
-    } else {
-      this.marker.visible = false;
-    }
-
     this.hall.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
+    this.callbacks.onRendered();
 
     const info = this.renderer.info.render;
     this.fpsAccumulator += dt;

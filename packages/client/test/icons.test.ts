@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ICON_NAMES, iconMarkup } from "../src/ui/icons.ts";
 
 describe("ui icons", () => {
-  it("registers the seven hud icons", () => {
-    expect([...ICON_NAMES].sort()).toEqual(["close", "gear", "hall", "link", "people", "soundOff", "soundOn"]);
+  it("registers the eight hud icons", () => {
+    expect([...ICON_NAMES].sort()).toEqual(["close", "gear", "hall", "link", "people", "sit", "soundOff", "soundOn"]);
   });
 
   it("draws every icon as a 24px stroke that follows the text colour", () => {

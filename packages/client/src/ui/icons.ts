@@ -9,6 +9,7 @@ const PATHS = {
   gear:
     '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  sit: '<circle cx="12" cy="6" r="2.2"/><path d="M8.5 15c0-3.2 1.4-5 3.5-5s3.5 1.8 3.5 5"/><ellipse cx="12" cy="18.5" rx="8" ry="2.5"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;
