@@ -11,7 +11,8 @@ import {
 } from "./constants.ts";
 import { randomHue } from "./identity.ts";
 import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
-import { type NpcActions, type NpcBrain, createNpcBrain, thinkNpc } from "./npc.ts";
+import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, thinkNpc } from "./npc.ts";
+import { type Persona, generatePersona } from "./persona.ts";
 import { Cushion, Monk, TempleState } from "./schema.ts";
 
 interface Target {
@@ -35,6 +36,7 @@ export interface SimOptions {
   chantEveryMs?: number;
   chantMs?: number;
   npcCount?: number;
+  personas?: readonly Persona[];
 }
 
 export class TempleSim {
@@ -64,13 +66,17 @@ export class TempleSim {
     }
     this.updateChant();
 
-    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`);
+    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`, options.personas?.[n - 1]);
   }
 
   get humanCount(): number {
     let count = 0;
     for (const monk of this.state.monks.values()) if (!monk.npc) count += 1;
     return count;
+  }
+
+  personaOf(id: string): Persona | undefined {
+    return this.runtimes.get(id)?.brain?.persona;
   }
 
   join(id: string, hue: number): Monk {
@@ -193,7 +199,15 @@ export class TempleSim {
     return Math.max(50, chantEndsAt(next) - now + 20);
   }
 
-  private spawnNpc(id: string): void {
+  private visitors(): NpcVisitor[] {
+    const visitors: NpcVisitor[] = [];
+    for (const monk of this.state.monks.values()) {
+      if (!monk.npc) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
+    }
+    return visitors;
+  }
+
+  private spawnNpc(id: string, persona: Persona | undefined): void {
     const random = this.random;
     const spot = resolveWalkable(
       WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
@@ -218,7 +232,7 @@ export class TempleSim {
       bowsLeft: 0,
       nextBowAt: 0,
       lastBowEndedAt: 0,
-      brain: createNpcBrain(random, this.clock()),
+      brain: createNpcBrain(persona ?? generatePersona(random), random, this.clock()),
     });
   }
 
@@ -232,6 +246,7 @@ export class TempleSim {
         now,
         random: this.random,
         chantEndsAt: chanting ? chantEndsAt(chant) : null,
+        visitors: this.visitors(),
         isFree: (cushionId) => this.state.cushions.get(String(cushionId))?.occupantId === "",
       },
       this.npcActions,

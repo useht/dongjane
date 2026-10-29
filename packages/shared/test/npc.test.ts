@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { CHANT_MS, NPC_PER_HALL, TICK_MS } from "../src/constants.ts";
 import { WALK_BOUNDS } from "../src/layout.ts";
+import { type NpcActions, type NpcBody, type NpcVisitor, type NpcWorld, createNpcBrain, thinkNpc } from "../src/npc.ts";
+import type { Persona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
 
 const CHANT_START = 1_800_000_000_000;
@@ -20,12 +22,16 @@ class Hall {
   now: number;
   readonly sim: TempleSim;
 
-  constructor(seed: number, options: { npcCount?: number; start?: number; random?: () => number } = {}) {
+  constructor(
+    seed: number,
+    options: { npcCount?: number; start?: number; random?: () => number; personas?: readonly Persona[] } = {},
+  ) {
     this.now = options.start ?? QUIET_START;
     this.sim = new TempleSim({
       clock: () => this.now,
       random: options.random ?? seededRandom(seed),
       npcCount: options.npcCount ?? NPC_PER_HALL,
+      personas: options.personas,
     });
   }
 
@@ -280,5 +286,256 @@ describe("npc and visitor cushions", () => {
     hall.sim.join("second", 0);
     expect(hall.sim.sit("second", 0)).toBe(false);
     expect(hall.cushionProblems()).toEqual([]);
+  });
+});
+
+const BASE: Persona = { devotion: 1, restless: 0.5, sociability: 0, shyness: 0, frontRow: 0.5 };
+const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+function bowedBack(seed: number, persona: Persona, guestCushion: number): number | null {
+  const hall = new Hall(seed, { npcCount: 1, personas: [persona] });
+  const npc = hall.npcs()[0]!;
+  const guest = hall.sim.join("guest", 0);
+  hall.sim.sit("npc-1", 2);
+  hall.sim.sit("guest", guestCushion);
+  hall.run(18_000);
+  if (npc.mode !== "kneel" || guest.mode !== "kneel") return null;
+
+  const before = npc.bowCount;
+  expect(hall.sim.bow("guest", 1)).toBe(true);
+  hall.run(10_000);
+  expect(hall.cushionProblems()).toEqual([]);
+  return npc.bowCount - before;
+}
+
+describe("npc sociability", () => {
+  it("bows back at a visitor's bow from the next cushion", () => {
+    const sociable: Persona = { ...BASE, sociability: 0.9 };
+    const answers = SEEDS.map((seed) => bowedBack(seed, sociable, 1)).filter((answer) => answer !== null);
+    expect(answers.length).toBeGreaterThan(SEEDS.length / 2);
+    expect(answers.filter((answer) => answer === 1).length).toBeGreaterThan(answers.length / 2);
+    expect(answers.every((answer) => answer <= 1)).toBe(true);
+  });
+
+  it("stays quiet when it is not sociable or the visitor bows out of earshot", () => {
+    for (const seed of SEEDS) {
+      expect(bowedBack(seed, { ...BASE, sociability: 0 }, 1) ?? 0).toBe(0);
+      expect(bowedBack(seed, { ...BASE, sociability: 1 }, 4) ?? 0).toBe(0);
+    }
+  });
+});
+
+describe("npc shyness and approach", () => {
+  const meet = (seed: number, persona: Persona, visitorX: number) => {
+    const hall = new Hall(seed, { npcCount: 1, personas: [persona] });
+    const npc = hall.npcs()[0]!;
+    const visitor = hall.sim.join("guest", 0);
+    npc.x = 0;
+    npc.z = 2;
+    visitor.x = visitorX;
+    visitor.z = 2;
+    return { hall, npc, visitor, gap: () => Math.hypot(npc.x - visitor.x, npc.z - visitor.z) };
+  };
+
+  it("walks away from a visitor standing one metre off", () => {
+    let steppedAway = 0;
+    for (const seed of SEEDS) {
+      const { hall, npc, gap } = meet(seed, { ...BASE, shyness: 0.9 }, 1);
+      let walking = false;
+      let firstWalkGap: number | null = null;
+      hall.run(7000, () => {
+        if (npc.mode === "walk") walking = true;
+        else if (walking && firstWalkGap === null) firstWalkGap = gap();
+      });
+      if (firstWalkGap !== null && firstWalkGap >= 2.9) steppedAway += 1;
+    }
+    expect(steppedAway).toBeGreaterThan(SEEDS.length * 0.75);
+  });
+
+  it("walks up to a visitor a few metres off when it is sociable and not shy", () => {
+    let approached = 0;
+    for (const seed of SEEDS) {
+      const { hall, gap } = meet(seed, { ...BASE, sociability: 1 }, 2.5);
+      let closest = Infinity;
+      hall.run(8000, () => {
+        closest = Math.min(closest, gap());
+      });
+      if (closest <= 1.6) approached += 1;
+    }
+    expect(approached).toBeGreaterThan(SEEDS.length * 0.75);
+  });
+});
+
+describe("npc front row preference", () => {
+  const sits = (seed: number, persona: Persona, guests = 0): number[] => {
+    const hall = new Hall(seed, { npcCount: 1, start: CHANT_START, personas: [persona] });
+    for (let n = 0; n < guests; n += 1) {
+      hall.sim.join(`g${n}`, 0);
+      hall.sim.sit(`g${n}`, n);
+    }
+    const npc = hall.npcs()[0]!;
+    const picked: number[] = [];
+    let last = -1;
+    hall.run(CHANT_MS - 10_000, () => {
+      if (npc.cushionId >= 0 && npc.cushionId !== last) picked.push(npc.cushionId);
+      last = npc.cushionId;
+    });
+    return picked;
+  };
+
+  it("always picks the row nearest the Buddha when it only wants the front", () => {
+    const picked = SEEDS.flatMap((seed) => sits(seed, { ...BASE, frontRow: 1 }));
+    expect(picked.length).toBeGreaterThan(0);
+    expect(picked.every((id) => id <= 3)).toBe(true);
+  });
+
+  it("sits in the back row too when it has no preference", () => {
+    const picked = SEEDS.flatMap((seed) => sits(seed, { ...BASE, frontRow: 0 }));
+    expect(picked.some((id) => id <= 3)).toBe(true);
+    expect(picked.some((id) => id >= 4)).toBe(true);
+  });
+
+  it("falls back to the back row once the front row is full", () => {
+    const picked = SEEDS.flatMap((seed) => sits(seed, { ...BASE, frontRow: 1 }, 4));
+    expect(picked.length).toBeGreaterThan(0);
+    expect(picked.every((id) => id >= 4)).toBe(true);
+  });
+});
+
+describe("npc brain reactions", () => {
+  function rig(visitorX: number, random: () => number, persona: Persona) {
+    const body = { id: "npc-1", mode: "kneel", x: 0, z: 0, cushionId: 2, bowCount: 0 };
+    const world: NpcWorld = {
+      now: 0,
+      random,
+      chantEndsAt: null,
+      visitors: [{ id: "v", x: visitorX, z: 0, bowCount: 0 }],
+      isFree: () => false,
+    };
+    const calls = { bows: [] as number[], stands: 0 };
+    const refuse = { bows: false };
+    const actions: NpcActions = {
+      move: () => true,
+      sit: () => true,
+      stand: () => {
+        calls.stands += 1;
+        return true;
+      },
+      bow: (_id, times) => {
+        calls.bows.push(times);
+        return !refuse.bows;
+      },
+    };
+    const brain = createNpcBrain(persona, random, 0);
+    return {
+      body,
+      brain,
+      calls,
+      refuse,
+      think: (now: number) => {
+        world.now = now;
+        thinkNpc(brain, body as NpcBody, world, actions);
+      },
+      visitorBows: (count: number) => {
+        world.visitors = world.visitors.map((visitor): NpcVisitor => ({ ...visitor, bowCount: count }));
+      },
+    };
+  }
+
+  const noPlan = () => 0.99;
+  const calm: Persona = { ...BASE, devotion: 0.3, sociability: 1 };
+
+  it("does not greet a visitor whose bows it is only now learning about", () => {
+    const { think, calls, visitorBows } = rig(1, noPlan, calm);
+    visitorBows(5);
+    for (let now = 0; now <= 10_000; now += 500) think(now);
+    expect(calls.bows).toEqual([]);
+  });
+
+  it("does not greet a bow from beyond earshot", () => {
+    const { think, calls, visitorBows } = rig(5, noPlan, calm);
+    think(0);
+    visitorBows(1);
+    for (let now = 500; now <= 10_000; now += 500) think(now);
+    expect(calls.bows).toEqual([]);
+  });
+
+  it("holds on to a greeting the sim refused and answers it on the next try", () => {
+    const { think, calls, visitorBows, refuse, brain } = rig(1, noPlan, calm);
+    think(0);
+    visitorBows(1);
+    refuse.bows = true;
+    think(1000);
+    think(2000);
+    expect(calls.bows).toEqual([]);
+    think(3000);
+    expect(calls.bows).toEqual([1]);
+    expect(brain.nextThinkAt).toBe(3400);
+    think(3100);
+    expect(calls.bows).toEqual([1]);
+
+    refuse.bows = false;
+    think(3400);
+    expect(calls.bows).toEqual([1, 1]);
+    expect(brain.greetAt).toBe(0);
+    think(4400);
+    think(5400);
+    expect(calls.bows).toEqual([1, 1]);
+  });
+
+  it("does not count its greeting bow towards the bows it planned before standing up", () => {
+    const { think, calls, visitorBows, body } = rig(1, () => 0.5, { ...BASE, sociability: 1 });
+    think(0);
+    think(2000);
+    expect(calls.bows).toEqual([3]);
+    visitorBows(1);
+    think(3000);
+    think(4000);
+    expect(calls.bows).toEqual([3, 1]);
+
+    body.bowCount = 3;
+    think(100_000);
+    think(300_000);
+    expect(calls.stands).toBe(0);
+
+    body.bowCount = 4;
+    think(300_500);
+    expect(calls.stands).toBe(0);
+    think(400_000);
+    expect(calls.stands).toBe(1);
+  });
+});
+
+describe("npc personas with visitors around", () => {
+  it("keeps one monk per cushion over six minutes of bowing, sitting and wandering visitors", () => {
+    const hall = new Hall(31);
+    const choice = seededRandom(77);
+    const guests = ["a", "b", "c", "d"];
+    for (const id of guests) hall.sim.join(id, 0);
+    const problems: string[] = [];
+    const wasSeated = new Map(hall.npcs().map((npc) => [npc.id, false]));
+    let ticks = 0;
+    let npcSittings = 0;
+
+    hall.run(6 * 60_000, () => {
+      problems.push(...hall.cushionProblems());
+      for (const npc of hall.npcs()) {
+        const seated = npc.cushionId >= 0;
+        if (seated && !wasSeated.get(npc.id)) npcSittings += 1;
+        wasSeated.set(npc.id, seated);
+      }
+      ticks += 1;
+      if (ticks % 40 !== 0) return;
+      const id = guests[Math.floor(choice() * guests.length)]!;
+      const roll = choice();
+      if (roll < 0.35) hall.sim.sit(id, Math.floor(choice() * 8));
+      else if (roll < 0.6) hall.sim.bow(id, 1 + Math.floor(choice() * 3));
+      else if (roll < 0.7) hall.sim.stand(id);
+      else hall.sim.move(id, choice() * 8 - 4, choice() * 6 - 2);
+    });
+
+    expect(problems).toEqual([]);
+    expect(hall.sim.humanCount).toBe(guests.length);
+    expect(npcSittings).toBeGreaterThan(0);
   });
 });

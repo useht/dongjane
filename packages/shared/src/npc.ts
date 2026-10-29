@@ -1,5 +1,7 @@
 import { BOW_COOLDOWN_MS, BOW_MAX_TIMES, BOW_MS, WALK_SPEED } from "./constants.ts";
 import { CUSHION_SPOTS, WALK_BOUNDS, resolveWalkable } from "./layout.ts";
+import type { CushionSpot } from "./layout.ts";
+import type { Persona } from "./persona.ts";
 
 export interface NpcBody {
   readonly id: string;
@@ -17,11 +19,29 @@ export interface NpcActions {
   bow(id: string, times: number): boolean;
 }
 
+export interface NpcVisitor {
+  readonly id: string;
+  readonly x: number;
+  readonly z: number;
+  readonly bowCount: number;
+}
+
 export interface NpcWorld {
   now: number;
   random: () => number;
   chantEndsAt: number | null;
+  visitors: readonly NpcVisitor[];
   isFree(cushionId: number): boolean;
+}
+
+interface Point {
+  x: number;
+  z: number;
+}
+
+interface Nearby {
+  visitor: NpcVisitor;
+  distance: number;
 }
 
 interface Seat {
@@ -29,14 +49,16 @@ interface Seat {
   bows: number;
   bowBase: number;
   bowsAsked: boolean;
+  greetBows: number;
   leaveAt: number;
 }
 
 export interface NpcBrain {
-  readonly restless: number;
-  readonly devotion: number;
+  readonly persona: Persona;
   nextThinkAt: number;
   seat: Seat | null;
+  greetAt: number;
+  seen: Map<string, number>;
 }
 
 type Range = readonly [number, number];
@@ -48,10 +70,18 @@ const SETTLE_MS: Range = [1000, 3000];
 const SIT_MS: Range = [12_000, 40_000];
 const LINGER_MS: Range = [0, 6000];
 const AFTER_STAND_MS: Range = [1000, 3000];
+const GREET_DELAY_MS: Range = [500, 1500];
+const AWAY_M: Range = [2, 3];
+const APPROACH_GAP_M: Range = [1, 1.5];
+const GREET_RANGE_M = 3;
+const TOO_CLOSE_M = 1.5;
+const NEAR_M = 3;
+const APPROACH_FACTOR = 0.5;
 const FAR_STROLL_CHANCE = 0.15;
 const CHANT_SIT_BOOST = 0.5;
 const WALK_RECHECK_MS = 300;
 const BOW_RECHECK_MS = 400;
+const SOCIAL_RECHECK_MS = 1000;
 const ARRIVE_SLACK_MS = 300;
 
 function span(random: () => number, [low, high]: Range): number {
@@ -62,12 +92,13 @@ function travelMs(monk: NpcBody, x: number, z: number): number {
   return (Math.hypot(x - monk.x, z - monk.z) / WALK_SPEED) * 1000;
 }
 
-export function createNpcBrain(random: () => number, now: number): NpcBrain {
+export function createNpcBrain(persona: Persona, random: () => number, now: number): NpcBrain {
   return {
-    restless: 0.2 + random() * 0.7,
-    devotion: 0.3 + random() * 0.7,
+    persona,
     nextThinkAt: now + span(random, FIRST_THINK_MS),
     seat: null,
+    greetAt: 0,
+    seen: new Map(),
   };
 }
 
@@ -75,15 +106,47 @@ export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, action
   if (monk.cushionId < 0) {
     brain.seat = null;
   } else if (brain.seat?.cushionId !== monk.cushionId) {
-    brain.seat = { cushionId: monk.cushionId, bows: -1, bowBase: 0, bowsAsked: false, leaveAt: 0 };
+    brain.seat = { cushionId: monk.cushionId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, leaveAt: 0 };
+    brain.greetAt = 0;
   }
 
-  if (monk.mode === "walk") brain.nextThinkAt = world.now + WALK_RECHECK_MS;
-  else if (brain.seat) thinkSeated(brain, brain.seat, monk, world, actions);
-  else thinkStanding(brain, monk, world, actions);
+  const bowSeen = watchVisitors(brain, monk, world);
+
+  if (monk.mode === "walk") {
+    brain.nextThinkAt = world.now + WALK_RECHECK_MS;
+  } else if (brain.seat) {
+    thinkSeated(brain, brain.seat, monk, world, actions, bowSeen);
+    if (brain.seat) {
+      brain.nextThinkAt = Math.min(brain.nextThinkAt, world.now + SOCIAL_RECHECK_MS);
+      if (brain.greetAt > 0) brain.nextThinkAt = Math.min(brain.nextThinkAt, brain.greetAt);
+    }
+  } else {
+    thinkStanding(brain, monk, world, actions);
+  }
 }
 
-function thinkSeated(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
+function watchVisitors(brain: NpcBrain, monk: NpcBody, world: NpcWorld): boolean {
+  let bowSeen = false;
+  const present = new Set<string>();
+  for (const visitor of world.visitors) {
+    present.add(visitor.id);
+    const before = brain.seen.get(visitor.id);
+    brain.seen.set(visitor.id, visitor.bowCount);
+    if (before === undefined || visitor.bowCount <= before) continue;
+    if (Math.hypot(visitor.x - monk.x, visitor.z - monk.z) <= GREET_RANGE_M) bowSeen = true;
+  }
+  for (const id of brain.seen.keys()) if (!present.has(id)) brain.seen.delete(id);
+  return bowSeen;
+}
+
+function thinkSeated(
+  brain: NpcBrain,
+  seat: Seat,
+  monk: NpcBody,
+  world: NpcWorld,
+  actions: NpcActions,
+  bowSeen: boolean,
+): void {
   const { now, random } = world;
 
   if (monk.mode !== "kneel") {
@@ -98,6 +161,19 @@ function thinkSeated(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld
     return;
   }
 
+  if (bowSeen && brain.greetAt === 0 && random() < brain.persona.sociability) {
+    brain.greetAt = now + span(random, GREET_DELAY_MS);
+  }
+  if (brain.greetAt > 0 && now >= brain.greetAt) {
+    if (actions.bow(monk.id, 1)) {
+      brain.greetAt = 0;
+      seat.greetBows += 1;
+      brain.nextThinkAt = now + BOW_RECHECK_MS;
+      return;
+    }
+    brain.greetAt = now + BOW_RECHECK_MS;
+  }
+
   if (seat.bows > 0 && !seat.bowsAsked) {
     if (!actions.bow(monk.id, seat.bows)) {
       brain.nextThinkAt = now + BOW_RECHECK_MS;
@@ -109,7 +185,7 @@ function thinkSeated(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld
   }
 
   // standing up would cancel bows the sim still has queued
-  if (monk.bowCount - seat.bowBase < seat.bows) {
+  if (monk.bowCount - seat.bowBase - seat.greetBows < seat.bows) {
     brain.nextThinkAt = now + BOW_RECHECK_MS;
     return;
   }
@@ -120,7 +196,7 @@ function thinkSeated(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld
     return;
   }
 
-  if (world.chantEndsAt !== null && random() < brain.devotion) {
+  if (world.chantEndsAt !== null && random() < brain.persona.devotion) {
     seat.leaveAt = world.chantEndsAt + span(random, LINGER_MS);
     brain.nextThinkAt = seat.leaveAt;
     return;
@@ -133,25 +209,76 @@ function thinkSeated(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld
 
 function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
   const { now, random } = world;
+  const { persona } = brain;
+
+  const near = nearestVisitor(monk, world.visitors);
+  if (near && near.distance <= TOO_CLOSE_M) {
+    if (random() < persona.shyness) {
+      walkTo(brain, monk, world, actions, stepAway(monk, near.visitor, random));
+      return;
+    }
+  } else if (near && near.distance <= NEAR_M && random() < persona.sociability * APPROACH_FACTOR) {
+    walkTo(brain, monk, world, actions, approach(monk, near.visitor, random));
+    return;
+  }
 
   const chanting = world.chantEndsAt !== null;
-  const sitChance = 0.04 + 0.12 * (1 - brain.restless) + 0.05 * brain.devotion + (chanting ? CHANT_SIT_BOOST : 0);
+  const sitChance = 0.04 + 0.12 * (1 - persona.restless) + 0.05 * persona.devotion + (chanting ? CHANT_SIT_BOOST : 0);
   if (random() < sitChance) {
-    const free = CUSHION_SPOTS.filter((spot) => world.isFree(spot.id));
-    const spot = free[Math.floor(random() * free.length)];
+    const spot = pickSeat(persona, world);
     if (spot && actions.sit(monk.id, spot.id)) {
       brain.nextThinkAt = now + travelMs(monk, spot.x, spot.z) + ARRIVE_SLACK_MS;
       return;
     }
   }
 
-  const target = pickStrollTarget(monk, random);
-  actions.move(monk.id, target.x, target.z);
-  const pause = span(random, PAUSE_MS) * (1.3 - 0.7 * brain.restless);
-  brain.nextThinkAt = now + travelMs(monk, target.x, target.z) + pause;
+  walkTo(brain, monk, world, actions, pickStrollTarget(monk, random));
 }
 
-function pickStrollTarget(monk: NpcBody, random: () => number): { x: number; z: number } {
+function walkTo(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions, target: Point): void {
+  actions.move(monk.id, target.x, target.z);
+  const pause = span(world.random, PAUSE_MS) * (1.3 - 0.7 * brain.persona.restless);
+  brain.nextThinkAt = world.now + travelMs(monk, target.x, target.z) + pause;
+}
+
+function nearestVisitor(monk: NpcBody, visitors: readonly NpcVisitor[]): Nearby | null {
+  let nearest: Nearby | null = null;
+  for (const visitor of visitors) {
+    const distance = Math.hypot(visitor.x - monk.x, visitor.z - monk.z);
+    if (!nearest || distance < nearest.distance) nearest = { visitor, distance };
+  }
+  return nearest;
+}
+
+function directionFrom(visitor: NpcVisitor, monk: NpcBody, random: () => number): Point {
+  const dx = monk.x - visitor.x;
+  const dz = monk.z - visitor.z;
+  const length = Math.hypot(dx, dz);
+  if (length > 1e-6) return { x: dx / length, z: dz / length };
+  const angle = random() * Math.PI * 2;
+  return { x: Math.cos(angle), z: Math.sin(angle) };
+}
+
+function stepAway(monk: NpcBody, visitor: NpcVisitor, random: () => number): Point {
+  const away = directionFrom(visitor, monk, random);
+  const reach = span(random, AWAY_M);
+  return resolveWalkable(monk.x + away.x * reach, monk.z + away.z * reach);
+}
+
+function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Point {
+  const side = directionFrom(visitor, monk, random);
+  const gap = span(random, APPROACH_GAP_M);
+  return resolveWalkable(visitor.x + side.x * gap, visitor.z + side.z * gap);
+}
+
+function pickSeat(persona: Persona, world: NpcWorld): CushionSpot | undefined {
+  const free = CUSHION_SPOTS.filter((spot) => world.isFree(spot.id));
+  const front = world.random() < persona.frontRow ? free.filter((spot) => spot.z < 0) : free;
+  const pool = front.length > 0 ? front : free;
+  return pool[Math.floor(world.random() * pool.length)];
+}
+
+function pickStrollTarget(monk: NpcBody, random: () => number): Point {
   if (random() < FAR_STROLL_CHANCE) {
     return resolveWalkable(
       WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
@@ -168,11 +295,11 @@ function pickStrollTarget(monk: NpcBody, random: () => number): { x: number; z: 
 }
 
 function rollBows(brain: NpcBrain, random: () => number): number {
-  if (random() >= 0.35 + 0.65 * brain.devotion) return 0;
-  return random() < 0.6 * brain.devotion ? BOW_MAX_TIMES : 1;
+  if (random() >= 0.35 + 0.65 * brain.persona.devotion) return 0;
+  return random() < 0.6 * brain.persona.devotion ? BOW_MAX_TIMES : 1;
 }
 
 function sitMs(brain: NpcBrain, random: () => number): number {
-  const mix = Math.min(1, random() * 0.5 + brain.devotion * 0.5);
+  const mix = Math.min(1, random() * 0.5 + brain.persona.devotion * 0.5);
   return SIT_MS[0] + (SIT_MS[1] - SIT_MS[0]) * mix;
 }
