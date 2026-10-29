@@ -172,6 +172,30 @@ describe("monk assets", () => {
     expect(lower.min.y).toBeLessThan(-monkRig.foreArm * 0.8);
   });
 
+  it("keeps the chibi proportions measured from docs/reference/images.jpg (in head heights, H = crown to chin)", async () => {
+    const parts = await loadParts();
+    const head = bounds(parts.head);
+    const H = monkRig.headHeight;
+    const standingCrown = monkRig.hipStand + monkRig.neckY + monkRig.crownY;
+    const kneelingCrown = monkRig.cushionTop + monkRig.hipKneel + monkRig.neckY + monkRig.crownY;
+
+    expect((head.max.x - head.min.x) / H, "head width incl. ears").toBeGreaterThan(0.8);
+    expect((head.max.x - head.min.x) / H, "head width incl. ears").toBeLessThan(1.0);
+    expect(standingCrown / H, "standing height").toBeGreaterThan(3.0);
+    expect(standingCrown / H, "standing height").toBeLessThan(3.5);
+    expect((monkRig.neckY + monkRig.chinY) / H, "chin to hip").toBeGreaterThan(0.6);
+    expect((monkRig.neckY + monkRig.chinY) / H, "chin to hip").toBeLessThan(0.8);
+    expect(monkRig.hipStand / H, "hip to sole").toBeGreaterThan(1.3);
+    expect(monkRig.hipStand / H, "hip to sole").toBeLessThan(1.9);
+    expect((monkRig.shoulderX * 2) / H, "shoulder joints").toBeLessThan(0.7);
+
+    // Same overall size as the first version of the monk, so cameras, labels and the cushion keep working.
+    expect(standingCrown).toBeGreaterThan(1.168 * 0.85);
+    expect(standingCrown).toBeLessThan(1.168 * 1.15);
+    expect(kneelingCrown).toBeGreaterThan(1.098 * 0.85);
+    expect(kneelingCrown).toBeLessThan(1.098 * 1.15);
+  });
+
   it("keeps the hem off the ground, clear of the cushion, and the sock tips out from under it", async () => {
     const parts = await loadParts();
     const skirt = bounds(parts.skirt);

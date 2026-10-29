@@ -22,14 +22,16 @@ Colours are written to the "Col" vertex-colour layer from PALETTE, and the mater
 
 Blender axes: X right, Y forward (the face looks toward +Y), Z up. glTF export maps (x, y, z) -> (x, z, -y).
 
-Reference: docs/reference/49DtAu-RvqVtsi3b5ODbtr6LQbpRq8uM3b9jFR4l1rBky5vgfMbhJmDlxTzJwF5o9UbmmEeVHSI4bOg9L1MlCg.webp
-(seated stone Buddha, low camera angle). H = crown to chin = 125 px in the 1000x750 photo. Measured, in H:
-    head width incl. ears      0.76     (face at the cheeks 0.67)
-    shoulder breadth, outer    1.60
-    neck (chin to shoulder line)  0.10
-    chin to front of lap       1.14     (foreshortened by the low camera; 1.40 used, see chin_to_hip)
-    crown to seat base         2.97
-    eye line below crown       0.49, nose base 0.68, mouth 0.77
+Reference: docs/reference/images.jpg, panel 4 (bottom right: the full-body chibi avatar, 194x258 px of the 387x516 sheet).
+H = hair top to chin = 66 px (y 37 to 103). Measured, in H:
+    standing height, hair top to sole   3.18     (210 px)
+    head width: face 0.64, with the side locks 0.82 (with the twin tails 1.1)
+    shoulder breadth, outer, arms down  0.72 .. 0.76
+    chin to waist (top of the skirt)    0.68     (a very short torso)
+    waist to sole                       1.50
+    waist width 0.33 .. 0.40, chest 0.55, skirt hem width 0.83 (hem 0.41 below the waist)
+    foot width 0.30, foot centres 0.19 either side of the middle, hand width 0.20
+(An earlier version used a seated stone Buddha photo; its statue ratios, shoulders 1.55 H and chin to hip 1.40 H, are gone.)
 """
 
 import bmesh
@@ -49,52 +51,59 @@ from mathutils.bvhtree import BVHTree
 # CONFIG - change numbers here and rebuild. Lengths are scene units (1 unit = the game's world unit).
 # ----------------------------------------------------------------------------------------------------------------------
 
-HEAD_H = 0.32  # crown to chin; the unit of every ratio below. Kneeling crown height = 3.0 H, like the reference.
+HEAD_H = 0.36  # hair/crown to chin; the unit of every ratio below. Standing crown = 3.18 H, kneeling on the cushion 2.8 H.
 
-RATIO = {  # in units of HEAD_H, measured from the reference
-    "head_width": 0.78,  # skull plus ears
-    "head_depth": 0.80,
-    "shoulder_breadth": 1.55,  # outer edge to outer edge, sleeves included
-    "neck": 0.12,  # chin down to the base of the neck
-    "chin_to_hip": 1.40,  # chin down to the hip pivot (waist belt sits just above it)
+RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
+    "head_width": 0.86,  # skull plus ears (face 0.64, with the side locks 0.82)
+    "head_depth": 0.84,
+    "shoulder_breadth": 0.85,  # outer edge to outer edge, sleeves included (0.72 .. 0.76 measured, puffed sleeves add a bit)
+    "neck": 0.07,  # chin down to the base of the neck (chibi: almost none)
+    "chin_to_hip": 0.68,  # chin down to the hip pivot (waist belt sits just above it)
+    "waist_to_sole": 1.50,  # hip pivot height when standing
 }
 
 RIG = {  # pivots and lengths the animation code uses
-    "hipStand": 0.40,
-    "hipKneel": 0.20,
-    "skirtDrop": 0.36,
-    "shoulderX": 0.18,
-    "shoulderDrop": 0.06,  # shoulder joint below the neck base
-    "upperArm": 0.18,
-    "foreArm": 0.17,
-    "footX": 0.09,
-    "footY": 0.045,
-    "footForward": 0.15,  # standing: the foot pivot sits this far in front of the hip so the sock tip clears the hem
-    "footKneelZ": 0.25,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
-    "footKneelY": 0.056,
+    "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
+    "hipKneel": 0.27,
+    "skirtDrop": 0.50,  # hem 0.04 above the ground
+    "shoulderX": 0.095,
+    "shoulderDrop": 0.045,  # shoulder joint below the neck base
+    "upperArm": 0.08,
+    "foreArm": 0.06,
+    "footX": 0.07,
+    "footY": 0.042,
+    "footForward": 0.11,  # standing: the foot pivot sits this far in front of the hip so the sock tip clears the hem
+    "footKneelZ": 0.20,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
     "footKneelTilt": pi,
-    "kneelSkirtGrow": 0.38,  # kneeling spreads the skirt sideways ...
-    "kneelSkirtScaleY": 0.56,  # ... and shortens it
+    "kneelSkirtGrow": 0.45,  # kneeling spreads the skirt sideways ...
+    "kneelSkirtScaleY": 0.54,  # ... and shortens it
     "kneelSkirtLift": 0.01,
     "cushionTop": 0.13,
 }
 
+FACE_K = HEAD_H / 0.32  # the face was drawn for a 0.32 head; every absolute size in it scales with the head
+
+
+def fk(*values):
+    return tuple(v * FACE_K for v in values) if len(values) > 1 else values[0] * FACE_K
+
+
 FACE = {  # heights are fractions of HEAD_H above the chin, x is a distance from the centre line
     "eye_f": 0.47,
-    "eye_x": 0.058,
-    "eye_radii": (0.0175, 0.011, 0.0225),
+    "eye_x": fk(0.058),
+    "eye_radii": fk(0.0175, 0.011, 0.0225),
     "cheek_f": 0.29,
-    "cheek_x": 0.078,
-    "cheek_radii": (0.030, 0.010, 0.022),
+    "cheek_x": fk(0.078),
+    "cheek_radii": fk(0.030, 0.010, 0.022),
     "nose_f": 0.33,
-    "nose_radii": (0.016, 0.016, 0.013),
+    "nose_radii": fk(0.016, 0.016, 0.013),
     "mouth_f": 0.185,
-    "mouth_halfwidth": 0.03,
-    "mouth_radius": 0.0042,
+    "mouth_halfwidth": fk(0.03),
+    "mouth_radius": fk(0.0042),
     "jaw_taper": 0.14,  # how much the skull narrows toward the chin
     "ear_f": 0.42,
-    "ear_radii": (0.0085, 0.020, 0.030),
-    "ear_out": 0.012,  # how far an ear sticks out of the skull
+    "ear_radii": fk(0.0085, 0.020, 0.030),
+    "ear_out": fk(0.012),  # how far an ear sticks out of the skull
 }
 
 HAIR = {  # shaved head: no hair mesh at all, the scalp of the head part just turns a shade darker toward the crown
@@ -110,7 +119,7 @@ OUTFIT = {
     "belt_knot": True,
     "collar_ring": True,
     "sash": True,  # the cream V of the crossed collar
-    "sash_width": 0.026,
+    "sash_width": 0.019,
 }
 SASH_LIFT = 0.002  # how far the cream lapel ribbon floats above the robe (it is a decal, not a 3D strap)
 
@@ -150,7 +159,7 @@ SKULL_A = H / 2
 SKULL_ZC = CHIN_Z + SKULL_A
 SKULL_RX = (RATIO["head_width"] * H - 2 * FACE["ear_out"]) / 2
 SKULL_RY = RATIO["head_depth"] * H / 2
-SKULL_CY = 0.02  # the skull sits a little forward of the neck, which also keeps the face and hair on the front side
+SKULL_CY = fk(0.02)  # the skull sits a little forward of the neck, which also keeps the face and hair on the front side
 
 COLOR_LAYER = "Col"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -360,7 +369,7 @@ def build_head():
         rings.append(ring_xy(0.0, SKULL_CY, z, rx, ry, n))
     p.loft(rings, "skin", cap_first=Vector((0.0, SKULL_CY, CHIN_Z)), cap_last=Vector((0.0, SKULL_CY, CROWN_Z)))
 
-    neck = [ring_xy(0.0, 0.004, z, r, r, 12) for z, r in ((-0.025, 0.056), (0.0, 0.052), (CHIN_Z + 0.02, 0.05))]
+    neck = [ring_xy(0.0, 0.004, z, r, r, 12) for z, r in ((-0.025, 0.046), (0.0, 0.043), (CHIN_Z + 0.02, 0.042))]
     p.loft(neck, "skin")
 
     ex = SKULL_RX
@@ -369,7 +378,7 @@ def build_head():
         t = math.asin(clamp((z - SKULL_ZC) / SKULL_A, -0.999, 0.999))
         _, rx, ry = skull_at(t)
         y, _ = skull_front(side * rx * 0.97, z)
-        centre = Vector((side * (rx + FACE["ear_out"] - FACE["ear_radii"][0] * 0.9), SKULL_CY - 0.012, z))
+        centre = Vector((side * (rx + FACE["ear_out"] - FACE["ear_radii"][0] * 0.9), SKULL_CY - fk(0.012), z))
         p.ellipsoid(centre, FACE["ear_radii"], "skin", rot=(0, 0, side * radians(-14)), u=8, v=6)
     return p.to_object()
 
@@ -400,7 +409,7 @@ def build_face():
     for i in range(steps):
         u = -1 + 2 * i / (steps - 1)
         x = hw * u
-        z = z0 + 0.0075 * u * u
+        z = z0 + fk(0.0075) * u * u
         y, ang = skull_front(x, z)
         pts.append((Vector((x, y - 0.0005, z)), ang))
     sides = 5
@@ -437,10 +446,10 @@ def mouth_rings(p, rings):
 def build_hair():
     p = Part("hair")
     if HAIR["crown_marks"]:
-        for x, y in ((-0.03, SKULL_CY + 0.012), (0.03, SKULL_CY + 0.012), (0.0, SKULL_CY - 0.032)):
+        for x, y in ((-fk(0.03), SKULL_CY + fk(0.012)), (fk(0.03), SKULL_CY + fk(0.012)), (0.0, SKULL_CY - fk(0.032))):
             q = 1 - (x / SKULL_RX) ** 2 - ((y - SKULL_CY) / SKULL_RY) ** 2
             z = SKULL_ZC + SKULL_A * sqrt(max(q, 0.0)) + 0.0005
-            p.ellipsoid(Vector((x, y, z)), (0.0085, 0.0085, 0.0035), "mark", u=8, v=4)
+            p.ellipsoid(Vector((x, y, z)), fk(0.0085, 0.0085, 0.0035), "mark", u=8, v=4)
     return p.to_object()
 
 
@@ -448,15 +457,15 @@ def build_hair():
 # Robe (frame: origin at the hip pivot)
 # ----------------------------------------------------------------------------------------------------------------------
 
-TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power
-    (0.000, 0.172, 0.142, 2.3),
-    (0.060, 0.160, 0.133, 2.3),
-    (0.180, 0.172, 0.138, 2.4),
-    (0.290, 0.192, 0.138, 2.6),
-    (TORSO_H - 0.080, 0.194, 0.128, 2.8),
-    (TORSO_H - 0.050, 0.166, 0.114, 2.5),
-    (TORSO_H - 0.024, 0.116, 0.088, 2.2),
-    (TORSO_H, 0.068, 0.066, 2.0),
+TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. Waist 0.45 H wide, chest 0.55 H, narrow neck
+    (0.000, 0.080, 0.068, 2.3),
+    (0.030, 0.077, 0.066, 2.3),
+    (0.090, 0.086, 0.069, 2.4),
+    (0.145, 0.097, 0.069, 2.6),
+    (TORSO_H - 0.040, 0.100, 0.066, 2.8),
+    (TORSO_H - 0.026, 0.088, 0.060, 2.5),
+    (TORSO_H - 0.014, 0.070, 0.054, 2.2),
+    (TORSO_H, 0.056, 0.050, 2.0),
 ]
 
 
@@ -519,15 +528,16 @@ def build_skirt():
     n = SEGMENTS["skirt"]
     drop = RIG["skirtDrop"]
     folds = 6
+    hem_w, hem_d, waist_w, waist_d = 0.176, 0.168, 0.084, 0.072
     stations = [  # z, half-width, half-depth, fold amplitude
-        (-drop, 0.268, 0.258, 0.0),
-        (-drop + 0.004, 0.2755, 0.2655, 0.0),
-        (-drop + 0.016, 0.2745, 0.2635, 0.012),
-        (-0.30, 0.262, 0.246, 0.011),
-        (-0.22, 0.240, 0.222, 0.009),
-        (-0.12, 0.208, 0.188, 0.006),
-        (-0.04, 0.184, 0.158, 0.003),
-        (0.0, 0.176, 0.146, 0.0),
+        (-drop, hem_w, hem_d, 0.0),
+        (-drop + 0.004, hem_w + 0.0065, hem_d + 0.0065, 0.0),
+        (-drop + 0.014, hem_w + 0.0055, hem_d + 0.0055, 0.006),
+        (-0.84 * drop, 0.173, 0.164, 0.0055),
+        (-0.60 * drop, 0.162, 0.152, 0.005),
+        (-0.32 * drop, 0.135, 0.124, 0.004),
+        (-0.10 * drop, 0.102, 0.090, 0.002),
+        (0.0, waist_w, waist_d, 0.0),
     ]
     rings = []
     for z, w, d, amp in stations:
@@ -537,7 +547,7 @@ def build_skirt():
             wob = 1 + amp * cos(folds * a) / max(w, 1e-6) * 3
             ring.append(Vector((w * wob * cos(a), d * wob * sin(a), z)))
         rings.append(ring)
-    inner = ring_xy(0.0, 0.0, -drop + 0.012, 0.25, 0.24, n)
+    inner = ring_xy(0.0, 0.0, -drop + 0.01, hem_w - 0.016, hem_d - 0.016, n)
     p.loft([inner] + rings, "robe")
     return p.to_object()
 
@@ -545,30 +555,30 @@ def build_skirt():
 def build_trim():
     p = Part("trim")
     n = SEGMENTS["belt"]
-    z0 = 0.004
+    z0 = 0.003
     belt = []
-    for z, grow in ((z0, 0.003), (z0 + 0.012, 0.012), (z0 + 0.05, 0.012), (z0 + 0.062, 0.003)):
+    for z, grow in ((z0, 0.003), (z0 + 0.009, 0.010), (z0 + 0.036, 0.010), (z0 + 0.045, 0.003)):
         hw, hd, power = torso_at(z)
         belt.append(ring_xy(0.0, 0.0, z, hw + grow, hd + grow, n, power))
     p.loft(belt, "gold", cap_first=False, cap_last=False)
 
     if OUTFIT["belt_knot"]:
-        zc = z0 + 0.031
+        zc = z0 + 0.0225
         hw, hd, _ = torso_at(zc)
-        y = hd + 0.012
-        p.ellipsoid(Vector((0.0, y + 0.003, zc)), (0.017, 0.011, 0.016), "gold", u=8, v=4)
+        y = hd + 0.009
+        p.ellipsoid(Vector((0.0, y + 0.002, zc)), (0.013, 0.009, 0.012), "gold", u=8, v=4)
         for side in (-1, 1):
-            p.ellipsoid(Vector((side * 0.026, y, zc + 0.004)), (0.015, 0.008, 0.012), "gold", rot=(0, side * radians(-25), 0), u=8, v=4)
+            p.ellipsoid(Vector((side * 0.02, y, zc + 0.003)), (0.011, 0.006, 0.009), "gold", rot=(0, side * radians(-25), 0), u=8, v=4)
 
     if OUTFIT["collar_ring"]:
         collar = []
-        for z, grow in ((TORSO_H - 0.016, 0.012), (TORSO_H - 0.004, 0.010), (TORSO_H + 0.012, 0.0)):
+        for z, grow in ((TORSO_H - 0.012, 0.009), (TORSO_H - 0.003, 0.008), (TORSO_H + 0.009, 0.0)):
             hw, hd, power = torso_at(min(z, TORSO_H))
             collar.append(ring_xy(0.0, 0.0, z, hw + grow, hd + grow, 16, 2.0))
         p.loft(collar, "cream")
 
     if OUTFIT["sash"]:
-        build_sash(p, z0 + 0.075)
+        build_sash(p, z0 + 0.052)
     return p.to_object()
 
 
@@ -577,11 +587,11 @@ def build_sash(p, tip_z):
     torso (ray-cast onto it), and the rows sit on the torso's own ring heights so no row straddles a crease."""
     surface = TorsoSurface()
     width = OUTFIT["sash_width"]
-    start_z = TORSO_H - 0.012
-    rows_z = [start_z] + [z for z, *_ in reversed(TORSO_PROFILE) if tip_z + 0.01 < z < start_z] + [tip_z]
+    start_z = TORSO_H - 0.006
+    rows_z = [start_z] + [z for z, *_ in reversed(TORSO_PROFILE) if tip_z + 0.008 < z < start_z - 0.004] + [tip_z]
     low, high = 1.0, -1.0
     for side in (-1, 1):
-        start_x = side * 0.07
+        start_x = side * 0.04
         dx, dz = -start_x, tip_z - start_z
         ln = sqrt(dx * dx + dz * dz)
         px, pz = -dz / ln, dx / ln
@@ -632,6 +642,9 @@ def dome_rings(radius, n, steps, z_centre=0.0, squash=1.0):
     return rings
 
 
+SHOULDER_DOME = 0.5  # height of the shoulder cap over the joint, as a fraction of the sleeve radius
+
+
 def build_sleeve_upper():
     p = Part("sleeveUpper")
     n = SEGMENTS["sleeve"]
@@ -642,8 +655,8 @@ def build_sleeve_upper():
         ring_xy(0.0, 0.0, -arm * 0.6, r * 1.06, r * 1.06, n),
         ring_xy(0.0, 0.0, -arm * 0.2, r * 1.0, r * 1.0, n),
     ]
-    dome = dome_rings(r, n, 3, squash=0.62)
-    p.loft(tube + dome, "robe", cap_first=True, cap_last=Vector((0.0, 0.0, r * 0.62)))
+    dome = dome_rings(r, n, 3, squash=SHOULDER_DOME)
+    p.loft(tube + dome, "robe", cap_first=True, cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))
     return p.to_object()
 
 
@@ -652,16 +665,16 @@ def build_sleeve_lower():
     n = SEGMENTS["sleeve"]
     fore = RIG["foreArm"]
     top_r = SHOULDER_R * 1.14
-    cuff = top_r + 0.03
-    end = -(fore - 0.02)
+    cuff = top_r + 0.022
+    end = -(fore - 0.012)
     rings = [
-        ring_xy(0.0, 0.0, end - 0.004, 0.034, 0.034, n),
-        ring_xy(0.0, 0.0, end - 0.002, cuff - 0.02, cuff - 0.02, n),
-        ring_xy(0.0, 0.0, end + 0.0, cuff - 0.012, cuff - 0.012, n),
-        ring_xy(0.0, 0.0, end + 0.008, cuff + 0.004, cuff + 0.004, n),
-        ring_xy(0.0, 0.0, end + 0.04, cuff - 0.004, cuff - 0.004, n),
-        ring_xy(0.0, 0.0, -fore * 0.5, lerp(top_r, cuff, 0.5), lerp(top_r, cuff, 0.5), n),
-        ring_xy(0.0, 0.0, -0.01, top_r, top_r, n),
+        ring_xy(0.0, 0.0, end - 0.004, 0.032, 0.032, n),
+        ring_xy(0.0, 0.0, end - 0.002, cuff - 0.016, cuff - 0.016, n),
+        ring_xy(0.0, 0.0, end + 0.0, cuff - 0.01, cuff - 0.01, n),
+        ring_xy(0.0, 0.0, end + 0.005, cuff + 0.003, cuff + 0.003, n),
+        ring_xy(0.0, 0.0, end + 0.014, cuff - 0.003, cuff - 0.003, n),
+        ring_xy(0.0, 0.0, -fore * 0.4, lerp(top_r, cuff, 0.5), lerp(top_r, cuff, 0.5), n),
+        ring_xy(0.0, 0.0, -0.008, top_r, top_r, n),
     ]
     elbow_dome = [
         ring_xy(0.0, 0.0, top_r * 0.7 * sin((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), n)
@@ -674,53 +687,68 @@ def build_sleeve_lower():
 def build_hand():
     p = Part("hand")
     n = SEGMENTS["hand"]
-    profile = [  # z, half-width, half-depth (origin at the wrist, fingers hang down)
-        (-0.098, 0.016, 0.014),
-        (-0.088, 0.030, 0.024),
-        (-0.066, 0.039, 0.030),
-        (-0.040, 0.040, 0.031),
-        (-0.014, 0.033, 0.026),
-        (0.012, 0.029, 0.024),
-        (0.030, 0.029, 0.024),
+    profile = [  # z, half-width, half-depth (origin at the wrist, fingers hang down); 0.2 H wide
+        (-0.070, 0.014, 0.013),
+        (-0.062, 0.027, 0.021),
+        (-0.046, 0.035, 0.027),
+        (-0.028, 0.036, 0.028),
+        (-0.010, 0.030, 0.024),
+        (0.008, 0.026, 0.022),
+        (0.021, 0.026, 0.022),
     ]
     rings = [ring_xy(0.0, 0.0, z, w, d, n) for z, w, d in profile]
-    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, -0.103)), cap_last=True)
+    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, -0.074)), cap_last=True)
     return p.to_object()
 
 
-def build_foot():
-    """버선: a cream sock with the upturned tip. Toes point toward +Y; the sole is at z = -footY."""
-    p = Part("foot")
+def foot_geometry():
+    """Rings and the two end poles of the sock, in the ankle frame. Toes point toward +Y; the sole is at z = -footY."""
     n = SEGMENTS["foot"]
     sole = -RIG["footY"]
     stations = [  # y, half-width, bottom z, top z
-        (-0.064, 0.021, sole + 0.012, sole + 0.072),
-        (-0.052, 0.036, sole + 0.002, sole + 0.100),
-        (-0.020, 0.044, sole, sole + 0.102),
-        (0.020, 0.048, sole, sole + 0.082),
-        (0.064, 0.044, sole, sole + 0.060),
-        (0.104, 0.034, sole + 0.002, sole + 0.052),
-        (0.138, 0.022, sole + 0.014, sole + 0.066),
-        (0.160, 0.011, sole + 0.040, sole + 0.086),
+        (-0.054, 0.021, sole + 0.011, sole + 0.065),
+        (-0.044, 0.036, sole + 0.002, sole + 0.090),
+        (-0.017, 0.044, sole, sole + 0.092),
+        (0.017, 0.048, sole, sole + 0.074),
+        (0.054, 0.044, sole, sole + 0.054),
+        (0.088, 0.034, sole + 0.002, sole + 0.047),
+        (0.117, 0.022, sole + 0.012, sole + 0.059),
+        (0.136, 0.011, sole + 0.036, sole + 0.077),
     ]
     rings = []
     for y, w, zb, zt in stations:
         zc, h = (zb + zt) / 2, (zt - zb) / 2
         rings.append([Vector((w * cos(2 * pi * k / n), y, zc - h * sin(2 * pi * k / n))) for k in range(n)])
+    heel = Vector((0.0, -0.065, sum(v.z for v in rings[0]) / n))
+    toe = Vector((0.0, 0.144, sum(v.z for v in rings[-1]) / n + 0.007))
+    return rings, heel, toe
+
+
+def build_foot():
+    """버선: a cream sock with the upturned tip."""
+    p = Part("foot")
+    n = SEGMENTS["foot"]
+    rings, heel, toe = foot_geometry()
     bm = p.bm
     vr = [[bm.verts.new(v) for v in ring] for ring in rings]
     for i in range(len(vr) - 1):
         for j in range(n):
             k = (j + 1) % n
             p.face([vr[i][j], vr[i][k], vr[i + 1][k], vr[i + 1][j]], "sock")
-    for ring, tip_y, flip in ((vr[0], -0.076, True), (vr[-1], 0.170, False)):
-        centre = sum((v.co for v in ring), Vector()) / n
-        pole = Vector((0.0, tip_y, centre.z + (0.008 if not flip else 0.0)))
+    for ring, pole, flip in ((vr[0], heel, True), (vr[-1], toe, False)):
         c = bm.verts.new(pole)
         for j in range(n):
             k = (j + 1) % n
             p.face([c, ring[k], ring[j]] if flip else [c, ring[j], ring[k]], "sock")
     return p.to_object()
+
+
+def foot_top():
+    rings, heel, toe = foot_geometry()
+    return max(max(v.z for ring in rings for v in ring), heel.z, toe.z)
+
+
+RIG["footKneelY"] = round(foot_top() + 0.001, 4)  # folded sole-up, the top of the sock rests on the cushion
 
 
 BUILDERS = {
@@ -983,7 +1011,7 @@ def render_previews(parts):
         render_view(cam, name, az, mid, 1.45)
     standing.hide_render = True
     kneeling.hide_render = False
-    kmid = (0, 0, 0.62)
+    kmid = (0, 0, 0.56)
     for name, az in (("monk_kneel_front", 0), ("monk_kneel_three_quarter", 38), ("monk_kneel_side", 90)):
         render_view(cam, name, az, kmid, 1.45)
     for coll in (standing, kneeling):
