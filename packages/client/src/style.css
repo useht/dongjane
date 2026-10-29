@@ -263,7 +263,30 @@ button:disabled {
 
 .link-banner {
   top: calc(var(--safe-top) + var(--edge) + 90px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(120, 52, 28, 0.9);
+}
+
+.link-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-action {
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  margin: -2px -8px -2px 0;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 224, 160, 0.4);
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .toasts {
@@ -300,43 +323,8 @@ button:disabled {
   bottom: calc(var(--safe-bottom) + var(--edge));
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.status-stack {
-  min-width: 0;
-  display: grid;
-  justify-items: start;
-  gap: 6px;
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.status-line {
-  display: none;
-}
-
-.status:has(.bow-tally:empty) {
-  display: none;
-}
-
-.bow-tally {
-  color: var(--gold);
-  font-weight: 700;
-}
-
-.bow-tally:empty {
-  display: none;
 }
 
 .bow-actions {
@@ -823,6 +811,10 @@ button:disabled {
 }
 
 .overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
   margin-top: 8px;
 }
 
