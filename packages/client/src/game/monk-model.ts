@@ -62,6 +62,12 @@ const UPPER_ARM = 0.18;
 const FORE_ARM = 0.16;
 const CUSHION_TOP = 0.13;
 const EMOTE_ANCHOR_Y = 0.45;
+const KNOCK_MS = 220;
+const KNOCK_REDUCED_SHARE = 0.3;
+const CHANT_NOD_HZ = 0.8;
+const CHANT_NOD = 0.06;
+const CHANT_SWAY_HZ = 0.4;
+const CHANT_SWAY = 0.025;
 
 function buildPartGeometries(): Record<PartName, BufferGeometry> {
   const head = new GeometryBuilder()
@@ -133,6 +139,7 @@ export class MonkAvatar {
   mode = "stand";
   modeSince = 0;
   slot = -1;
+  chanting = false;
 
   private readonly hips = new Object3D();
   private readonly skirtNode = new Object3D();
@@ -145,6 +152,8 @@ export class MonkAvatar {
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private chantMix = 0;
+  private knockAt = Number.NEGATIVE_INFINITY;
   private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
@@ -191,6 +200,10 @@ export class MonkAvatar {
     this.modeSince = nowMs;
   }
 
+  knock(nowMs: number): void {
+    this.knockAt = nowMs;
+  }
+
   place(x: number, z: number, yaw: number): void {
     this.root.position.x = x;
     this.root.position.z = z;
@@ -209,6 +222,10 @@ export class MonkAvatar {
     const swingBack = Math.sin(this.phase + Math.PI);
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
+    this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
+    const chant = this.chantMix * kneel;
+    const knockProgress = (nowMs - this.knockAt) / KNOCK_MS;
+    const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
     this.root.position.y = this.liftedBy * kneel;
     const bob = Math.abs(swing) * 0.03 * walk;
@@ -221,7 +238,8 @@ export class MonkAvatar {
     this.skirtNode.position.y = 0.01 * kneel;
 
     this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
-    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk;
+    this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
+    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -242,10 +260,11 @@ export class MonkAvatar {
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;
-      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel);
+      const strike = side === 1 ? knock * prayMix : 0;
+      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel) + strike * 0.12;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
-      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel);
+      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.55;
 
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;

@@ -57,6 +57,14 @@ export class SoloSession {
     if (!this.closed) this.sim.emote(SOLO_ID, id);
   }
 
+  knock(): void {
+    if (!this.closed) this.sim.knock(SOLO_ID);
+  }
+
+  chant(on: boolean): void {
+    if (!this.closed) this.sim.chant(SOLO_ID, on);
+  }
+
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

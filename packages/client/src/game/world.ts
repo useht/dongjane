@@ -15,6 +15,7 @@ import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
+import { KnockTracker } from "./knock-tracker.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
@@ -34,6 +35,8 @@ export interface MonkView {
   bowCount: number;
   emote: number;
   emoteSeq: number;
+  knockSeq: number;
+  chanting: boolean;
 }
 
 export interface WorldCallbacks {
@@ -69,6 +72,7 @@ export class World {
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
   readonly emotes = new EmoteTracker();
+  private readonly knocks = new KnockTracker();
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
@@ -212,9 +216,11 @@ export class World {
     this.selfPrediction = display;
   }
 
-  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): void {
+  // Returns how many other monks struck their wooden fish since the last call; the caller plays the sound.
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): number {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
+    let remoteKnocks = 0;
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
@@ -249,12 +255,23 @@ export class World {
       entry.targetYaw = view.yaw;
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      entry.avatar.chanting = view.chanting;
+      if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
+        entry.avatar.knock(nowMs);
+        remoteKnocks += 1;
+      }
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
     }
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+    return remoteKnocks;
+  }
+
+  // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.
+  knock(monkId: string, nowMs: number): void {
+    this.entries.get(monkId)?.avatar.knock(nowMs);
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
@@ -263,6 +280,7 @@ export class World {
 
   clear(): void {
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
+    this.knocks.reset();
     this.selfId = null;
     this.selfPrediction = null;
     this.clock.reset();
@@ -315,6 +333,7 @@ export class World {
     entry.avatar.dispose();
     this.entries.delete(id);
     this.emotes.forget(id);
+    this.knocks.forget(id);
   }
 
   private applyAtmosphere(): void {

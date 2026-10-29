@@ -17,6 +17,15 @@ export const BELL_PARTIALS: readonly BellPartial[] = [
 export const BELL_STRIKES = 3;
 export const BELL_GAP_SECONDS = 5.5;
 
+// A soft sine pair a fifth apart; the second sits a hair sharp so the two slowly beat against each other.
+export const CHANT_DRONE_HZ: readonly [number, number] = [BELL_FUNDAMENTAL_HZ, BELL_FUNDAMENTAL_HZ * 1.5 + 0.6];
+export const CHANT_LEVEL = 0.1;
+
+interface ChantVoice {
+  master: GainNode;
+  sources: OscillatorNode[];
+}
+
 type AudioContextCtor = typeof AudioContext;
 
 function contextClass(): AudioContextCtor | undefined {
@@ -30,6 +39,8 @@ export class AudioEngine {
   private effects: GainNode | null = null;
   private ambience: GainNode | null = null;
   private windGain: GainNode | null = null;
+  private chantVoice: ChantVoice | null = null;
+  private chantWanted = false;
   private ambientVolume = 0.7;
   private effectVolume = 0.7;
   private sound = true;
@@ -38,6 +49,10 @@ export class AudioEngine {
 
   get unlocked(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
+  }
+
+  get chanting(): boolean {
+    return this.chantWanted;
   }
 
   configure(ambientVolume: number, effectVolume: number, sound: boolean, wind: boolean): void {
@@ -63,6 +78,7 @@ export class AudioEngine {
       this.ambience.connect(this.ctx.destination);
       this.startWind();
       this.applyLevels();
+      if (this.chantWanted) this.buildChant();
     }
     if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => undefined);
   }
@@ -92,8 +108,20 @@ export class AudioEngine {
     osc.stop(now + 0.2);
   }
 
+  startChant(): void {
+    this.chantWanted = true;
+    this.buildChant();
+  }
+
+  stopChant(): void {
+    this.chantWanted = false;
+    this.releaseChant();
+  }
+
   dispose(): void {
     const ctx = this.ctx;
+    this.chantWanted = false;
+    this.chantVoice = null;
     this.ctx = null;
     this.effects = null;
     this.ambience = null;
@@ -169,6 +197,56 @@ export class AudioEngine {
     source.start();
     lfo.start();
     sweep.start();
+  }
+
+  private buildChant(): void {
+    const ctx = this.ctx;
+    const effects = this.effects;
+    if (!ctx || !effects || this.chantVoice) return;
+    const now = ctx.currentTime;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 520;
+    tone.Q.value = 0.3;
+    const swell = ctx.createGain();
+    swell.gain.value = 0.6;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.21;
+    const lfoDepth = ctx.createGain();
+    lfoDepth.gain.value = 0.3;
+    lfo.connect(lfoDepth).connect(swell.gain);
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0, now);
+    master.gain.setTargetAtTime(CHANT_LEVEL, now, 0.35);
+    tone.connect(swell).connect(master).connect(effects);
+
+    const sources: OscillatorNode[] = [lfo];
+    CHANT_DRONE_HZ.forEach((hz, index) => {
+      const osc = ctx.createOscillator();
+      const share = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = hz;
+      share.gain.value = index === 0 ? 0.7 : 0.4;
+      osc.connect(share).connect(tone);
+      osc.start(now);
+      sources.push(osc);
+    });
+    lfo.start(now);
+    this.chantVoice = { master, sources };
+  }
+
+  private releaseChant(): void {
+    const voice = this.chantVoice;
+    this.chantVoice = null;
+    const ctx = this.ctx;
+    if (!voice || !ctx) return;
+    const now = ctx.currentTime;
+    voice.master.gain.cancelScheduledValues(now);
+    voice.master.gain.setTargetAtTime(0, now, 0.15);
+    for (const source of voice.sources) {
+      source.onended = () => voice.master.disconnect();
+      source.stop(now + 1.2);
+    }
   }
 
   private noise(seconds: number): AudioBuffer {
