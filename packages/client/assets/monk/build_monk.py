@@ -15,6 +15,8 @@ and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo)
 Parts (one mesh object each, named exactly like the slot in monk-model.ts), each built in the local frame of its pivot:
     head, face, hair, torso, skirt, trim, sleeveUpper, sleeveLower, hand, foot
 sleeveUpper, sleeveLower, hand and foot are mirror-symmetric about x = 0 because one geometry serves both sides.
+The head is shaved: "hair" is only the three ordination dots on the crown, and the scalp shade is a smooth vertex-colour
+gradient on the head itself (no cap mesh, so there is no edge to show).
 Robe parts (torso, skirt, sleeveUpper, sleeveLower) stay white; the game tints them per monk.
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
@@ -41,6 +43,7 @@ import tempfile
 import warnings
 from math import atan2, cos, pi, radians, sin, sqrt
 from mathutils import Euler, Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 # ----------------------------------------------------------------------------------------------------------------------
 # CONFIG - change numbers here and rebuild. Lengths are scene units (1 unit = the game's world unit).
@@ -66,6 +69,14 @@ RIG = {  # pivots and lengths the animation code uses
     "foreArm": 0.17,
     "footX": 0.09,
     "footY": 0.045,
+    "footForward": 0.15,  # standing: the foot pivot sits this far in front of the hip so the sock tip clears the hem
+    "footKneelZ": 0.25,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
+    "footKneelY": 0.056,
+    "footKneelTilt": pi,
+    "kneelSkirtGrow": 0.38,  # kneeling spreads the skirt sideways ...
+    "kneelSkirtScaleY": 0.56,  # ... and shortens it
+    "kneelSkirtLift": 0.01,
+    "cushionTop": 0.13,
 }
 
 FACE = {  # heights are fractions of HEAD_H above the chin, x is a distance from the centre line
@@ -86,13 +97,13 @@ FACE = {  # heights are fractions of HEAD_H above the chin, x is a distance from
     "ear_out": 0.012,  # how far an ear sticks out of the skull
 }
 
-HAIR = {  # shaved head: a barely visible stubble cap on the skin-coloured scalp
-    "enabled": True,
-    "thickness": 0.0045,
-    "hairline_front_f": 0.72,
+HAIR = {  # shaved head: no hair mesh at all, the scalp of the head part just turns a shade darker toward the crown
+    "scalp_tint": True,
+    "hairline_front_f": 0.72,  # fractions of the head height above the chin where the tint starts to fade in
     "hairline_side_f": 0.62,
     "hairline_back_f": 0.42,
-    "crown_marks": True,  # three tiny ordination dots
+    "fade": 0.75,  # latitude (radians) over which skin turns into full scalp colour
+    "crown_marks": True,  # three tiny ordination dots, the only geometry of the "hair" part
 }
 
 OUTFIT = {
@@ -101,6 +112,7 @@ OUTFIT = {
     "sash": True,  # the cream V of the crossed collar
     "sash_width": 0.026,
 }
+SASH_LIFT = 0.002  # how far the cream lapel ribbon floats above the robe (it is a decal, not a 3D strap)
 
 PALETTE = {  # sRGB hex
     "skin": 0xF3CBA2,
@@ -112,7 +124,7 @@ PALETTE = {  # sRGB hex
     "cheek": 0xF0948A,
     "mouth": 0x9A4A3C,
     "nose": 0xE8AE8C,
-    "stubble": 0xE8C19B,
+    "scalp": 0xDDB693,
     "mark": 0xA67F60,
 }
 
@@ -168,6 +180,15 @@ def lerp(a, b, t):
     return a + (b - a) * t
 
 
+def smoothstep(t):
+    t = clamp(t, 0.0, 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def mix_colors(a, b, t):
+    return tuple(lerp(x, y, t) for x, y in zip(a, b))
+
+
 def smooth_pow(c, p):
     return math.copysign(abs(c) ** (2.0 / p), c)
 
@@ -189,6 +210,7 @@ class Part:
         self.name = name
         self.bm = bmesh.new()
         self.keys = []
+        self.tint = None  # optional fn(key, co) -> linear colour or None, for smooth colour gradients
 
     def slot(self, key):
         if key not in self.keys:
@@ -239,7 +261,7 @@ class Part:
         bm.free()
         for key in self.keys:
             mesh.materials.append(material(key))
-        bake_colors(mesh, self.keys)
+        bake_colors(mesh, self.keys, self.tint)
         obj = bpy.data.objects.new(self.name, mesh)
         return obj
 
@@ -266,12 +288,14 @@ def material(key):
     return mat
 
 
-def bake_colors(mesh, keys):
+def bake_colors(mesh, keys, tint=None):
     attr = mesh.color_attributes.new(COLOR_LAYER, "FLOAT_COLOR", "CORNER")
     for poly in mesh.polygons:
-        colour = srgb_to_linear(PALETTE[keys[poly.material_index]])
+        key = keys[poly.material_index]
+        colour = srgb_to_linear(PALETTE[key])
         for li in poly.loop_indices:
-            attr.data[li].color = colour
+            shaded = tint(key, mesh.vertices[mesh.loops[li].vertex_index].co) if tint else None
+            attr.data[li].color = shaded or colour
     mesh.color_attributes.active_color = attr
     mesh.color_attributes.render_color_index = mesh.color_attributes.find(COLOR_LAYER)
 
@@ -305,8 +329,28 @@ def face_z(fraction):
     return CHIN_Z + fraction * H
 
 
+def hairline(a):
+    """Latitude where the scalp tint starts, around the head (a = azimuth, 0 = right ear, pi/2 = forehead)."""
+    t_front = math.asin((HAIR["hairline_front_f"] - 0.5) * 2)
+    t_side = math.asin((HAIR["hairline_side_f"] - 0.5) * 2)
+    t_back = math.asin((HAIR["hairline_back_f"] - 0.5) * 2)
+    s = sin(a)
+    return lerp(t_side, t_front, s**1.4) if s > 0 else lerp(t_side, t_back, -s)
+
+
+def scalp_tint(key, co):
+    """Skin turns smoothly into the shaved-scalp shade above the old hairline; neck, ears and face stay skin."""
+    if key != "skin" or not HAIR["scalp_tint"]:
+        return None
+    lat = math.asin(clamp((co.z - SKULL_ZC) / SKULL_A, -1.0, 1.0))
+    a = atan2((co.y - SKULL_CY) / SKULL_RY, co.x / SKULL_RX)
+    w = smoothstep((lat - hairline(a)) / HAIR["fade"])
+    return mix_colors(srgb_to_linear(PALETTE["skin"]), srgb_to_linear(PALETTE["scalp"]), w)
+
+
 def build_head():
     p = Part("head")
+    p.tint = scalp_tint
     n = SEGMENTS["head"]
     lats = 12
     rings = []
@@ -392,41 +436,10 @@ def mouth_rings(p, rings):
 
 def build_hair():
     p = Part("hair")
-    if not HAIR["enabled"]:
-        return p.to_object()
-    n = SEGMENTS["head"]
-    thick = HAIR["thickness"]
-    t_front = math.asin((HAIR["hairline_front_f"] - 0.5) * 2)
-    t_side = math.asin((HAIR["hairline_side_f"] - 0.5) * 2)
-    t_back = math.asin((HAIR["hairline_back_f"] - 0.5) * 2)
-    steps = 5
-    top_t = radians(78)
-
-    def shell_point(a, t, off):
-        z, rx, ry = skull_at(t)
-        x, y = rx * cos(a), ry * sin(a)
-        zc = z - SKULL_ZC
-        sx, sy, sz = 1 + off / SKULL_RX, 1 + off / SKULL_RY, 1 + off / SKULL_A
-        return Vector((x * sx, SKULL_CY + y * sy, SKULL_ZC + zc * sz))
-
-    rings = []
-    for i in range(steps):
-        ring = []
-        for k in range(n):
-            a = 2 * pi * k / n
-            s = sin(a)
-            low = lerp(t_side, t_front, s**1.4) if s > 0 else lerp(t_side, t_back, -s)
-            t = lerp(low, top_t, i / (steps - 1))
-            off = lerp(0.0015, thick, clamp(i / 1.5, 0.0, 1.0))
-            ring.append(shell_point(a, t, off))
-        rings.append(ring)
-    pole = Vector((0.0, SKULL_CY, CROWN_Z + thick))
-    p.loft(rings, "stubble", cap_last=pole)
-
     if HAIR["crown_marks"]:
         for x, y in ((-0.03, SKULL_CY + 0.012), (0.03, SKULL_CY + 0.012), (0.0, SKULL_CY - 0.032)):
             q = 1 - (x / SKULL_RX) ** 2 - ((y - SKULL_CY) / SKULL_RY) ** 2
-            z = SKULL_ZC + SKULL_A * sqrt(max(q, 0.0)) + thick - 0.0015
+            z = SKULL_ZC + SKULL_A * sqrt(max(q, 0.0)) + 0.0005
             p.ellipsoid(Vector((x, y, z)), (0.0085, 0.0085, 0.0035), "mark", u=8, v=4)
     return p.to_object()
 
@@ -463,12 +476,42 @@ def torso_front(x, z):
     return hd * (1 - xn**power) ** (1 / power)
 
 
+def torso_rings():
+    n = SEGMENTS["torso"]
+    return [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE]
+
+
 def build_torso():
     p = Part("torso")
-    n = SEGMENTS["torso"]
-    rings = [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE]
-    p.loft(rings, "robe", cap_first=True, cap_last=True)
+    p.loft(torso_rings(), "robe", cap_first=True, cap_last=True)
     return p.to_object()
+
+
+class TorsoSurface:
+    """The faceted torso mesh itself (not the smooth curve it is sampled from), so trim can sit exactly on it."""
+
+    def __init__(self):
+        self.bm = bmesh.new()
+        n = SEGMENTS["torso"]
+        vr = [[self.bm.verts.new(v) for v in ring] for ring in torso_rings()]
+        for i in range(len(vr) - 1):
+            for j in range(n):
+                k = (j + 1) % n
+                self.bm.faces.new([vr[i][j], vr[i][k], vr[i + 1][k], vr[i + 1][j]])
+        self.bm.normal_update()
+        self.tree = BVHTree.FromBMesh(self.bm)
+
+    def front(self, x, z):
+        """(point, outward normal) of the torso surface seen from the front (+Y) at (x, z)."""
+        hit, normal, _, _ = self.tree.ray_cast(Vector((x, 1.0, z)), Vector((0.0, -1.0, 0.0)))
+        if hit is None:
+            raise RuntimeError("no torso surface at x=%.3f z=%.3f" % (x, z))
+        return hit, normal
+
+    def clearance(self, point):
+        """Signed distance from the surface (positive = outside the robe)."""
+        hit, normal, _, dist = self.tree.find_nearest(point)
+        return dist if (point - hit).dot(normal) >= 0 else -dist
 
 
 def build_skirt():
@@ -525,25 +568,41 @@ def build_trim():
         p.loft(collar, "cream")
 
     if OUTFIT["sash"]:
-        width = OUTFIT["sash_width"]
-        tip = (0.0, z0 + 0.075)
-        for side in (-1, 1):
-            start = (side * 0.07, TORSO_H - 0.012)
-            samples = 7
-            rings = []
-            for i in range(samples):
-                t = i / (samples - 1)
-                cx, cz = lerp(start[0], tip[0], t), lerp(start[1], tip[1], t)
-                dx, dz = tip[0] - start[0], tip[1] - start[1]
-                ln = sqrt(dx * dx + dz * dz)
-                px, pz = -dz / ln, dx / ln
-                pts = []
-                for off, lift in ((-0.5, 0.004), (0.0, 0.0085), (0.5, 0.004)):
-                    x, z = cx + px * width * off, cz + pz * width * off
-                    pts.append(Vector((x, torso_front(x, z) + lift, z)))
-                rings.append(pts)
-            sash_strip(p, rings)
+        build_sash(p, z0 + 0.075)
     return p.to_object()
+
+
+def build_sash(p, tip_z):
+    """The two cream lapels crossing the chest in a V. They are decals: every vertex sits SASH_LIFT above the faceted
+    torso (ray-cast onto it), and the rows sit on the torso's own ring heights so no row straddles a crease."""
+    surface = TorsoSurface()
+    width = OUTFIT["sash_width"]
+    start_z = TORSO_H - 0.012
+    rows_z = [start_z] + [z for z, *_ in reversed(TORSO_PROFILE) if tip_z + 0.01 < z < start_z] + [tip_z]
+    low, high = 1.0, -1.0
+    for side in (-1, 1):
+        start_x = side * 0.07
+        dx, dz = -start_x, tip_z - start_z
+        ln = sqrt(dx * dx + dz * dz)
+        px, pz = -dz / ln, dx / ln
+        rings = []
+        for z in rows_z:
+            t = (start_z - z) / (start_z - tip_z)
+            cx = lerp(start_x, 0.0, t)
+            row = []
+            for off in (-0.5, 0.0, 0.5):
+                x, zz = cx + px * width * off, z + pz * width * off
+                hit, normal = surface.front(x, zz)
+                row.append(hit + normal * SASH_LIFT)
+            rings.append(row)
+        sash_strip(p, rings)
+        for a, b in zip(rings, rings[1:]):  # sample the ribbon between its vertices, where a flat quad could dip under
+            for j in range(3):
+                mid = (a[j] + b[j]) / 2
+                c = surface.clearance(mid)
+                low, high = min(low, c), max(high, c)
+    print("SASH clearance over the torso: min %.4f max %.4f" % (low, high))
+    assert low > 0.0003 and high < 0.0035, "the sash must lie on the torso, not sink into it or float off it"
 
 
 def sash_strip(p, rows):
@@ -635,14 +694,14 @@ def build_foot():
     n = SEGMENTS["foot"]
     sole = -RIG["footY"]
     stations = [  # y, half-width, bottom z, top z
-        (-0.062, 0.020, sole + 0.012, sole + 0.070),
-        (-0.050, 0.033, sole + 0.002, sole + 0.098),
-        (-0.020, 0.040, sole, sole + 0.100),
-        (0.020, 0.043, sole, sole + 0.078),
-        (0.062, 0.039, sole, sole + 0.052),
-        (0.100, 0.029, sole + 0.002, sole + 0.040),
-        (0.130, 0.017, sole + 0.012, sole + 0.052),
-        (0.150, 0.008, sole + 0.034, sole + 0.066),
+        (-0.064, 0.021, sole + 0.012, sole + 0.072),
+        (-0.052, 0.036, sole + 0.002, sole + 0.100),
+        (-0.020, 0.044, sole, sole + 0.102),
+        (0.020, 0.048, sole, sole + 0.082),
+        (0.064, 0.044, sole, sole + 0.060),
+        (0.104, 0.034, sole + 0.002, sole + 0.052),
+        (0.138, 0.022, sole + 0.014, sole + 0.066),
+        (0.160, 0.011, sole + 0.040, sole + 0.086),
     ]
     rings = []
     for y, w, zb, zt in stations:
@@ -654,9 +713,9 @@ def build_foot():
         for j in range(n):
             k = (j + 1) % n
             p.face([vr[i][j], vr[i][k], vr[i + 1][k], vr[i + 1][j]], "sock")
-    for ring, tip_y, flip in ((vr[0], -0.074, True), (vr[-1], 0.158, False)):
+    for ring, tip_y, flip in ((vr[0], -0.076, True), (vr[-1], 0.170, False)):
         centre = sum((v.co for v in ring), Vector()) / n
-        pole = Vector((0.0, tip_y, centre.z + (0.004 if not flip else 0.0)))
+        pole = Vector((0.0, tip_y, centre.z + (0.008 if not flip else 0.0)))
         c = bm.verts.new(pole)
         for j in range(n):
             k = (j + 1) % n
@@ -771,6 +830,14 @@ def rig_dict():
         "foreArm": RIG["foreArm"],
         "footX": RIG["footX"],
         "footY": RIG["footY"],
+        "footForward": RIG["footForward"],
+        "footKneelZ": RIG["footKneelZ"],
+        "footKneelY": RIG["footKneelY"],
+        "footKneelTilt": round(RIG["footKneelTilt"], 5),
+        "kneelSkirtGrow": RIG["kneelSkirtGrow"],
+        "kneelSkirtScaleY": RIG["kneelSkirtScaleY"],
+        "kneelSkirtLift": RIG["kneelSkirtLift"],
+        "cushionTop": RIG["cushionTop"],
     }
 
 
@@ -807,7 +874,8 @@ def pose_matrices(kneel, cushion):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose."""
     lift = cushion * kneel
     hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), 0))
-    skirt = hips @ tmat((0, 0.01 * kneel, 0), scale=(1 + 0.38 * kneel, lerp(1, 0.56, kneel), 1 + 0.38 * kneel))
+    grow = 1 + RIG["kneelSkirtGrow"] * kneel
+    skirt = hips @ tmat((0, RIG["kneelSkirtLift"] * kneel, 0), scale=(grow, lerp(1, RIG["kneelSkirtScaleY"], kneel), grow))
     torso = hips
     head = torso @ tmat((0, NECK_Y, 0))
     out = {"head": [head], "face": [head], "hair": [head], "skirt": [skirt], "torso": [torso], "trim": [torso]}
@@ -818,7 +886,9 @@ def pose_matrices(kneel, cushion):
         shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (lerp(0.1, 0.62, kneel), 0, -sign * lerp(0.12, 0.5, kneel)))
         elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (lerp(0.22, 1.95, kneel), 0, 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
-        foot = tmat((sign * RIG["footX"], lift + RIG["footY"], 0.2 * kneel), (0.5 * kneel, 0, 0))
+        foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel)
+        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel)
+        foot = tmat((sign * RIG["footX"], foot_y, foot_z), (RIG["footKneelTilt"] * kneel, 0, 0))
         out["sleeveUpper"].append(shoulder)
         out["sleeveLower"].append(elbow)
         out["hand"].append(hand)
@@ -831,7 +901,7 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
-def build_pose(name, parts, kneel, tint_hue=None, cushion=0.13):
+def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["cushionTop"]):
     coll = new_collection(name)
     mats = pose_matrices(kneel, cushion)
     robe = {"torso", "skirt", "sleeveUpper", "sleeveLower"}

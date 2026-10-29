@@ -13,5 +13,13 @@
   "upperArm": 0.18,
   "foreArm": 0.17,
   "footX": 0.09,
-  "footY": 0.045
+  "footY": 0.045,
+  "footForward": 0.15,
+  "footKneelZ": 0.25,
+  "footKneelY": 0.056,
+  "footKneelTilt": 3.14159,
+  "kneelSkirtGrow": 0.38,
+  "kneelSkirtScaleY": 0.56,
+  "kneelSkirtLift": 0.01,
+  "cushionTop": 0.13
 }

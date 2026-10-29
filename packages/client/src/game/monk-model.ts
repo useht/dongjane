@@ -33,7 +33,8 @@ const PART_COPIES: Record<PartName, number> = {
 
 const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
-// Rig numbers come from build_monk.py (assets/monk/monk-rig.json), so the model and the animation always agree.
+// Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
+// so the model and the animation always agree. Only pose angles and walk timing live in animate().
 const HIP_STAND = rig.hipStand;
 const HIP_KNEEL = rig.hipKneel;
 const NECK_Y = rig.neckY;
@@ -43,7 +44,14 @@ const UPPER_ARM = rig.upperArm;
 const FORE_ARM = rig.foreArm;
 const FOOT_X = rig.footX;
 const FOOT_Y = rig.footY;
-const CUSHION_TOP = 0.13;
+const FOOT_FORWARD = rig.footForward;
+const FOOT_KNEEL_Z = rig.footKneelZ;
+const FOOT_KNEEL_Y = rig.footKneelY;
+const FOOT_KNEEL_TILT = rig.footKneelTilt;
+const KNEEL_SKIRT_GROW = rig.kneelSkirtGrow;
+const KNEEL_SKIRT_SCALE_Y = rig.kneelSkirtScaleY;
+const KNEEL_SKIRT_LIFT = rig.kneelSkirtLift;
+const CUSHION_TOP = rig.cushionTop;
 
 interface Binding {
   part: PartName;
@@ -143,10 +151,10 @@ export class MonkAvatar {
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
 
-    const skirtY = 1 + (0.56 - 1) * kneel;
-    const skirtXZ = 1 + 0.38 * kneel;
+    const skirtY = 1 + (KNEEL_SKIRT_SCALE_Y - 1) * kneel;
+    const skirtXZ = 1 + KNEEL_SKIRT_GROW * kneel;
     this.skirtNode.scale.set(skirtXZ, skirtY, skirtXZ);
-    this.skirtNode.position.y = 0.01 * kneel;
+    this.skirtNode.position.y = KNEEL_SKIRT_LIFT * kneel;
 
     this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
     this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk;
@@ -178,9 +186,9 @@ export class MonkAvatar {
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
-      foot.position.z = stride * 0.2 + 0.2 * kneel;
-      foot.position.y = FOOT_Y + lift * 0.07;
-      foot.rotation.x = kneel * 0.5;
+      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel;
+      foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
+      foot.rotation.x = kneel * FOOT_KNEEL_TILT;
     }
 
     this.root.updateMatrixWorld(true);

@@ -134,9 +134,89 @@ describe("monk assets", () => {
       "foreArm",
       "footX",
       "footY",
+      "footForward",
+      "footKneelZ",
+      "footKneelY",
+      "footKneelTilt",
+      "kneelSkirtGrow",
+      "kneelSkirtScaleY",
+      "kneelSkirtLift",
+      "cushionTop",
     ] as const) {
       expect(monkRig[key], key).toBeGreaterThan(0);
     }
+  });
+
+  it("keeps the rig pivots consistent with the geometry hung on them", async () => {
+    const parts = await loadParts();
+    const torso = bounds(parts.torso);
+    const head = bounds(parts.head);
+    const upper = bounds(parts.sleeveUpper);
+    const lower = bounds(parts.sleeveLower);
+
+    // The neck pivot is the top of the torso; the head's neck stub dips just below it into the robe.
+    expect(monkRig.neckY).toBeCloseTo(monkRig.torsoHeight, 4);
+    expect(torso.max.y).toBeCloseTo(monkRig.neckY, 3);
+    expect(monkRig.neckY + head.min.y).toBeLessThanOrEqual(torso.max.y);
+    expect(monkRig.neckY + head.min.y).toBeGreaterThan(torso.max.y - 0.05);
+
+    // The shoulder pivot sits a little below the neck, and the sleeve spans one upper arm plus its shoulder cap.
+    expect(monkRig.shoulderY).toBeLessThan(monkRig.neckY);
+    expect(monkRig.shoulderY).toBeGreaterThan(monkRig.neckY - 0.1);
+    const span = upper.max.y - upper.min.y;
+    expect(span).toBeGreaterThan(monkRig.upperArm);
+    expect(span).toBeLessThan(monkRig.upperArm * 1.4);
+
+    // The forearm sleeve ends just above the wrist pivot where the hand hangs.
+    expect(lower.min.y).toBeGreaterThan(-monkRig.foreArm);
+    expect(lower.min.y).toBeLessThan(-monkRig.foreArm * 0.8);
+  });
+
+  it("keeps the hem off the ground, clear of the cushion, and the sock tips out from under it", async () => {
+    const parts = await loadParts();
+    const skirt = bounds(parts.skirt);
+    const foot = bounds(parts.foot);
+
+    const hemStanding = monkRig.hipStand + skirt.min.y;
+    expect(hemStanding).toBeGreaterThanOrEqual(0);
+    expect(hemStanding).toBeLessThan(0.1);
+    const hemKneeling = monkRig.cushionTop + monkRig.hipKneel + monkRig.kneelSkirtLift + skirt.min.y * monkRig.kneelSkirtScaleY;
+    expect(hemKneeling).toBeGreaterThanOrEqual(monkRig.cushionTop);
+
+    // Standing, the toe tip (toward -Z) pokes out past the front of the skirt so the cream sock reads.
+    expect(-monkRig.footForward + foot.min.z).toBeLessThan(skirt.min.z - 0.02);
+    // Kneeling, the foot is turned over behind the hip: its top rests on the cushion, the toes show past the back hem.
+    expect(monkRig.footKneelY - foot.max.y).toBeGreaterThanOrEqual(0);
+    expect(monkRig.footKneelZ - foot.min.z).toBeGreaterThan(skirt.max.z * (1 + monkRig.kneelSkirtGrow) + 0.02);
+  });
+
+  it("fades the scalp tint in smoothly instead of leaving a cap seam", async () => {
+    const parts = await loadParts();
+    const head = parts.head;
+    const color = head.getAttribute("color");
+    const position = head.getAttribute("position");
+    const index = head.index;
+    expect(index).not.toBeNull();
+
+    let crown = 0;
+    let crownY = -Infinity;
+    let neck = 0;
+    let neckY = Infinity;
+    for (let i = 0; i < position.count; i += 1) {
+      if (position.getY(i) > crownY) [crownY, crown] = [position.getY(i), i];
+      if (position.getY(i) < neckY) [neckY, neck] = [position.getY(i), i];
+    }
+    const channelGap = (a: number, b: number): number =>
+      Math.max(Math.abs(color.getX(a) - color.getX(b)), Math.abs(color.getY(a) - color.getY(b)), Math.abs(color.getZ(a) - color.getZ(b)));
+    expect(channelGap(crown, neck), "the crown should be a shade darker than the skin").toBeGreaterThan(0.1);
+    expect(color.getX(crown)).toBeLessThan(color.getX(neck));
+
+    let steepest = 0;
+    const ids = (index as NonNullable<typeof index>).array;
+    for (let t = 0; t < ids.length; t += 3) {
+      for (let e = 0; e < 3; e += 1) steepest = Math.max(steepest, channelGap(ids[t + e] as number, ids[t + ((e + 1) % 3)] as number));
+    }
+    expect(steepest, "no neighbouring vertices may jump in colour").toBeLessThan(0.12);
   });
 
   it("rejects a scene that lacks a part", async () => {
