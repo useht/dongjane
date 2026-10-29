@@ -6,6 +6,7 @@ const world = (n: number, clients: number): WorldInfo => ({
   world: n,
   roomId: `room${n}`,
   clients,
+  npcs: 6,
   capacity: WORLD_CAPACITY,
   full: clients >= WORLD_CAPACITY,
   zones: { gatbawi: clients, dharma: 0 },

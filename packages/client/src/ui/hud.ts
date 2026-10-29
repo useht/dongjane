@@ -354,7 +354,7 @@ export class Hud {
         pick.disabled = here || full;
         pick.append(
           h("strong", "", worldName(info.world)),
-          h("span", "world-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients}/${info.capacity}명`),
+          h("span", "world-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients + info.npcs}/${info.capacity}명`),
         );
         pick.addEventListener("click", () => {
           this.worldSheet.close();
