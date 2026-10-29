@@ -20,6 +20,10 @@ export function earnedTitles(total: number): BowTitle[] {
   return BOW_TITLES.filter((title) => title.bows <= total);
 }
 
+export function homeTitleName(total: number): string | null {
+  return earnedTitles(total).at(-1)?.name ?? null;
+}
+
 export function nextTitle(total: number): BowTitle | null {
   return BOW_TITLES.find((title) => title.bows > total) ?? null;
 }

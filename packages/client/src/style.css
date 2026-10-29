@@ -214,36 +214,18 @@ button:disabled {
 }
 
 .clock-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 14px 0 10px;
-  border-radius: 22px;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.clock-icon {
-  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-grid;
   place-items: center;
-  color: var(--gold);
+  border-radius: 50%;
 }
 
-.clock-text {
-  display: grid;
-  gap: 1px;
-  line-height: 1.15;
-}
-
-.clock-time {
-  font-weight: 700;
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-}
-
-.clock-label {
-  color: var(--muted);
-  font-size: 11px;
+.clock-watch {
+  display: block;
+  width: 40px;
+  height: 40px;
 }
 
 .badge {
