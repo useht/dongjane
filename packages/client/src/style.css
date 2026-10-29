@@ -575,13 +575,17 @@ button:disabled {
   padding: 0;
   border-radius: 50%;
   border: 0;
-  background: rgba(255, 245, 224, 0.25);
+  background: rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
   color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 24px rgba(0, 0, 0, 0.18);
   transition: background-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .bow-button:active {
-  background: rgba(255, 245, 224, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 4px 14px rgba(0, 0, 0, 0.16);
 }
 
 .bow-button svg,
@@ -605,12 +609,12 @@ button:disabled {
 }
 
 .action-button.active {
-  background: rgba(255, 245, 224, 0.34);
-  box-shadow: 0 0 14px rgba(255, 224, 160, 0.4);
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 0 14px rgba(255, 224, 160, 0.4), 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 
 .action-button.active:active {
-  background: rgba(255, 245, 224, 0.22);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .stand-button {
