@@ -5,6 +5,7 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --hud-top: calc(var(--safe-top) + 100px);
   --hud-bottom: calc(var(--safe-bottom) + 112px);
+  --hud-bow-size: 84px;
   font-family: var(--font);
   color-scheme: dark;
 }
@@ -125,12 +126,8 @@ button:disabled {
   gap: 8px;
 }
 
-.top-actions {
-  display: flex;
-  gap: 6px;
-}
-
 .world-button,
+.clock-button,
 .icon-button {
   min-height: 44px;
   border: 1px solid var(--line);
@@ -168,8 +165,42 @@ button:disabled {
 }
 
 .icon-button:active,
-.world-button:active {
+.world-button:active,
+.clock-button:active {
   background: color-mix(in srgb, var(--gold-pale) 12%, var(--panel));
+}
+
+.clock-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 10px;
+  border-radius: 22px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.clock-icon {
+  display: grid;
+  place-items: center;
+  color: var(--gold);
+}
+
+.clock-text {
+  display: grid;
+  gap: 1px;
+  line-height: 1.15;
+}
+
+.clock-time {
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-label {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .badge {
@@ -226,7 +257,7 @@ button:disabled {
 .toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 118px);
+  bottom: calc(var(--safe-bottom) + 150px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -295,52 +326,56 @@ button:disabled {
 .bow-actions {
   flex: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 10px;
 }
 
-.bow-button,
-.triple-button {
-  transition: transform 0.1s ease, opacity 0.2s ease, filter 0.2s ease;
-}
-
-.bow-button:active:not(:disabled),
-.triple-button:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.bow-button:disabled,
-.triple-button:disabled {
-  opacity: 0.38;
-  filter: saturate(0.5);
-  box-shadow: none;
+/* Seated, the column keeps its full height so the stand-up button does not drop while the bow button hides. */
+.bow-actions.seated {
+  justify-content: flex-start;
+  min-height: calc(var(--hud-bow-size) + 46px);
 }
 
 .bow-button {
-  width: 84px;
-  height: 84px;
+  display: grid;
+  place-items: center;
+  width: var(--hud-bow-size);
+  height: var(--hud-bow-size);
   padding: 0;
   border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
   background: linear-gradient(180deg, var(--gold-pale), var(--gold-deep));
   color: var(--ink);
-  font-size: 20px;
-  font-weight: 800;
   box-shadow: 0 4px 14px color-mix(in srgb, black 35%, transparent);
+  transition: transform 0.1s ease;
 }
 
-.triple-button {
-  min-width: 64px;
-  min-height: 44px;
-  padding: 0 16px;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 78%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  color: var(--cream);
-  font-size: 15px;
-  font-weight: 700;
+.bow-button:active {
+  transform: scale(0.96);
+}
+
+.bow-button svg {
+  width: calc(var(--hud-bow-size) * 0.55);
+  height: calc(var(--hud-bow-size) * 0.55);
+  stroke-width: 1.7;
+}
+
+.stand-button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+}
+
+.stand-button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+.stand-button svg {
+  width: 20px;
+  height: 20px;
 }
 
 .seat-hints {
@@ -399,13 +434,6 @@ button:disabled {
   background: color-mix(in srgb, var(--gold) 80%, transparent);
   box-shadow: 0 2px 10px color-mix(in srgb, black 40%, transparent);
   will-change: transform;
-}
-
-.key-hint {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-  text-shadow: 0 1px 3px color-mix(in srgb, black 80%, transparent);
 }
 
 .stats {
@@ -665,6 +693,79 @@ button:disabled {
   font-size: 16px;
 }
 
+.tool-list {
+  display: grid;
+}
+
+.tool-row {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 6px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+
+.tool-row:last-child {
+  border-bottom: 0;
+}
+
+.tool-row:active {
+  background: color-mix(in srgb, var(--cream) 6%, transparent);
+}
+
+.tool-row .row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-row .badge {
+  position: static;
+  flex: none;
+}
+
+.tool-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cream) 8%, transparent);
+  color: var(--gold);
+}
+
+.clock-hero {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px 0 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.clock-hero-icon {
+  color: var(--gold);
+}
+
+.clock-hero-icon svg {
+  width: 44px;
+  height: 44px;
+}
+
+.clock-hero-time {
+  font-size: 34px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.clock-hero-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .fine-print {
   margin: 12px 0 0;
   color: var(--muted);
@@ -777,10 +878,8 @@ noscript {
     display: none;
   }
 
-  .bow-button {
-    width: 72px;
-    height: 72px;
-    font-size: 18px;
+  :root {
+    --hud-bow-size: 72px;
   }
 }
 
@@ -788,6 +887,7 @@ noscript {
   :root {
     --hud-top: calc(var(--safe-top) + 58px);
     --hud-bottom: calc(var(--safe-bottom) + 96px);
+    --hud-bow-size: 72px;
   }
 
   .chant-pill {
@@ -799,17 +899,7 @@ noscript {
   }
 
   .toasts {
-    bottom: calc(var(--safe-bottom) + 104px);
-  }
-
-  .bow-button {
-    width: 72px;
-    height: 72px;
-    font-size: 18px;
-  }
-
-  .key-hint {
-    display: none;
+    bottom: calc(var(--safe-bottom) + 138px);
   }
 }
 

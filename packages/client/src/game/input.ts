@@ -201,7 +201,7 @@ export class PointerInput {
 }
 
 export interface KeyHandlers {
-  onBow(times: 1 | 2 | 3): void;
+  onBow(): void;
   onStand(): void;
 }
 
@@ -236,11 +236,7 @@ export class KeyboardInput {
     const code = event.code;
     if (code === "Space") {
       event.preventDefault();
-      if (!event.repeat) this.handlers.onBow(1);
-      return;
-    }
-    if (code === "Digit3" || code === "Numpad3") {
-      if (!event.repeat) this.handlers.onBow(3);
+      if (!event.repeat) this.handlers.onBow();
       return;
     }
     if (code === "Escape") {

@@ -1,8 +1,9 @@
-import { type WorldInfo, worldName, seatLabel } from "@dongjane/shared";
+import { type SkyState, type WorldInfo, seatLabel, worldName } from "@dongjane/shared";
 import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
-import { button, h, iconButton, swapIcon } from "./dom.ts";
-import { type IconName, icon } from "./icons.ts";
+import { ClockWidget } from "./clock.ts";
+import { button, h, iconButton } from "./dom.ts";
+import { icon } from "./icons.ts";
 import { type ChantStatus, modeLabel } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 
@@ -24,7 +25,8 @@ export interface SelfStatus {
 export interface HudHandlers {
   onSwitchWorld(world: number): void;
   onOpenWorlds(): void;
-  onBow(times: 1 | 3): void;
+  onBow(): void;
+  onStand(): void;
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
@@ -38,17 +40,15 @@ export class Hud {
   private readonly worldButton = h("button", "world-button");
   private readonly worldLabel = h("span", "world-label", "월드");
   private readonly worldCount = h("span", "world-count", "");
-  private readonly visitorsButton: HTMLButtonElement;
-  private readonly visitorBadge = h("span", "badge", "0");
-  private readonly soundButton: HTMLButtonElement;
+  private readonly clock: ClockWidget;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
   private readonly toasts = h("div", "toasts");
   private readonly statusLine = h("p", "status-line");
   private readonly bowTally = h("span", "bow-tally");
+  private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
-  private readonly samBaeButton: HTMLButtonElement;
-  private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · 3 삼배 · Esc 일어서기 · Q/E 돌리기");
+  private readonly standButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly worldSheet: Sheet;
   private readonly visitorSheet: Sheet;
@@ -60,7 +60,6 @@ export class Hud {
   private visitorKey = "";
   private lastSelf = "";
   private lastChant = "";
-  private soundOn = true;
 
   constructor(
     host: HTMLElement,
@@ -74,26 +73,22 @@ export class Hud {
       if (this.worldSheet.isOpen) handlers.onOpenWorlds();
     });
 
-    const invite = iconButton("link", "초대 링크 복사", () => handlers.onInvite());
-    this.visitorsButton = iconButton("people", "방문객 보기", () => this.visitorSheet.toggle());
-    this.visitorsButton.append(this.visitorBadge);
-    this.soundButton = iconButton("soundOn", "소리 켜고 끄기", () => handlers.onToggleSound());
-    const settings = iconButton("gear", "설정", () => handlers.onOpenSettings());
+    this.clock = new ClockWidget(host, {
+      onOpenVisitors: () => this.visitorSheet.open(),
+      onInvite: () => handlers.onInvite(),
+      onToggleSound: () => handlers.onToggleSound(),
+      onOpenSettings: () => handlers.onOpenSettings(),
+    });
+    const top = h("div", "topbar", this.worldButton, this.clock.button);
 
-    const top = h(
-      "div",
-      "topbar",
-      this.worldButton,
-      h("div", "top-actions", invite, this.visitorsButton, this.soundButton, settings),
-    );
-
-    this.bowButton = button("절하기", "bow-button", () => handlers.onBow(1));
-    this.samBaeButton = button("삼배", "triple-button", () => handlers.onBow(3));
+    this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
+    this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
+    this.bowActions.append(this.standButton, this.bowButton);
     const bottom = h(
       "div",
       "bottombar",
-      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally), this.keyHint),
-      h("div", "bow-actions", this.samBaeButton, this.bowButton),
+      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally)),
+      this.bowActions,
     );
 
     this.worldInput.type = "text";
@@ -127,7 +122,6 @@ export class Hud {
     this.root.append(top, this.chantPill, this.linkBanner, this.toasts, bottom, this.stats);
     host.append(this.root);
 
-    if (window.matchMedia("(pointer: coarse)").matches) this.keyHint.hidden = true;
     this.renderWorlds();
     this.setSelf({ mode: "stand", matId: -1, bowCount: 0 });
   }
@@ -146,7 +140,7 @@ export class Hud {
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
-    this.visitorBadge.textContent = String(rows.length);
+    this.clock.setVisitorCount(rows.length);
     const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.matId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
@@ -168,8 +162,9 @@ export class Hud {
     this.lastSelf = key;
     const seated = self.matId >= 0 && (self.mode === "kneel" || self.mode === "bow");
     const bowing = self.mode === "bow";
-    this.bowButton.disabled = !seated || bowing;
-    this.samBaeButton.disabled = !seated || bowing;
+    this.bowButton.classList.toggle("hidden", !seated || bowing);
+    this.standButton.classList.toggle("hidden", !seated);
+    this.bowActions.classList.toggle("seated", seated);
     this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
     this.statusLine.textContent = seated
       ? bowing
@@ -203,25 +198,22 @@ export class Hud {
     }
   }
 
+  setSky(sky: SkyState | null): void {
+    this.clock.setSky(sky);
+  }
+
   setSolo(): void {
     this.worlds = [];
     this.currentWorld = 0;
     this.worldLabel.textContent = "혼자 있는 월드";
     this.worldCount.textContent = "";
     this.renderWorlds();
-    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요";
+    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 월드로 다시 모셔요";
     this.linkBanner.classList.remove("hidden");
   }
 
   setSoundOn(on: boolean): void {
-    this.soundOn = on;
-    const name: IconName = on ? "soundOn" : "soundOff";
-    swapIcon(this.soundButton, name);
-    this.soundButton.setAttribute("aria-pressed", String(on));
-  }
-
-  get isSoundOn(): boolean {
-    return this.soundOn;
+    this.clock.setSoundOn(on);
   }
 
   toast(text: string): void {

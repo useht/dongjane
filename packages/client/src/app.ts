@@ -77,7 +77,8 @@ export class App {
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
-  private readonly soloAction = { label: "혼자 월드에서 쉬기", run: () => void this.enterSolo() };
+  private inSolo = false;
+  private soloReturnWorld: number | null = null;
 
   constructor(assets: GameAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
@@ -98,10 +99,11 @@ export class App {
     this.hud = new Hud(this.ui, {
       onSwitchWorld: (world) => void this.enter(world),
       onOpenWorlds: () => void this.refreshWorlds(),
-      onBow: (times) => this.bow(times),
+      onBow: () => this.bow(),
+      onStand: () => this.stand(),
       onInvite: () => void this.copyInvite(),
       onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
-      onOpenSettings: () => this.settingsSheet.sheet.toggle(),
+      onOpenSettings: () => this.settingsSheet.sheet.open(),
     });
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -113,7 +115,7 @@ export class App {
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
-      onBow: (times) => this.bow(times === 3 ? 3 : 1),
+      onBow: () => this.bow(),
       onStand: () => {
         if (!this.hud.closeSheets()) this.stand();
       },
@@ -142,6 +144,7 @@ export class App {
     if (!profile) return;
     const token = ++this.joinToken;
     this.lost = false;
+    this.inSolo = false;
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
 
@@ -153,7 +156,8 @@ export class App {
     this.hud.setLink("online");
     this.overlay.loading("월드로 들어가는 중이에요", "잠시만 기다려 주세요");
 
-    const retry = { label: "다시 시도", run: () => void this.enter(requested ?? (this.currentWorld || null)) };
+    const returnWorld = requested ?? (this.currentWorld || null);
+    const retry = { label: "다시 시도", run: () => void this.enter(returnWorld) };
 
     let busyFailures = 0;
     let transportFailures = 0;
@@ -165,7 +169,7 @@ export class App {
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
-        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction]);
+        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction(returnWorld)]);
         return;
       }
       if (token !== this.joinToken) return;
@@ -204,7 +208,7 @@ export class App {
         }
         const delay = JOIN_RETRY_DELAYS_MS[transportFailures];
         if (delay === undefined) {
-          this.showUnreachable([retry, this.soloAction]);
+          this.showUnreachable([retry, this.soloAction(returnWorld)]);
           return;
         }
         transportFailures += 1;
@@ -226,12 +230,18 @@ export class App {
     return this.profile;
   }
 
-  private async enterSolo(): Promise<void> {
+  private soloAction(returnWorld: number | null): { label: string; run(): void } {
+    return { label: "혼자 월드에서 쉬기", run: () => void this.enterSolo(returnWorld) };
+  }
+
+  private async enterSolo(returnWorld: number | null): Promise<void> {
     const profile = this.ensureProfile();
     const token = ++this.joinToken;
     this.lost = false;
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
+    this.inSolo = true;
+    this.soloReturnWorld = returnWorld;
 
     this.world.clear();
     this.bowWatch.reset();
@@ -355,7 +365,7 @@ export class App {
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "월드와의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentWorld || null) },
-      this.soloAction,
+      this.soloAction(this.currentWorld || null),
     ]);
   }
 
@@ -367,7 +377,7 @@ export class App {
     }
   }
 
-  private bow(times: 1 | 3): void {
+  private bow(): void {
     const session = this.session;
     if (!session) return;
     this.audio.unlock();
@@ -376,7 +386,7 @@ export class App {
       if (this.self?.mode !== "bow") this.hud.toast("돗자리에 앉아야 절할 수 있어요");
       return;
     }
-    session.bow(times);
+    session.bow(1);
   }
 
   private stand(): void {
@@ -451,20 +461,23 @@ export class App {
     };
   }
 
-  private async refreshWorlds(): Promise<void> {
+  private async refreshWorlds(): Promise<boolean> {
     try {
       this.worlds = await fetchWorlds(this.base, undefined, undefined, (serverTime) =>
         this.world.seedServerTime(serverTime, performance.now()),
       );
       if (this.currentWorld) this.hud.setWorlds(this.worlds, this.currentWorld);
+      return true;
     } catch {
       // the list keeps its last known counts; joining reports a real failure
+      return false;
     }
   }
 
   private async pollWorlds(): Promise<void> {
     if (document.visibilityState !== "visible" || !this.session) return;
-    await this.refreshWorlds();
+    const reachable = await this.refreshWorlds();
+    if (reachable && this.inSolo) void this.enter(this.soloReturnWorld);
   }
 
   private async copyInvite(): Promise<void> {
@@ -548,7 +561,9 @@ export class App {
 
   private tickSky(): void {
     const serverNow = this.world.serverNowAt(performance.now());
-    if (serverNow !== null) this.world.setSky(skyAt(serverNow));
+    const sky = serverNow === null ? null : skyAt(serverNow);
+    if (sky) this.world.setSky(sky);
+    this.hud.setSky(sky);
   }
 
   private tickChant(): void {

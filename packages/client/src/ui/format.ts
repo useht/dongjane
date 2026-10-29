@@ -1,4 +1,5 @@
-import { type MonkMode, chantEndsAt, chantPhase } from "@dongjane/shared";
+import { type MonkMode, type SkyPeriod, type SkyState, type Weather, chantEndsAt, chantPhase } from "@dongjane/shared";
+import type { IconName } from "./icons.ts";
 
 export function modeLabel(mode: string, matId: number): string {
   switch (mode as MonkMode) {
@@ -42,4 +43,50 @@ export function formatSpan(totalSeconds: number): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest === 0 ? `${hours}시간` : `${hours}시간 ${rest}분`;
+}
+
+const DAY_MINUTES = 24 * 60;
+
+// Korean 12-hour clock for the KST hour skyAt() reports (fractional, 0..24).
+export function formatClockTime(hour: number): string {
+  if (!Number.isFinite(hour)) return "--:--";
+  const wrapped = ((hour % 24) + 24) % 24;
+  const total = Math.floor(wrapped * 60 + 1e-6) % DAY_MINUTES;
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  const meridiem = hours < 12 ? "오전" : "오후";
+  const display = hours % 12 === 0 ? 12 : hours % 12;
+  return `${meridiem} ${display}:${String(minutes).padStart(2, "0")}`;
+}
+
+const PERIOD_LABELS: Record<SkyPeriod, string> = { night: "밤", dawn: "새벽", day: "낮", dusk: "저녁" };
+const WEATHER_LABELS: Record<Weather, string> = { clear: "맑음", cloudy: "흐림", rain: "비", snow: "눈" };
+const WEATHER_NOTES: Record<Weather, string> = {
+  clear: "하늘이 맑아요",
+  cloudy: "구름이 끼었어요",
+  rain: "비가 내리고 있어요",
+  snow: "눈이 내리고 있어요",
+};
+
+// A clear sky shows the sun while the day is more than half lit, the moon otherwise.
+export function weatherIconName(weather: Weather, daylight: number): IconName {
+  if (weather === "clear") return daylight >= 0.5 ? "sun" : "moon";
+  return weather === "cloudy" ? "cloud" : weather;
+}
+
+export interface ClockView {
+  time: string;
+  weather: string;
+  note: string;
+  icon: IconName;
+}
+
+export function describeSky(sky: SkyState | null): ClockView {
+  if (!sky) return { time: "--:--", weather: "확인 중", note: "하늘을 확인하는 중이에요", icon: "cloud" };
+  return {
+    time: formatClockTime(sky.hour),
+    weather: WEATHER_LABELS[sky.weather],
+    note: `${PERIOD_LABELS[sky.period]} · ${WEATHER_NOTES[sky.weather]}`,
+    icon: weatherIconName(sky.weather, sky.daylight),
+  };
 }

@@ -23,8 +23,8 @@ export function button(label: string, className: string, onClick: () => void): H
   return node;
 }
 
-export function iconButton(name: IconName, label: string, onClick: () => void): HTMLButtonElement {
-  const node = h("button", "icon-button", icon(name));
+export function iconButton(name: IconName, label: string, onClick: () => void, className = "icon-button"): HTMLButtonElement {
+  const node = h("button", className, icon(name));
   node.type = "button";
   node.setAttribute("aria-label", label);
   node.title = label;
@@ -32,6 +32,6 @@ export function iconButton(name: IconName, label: string, onClick: () => void): 
   return node;
 }
 
-export function swapIcon(buttonNode: HTMLButtonElement, name: IconName): void {
-  buttonNode.replaceChildren(icon(name));
+export function swapIcon(holder: HTMLElement, name: IconName): void {
+  holder.replaceChildren(icon(name));
 }
