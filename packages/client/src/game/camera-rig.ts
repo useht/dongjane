@@ -68,8 +68,8 @@ export interface RigLimits {
   maxPitch: number;
 }
 
-const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 18, minPitch: 0.16, maxPitch: 1.3 };
-const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 9.5, minPitch: 0.16, maxPitch: 1.3 };
+const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 22, minPitch: 0.16, maxPitch: 1.3 };
+const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 12, minPitch: 0.16, maxPitch: 1.3 };
 
 // Inside the 법당: the room is a lit box and the camera stays within it, a little short of its walls.
 export const DHARMA_CAMERA_BOUNDS: Box = {

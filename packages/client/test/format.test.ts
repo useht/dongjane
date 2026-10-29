@@ -114,8 +114,8 @@ describe("describeSky", () => {
 describe("server endpoint resolution", () => {
   const loc = { protocol: "http:", hostname: "192.168.0.5", origin: "http://192.168.0.5:5173" };
 
-  it("targets port 2567 on the page host in dev", () => {
-    expect(resolveServerHttpBase(undefined, loc, true)).toBe("http://192.168.0.5:2567");
+  it("routes dev traffic through the page origin", () => {
+    expect(resolveServerHttpBase(undefined, loc, true)).toBe("http://192.168.0.5:5173/__server");
   });
 
   it("uses the page origin in production unless overridden", () => {
