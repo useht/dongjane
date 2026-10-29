@@ -22,6 +22,7 @@ export interface VisitorRow {
 export interface SelfStatus {
   mode: string;
   cushionId: number;
+  chanting: boolean;
 }
 
 export interface HudHandlers {
@@ -30,6 +31,8 @@ export interface HudHandlers {
   onBow(): void;
   onStand(): void;
   onEmote(emote: number): void;
+  onKnock(): void;
+  onChant(on: boolean): void;
   onInvite(): void;
   onToggleSound(): void;
   onCancelReturn(): void;
@@ -58,8 +61,13 @@ export class Hud {
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
+  private readonly toolButton: HTMLButtonElement;
+  private readonly knockButton: HTMLButtonElement;
+  private readonly chantButton: HTMLButtonElement;
+  private readonly toolHint = h("p", "tool-hint", "방석에 앉으면 쓸 수 있어요");
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
+  private readonly toolSheet: Sheet;
   private readonly emotePicker: EmotePicker;
   private readonly hallList = h("ul", "list");
   private readonly hallInput = h("input", "name-input");
@@ -70,6 +78,7 @@ export class Hud {
   private lastSky = "";
   private lastSelf = "";
   private lastChant = "";
+  private selfChanting = false;
 
   constructor(
     host: HTMLElement,
@@ -99,7 +108,13 @@ export class Hud {
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
-    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions));
+    this.toolSheet = new Sheet(host, "도구");
+    this.toolButton = iconButton("mokt", "도구", () => this.toolSheet.toggle(), "icon-button tool-button");
+    this.toolButton.setAttribute("aria-haspopup", "dialog");
+    this.knockButton = button("목탁 치기", "primary wide", () => handlers.onKnock());
+    this.chantButton = button("염불 시작", "primary wide", () => handlers.onChant(!this.selfChanting));
+    this.toolSheet.body.append(h("div", "tool-actions", this.knockButton, this.chantButton), this.toolHint);
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions, this.toolButton));
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";
@@ -129,7 +144,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1 });
+    this.setSelf({ mode: "stand", cushionId: -1, chanting: false });
     this.setSky(null);
   }
 
@@ -164,7 +179,7 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}`;
+    const key = `${self.mode}|${self.cushionId}|${self.chanting}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
     const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
@@ -172,6 +187,13 @@ export class Hud {
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
     this.bowActions.classList.toggle("seated", seated);
+    this.selfChanting = seated && self.chanting;
+    this.toolButton.classList.toggle("ready", seated);
+    this.knockButton.disabled = !seated;
+    this.chantButton.disabled = !seated;
+    this.chantButton.textContent = this.selfChanting ? "염불 그만두기" : "염불 시작";
+    this.chantButton.setAttribute("aria-pressed", String(this.selfChanting));
+    this.toolHint.classList.toggle("hidden", seated);
   }
 
   setChant(status: ChantStatus | null): void {

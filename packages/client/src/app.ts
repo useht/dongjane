@@ -1,6 +1,7 @@
 import {
   CUSHION_SPOTS,
   type HallInfo,
+  KNOCK_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
   hallName,
@@ -94,6 +95,7 @@ export class App {
   private currentHall = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
+  private nextKnockAt = 0;
   private occupiedCushions = new Set<number>();
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
@@ -138,6 +140,8 @@ export class App {
         onBow: () => this.bow(),
         onStand: () => this.stand(),
         onEmote: (emote) => this.session?.emote(emote),
+        onKnock: () => this.knock(),
+        onChant: (on) => this.chant(on),
         onInvite: () => void this.copyInvite(),
         onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
         onCancelReturn: () => this.holdReturn(),
@@ -189,6 +193,7 @@ export class App {
     if (token !== this.joinToken) return;
 
     this.world.clear();
+    this.audio.stopChant();
     this.bowWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
@@ -287,6 +292,7 @@ export class App {
     this.soloReturnHall = returnHall;
 
     this.world.clear();
+    this.audio.stopChant();
     this.bowWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
@@ -356,6 +362,8 @@ export class App {
         bowCount: monk.bowCount,
         emote: monk.emote,
         emoteSeq: monk.emoteSeq,
+        knockSeq: monk.knockSeq,
+        chanting: monk.chanting,
       });
       if (monk.npc) return;
       visitorIds.add(monk.id);
@@ -371,7 +379,8 @@ export class App {
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId });
+        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, chanting: monk.chanting });
+        this.syncChantAudio(monk.chanting);
         this.creditBows(monk.bowCount);
         for (const quest of this.quests.observe(selfId, monk, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
@@ -387,7 +396,7 @@ export class App {
     this.occupiedCushions = occupied;
 
     this.world.setSelfPrediction(this.prediction.display());
-    this.world.applyMonks(views, now, state.serverTime);
+    if (this.world.applyMonks(views, now, state.serverTime) > 0) this.audio.knock();
     this.world.setOccupancy(occupied);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
@@ -425,6 +434,7 @@ export class App {
     this.session = null;
     this.prediction.cancel();
     this.world.clear();
+    this.audio.stopChant();
     this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
       this.soloAction(this.currentHall || null),
@@ -449,6 +459,41 @@ export class App {
       return;
     }
     session.bow(1);
+  }
+
+  private knock(): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || self.cushionId < 0 || (self.mode !== "kneel" && self.mode !== "bow")) {
+      this.hud.toast("방석에 앉아야 목탁을 칠 수 있어요");
+      return;
+    }
+    const now = performance.now();
+    if (self.mode !== "kneel" || now < this.nextKnockAt) return;
+    this.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    session.knock();
+    this.world.knock(session.sessionId, now);
+    this.audio.knock();
+  }
+
+  private chant(on: boolean): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || self.cushionId < 0 || (self.mode !== "kneel" && self.mode !== "bow")) {
+      this.hud.toast("방석에 앉아야 염불을 할 수 있어요");
+      return;
+    }
+    session.chant(on);
+  }
+
+  private syncChantAudio(chanting: boolean): void {
+    if (chanting === this.audio.chanting) return;
+    if (chanting) this.audio.startChant();
+    else this.audio.stopChant();
   }
 
   private stand(): void {

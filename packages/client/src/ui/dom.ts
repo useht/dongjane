@@ -44,6 +44,8 @@ const ICONS = {
   check: '<path d="m5.5 12.5 4.2 4.2L18.5 7.8"/>',
   emote:
     '<circle cx="12" cy="12" r="9"/><path d="M8.2 14.2a4.6 4.6 0 0 0 7.6 0"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>',
+  mokt: '<ellipse cx="10.5" cy="13.5" rx="7.5" ry="6.5"/><path d="M5.2 15.2c3.2 1.6 7.4 1.6 10.6 0"/><path d="M15.8 8.2 20 4"/><circle cx="20.6" cy="3.6" r="1.1"/>',
+  chant: '<path d="M7 9.5v5M11 6.5v11M15 8.5v7M19 10.5v3M3 11v2"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;

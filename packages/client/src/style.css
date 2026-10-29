@@ -403,6 +403,27 @@ button:disabled {
   color: var(--gold);
 }
 
+.tool-button {
+  margin-left: 10px;
+  color: var(--muted);
+}
+
+.tool-button.ready {
+  color: var(--gold);
+}
+
+.tool-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .bow-actions {
   flex: none;
   display: flex;
