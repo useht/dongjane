@@ -17,7 +17,6 @@ export const TWILIGHT_HOURS = 1;
 export const WEATHER_SLOT_MS = 60 * 60 * 1000;
 export const CLEAR_SHARE = 0.5;
 export const CLOUDY_SHARE = 0.25;
-export const RAIN_SHARE = 0.15;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -62,7 +61,7 @@ export function weatherAt(serverNowMs: number): Weather {
   const roll = hash32(slot) / 0x100000000;
   if (roll < CLEAR_SHARE) return "clear";
   if (roll < CLEAR_SHARE + CLOUDY_SHARE) return "cloudy";
-  if (roll < CLEAR_SHARE + CLOUDY_SHARE + RAIN_SHARE) return "rain";
+  // Everything past the cloudy share is precipitation; the season alone decides its form.
   const month = new Date(serverNowMs + KST_OFFSET_MS).getUTCMonth();
   return WINTER_MONTHS.includes(month) ? "snow" : "rain";
 }

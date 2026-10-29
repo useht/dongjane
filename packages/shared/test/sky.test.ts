@@ -104,7 +104,7 @@ describe("weather", () => {
       if (previous !== null && weather !== previous) changes += 1;
       previous = weather;
     }
-    expect([...seen].sort()).toEqual(["clear", "cloudy", "rain", "snow"]);
+    expect([...seen].sort()).toEqual(["clear", "cloudy", "snow"]);
     expect(changes).toBeGreaterThan(100);
   });
 
@@ -132,22 +132,33 @@ describe("weather", () => {
   });
 
   it("uses the KST month, not the UTC month, at the boundary", () => {
-    const lastSlotOfNovember = kst(2026, 11, 30, 23);
-    const firstSlotOfDecember = kst(2026, 12, 1, 0);
-    expect(kstMonth(lastSlotOfNovember)).toBe(11);
-    expect(kstMonth(firstSlotOfDecember)).toBe(12);
-    expect(weatherAt(lastSlotOfNovember)).not.toBe("snow");
+    expect(kstMonth(kst(2026, 11, 30, 23))).toBe(11);
+    expect(kstMonth(kst(2026, 12, 1, 0))).toBe(12);
+    let wet = 0;
+    for (let slot = 0; slot < 72; slot += 1) {
+      const at = kst(2026, 11, 30, 0) + slot * WEATHER_SLOT_MS;
+      const weather = weatherAt(at);
+      if (weather === "clear" || weather === "cloudy") continue;
+      wet += 1;
+      expect(weather).toBe(kstMonth(at) === 12 ? "snow" : "rain");
+    }
+    expect(wet).toBeGreaterThan(5);
   });
 
-  it("turns would-be snow into rain outside winter", () => {
-    const winterWeather: Weather[] = [];
-    const summerWeather: Weather[] = [];
-    for (let slot = 0; slot < 24 * 31; slot += 1) {
-      winterWeather.push(weatherAt(kst(2027, 1, 1, 0) + slot * WEATHER_SLOT_MS));
-      summerWeather.push(weatherAt(kst(2026, 7, 1, 0) + slot * WEATHER_SLOT_MS));
-    }
-    expect(winterWeather.includes("snow")).toBe(true);
-    expect(summerWeather.includes("snow")).toBe(false);
-    expect(summerWeather.includes("rain")).toBe(true);
+  it("makes every precipitation hour snow in January and rain in July", () => {
+    const precipitation = (start: number): Weather[] => {
+      const found: Weather[] = [];
+      for (let slot = 0; slot < 24 * 31; slot += 1) {
+        const weather = weatherAt(start + slot * WEATHER_SLOT_MS);
+        if (weather !== "clear" && weather !== "cloudy") found.push(weather);
+      }
+      return found;
+    };
+    const january = precipitation(kst(2027, 1, 1, 0));
+    const july = precipitation(kst(2026, 7, 1, 0));
+    expect(january.length).toBeGreaterThan(100);
+    expect(july.length).toBeGreaterThan(100);
+    expect(january.every((weather) => weather === "snow")).toBe(true);
+    expect(july.every((weather) => weather === "rain")).toBe(true);
   });
 });
