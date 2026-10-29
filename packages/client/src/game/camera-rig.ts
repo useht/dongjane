@@ -63,6 +63,25 @@ export function configureCamera(camera: PerspectiveCamera, rig: CameraRig, width
   camera.updateProjectionMatrix();
 }
 
+const projected = new Vector3();
+
+// CSS pixels of a world point inside the canvas, or false when it is behind the camera or off screen. Call after the camera matrices are current.
+export function projectToCanvas(
+  camera: PerspectiveCamera,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  out: { x: number; y: number },
+): boolean {
+  projected.set(x, y, z).project(camera);
+  if (projected.z < -1 || projected.z > 1 || Math.abs(projected.x) > 1 || Math.abs(projected.y) > 1) return false;
+  out.x = (projected.x + 1) * 0.5 * width;
+  out.y = (1 - projected.y) * 0.5 * height;
+  return true;
+}
+
 export class CameraRig {
   yaw: number = DEFAULT_VIEW.yaw;
   pitch: number = DEFAULT_VIEW.pitch;

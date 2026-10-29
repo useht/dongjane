@@ -1,9 +1,9 @@
-import { type HallInfo, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
+import { CUSHION_SPOTS, type HallInfo, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
-import { floorDirection, KeyboardInput } from "./game/input.ts";
+import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { chooseHall, fetchHalls, loadHalls } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -13,11 +13,15 @@ import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
 import { runIntro } from "./ui/intro.ts";
+import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
+import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsSheet } from "./ui/settings.ts";
 
-const KEY_MOVE_INTERVAL_MS = 125;
-const KEY_MOVE_REACH = 1.6;
+const MOVE_INTERVAL_MS = 125;
+const MOVE_REACH = 1.6;
+const SEAT_HINT_REACH = 2.2;
+const SEAT_HINT_HEIGHT = 0.6;
 const CHANT_TICK_MS = 250;
 const HALL_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
@@ -45,6 +49,9 @@ export class App {
   private readonly overlay: Overlay;
   private readonly settingsSheet: SettingsSheet;
   private readonly keyboard: KeyboardInput;
+  private readonly joystick: Joystick;
+  private readonly seatHints: SeatHints;
+  private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
   private session: HallSession | null = null;
@@ -53,8 +60,8 @@ export class App {
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
   private cushionOwners = new Map<number, string>();
-  private lastKeyMove = 0;
-  private keysHeld = false;
+  private lastMove = 0;
+  private walking = false;
   private nextChantTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
@@ -64,10 +71,11 @@ export class App {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
     this.ui = document.getElementById("ui") as HTMLElement;
 
+    this.joystick = new Joystick(this.ui);
     this.world = new World(this.canvas, {
-      onPickCushion: (id) => this.pickCushion(id),
-      onPickFloor: (x, z) => this.session?.move(x, z),
       onFrame: (dt, now) => this.frame(dt, now),
+      onRendered: () => this.updateSeatHints(),
+      onStick: (stick) => this.joystick.set(stick),
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
 
@@ -75,7 +83,6 @@ export class App {
       onSwitchHall: (hall) => void this.enter(hall),
       onOpenHalls: () => void this.refreshHalls(),
       onBow: (times) => this.bow(times),
-      onStand: () => this.stand(),
       onInvite: () => void this.copyInvite(),
       onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
       onOpenSettings: () => this.settingsSheet.sheet.toggle(),
@@ -84,6 +91,7 @@ export class App {
       onChange: (next) => this.updateSettings(next),
       onRename: (name) => this.rename(name),
     });
+    this.seatHints = new SeatHints(this.ui, (id) => this.session?.sit(id));
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
@@ -308,18 +316,6 @@ export class App {
     }
   }
 
-  private pickCushion(id: number): void {
-    const session = this.session;
-    if (!session) return;
-    const owner = this.cushionOwners.get(id);
-    if (owner === session.sessionId) return;
-    if (owner) {
-      this.hud.toast("다른 동자승이 앉아 있는 방석이에요");
-      return;
-    }
-    session.sit(id);
-  }
-
   private bow(times: 1 | 3): void {
     const session = this.session;
     if (!session) return;
@@ -459,32 +455,48 @@ export class App {
   }
 
   private frame(dt: number, nowMs: number): void {
-    this.driveKeyboard(dt, nowMs);
+    this.driveMovement(dt, nowMs);
     if (nowMs >= this.nextChantTick) {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
     }
   }
 
-  private driveKeyboard(dt: number, nowMs: number): void {
+  private driveMovement(dt: number, nowMs: number): void {
     const turn = this.keyboard.rotation();
     if (turn !== 0) this.world.rig.orbit(turn * dt * 1.8, 0);
 
     const session = this.session;
     const self = this.self;
     if (!session || !self) return;
-    const axes = this.keyboard.axes();
+    const axes = combineAxes(this.keyboard.axes(), this.joystick.axes());
     const moving = axes.forward !== 0 || axes.right !== 0;
     if (moving) {
-      this.keysHeld = true;
-      if (nowMs - this.lastKeyMove < KEY_MOVE_INTERVAL_MS) return;
-      this.lastKeyMove = nowMs;
+      this.walking = true;
+      if (nowMs - this.lastMove < MOVE_INTERVAL_MS) return;
+      this.lastMove = nowMs;
       const dir = floorDirection(axes, this.world.rig.forward);
       const length = Math.hypot(dir.x, dir.z) || 1;
-      session.move(self.x + (dir.x / length) * KEY_MOVE_REACH, self.z + (dir.z / length) * KEY_MOVE_REACH);
-    } else if (this.keysHeld) {
-      this.keysHeld = false;
+      session.move(self.x + (dir.x / length) * MOVE_REACH, self.z + (dir.z / length) * MOVE_REACH);
+    } else if (this.walking) {
+      this.walking = false;
       session.move(self.x, self.z);
+    }
+  }
+
+  private updateSeatHints(): void {
+    const self = this.self;
+    if (!this.session || !self || self.cushionId >= 0) {
+      this.seatHints.hideAll();
+      return;
+    }
+    for (const spot of CUSHION_SPOTS) {
+      const reachable = !this.cushionOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+      if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
+        this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
+      } else {
+        this.seatHints.hide(spot.id);
+      }
     }
   }
 

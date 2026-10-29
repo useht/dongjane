@@ -1,9 +1,6 @@
-export const TAP_SLOP_PX = 8;
+export const STICK_RADIUS_PX = 56;
+export const STICK_DEADZONE = 0.15;
 const ORBIT_RADIANS_PER_PX = 0.0058;
-
-export function isTap(downX: number, downY: number, upX: number, upY: number, slop = TAP_SLOP_PX): boolean {
-  return Math.hypot(upX - downX, upY - downY) < slop;
-}
 
 export interface MoveAxes {
   forward: number;
@@ -30,6 +27,21 @@ export function axesFromKeys(held: ReadonlySet<string>): MoveAxes {
   return length > 1 ? { forward: forward / length, right: right / length } : { forward, right };
 }
 
+// Screen-up is forward and screen-right is right; the magnitude is clamped to 1 and the deadzone stays still.
+export function axesFromJoystick(dxPx: number, dyPx: number, radiusPx = STICK_RADIUS_PX, deadzone = STICK_DEADZONE): MoveAxes {
+  const length = Math.hypot(dxPx, dyPx);
+  if (length <= radiusPx * deadzone) return { forward: 0, right: 0 };
+  const scale = Math.min(1, length / radiusPx) / length;
+  return { forward: -dyPx * scale, right: dxPx * scale };
+}
+
+export function combineAxes(a: MoveAxes, b: MoveAxes): MoveAxes {
+  const forward = a.forward + b.forward;
+  const right = a.right + b.right;
+  const length = Math.hypot(forward, right);
+  return length > 1 ? { forward: forward / length, right: right / length } : { forward, right };
+}
+
 // Turns key axes into a floor direction, relative to where the camera looks (cameraForward on x/z).
 export function floorDirection(axes: MoveAxes, cameraForward: { x: number; z: number }): { x: number; z: number } {
   const rightX = -cameraForward.z;
@@ -48,24 +60,30 @@ export function isEditable(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+export interface StickState {
+  originX: number;
+  originY: number;
+  dx: number;
+  dy: number;
+}
+
 export interface PointerHandlers {
-  onTap(clientX: number, clientY: number): void;
   onOrbit(dxRadians: number, dyRadians: number): void;
   onZoom(factor: number): void;
+  onStick(stick: StickState | null): void;
 }
 
 interface Tracked {
-  startX: number;
-  startY: number;
   x: number;
   y: number;
 }
 
 export class PointerInput {
   private readonly pointers = new Map<number, Tracked>();
-  private dragged = false;
-  private pinched = false;
   private pinchDistance = 0;
+  private stickId: number | null = null;
+  private stickX = 0;
+  private stickY = 0;
 
   constructor(
     private readonly canvas: HTMLElement,
@@ -89,24 +107,30 @@ export class PointerInput {
     this.canvas.removeEventListener("contextmenu", this.contextMenu);
   }
 
+  // The stick finger stays out of `pointers`, so it never counts toward a pinch.
   private readonly down = (event: PointerEvent): void => {
-    if (this.pointers.size === 0) {
-      this.dragged = false;
-      this.pinched = false;
+    this.capture(event.pointerId);
+    if (this.stickId === null && event.pointerType === "touch" && this.inStickZone(event.clientX)) {
+      this.stickId = event.pointerId;
+      this.stickX = event.clientX;
+      this.stickY = event.clientY;
+      this.handlers.onStick({ originX: this.stickX, originY: this.stickY, dx: 0, dy: 0 });
+      return;
     }
-    this.pointers.set(event.pointerId, { startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY });
-    try {
-      this.canvas.setPointerCapture(event.pointerId);
-    } catch {
-      // capture can fail for synthetic pointers; dragging still works while over the canvas
-    }
-    if (this.pointers.size === 2) {
-      this.pinched = true;
-      this.pinchDistance = this.currentPinch();
-    }
+    this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.pointers.size === 2) this.pinchDistance = this.currentPinch();
   };
 
   private readonly move = (event: PointerEvent): void => {
+    if (event.pointerId === this.stickId) {
+      this.handlers.onStick({
+        originX: this.stickX,
+        originY: this.stickY,
+        dx: event.clientX - this.stickX,
+        dy: event.clientY - this.stickY,
+      });
+      return;
+    }
     const tracked = this.pointers.get(event.pointerId);
     if (!tracked) return;
     const dx = event.clientX - tracked.x;
@@ -120,27 +144,23 @@ export class PointerInput {
       this.pinchDistance = distance;
       return;
     }
-    if (!this.dragged && !isTap(tracked.startX, tracked.startY, tracked.x, tracked.y)) this.dragged = true;
-    if (this.dragged) this.handlers.onOrbit(dx * ORBIT_RADIANS_PER_PX, dy * ORBIT_RADIANS_PER_PX);
+    this.handlers.onOrbit(dx * ORBIT_RADIANS_PER_PX, dy * ORBIT_RADIANS_PER_PX);
   };
 
   private readonly up = (event: PointerEvent): void => {
-    const tracked = this.pointers.get(event.pointerId);
-    if (!tracked) return;
-    this.pointers.delete(event.pointerId);
-    if (this.canvas.hasPointerCapture?.(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
-    if (this.pointers.size > 0) {
-      this.pinchDistance = 0;
+    if (event.pointerId === this.stickId) {
+      this.release(event.pointerId);
+      this.endStick();
       return;
     }
-    if (!this.dragged && !this.pinched && isTap(tracked.startX, tracked.startY, event.clientX, event.clientY)) {
-      this.handlers.onTap(event.clientX, event.clientY);
-    }
+    if (!this.pointers.delete(event.pointerId)) return;
+    this.release(event.pointerId);
+    if (this.pointers.size > 0) this.pinchDistance = 0;
   };
 
   private readonly cancel = (event: PointerEvent): void => {
-    this.pointers.delete(event.pointerId);
-    this.dragged = true;
+    if (event.pointerId === this.stickId) this.endStick();
+    else this.pointers.delete(event.pointerId);
   };
 
   private readonly wheel = (event: WheelEvent): void => {
@@ -151,6 +171,28 @@ export class PointerInput {
   private readonly contextMenu = (event: Event): void => {
     event.preventDefault();
   };
+
+  private inStickZone(clientX: number): boolean {
+    const rect = this.canvas.getBoundingClientRect();
+    return clientX < rect.left + rect.width / 2;
+  }
+
+  private endStick(): void {
+    this.stickId = null;
+    this.handlers.onStick(null);
+  }
+
+  private capture(pointerId: number): void {
+    try {
+      this.canvas.setPointerCapture(pointerId);
+    } catch {
+      // capture can fail for synthetic pointers; dragging still works while over the canvas
+    }
+  }
+
+  private release(pointerId: number): void {
+    if (this.canvas.hasPointerCapture?.(pointerId)) this.canvas.releasePointerCapture(pointerId);
+  }
 
   private currentPinch(): number {
     const [a, b] = [...this.pointers.values()];
