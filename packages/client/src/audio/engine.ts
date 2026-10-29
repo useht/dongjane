@@ -96,12 +96,14 @@ export class AudioEngine {
     this.announce();
   }
 
-  bell(strikes: number = BELL_STRIKES): void {
+  bell(volume = 1): void {
     const ctx = this.ctx;
     if (!ctx || !this.effects) return;
     this.bellCount += 1;
+    const level = Math.min(1, Math.max(0, volume));
+    if (level <= 0) return;
     const start = ctx.currentTime + 0.05;
-    for (let i = 0; i < strikes; i += 1) this.strike(start + i * BELL_GAP_SECONDS, 1 - i * 0.12);
+    for (let i = 0; i < BELL_STRIKES; i += 1) this.strike(start + i * BELL_GAP_SECONDS, (1 - i * 0.12) * level);
   }
 
   knock(volume = 1): void {

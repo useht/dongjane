@@ -10,7 +10,7 @@ export function resolveServerHttpBase(
   if (env) {
     return trimSlash(env.replace(/^ws(s?):/, "http$1:"));
   }
-  if (dev) return `${location.protocol}//${location.hostname}:2567`;
+  if (dev) return `${location.origin}/__server`;
   return location.origin;
 }
 

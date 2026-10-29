@@ -13,7 +13,19 @@ export function themePlugin(): Plugin {
 }
 
 export default defineConfig({
-  server: { host: true, port: 5173 },
+  server: {
+    host: true,
+    port: 5173,
+    allowedHosts: ["dongjane.sslip.net"],
+    // Same default port as packages/server/src/index.ts
+    proxy: {
+      "/__server": {
+        target: `http://localhost:${process.env.PORT ?? 2567}`,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/__server/, ""),
+      },
+    },
+  },
   preview: { host: true, port: 4173 },
   build: {
     target: "es2022",

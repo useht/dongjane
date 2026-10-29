@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ICON_NAMES, iconMarkup } from "../src/ui/icons.ts";
 
 describe("ui icons", () => {
-  it("registers the nineteen hud icons", () => {
+  it("registers the twenty hud icons", () => {
     expect([...ICON_NAMES].sort()).toEqual([
       "back",
       "book",
@@ -16,6 +16,7 @@ describe("ui icons", () => {
       "link",
       "moon",
       "people",
+      "play",
       "putDown",
       "rain",
       "sit",
