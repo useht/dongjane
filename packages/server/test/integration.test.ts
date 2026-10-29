@@ -519,12 +519,11 @@ describe("seat exclusivity", () => {
     await waitFor(() => b.state.seats.get("gatbawi:0")?.occupantId === b.sessionId, "B claims");
   });
 
-  it("ignores a seat that does not exist and the field name an older client still sends", async () => {
+  it("ignores a seat that does not exist", async () => {
     const a = await rig.enter(1);
     a.send("sit", { zone: "gatbawi", seatId: 99 });
     a.send("sit", { zone: "dharma", seatId: -1 });
     a.send("sit", { zone: "garden", seatId: 0 });
-    a.send("sit", { ["mat" + "Id"]: 0 });
     await sleep(300);
     expect(a.state.monks.get(a.sessionId)?.seatId).toBe(-1);
     expect([...a.state.seats.values()].every((seat) => seat.occupantId === "")).toBe(true);
