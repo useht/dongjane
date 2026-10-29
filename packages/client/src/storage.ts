@@ -1,7 +1,6 @@
-import { randomHue, sanitizeName } from "@dongjane/shared";
+import { randomHue } from "@dongjane/shared";
 
 export interface Profile {
-  name: string;
   hue: number;
 }
 
@@ -35,10 +34,9 @@ function writeJson(key: string, value: unknown): void {
 export function loadProfile(): Profile | null {
   const data = readJson(PROFILE_KEY);
   if (typeof data !== "object" || data === null) return null;
-  const { name, hue } = data as Record<string, unknown>;
-  const clean = sanitizeName(name);
-  if (clean === "" || typeof hue !== "number" || !Number.isFinite(hue)) return null;
-  return { name: clean, hue: ((Math.round(hue) % 360) + 360) % 360 };
+  const { hue } = data as Record<string, unknown>;
+  if (typeof hue !== "number" || !Number.isFinite(hue)) return null;
+  return { hue: ((Math.round(hue) % 360) + 360) % 360 };
 }
 
 export function saveProfile(profile: Profile): void {

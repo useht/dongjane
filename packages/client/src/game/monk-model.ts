@@ -6,15 +6,10 @@ import {
   InstancedMesh,
   MeshLambertMaterial,
   Object3D,
-  type PerspectiveCamera,
-  Sprite,
-  SpriteMaterial,
-  Vector3,
 } from "three";
 import { BOW_MS } from "@dongjane/shared";
 import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
 import type { ModelMeshes } from "../assets/registry.ts";
-import { THEME } from "../theme.ts";
 import {
   CUSHION_TOP,
   FOOT_X,
@@ -22,16 +17,13 @@ import {
   FORE_ARM,
   HIP_KNEEL,
   HIP_STAND,
-  NAME_HEIGHT,
   NECK_Y,
   PART_COPIES,
   SHOULDER_X,
   SHOULDER_Y,
   UPPER_ARM,
 } from "./monk-rig.ts";
-import { fitPlate } from "./nameplate-fit.ts";
 import { PoseBlend, approach, bowDepth } from "./pose.ts";
-import { nameTexture } from "./textures.ts";
 
 const ROBE_PARTS: ReadonlySet<MonkPart> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
@@ -47,7 +39,6 @@ export class MonkAvatar {
   readonly bindings: Binding[] = [];
   readonly pose = new PoseBlend();
   hue: number;
-  name: string;
   isSelf: boolean;
   mode = "stand";
   modeSince = 0;
@@ -61,18 +52,12 @@ export class MonkAvatar {
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
-  private readonly plate: Sprite;
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
-  private plateY = NAME_HEIGHT;
-  private readonly view = new Vector3();
-  private readonly world = new Vector3();
-  private readonly right = new Vector3();
 
-  constructor(id: string, name: string, hue: number, isSelf: boolean) {
+  constructor(id: string, hue: number, isSelf: boolean) {
     this.id = id;
-    this.name = name;
     this.hue = hue;
     this.isSelf = isSelf;
 
@@ -107,13 +92,6 @@ export class MonkAvatar {
       bind("hand", this.handNodes[side] as Object3D, side);
       bind("foot", this.feet[side] as Object3D, side);
     }
-
-    const { texture, aspect } = nameTexture(name, isSelf ? THEME.scene.nameSelf : THEME.scene.nameOther);
-    this.plate = new Sprite(new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, fog: false }));
-    this.plate.scale.set(0.2 * aspect, 0.2, 1);
-    this.plate.position.y = NAME_HEIGHT;
-    this.plate.renderOrder = 10;
-    this.root.add(this.plate);
   }
 
   setMode(mode: string, nowMs: number): void {
@@ -186,37 +164,10 @@ export class MonkAvatar {
       foot.rotation.x = kneel * 0.5;
     }
 
-    this.plateY = NAME_HEIGHT - 0.42 * kneel;
-    this.plate.position.set(0, this.plateY, 0);
     this.root.updateMatrixWorld(true);
   }
 
-  // Keeps the nameplate fully on screen near the viewport edges and fades it once its monk has left the view.
-  fitPlate(camera: PerspectiveCamera): void {
-    const material = this.plate.material;
-    const view = this.view.set(this.root.position.x, this.root.position.y + this.plateY, this.root.position.z);
-    this.world.copy(view);
-    view.applyMatrix4(camera.matrixWorldInverse);
-    const depth = -view.z;
-    if (depth <= camera.near) {
-      this.plate.visible = false;
-      return;
-    }
-    const scale = camera.projectionMatrix.elements[0] as number;
-    const halfWidth = (this.plate.scale.x / 2) * scale / depth;
-    const ndc = view.applyMatrix4(camera.projectionMatrix);
-    const fit = fitPlate(ndc.x, ndc.y, halfWidth);
-    material.opacity = fit.opacity;
-    this.plate.visible = fit.opacity > 0.01;
-    if (fit.shift === 0) return;
-    this.world.addScaledVector(this.right.setFromMatrixColumn(camera.matrixWorld, 0), (fit.shift * depth) / scale);
-    this.plate.position.copy(this.root.worldToLocal(this.world));
-  }
-
   dispose(): void {
-    const material = this.plate.material;
-    material.map?.dispose();
-    material.dispose();
     this.root.removeFromParent();
   }
 }

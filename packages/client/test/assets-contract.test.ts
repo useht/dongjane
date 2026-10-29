@@ -106,7 +106,6 @@ describe("monk.glb", () => {
     expect(head.min[1]).toBeGreaterThanOrEqual(-2 * TOLERANCE);
     expect(head.min[1]).toBeLessThanOrEqual(TOLERANCE);
     expect(head.max[1]).toBeGreaterThan(MONK_RIG.NECK_Y);
-    expect(MONK_RIG.HIP_STAND + MONK_RIG.NECK_Y + head.max[1], "a standing head stays under its nameplate").toBeLessThan(MONK_RIG.NAME_HEIGHT);
 
     const upper = part("sleeveUpper").positions;
     const capRise = MONK_RIG.NECK_Y - MONK_RIG.SHOULDER_Y;

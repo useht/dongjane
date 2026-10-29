@@ -648,6 +648,10 @@ button:disabled {
   padding: 0;
 }
 
+.hall-go {
+  margin-bottom: 12px;
+}
+
 .name-input {
   flex: 1;
   min-width: 0;
@@ -716,133 +720,6 @@ button:disabled {
   animation: pulse 1.6s ease-in-out infinite;
 }
 
-.intro {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  padding: calc(var(--safe-top) + 20px) calc(var(--safe-right) + 20px) calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 20px);
-  background: radial-gradient(
-    ellipse at 50% 40%,
-    color-mix(in srgb, var(--gold-deep) 14%, var(--wood-soft)),
-    color-mix(in srgb, var(--wood) 94%, transparent) 72%
-  );
-  pointer-events: auto;
-  transition: opacity 0.6s ease;
-}
-
-.intro.leaving {
-  opacity: 0;
-}
-
-.intro-card {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  width: min(100%, 340px);
-  text-align: center;
-}
-
-.intro-title {
-  margin: 0;
-  font-size: 30px;
-  letter-spacing: 0.04em;
-  color: var(--gold);
-}
-
-.intro-lead {
-  margin: 0;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.intro-form {
-  display: grid;
-  gap: 10px;
-  width: 100%;
-  margin-top: 8px;
-}
-
-.intro-form .name-input {
-  text-align: center;
-  font-size: 18px;
-}
-
-.intro-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.intro-name {
-  margin: 0;
-  font-size: 22px;
-  color: var(--cream);
-  animation: rise 0.6s ease-out both;
-}
-
-.bud {
-  position: relative;
-  width: 112px;
-  height: 112px;
-}
-
-.bud-glow {
-  position: absolute;
-  inset: 8px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    color-mix(in srgb, var(--gold-pale) 55%, white) 0%,
-    color-mix(in srgb, var(--gold) 75%, transparent) 38%,
-    transparent 70%
-  );
-  animation: pulse 2.8s ease-in-out infinite;
-}
-
-.bud-petals {
-  position: absolute;
-  inset: 0;
-}
-
-.bud-petals::before,
-.bud-petals::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 22%;
-  width: 34px;
-  height: 56px;
-  margin-left: -17px;
-  border-radius: 50% 50% 50% 50% / 70% 70% 30% 30%;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--lotus) 55%, white), var(--lotus));
-  transform-origin: 50% 100%;
-  transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.3, 1);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--lotus) 45%, transparent);
-}
-
-.bud-petals::before {
-  transform: rotate(-8deg);
-}
-
-.bud-petals::after {
-  transform: rotate(8deg);
-}
-
-.born .bud-petals::before {
-  transform: rotate(-52deg);
-}
-
-.born .bud-petals::after {
-  transform: rotate(52deg);
-}
-
-.born .bud-glow {
-  animation: bloom 2.2s ease-out both;
-}
-
 noscript {
   position: fixed;
   inset: 0;
@@ -860,17 +737,6 @@ noscript {
   50% {
     transform: scale(1.08);
     opacity: 1;
-  }
-}
-
-@keyframes bloom {
-  from {
-    transform: scale(0.8);
-    opacity: 0.6;
-  }
-  to {
-    transform: scale(1.7);
-    opacity: 0.95;
   }
 }
 

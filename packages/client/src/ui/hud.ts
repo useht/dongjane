@@ -1,4 +1,5 @@
-import { HALL_COUNT, type HallInfo, hallName } from "@dongjane/shared";
+import { type HallInfo, hallName, seatLabel } from "@dongjane/shared";
+import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
 import { button, h, iconButton, swapIcon } from "./dom.ts";
 import { type IconName, icon } from "./icons.ts";
@@ -7,7 +8,7 @@ import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
   id: string;
-  name: string;
+  slot: number;
   mode: string;
   cushionId: number;
   bowCount: number;
@@ -52,6 +53,7 @@ export class Hud {
   private readonly hallSheet: Sheet;
   private readonly visitorSheet: Sheet;
   private readonly hallList = h("ul", "list");
+  private readonly hallInput = h("input", "name-input");
   private readonly visitorList = h("ul", "list");
   private halls: HallInfo[] = [];
   private currentHall = 0;
@@ -94,9 +96,24 @@ export class Hud {
       h("div", "bow-actions", this.samBaeButton, this.bowButton),
     );
 
+    this.hallInput.type = "text";
+    this.hallInput.inputMode = "numeric";
+    this.hallInput.maxLength = 4;
+    this.hallInput.autocomplete = "off";
+    this.hallInput.placeholder = "법당 번호";
+    this.hallInput.setAttribute("aria-label", "법당 번호");
+    const go = h("button", "primary", "이동");
+    go.type = "submit";
+    const hallForm = h("form", "row name-row hall-go", this.hallInput, go);
+    hallForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      this.submitHall();
+    });
+
     this.hallSheet = new Sheet(host, "법당 고르기");
     this.hallSheet.body.append(
       this.hallList,
+      hallForm,
       button("이 법당 초대 링크 복사", "primary wide", () => handlers.onInvite()),
     );
     this.visitorSheet = new Sheet(host, "함께 있는 동자승");
@@ -115,10 +132,6 @@ export class Hud {
     this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
   }
 
-  setVisible(visible: boolean): void {
-    this.root.classList.toggle("hidden", !visible);
-  }
-
   closeSheets(): boolean {
     return Sheet.closeOpen();
   }
@@ -134,7 +147,7 @@ export class Hud {
 
   setVisitors(rows: readonly VisitorRow[]): void {
     this.visitorBadge.textContent = String(rows.length);
-    const key = rows.map((row) => `${row.id}|${row.name}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
+    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
     this.visitorList.replaceChildren(
@@ -142,7 +155,7 @@ export class Hud {
         h(
           "li",
           row.isSelf ? "item self" : "item",
-          h("span", "item-main", h("strong", "", row.name), row.isSelf && h("em", "", "나")),
+          h("span", "item-main", h("strong", "", seatLabel(row.slot)), row.isSelf && h("em", "", "나")),
           h("span", "item-sub", `${modeLabel(row.mode, row.cushionId)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
         ),
       ),
@@ -214,30 +227,42 @@ export class Hud {
     if (text !== null) this.stats.textContent = text;
   }
 
-  private renderHalls(): void {
-    const rows: HTMLElement[] = [];
-    for (let hall = 1; hall <= HALL_COUNT; hall += 1) {
-      const info = this.halls.find((entry) => entry.hall === hall);
-      const here = hall === this.currentHall;
-      const full = info?.full === true && !here;
-      const unavailable = info === undefined || info.roomId === null;
-      const pick = h("button", `hall-row${here ? " here" : ""}`);
-      pick.type = "button";
-      pick.disabled = here || full || unavailable;
-      pick.append(
-        h("strong", "", hallName(hall)),
-        h(
-          "span",
-          "hall-meta",
-          here ? "지금 여기 있어요" : full ? "가득 찼어요" : unavailable ? "준비 중" : `${info.clients}/${info.capacity}명`,
-        ),
-      );
-      pick.addEventListener("click", () => {
-        this.hallSheet.close();
-        this.handlers.onSwitchHall(hall);
-      });
-      rows.push(h("li", "", pick));
+  private submitHall(): void {
+    const result = checkHallEntry(this.halls, this.currentHall, this.hallInput.value);
+    if (result.ok) {
+      this.hallInput.value = "";
+      this.hallSheet.close();
+      this.handlers.onSwitchHall(result.hall);
+      return;
     }
-    this.hallList.replaceChildren(...rows);
+    const target = result.hall === null ? "" : hallName(result.hall);
+    const messages = {
+      invalid: "법당 번호를 숫자로 적어 주세요",
+      current: "지금 이 법당에 있어요",
+      missing: `${target}은 아직 열려 있지 않아요`,
+      full: `${target}은 가득 찼어요`,
+    } as const;
+    this.toast(messages[result.reason]);
+  }
+
+  private renderHalls(): void {
+    this.hallList.replaceChildren(
+      ...this.halls.map((info) => {
+        const here = info.hall === this.currentHall;
+        const full = info.full && !here;
+        const pick = h("button", `hall-row${here ? " here" : ""}`);
+        pick.type = "button";
+        pick.disabled = here || full;
+        pick.append(
+          h("strong", "", hallName(info.hall)),
+          h("span", "hall-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients}/${info.capacity}명`),
+        );
+        pick.addEventListener("click", () => {
+          this.hallSheet.close();
+          this.handlers.onSwitchHall(info.hall);
+        });
+        return h("li", "", pick);
+      }),
+    );
   }
 }

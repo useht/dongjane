@@ -1,11 +1,9 @@
-import { NAME_MAX_LENGTH, sanitizeName } from "@dongjane/shared";
 import type { Settings } from "../storage.ts";
-import { button, h } from "./dom.ts";
+import { h } from "./dom.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface SettingsHandlers {
   onChange(settings: Settings): void;
-  onRename(name: string): void;
 }
 
 function toggleRow(label: string, hint: string, checked: boolean, onChange: (value: boolean) => void): HTMLLabelElement {
@@ -22,7 +20,6 @@ export class SettingsSheet {
   private readonly sound: HTMLInputElement;
   private readonly wind: HTMLInputElement;
   private readonly reduce: HTMLInputElement;
-  private readonly nameInput = h("input", "name-input");
   private current: Settings;
 
   constructor(
@@ -50,31 +47,8 @@ export class SettingsSheet {
     this.wind = windRow.querySelector("input") as HTMLInputElement;
     this.reduce = reduceRow.querySelector("input") as HTMLInputElement;
 
-    this.nameInput.type = "text";
-    this.nameInput.maxLength = NAME_MAX_LENGTH;
-    this.nameInput.autocomplete = "off";
-    this.nameInput.spellcheck = false;
-    this.nameInput.setAttribute("aria-label", "이름 바꾸기");
-    const rename = button("바꾸기", "primary", () => this.submitName());
-    const nameForm = h("form", "row name-row", this.nameInput, rename);
-    nameForm.addEventListener("submit", (event) => {
-      event.preventDefault();
-      this.submitName();
-    });
-
-    this.sheet.body.append(
-      volumeRow,
-      soundRow,
-      windRow,
-      reduceRow,
-      h("div", "row-group", h("strong", "", "이름"), nameForm),
-      h("p", "fine-print", "이름과 설정은 이 기기에만 저장돼요."),
-    );
+    this.sheet.body.append(volumeRow, soundRow, windRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
     this.sync(initial);
-  }
-
-  setName(name: string): void {
-    this.nameInput.value = name;
   }
 
   sync(settings: Settings): void {
@@ -88,13 +62,5 @@ export class SettingsSheet {
   private update(patch: Partial<Settings>): void {
     this.current = { ...this.current, ...patch };
     this.handlers.onChange({ ...this.current });
-  }
-
-  private submitName(): void {
-    const name = sanitizeName(this.nameInput.value);
-    if (name === "") return;
-    this.nameInput.value = name;
-    this.handlers.onRename(name);
-    this.sheet.close();
   }
 }
