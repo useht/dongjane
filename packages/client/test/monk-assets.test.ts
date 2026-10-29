@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { type BufferGeometry, Box3, Color, type Object3D, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
+import { BOW_MS } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
 import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 
@@ -221,8 +222,8 @@ describe("monk assets", () => {
       "footY",
       "footForward",
       "footKneelZ",
-      "footKneelY",
       "footKneelTilt",
+      "legKneelLift",
       "legTopDrop",
       "legLength",
       "kneelPelvisGrow",
@@ -233,6 +234,7 @@ describe("monk assets", () => {
     ] as const) {
       expect(monkRig[key], key).toBeGreaterThan(0);
     }
+    expect(Math.abs(monkRig.footKneelY), "the folded flat foot rests with its pivot on the seat").toBeLessThan(0.01);
     expect(monkRig.kneelPelvisLift).toBeGreaterThanOrEqual(0);
     expect(monkRig.robeTintSaturation).toBeLessThanOrEqual(1);
     expect(monkRig.robeTintLightness).toBeLessThanOrEqual(1);
@@ -281,23 +283,44 @@ describe("monk assets", () => {
 
     expect(Math.abs((crownWorld - soleWorld) / H - 4), "standing height: 4 heads").toBeLessThanOrEqual(0.05);
     expect(Math.abs((chinWorld - soleWorld) / H - 3), "chin height: 3 heads").toBeLessThanOrEqual(0.05);
-    expect(Math.abs((chinWorld - monkRig.hipStand) / H - 1.25), "chin to hip").toBeLessThanOrEqual(0.03);
-    expect(Math.abs((monkRig.hipStand - soleWorld) / H - 1.75), "hip to sole").toBeLessThanOrEqual(0.05);
+    expect(Math.abs((chinWorld - monkRig.hipStand) / H - 1.29), "chin to hip").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((monkRig.hipStand - soleWorld) / H - 1.71), "hip to sole").toBeLessThanOrEqual(0.02);
     expect(Math.abs((head.max.x - head.min.x) / H - 0.94), "head width incl. ears").toBeLessThanOrEqual(0.03);
     expect((monkRig.shoulderX * 2) / H, "shoulder joints").toBeLessThan(0.7);
 
-    // The arm: shoulder joint, elbow and fingertip, measured with the arm hanging straight down.
+    // The arm: shoulder joint, elbow, wrist and fingertip, measured with the arm hanging straight down. Human proportions (a real
+    // arm is 1.5 head heights from shoulder to fingertip, the elbow 43% of the way down), which the 4 heads and the big head don't change.
     const upper = -bounds(parts.sleeveUpper).min.y;
+    const hand = -bounds(parts.hand).min.y;
     const shoulderWorld = monkRig.hipStand + monkRig.shoulderY;
-    const fingertipWorld = shoulderWorld - upper - monkRig.foreArm + bounds(parts.hand).min.y;
+    const elbowWorld = shoulderWorld - upper;
+    const wristWorld = elbowWorld - monkRig.foreArm;
+    const fingertipWorld = wristWorld - hand;
     const reach = shoulderWorld - fingertipWorld;
-    expect(Math.abs((chinWorld - shoulderWorld) / H - 0.45), "chin to shoulder joint").toBeLessThanOrEqual(0.03);
-    expect(Math.abs((shoulderWorld - soleWorld) / H - 2.55), "shoulder joint height").toBeLessThanOrEqual(0.03);
-    expect(Math.abs((fingertipWorld - soleWorld) / H - 1.58), "fingertip height").toBeLessThanOrEqual(0.04);
-    expect(Math.abs(upper / H - 0.35), "upper arm").toBeLessThanOrEqual(0.03);
-    expect(Math.abs(monkRig.foreArm / H - 0.31), "forearm").toBeLessThanOrEqual(0.03);
-    expect(Math.abs(reach / H - 0.97), "shoulder to fingertip").toBeLessThanOrEqual(0.03);
-    expect(Math.abs(upper / reach - 0.36), "elbow along the arm, from the shoulder").toBeLessThanOrEqual(0.03);
+    expect(Math.abs((chinWorld - shoulderWorld) / H - 0.21), "chin to shoulder joint").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((shoulderWorld - soleWorld) / H - 2.79), "shoulder joint height").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((elbowWorld - soleWorld) / H - 2.14), "elbow height").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((wristWorld - soleWorld) / H - 1.61), "wrist height").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((fingertipWorld - soleWorld) / H - 1.29), "fingertip height: mid-thigh").toBeLessThanOrEqual(0.02);
+    expect(Math.abs(upper / H - 0.64), "upper arm").toBeLessThanOrEqual(0.01);
+    expect(Math.abs(monkRig.foreArm / H - 0.54), "forearm").toBeLessThanOrEqual(0.01);
+    expect(Math.abs(hand / H - 0.32), "hand").toBeLessThanOrEqual(0.01);
+    expect(Math.abs(reach / H - 1.5), "shoulder to fingertip").toBeLessThanOrEqual(0.02);
+    expect(Math.abs(upper / reach - 0.43), "elbow along the arm, from the shoulder").toBeLessThanOrEqual(0.01);
+
+    // The leg: the knee is the widest point of the trouser leg, a thigh above the ankle pivot a shin long.
+    const trousers = parts.trousers.getAttribute("position");
+    let kneeLocal = 0;
+    let kneeWidth = -Infinity;
+    for (let i = 0; i < trousers.count; i += 1) {
+      if (trousers.getX(i) > kneeWidth) [kneeWidth, kneeLocal] = [trousers.getX(i), trousers.getY(i)];
+    }
+    const kneeWorld = monkRig.hipStand - monkRig.legTopDrop + kneeLocal;
+    const ankleWorld = soleWorld + monkRig.footY;
+    expect(Math.abs((kneeWorld - soleWorld) / H - 0.855), "knee height").toBeLessThanOrEqual(0.01);
+    expect(Math.abs((ankleWorld - soleWorld) / H - 0.21), "ankle height").toBeLessThanOrEqual(0.01);
+    expect(Math.abs((monkRig.hipStand - kneeWorld) / H - 0.855), "thigh").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((kneeWorld - ankleWorld) / H - 0.645), "shin").toBeLessThanOrEqual(0.02);
 
     // The head keeps its size; the body is 4 heads (1.32 standing). Kneeling, the seat of the trousers (pelvisDrop below the hip)
     // rests on the seat, so the hip drops to seat + pelvisDrop and the crown to about 0.81 of the standing crown (1.068).
@@ -324,14 +347,15 @@ describe("monk assets", () => {
     const cuff = legPivot + trousers.min.y;
 
     // The jacket ends just below the hip (not a robe down to the shins), the crotch hangs lower, and the cuff is just above the ankle.
-    expect(Math.abs((hem - sole) / H - 1.49), "jacket hem above the sole (1.49 H, just below the hip at 1.75 H)").toBeLessThanOrEqual(0.04);
+    expect(Math.abs((hem - sole) / H - 1.45), "jacket hem above the sole (1.45 H, just below the hip at 1.71 H)").toBeLessThanOrEqual(0.03);
     expect(hem, "the hem is below the hip pivot").toBeLessThan(monkRig.hipStand);
     expect(monkRig.hipStand - hem, "the hem is only just below the hip pivot").toBeLessThan(0.3 * H);
     expect(crotch, "the crotch hangs below the jacket hem").toBeLessThan(hem);
-    expect(Math.abs((crotch - sole) / H - 1.18), "crotch above the sole").toBeLessThanOrEqual(0.04);
-    expect(Math.abs((cuff - sole) / H - 0.335), "trouser cuff above the sole").toBeLessThanOrEqual(0.04);
+    expect(Math.abs((crotch - sole) / H - 1.14), "crotch above the sole").toBeLessThanOrEqual(0.03);
+    expect(Math.abs((cuff - sole) / H - 0.26), "trouser cuff above the sole").toBeLessThanOrEqual(0.01);
     expect(footTop, "the foot shows below the cuff").toBeLessThan(cuff);
     expect((cuff - footTop) / H, "the cuff clears the foot by a visible band of ankle").toBeGreaterThan(0.045);
+    expect(footTop / H, "the flat foot stays below the ankle pivot (0.21 H)").toBeLessThan(0.21);
 
     // The leg hangs from a pivot inside the trouser leg and reaches down to the foot, so no gap shows between cuff and foot.
     const legTop = legPivot + leg.max.y;
@@ -366,19 +390,27 @@ describe("monk assets", () => {
     expect(trousers.max.x / cuffRadius, "the leg is gathered in below the knee").toBeGreaterThan(1.3);
   });
 
-  it("lets the arms hang straight when standing: no crease at the elbow, the fingertips at 1.58 H", async () => {
+  it("lets the arms hang almost straight when standing: no crease at the elbow, clear of the hips, the fingertips at mid-thigh (1.29 H)", async () => {
     const parts = await loadParts();
     const H = monkRig.headHeight;
     const avatar = posedAvatar("stand");
     for (const side of [0, 1]) {
+      const sign = side === 0 ? -1 : 1;
       const shoulder = new Vector3().setFromMatrixPosition(nodeOf(avatar, "sleeveUpper", side).matrixWorld);
       const elbow = new Vector3().setFromMatrixPosition(nodeOf(avatar, "sleeveLower", side).matrixWorld);
       const wrist = new Vector3().setFromMatrixPosition(nodeOf(avatar, "hand", side).matrixWorld);
       const bend = elbow.clone().sub(shoulder).angleTo(wrist.clone().sub(elbow));
       expect(bend, `elbow bend of arm ${side}`).toBeLessThan(0.15);
-      expect(Math.abs(elbow.x - shoulder.x), "the upper arm hangs vertically").toBeLessThan(0.01);
-      const tip = Math.min(...worldVertices(nodeOf(avatar, "hand", side), parts.hand).map((v) => v.y));
-      expect(Math.abs(tip / H - 1.58), `fingertip height of arm ${side}`).toBeLessThanOrEqual(0.04);
+      const lean = Math.atan2(sign * (elbow.x - shoulder.x), shoulder.y - elbow.y);
+      expect(lean, `the upper arm of arm ${side} hangs a little away from the body, not into it`).toBeGreaterThan(0);
+      expect(lean, `the upper arm of arm ${side} hangs almost vertically`).toBeLessThan(0.15);
+      expect((shoulder.y - elbow.y) / H, `upper arm ${side}`).toBeCloseTo(0.64, 1);
+      expect((elbow.y - wrist.y) / H, `forearm ${side}`).toBeCloseTo(0.54, 1);
+      const hand = worldVertices(nodeOf(avatar, "hand", side), parts.hand);
+      const tip = Math.min(...hand.map((v) => v.y));
+      expect(Math.abs(tip / H - 1.29), `fingertip height of arm ${side} (a little higher than hanging straight: the arm leans out and forward)`).toBeLessThanOrEqual(0.04);
+      const pelvis = bounds(parts.pelvis);
+      expect(Math.min(...hand.map((v) => sign * v.x)), `the hand of arm ${side} hangs outside the hip`).toBeGreaterThan(pelvis.max.x * 0.8);
     }
   });
 
@@ -392,6 +424,7 @@ describe("monk assets", () => {
       const sign = side === 0 ? -1 : 1;
       const points = worldVertices(nodeOf(avatar, "hand", side), parts.hand);
       expect(Math.max(...points.map((v) => v.y)), `hand ${side} stays below the chin`).toBeLessThan(chinWorld);
+      expect(Math.max(...points.map((v) => v.y)), `hand ${side} reaches up to just under the chin`).toBeGreaterThan(chinWorld - 0.1);
       expect(Math.max(...points.map((v) => v.z)), `hand ${side} stays in front of the chest`).toBeLessThan(-0.05);
       expect(Math.min(...points.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeGreaterThan(-0.012);
       tips.push(points.reduce((top, v) => (v.y > top.y ? v : top)));
@@ -400,6 +433,59 @@ describe("monk assets", () => {
     for (const side of [0, 1]) {
       const palm = new Vector3(0, 0, 1).transformDirection(nodeOf(avatar, "hand", side).matrixWorld);
       expect(Math.abs(palm.x), `the palm of hand ${side} faces the other hand`).toBeGreaterThan(0.9);
+    }
+  });
+
+  it("bows with the hands together on the seat in front of the face: nothing below the seat, the hands off the head", async () => {
+    const parts = await loadParts();
+    const avatar = new MonkAvatar("bower", 0, false);
+    avatar.setMode("bow", 0);
+    avatar.animate(0.016, BOW_MS * 0.45, 0, true);
+    for (const part of BODY_PART_NAMES) {
+      for (let copy = 0; copy < COPIES[part]; copy += 1) {
+        const low = Math.min(...worldVertices(nodeOf(avatar, part, copy), parts[part]).map((v) => v.y));
+        expect(low, `${part} ${copy} stays on the seat in the bow`).toBeGreaterThanOrEqual(monkRig.seatTop - 0.002);
+      }
+    }
+    const head = worldVertices(nodeOf(avatar, "head", 0), parts.head);
+    for (const side of [0, 1]) {
+      const sign = side === 0 ? -1 : 1;
+      const hand = worldVertices(nodeOf(avatar, "hand", side), parts.hand);
+      let nearest = Infinity;
+      for (const h of hand) for (const v of head) nearest = Math.min(nearest, h.distanceTo(v));
+      expect(nearest, `hand ${side} keeps off the head`).toBeGreaterThan(0.01);
+      expect(Math.min(...hand.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeGreaterThan(-0.012);
+      expect(Math.min(...hand.map((v) => v.y)) - monkRig.seatTop, `hand ${side} rests on the seat`).toBeLessThan(0.05);
+      expect(Math.max(...hand.map((v) => v.z)), `hand ${side} lies in front of the knees`).toBeLessThan(-0.1);
+    }
+  });
+
+  it("swings the arms in a natural arc against the same-side leg while walking", async () => {
+    const parts = await loadParts();
+    const avatar = new MonkAvatar("swinger", 0, false);
+    avatar.setMode("walk", 0);
+    const handZ: number[] = [];
+    const footZ: number[] = [];
+    for (let i = 0; i < 80; i += 1) {
+      avatar.animate(0.05, 50 * (i + 1), 3, true);
+      if (i < 40) continue;
+      handZ.push(new Vector3().setFromMatrixPosition(nodeOf(avatar, "hand", 0).matrixWorld).z);
+      footZ.push(new Vector3().setFromMatrixPosition(nodeOf(avatar, "foot", 0).matrixWorld).z);
+    }
+    const travel = Math.max(...handZ) - Math.min(...handZ);
+    expect(travel, "the hand swings through a natural arc").toBeGreaterThan(0.15);
+    expect(travel, "the hand swings through a natural arc").toBeLessThan(0.4);
+    const meanHand = handZ.reduce((a, b) => a + b, 0) / handZ.length;
+    const meanFoot = footZ.reduce((a, b) => a + b, 0) / footZ.length;
+    let covariance = 0;
+    for (let i = 0; i < handZ.length; i += 1) covariance += ((handZ[i] as number) - meanHand) * ((footZ[i] as number) - meanFoot);
+    expect(covariance, "the arm swings forward as the same-side foot goes back").toBeLessThan(0);
+    const hips = bounds(parts.pelvis);
+    for (let side = 0; side < 2; side += 1) {
+      const sign = side === 0 ? -1 : 1;
+      expect(Math.min(...worldVertices(nodeOf(avatar, "hand", side), parts.hand).map((v) => sign * v.x)), `hand ${side} swings outside the hip`).toBeGreaterThan(
+        hips.max.x * 0.75,
+      );
     }
   });
 

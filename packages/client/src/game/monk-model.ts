@@ -60,6 +60,7 @@ const FOOT_FORWARD = rig.footForward;
 const FOOT_KNEEL_Z = rig.footKneelZ;
 const FOOT_KNEEL_Y = rig.footKneelY;
 const FOOT_KNEEL_TILT = rig.footKneelTilt;
+const LEG_KNEEL_LIFT = rig.legKneelLift;
 const LEG_TOP_DROP = rig.legTopDrop;
 const LEG_LENGTH = rig.legLength;
 const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
@@ -212,7 +213,7 @@ export class MonkAvatar {
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
     this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
-    this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
+    this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006;
     this.hips.position.z = -depth * 0.1;
 
     // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs.
@@ -230,21 +231,22 @@ export class MonkAvatar {
       const sign = side === 0 ? -1 : 1;
       const shoulder = this.shoulders[side] as Object3D;
       const elbow = this.elbows[side] as Object3D;
-      const armSwing = (side === 0 ? swing : swingBack) * 0.75 * walk;
+      const armSwing = (side === 0 ? swing : swingBack) * 0.5 * walk;
 
-      // The arm hangs straight at rest; praying swings it forward, yaws it inward and rolls the forearm so the palms meet under the chin
+      // The arm hangs almost straight at rest (a little out from the hip, so the hand clears the trousers); praying swings it forward,
+      // yaws it inward and rolls the forearm so the palms meet under the chin; bowing lays both hands together on the seat in front of the face
       // (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
       const idleX = 0.08 + breathe * 0.02;
-      const idleZ = 0;
+      const idleZ = sign * 0.12;
       const idleElbow = 0.1;
-      const prayX = 0.9;
+      const prayX = 0.24;
       const prayY = sign * 0.35;
-      const prayZ = -sign * 0.28;
-      const prayElbow = 1.93;
-      const prayTwist = -sign * 0.94;
-      const bowX = 2.45;
-      const bowZ = -sign * 0.32;
-      const bowElbow = 0.1;
+      const prayZ = -sign * 0.05;
+      const prayElbow = 2.28;
+      const prayTwist = -sign * 1.15;
+      const bowX = 0.83;
+      const bowZ = -sign * 0.43;
+      const bowElbow = 1.81;
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;
@@ -253,7 +255,7 @@ export class MonkAvatar {
       shoulder.rotation.y = prayY * prayMix;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
-      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.55;
+      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.4;
       elbow.rotation.y = prayTwist * prayMix;
 
       const foot = this.feet[side] as Object3D;
@@ -267,7 +269,7 @@ export class MonkAvatar {
       // strides, bobbing and the folded kneel.
       const leg = this.legs[side] as Object3D;
       const topY = this.hips.position.y - LEG_TOP_DROP;
-      const reachY = foot.position.y - topY;
+      const reachY = foot.position.y + LEG_KNEEL_LIFT * kneel - topY;
       const reachZ = foot.position.z - this.hips.position.z;
       leg.position.set(sign * FOOT_X, topY, this.hips.position.z);
       leg.rotation.x = Math.atan2(-reachZ, -reachY);
