@@ -15,7 +15,12 @@ export const CANDLE_SPOTS: ReadonlyArray<readonly [number, number]> = [
   [3.1, BUDDHA_Z + 0.8],
 ];
 
-export const HALL_LAYOUT = { WALL_X, BACK_Z, HEIGHT, ALTAR_TOP, CANDLE_SPOTS } as const;
+// The late-afternoon sun shining through the right-hand window; the sunbeams in hall.glb follow
+// the line between the two.
+export const SUN_POSITION = [14, 8, -2] as const;
+export const SUN_TARGET = [0, 0.3, 1.5] as const;
+
+export const HALL_LAYOUT = { WALL_X, BACK_Z, HEIGHT, ALTAR_TOP, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } as const;
 
 export const HALL_BOUNDS = {
   minX: -HALL_HALF_WIDTH + 0.7,

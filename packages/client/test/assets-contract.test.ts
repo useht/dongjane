@@ -1,6 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BUDGET, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
+import { CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
+import { BUDDHA_MESHES, BUDGET, HALL_MESHES, HALL_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
+import { HALL_LAYOUT } from "../src/game/hall-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";
 
@@ -106,6 +108,113 @@ describe("monk.glb", () => {
       expect(Math.min(...values), `${name} darkest`).toBeGreaterThanOrEqual(0.6);
       expect(Math.max(...values), `${name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
     }
+  });
+});
+
+function byName(nodes: readonly GlbNode[]): (name: string) => GlbNode {
+  return (name) => {
+    const found = nodes.find((node) => node.name === name);
+    if (!found) throw new Error(`missing ${name}`);
+    return found;
+  };
+}
+
+function expectLinearColors(glb: Glb, nodes: readonly GlbNode[]): void {
+  for (const node of nodes.filter((candidate) => !textured.includes(candidate.name))) {
+    const { values } = colors(glb, node.name);
+    expect(Math.min(...values), `${node.name} darkest`).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...values), `${node.name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
+  }
+}
+
+describe("buddha.glb", () => {
+  const glb = loadGlb(new URL("buddha.glb", MODELS));
+  const nodes = expectContract(glb, BUDDHA_MESHES);
+  const mesh = byName(nodes);
+
+  it("stays inside its size budget", () => {
+    expect(nodes.reduce((sum, node) => sum + node.triangles, 0)).toBeLessThanOrEqual(BUDGET.buddha.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.buddha.bytes);
+  });
+
+  it("is centred on the altar line, so the group can be placed at BUDDHA_Z", () => {
+    for (const node of nodes) {
+      expect(Math.abs((node.positions.min[0] + node.positions.max[0]) / 2), node.name).toBeLessThanOrEqual(TOLERANCE);
+    }
+  });
+
+  it("sits on its lotus, facing +Z into the hall", () => {
+    const figure = mesh("figure").positions;
+    const lotus = mesh("lotus").positions;
+    expect(Math.abs(lotus.max[1])).toBeLessThanOrEqual(0.3);
+    expect(lotus.min[1]).toBeLessThan(0);
+    expect(figure.min[1]).toBeGreaterThanOrEqual(lotus.min[1]);
+    expect(figure.max[1] - figure.min[1]).toBeGreaterThan(2.5);
+    expect(figure.max[2]).toBeGreaterThan(-figure.min[2]);
+  });
+
+  it("puts the halo and the glow behind the figure", () => {
+    expect(mesh("halo").positions.max[2]).toBeLessThan(0);
+    expect(mesh("glow").positions.max[2]).toBeLessThan(0);
+  });
+
+  it("keeps the vertex colours linear and in range", () => {
+    expectLinearColors(glb, nodes);
+  });
+});
+
+describe("hall.glb", () => {
+  const glb = loadGlb(new URL("hall.glb", MODELS));
+  const nodes = expectContract(glb, HALL_MESHES);
+  const mesh = byName(nodes);
+  const { BACK_Z, HEIGHT } = HALL_LAYOUT;
+  const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
+
+  it("stays inside its size budget, counting every cushion the game draws", () => {
+    const prototypes: readonly string[] = HALL_PROTOTYPES;
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? CUSHION_SPOTS.length : 1), 0);
+    expect(triangles).toBeLessThanOrEqual(BUDGET.hall.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.hall.bytes);
+  });
+
+  it("lays the floor over exactly the room the server lets players walk in", () => {
+    const { min, max } = mesh("floor").positions;
+    near(min[0], -HALL_HALF_WIDTH);
+    near(max[0], HALL_HALF_WIDTH);
+    near(min[2], BACK_Z);
+    near(max[2], HALL_FRONT_Z);
+    near(min[1], 0);
+    near(max[1], 0);
+  });
+
+  it("hangs the mural across the whole back wall", () => {
+    const { min, max } = mesh("backdrop").positions;
+    near(min[0], -HALL_HALF_WIDTH);
+    near(max[0], HALL_HALF_WIDTH);
+    near(min[1], 0);
+    near(max[1], HEIGHT);
+    expect(Math.abs(min[2] - BACK_Z)).toBeLessThanOrEqual(0.1);
+  });
+
+  it("keeps everything indoors under the roof", () => {
+    for (const name of ["structure", "beams", "paper", "lanterns"]) {
+      expect(mesh(name).positions.max[1], name).toBeLessThanOrEqual(HEIGHT + 0.05);
+      expect(mesh(name).positions.min[1], name).toBeGreaterThanOrEqual(-0.05);
+    }
+  });
+
+  it("authors the cushion prototypes at the origin, ready to be instanced", () => {
+    for (const name of HALL_PROTOTYPES) {
+      const { min, max } = mesh(name).positions;
+      expect(Math.abs((min[0] + max[0]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
+      expect(Math.abs((min[2] + max[2]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
+      expect(min[1], name).toBeGreaterThanOrEqual(-0.01);
+      expect(max[1], name).toBeLessThan(0.3);
+    }
+  });
+
+  it("keeps the vertex colours linear and in range", () => {
+    expectLinearColors(glb, nodes);
   });
 });
 

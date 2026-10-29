@@ -42,7 +42,7 @@ import {
 import { BUDDHA_Z, CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
 import { GeometryBuilder, type Placement } from "./geometry.ts";
-import { ALTAR_TOP, BACK_Z, CANDLE_SPOTS, HEIGHT, WALL_X } from "./hall-layout.ts";
+import { ALTAR_TOP, BACK_Z, CANDLE_SPOTS, HEIGHT, SUN_POSITION as SUN_POSITION_AT, SUN_TARGET as SUN_TARGET_AT, WALL_X } from "./hall-layout.ts";
 import {
   backdropTexture,
   beamGlowTexture,
@@ -67,8 +67,8 @@ const LACQUER = 0x9a2f20;
 const GOLD = 0xd9ad48;
 const GOLD_ACCENT = [0xd9ad48, 0x2f7d6b, 0xe6b43c, 0xc43d2d];
 
-const SUN_POSITION = new Vector3(14, 8, -2);
-const SUN_TARGET = new Vector3(0, 0.3, 1.5);
+const SUN_POSITION = new Vector3(...SUN_POSITION_AT);
+const SUN_TARGET = new Vector3(...SUN_TARGET_AT);
 
 function buildDoorSection(width: number, window: boolean): { wood: BufferGeometry; paper: BufferGeometry | null } {
   const wood = new GeometryBuilder();

@@ -11,6 +11,7 @@ export function assetInputs() {
     layout: { HALL_HALF_WIDTH, HALL_FRONT_Z, BUDDHA_Z },
     hall: HALL_LAYOUT,
     monk: MONK_RIG,
+    scene: THEME.scene,
     material: THEME.material,
     names: { MONK_PARTS, HALL_MESHES, HALL_PROTOTYPES, BUDDHA_MESHES, TEXTURED },
   };
