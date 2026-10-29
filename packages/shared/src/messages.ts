@@ -1,4 +1,5 @@
 import { BOW_MAX_TIMES, NAME_MAX_LENGTH } from "./constants.ts";
+import { isValidHall } from "./hall.ts";
 import { CUSHION_COUNT } from "./layout.ts";
 
 export const MSG = {
@@ -7,6 +8,7 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   setName: "setName",
+  relocate: "relocate",
 } as const;
 
 export interface MoveMessage {
@@ -30,6 +32,10 @@ export interface ClientToServerMessages {
   stand: StandMessage;
   bow: BowMessage;
   setName: SetNameMessage;
+}
+
+export interface RelocateMessage {
+  hall: number;
 }
 
 export interface JoinOptions {
@@ -62,6 +68,11 @@ export function parseBow(payload: unknown): BowMessage | null {
   const times = payload.times;
   if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return null;
   return { times: times as 1 | 2 | 3 };
+}
+
+export function parseRelocate(payload: unknown): RelocateMessage | null {
+  if (!isRecord(payload) || !isValidHall(payload.hall)) return null;
+  return { hall: payload.hall };
 }
 
 export function parseSetName(payload: unknown): SetNameMessage | null {

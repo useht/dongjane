@@ -6,25 +6,29 @@ import {
   createRouter,
   defineRoom,
   defineServer,
+  logger,
   matchMaker,
 } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import {
   HALLS_PATH,
-  HALL_COUNT,
   ROOM_NAME,
-  type HallInfo,
+  SEAT_PATH,
   type HallListResponse,
-  emptyHall,
-  isValidHall,
+  parseSeatRequest,
 } from "@dongjane/shared";
-import { HallRoom, hallCreationKey } from "./hall-room.ts";
+import { HallDirectory, HallsBusyError } from "./hall-directory.ts";
+import { HallRoom, hallHost } from "./hall-room.ts";
 import { createStaticHandler } from "./static.ts";
 
 export interface GameServerOptions {
   port?: number;
   hostname?: string;
   reconnectSeconds?: number;
+  /** How long a handed-out seat keeps its hall alive while the client connects. */
+  seatReservationMs?: number;
+  /** How long a hall being merged waits for its visitors to move before it closes. */
+  relocationGraceMs?: number;
   handleSignals?: boolean;
   greet?: boolean;
   /** Directory of the built client to serve on the same origin (e.g. packages/client/dist). */
@@ -37,71 +41,56 @@ export interface GameServer {
   stop(): Promise<void>;
 }
 
-export async function listHalls(): Promise<HallInfo[]> {
-  const rooms = await matchMaker.query({ name: ROOM_NAME });
-  const byHall = new Map<number, (typeof rooms)[number]>();
-  for (const room of rooms) {
-    const hall = room.metadata?.hall;
-    if (isValidHall(hall)) byHall.set(hall, room);
-  }
-  return Array.from({ length: HALL_COUNT }, (_, index) => {
-    const hall = index + 1;
-    const room = byHall.get(hall);
-    if (!room) return emptyHall(hall);
-    return {
-      hall,
-      roomId: room.roomId,
-      clients: room.clients,
-      capacity: room.maxClients,
-      full: room.clients >= room.maxClients,
-    };
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
+
+function createHallEndpoints(directory: HallDirectory) {
+  const hallsEndpoint = createEndpoint(HALLS_PATH, { method: "GET" }, async () => {
+    const body: HallListResponse = { halls: directory.list() };
+    return json(body);
+  });
+
+  const seatEndpoint = createEndpoint(SEAT_PATH, { method: "POST" }, async (ctx) => {
+    try {
+      return json(await directory.seat(parseSeatRequest(ctx.body as unknown).hall));
+    } catch (error) {
+      if (error instanceof HallsBusyError) return json({ error: "busy" }, 503);
+      throw error;
+    }
+  });
+
+  return { hallsEndpoint, seatEndpoint };
 }
 
-const hallsEndpoint = createEndpoint(HALLS_PATH, { method: "GET" }, async () => {
-  const body: HallListResponse = { halls: await listHalls() };
-  return new Response(JSON.stringify(body), {
-    headers: {
-      "content-type": "application/json",
-      "cache-control": "no-store",
-      "access-control-allow-origin": "*",
-    },
-  });
-});
-
 export async function startGameServer(options: GameServerOptions = {}): Promise<GameServer> {
-  hallCreationKey.value = randomBytes(16).toString("hex");
-  let stopping = false;
+  hallHost.key = randomBytes(16).toString("hex");
+  const directory = new HallDirectory({
+    create: (hall) =>
+      matchMaker.createRoom(ROOM_NAME, {
+        hall,
+        key: hallHost.key,
+        reconnectSeconds: options.reconnectSeconds,
+        relocationGraceMs: options.relocationGraceMs,
+      }),
+    onError: (error) => logger.error("hall directory failed", error),
+    reservationMs: options.seatReservationMs,
+  });
+  hallHost.directory = directory;
 
-  const handler = defineRoom(HallRoom).filterBy(["hall"]);
   const clientDir = options.clientDir;
   const server = defineServer({
-    rooms: { [ROOM_NAME]: handler },
-    routes: createRouter({ hallsEndpoint }, { openapi: { disabled: true } }),
+    rooms: { [ROOM_NAME]: defineRoom(HallRoom) },
+    routes: createRouter(createHallEndpoints(directory), { openapi: { disabled: true } }),
     transport: new WebSocketTransport(),
     gracefullyShutdown: options.handleSignals ?? false,
     greet: options.greet ?? false,
     ...(clientDir ? { express: (app) => void app.use(createStaticHandler(clientDir)) } : {}),
   });
 
-  const ensureHalls = async () => {
-    const existing = new Set((await matchMaker.query({ name: ROOM_NAME })).map((room) => room.metadata?.hall));
-    for (let hall = 1; hall <= HALL_COUNT; hall += 1) {
-      if (existing.has(hall)) continue;
-      await matchMaker.createRoom(ROOM_NAME, {
-        hall,
-        key: hallCreationKey.value,
-        reconnectSeconds: options.reconnectSeconds,
-      });
-    }
-  };
-
-  handler.on("dispose", () => {
-    if (!stopping) void ensureHalls().catch(() => undefined);
-  });
-
   await server.listen(options.port ?? 0, options.hostname);
-  await ensureHalls();
 
   const address = server.transport.server?.address() as AddressInfo | null | undefined;
   const port = address?.port ?? options.port ?? 0;
@@ -110,7 +99,7 @@ export async function startGameServer(options: GameServerOptions = {}): Promise<
     server,
     port,
     async stop() {
-      stopping = true;
+      await directory.close();
       await server.gracefullyShutdown(false);
     },
   };
