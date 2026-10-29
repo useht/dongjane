@@ -4,6 +4,7 @@ import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { floorDirection, KeyboardInput } from "./game/input.ts";
+import { SelfPrediction } from "./game/prediction.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { chooseHall, fetchHalls, loadHalls } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -16,8 +17,6 @@ import { runIntro } from "./ui/intro.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SettingsSheet } from "./ui/settings.ts";
 
-const KEY_MOVE_INTERVAL_MS = 125;
-const KEY_MOVE_REACH = 1.6;
 const CHANT_TICK_MS = 250;
 const HALL_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
@@ -53,8 +52,7 @@ export class App {
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
   private cushionOwners = new Map<number, string>();
-  private lastKeyMove = 0;
-  private keysHeld = false;
+  private readonly prediction = new SelfPrediction();
   private nextChantTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
@@ -66,7 +64,10 @@ export class App {
 
     this.world = new World(this.canvas, {
       onPickCushion: (id) => this.pickCushion(id),
-      onPickFloor: (x, z) => this.session?.move(x, z),
+      onPickFloor: (x, z) => {
+        this.prediction.cancel();
+        this.session?.move(x, z);
+      },
       onFrame: (dt, now) => this.frame(dt, now),
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
@@ -128,6 +129,7 @@ export class App {
     this.world.clear();
     this.bowWatch.reset();
     this.self = null;
+    this.prediction.cancel();
     this.cushionOwners.clear();
     this.hud.setLink("online");
     this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
@@ -254,6 +256,7 @@ export class App {
       });
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
+        this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode }, now);
         this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
       }
     });
@@ -269,7 +272,8 @@ export class App {
     });
     this.cushionOwners = owners;
 
-    this.world.applyMonks(views, now);
+    this.world.setSelfPrediction(this.prediction.display());
+    this.world.applyMonks(views, now, state.serverTime);
     this.world.setOccupancy(occupied);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.name.localeCompare(b.name, "ko"));
@@ -294,6 +298,7 @@ export class App {
     if (link !== "lost") return;
     this.lost = true;
     this.session = null;
+    this.prediction.cancel();
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
@@ -317,6 +322,7 @@ export class App {
       this.hud.toast("다른 동자승이 앉아 있는 방석이에요");
       return;
     }
+    this.prediction.cancel();
     session.sit(id);
   }
 
@@ -333,6 +339,7 @@ export class App {
   }
 
   private stand(): void {
+    this.prediction.cancel();
     if (this.self && this.self.mode !== "stand") this.session?.stand();
   }
 
@@ -471,21 +478,14 @@ export class App {
     if (turn !== 0) this.world.rig.orbit(turn * dt * 1.8, 0);
 
     const session = this.session;
-    const self = this.self;
-    if (!session || !self) return;
+    const displayed = this.world.selfPosition;
+    if (!session || !this.self || !displayed) return;
     const axes = this.keyboard.axes();
     const moving = axes.forward !== 0 || axes.right !== 0;
-    if (moving) {
-      this.keysHeld = true;
-      if (nowMs - this.lastKeyMove < KEY_MOVE_INTERVAL_MS) return;
-      this.lastKeyMove = nowMs;
-      const dir = floorDirection(axes, this.world.rig.forward);
-      const length = Math.hypot(dir.x, dir.z) || 1;
-      session.move(self.x + (dir.x / length) * KEY_MOVE_REACH, self.z + (dir.z / length) * KEY_MOVE_REACH);
-    } else if (this.keysHeld) {
-      this.keysHeld = false;
-      session.move(self.x, self.z);
-    }
+    const dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
+    const target = this.prediction.frame(dt, nowMs, dir, displayed);
+    this.world.setSelfPrediction(this.prediction.display());
+    if (target) session.move(target.x, target.z);
   }
 
   private tickChant(): void {

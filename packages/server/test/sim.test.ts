@@ -95,6 +95,27 @@ describe("join and movement", () => {
   });
 });
 
+describe("server clock", () => {
+  it("starts at the sim clock and advances with every tick", () => {
+    expect(h.sim.state.serverTime).toBe(T0);
+    const seen: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      h.advance(TICK_MS);
+      seen.push(h.sim.state.serverTime);
+    }
+    expect(seen).toEqual([1, 2, 3, 4, 5].map((n) => T0 + n * TICK_MS));
+  });
+
+  it("stamps monk positions with the time they were computed at", () => {
+    h.sim.join("a", "a", 0);
+    const startZ = h.monk("a").z;
+    h.sim.move("a", h.monk("a").x, startZ - 4);
+    h.advance(1000);
+    expect(h.sim.state.serverTime).toBe(T0 + 1000);
+    expect(startZ - h.monk("a").z).toBeCloseTo((WALK_SPEED * (h.sim.state.serverTime - T0)) / 1000, 4);
+  });
+});
+
 describe("cushions", () => {
   it("claims a cushion, walks over, and kneels facing the Buddha", () => {
     h.sim.join("a", "a", 0);

@@ -54,6 +54,7 @@ export class TempleSim {
     this.random = options.random ?? Math.random;
     this.chantEveryMs = options.chantEveryMs ?? CHANT_EVERY_MS;
     this.chantMs = options.chantMs ?? CHANT_MS;
+    this.state.serverTime = this.clock();
 
     for (const spot of CUSHION_SPOTS) {
       this.state.cushions.set(String(spot.id), new Cushion({ id: spot.id, occupantId: "" }));
@@ -148,6 +149,7 @@ export class TempleSim {
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
+    this.state.serverTime = now;
 
     for (const [id, monk] of this.state.monks) {
       const runtime = this.runtimes.get(id);
