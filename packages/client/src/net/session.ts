@@ -1,5 +1,5 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { type BowMessage, type JoinOptions, MSG, TempleState, isHallFullError } from "@dongjane/shared";
+import { type BowMessage, type JoinOptions, MSG, TempleState, isHallFullError, parseRelocate } from "@dongjane/shared";
 import { toWebSocketBase } from "../config.ts";
 
 export type JoinFailure = "full" | "gone" | "offline";
@@ -25,6 +25,7 @@ export function classifyJoinError(error: unknown): JoinFailure {
 export interface SessionHandlers {
   onState(state: TempleState): void;
   onLink(link: LinkState): void;
+  onRelocate(hall: number): void;
 }
 
 const MIN_UPTIME_MS = 1000;
@@ -46,6 +47,10 @@ export class HallSession {
     });
     room.onReconnect(() => {
       if (!this.closed) handlers.onLink("online");
+    });
+    room.onMessage(MSG.relocate, (payload: unknown) => {
+      const move = parseRelocate(payload);
+      if (move && !this.closed) handlers.onRelocate(move.hall);
     });
     room.onLeave(() => {
       if (this.closed) return;
@@ -96,10 +101,6 @@ export class HallSession {
 
   bow(times: BowMessage["times"]): void {
     this.send(MSG.bow, { times });
-  }
-
-  rename(name: string): void {
-    this.send(MSG.setName, { name });
   }
 
   async leave(): Promise<void> {

@@ -3,7 +3,7 @@ import { schema, t, type SchemaType } from "@colyseus/schema";
 export const Monk = schema(
   {
     id: t.string().default(""),
-    name: t.string().default(""),
+    slot: t.uint8().default(0),
     hue: t.uint16().default(0),
     x: t.float32().default(0),
     z: t.float32().default(0),

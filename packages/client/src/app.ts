@@ -1,19 +1,27 @@
-import { CUSHION_SPOTS, type HallInfo, type TempleState, hallName, parseHallParam, skyAt } from "@dongjane/shared";
+import {
+  CUSHION_SPOTS,
+  type HallInfo,
+  type SeatResponse,
+  type TempleState,
+  hallName,
+  parseHallParam,
+  seatLabel,
+  skyAt,
+} from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { type MonkView, World } from "./game/world.ts";
-import { chooseHall, fetchHalls, loadHalls } from "./net/halls.ts";
+import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { ServerClock } from "./net/server-clock.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
-import { type Profile, type Settings, loadProfile, loadSettings, saveProfile, saveSettings } from "./storage.ts";
+import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
-import { runIntro } from "./ui/intro.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
@@ -93,7 +101,6 @@ export class App {
     });
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
-      onRename: (name) => this.rename(name),
     });
     this.seatHints = new SeatHints(this.ui, (id) => this.session?.sit(id));
     this.hudFrame = new HudFrame(this.ui);
@@ -117,13 +124,9 @@ export class App {
 
   async start(): Promise<void> {
     if (!this.profile) {
-      void this.refreshHalls();
-      this.world.setIdleSpin(true);
-      this.hud.setVisible(false);
-      this.profile = await runIntro(this.ui, () => this.audio.unlock());
-      this.hud.setVisible(true);
+      this.profile = { hue: newHue() };
+      saveProfile(this.profile);
     }
-    this.settingsSheet.setName(this.profile.name);
     this.world.setIdleSpin(false);
     const requested = parseHallParam(this.params.get("hall"));
     await this.enter(requested);
@@ -150,11 +153,10 @@ export class App {
     let busyFailures = 0;
     let transportFailures = 0;
     while (busyFailures < ENTER_ATTEMPTS) {
-      let halls: HallInfo[];
+      let seat: SeatResponse;
       try {
-        halls = await loadHalls(this.base, {
+        seat = await requestSeat(this.base, requested, {
           isCancelled: () => token !== this.joinToken,
-          onServerTime: (serverTime) => this.serverClock.observe(serverTime),
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
@@ -162,20 +164,13 @@ export class App {
         return;
       }
       if (token !== this.joinToken) return;
-      this.halls = halls;
-
-      const choice = chooseHall(halls, requested);
-      if (!choice) {
-        this.overlay.problem("모든 법당이 가득 찼어요", "조금 뒤에 다시 들러 주세요.", [retry]);
-        return;
-      }
 
       try {
         const session = await HallSession.join(
           this.base,
-          choice.roomId,
-          choice.hall,
-          { name: profile.name, hue: profile.hue },
+          seat.roomId,
+          seat.hall,
+          { hue: profile.hue },
           {
             onState: (state) => {
               if (token === this.joinToken) this.handleState(state);
@@ -183,13 +178,18 @@ export class App {
             onLink: (link) => {
               if (token === this.joinToken) this.handleLink(link);
             },
+            onRelocate: (hall) => {
+              if (token !== this.joinToken) return;
+              this.hud.toast(`법당이 합쳐져서 ${hallName(hall)}으로 옮겨 드려요`);
+              void this.enter(hall);
+            },
           },
         );
         if (token !== this.joinToken) {
           void session.leave();
           return;
         }
-        this.attach(session, choice.hall, choice.fellBack ? requested : null);
+        this.attach(session, seat.hall, seat.fellBack ? requested : null);
         return;
       } catch (error) {
         if (token !== this.joinToken) return;
@@ -219,6 +219,7 @@ export class App {
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
     this.hud.setHalls(this.halls, hall);
+    void this.refreshHalls();
 
     const url = new URL(window.location.href);
     url.searchParams.set("hall", String(hall));
@@ -226,7 +227,7 @@ export class App {
 
     this.overlay.hide();
     if (fellBackFrom !== null) {
-      this.hud.toast(`${hallName(fellBackFrom)}이 가득 차서 ${hallName(hall)}으로 모셨어요`);
+      this.hud.toast(`${hallName(fellBackFrom)}은 없거나 비어 있거나 가득 차서 ${hallName(hall)}으로 모셨어요`);
     }
     this.handleState(session.state);
   }
@@ -250,7 +251,6 @@ export class App {
     state.monks.forEach((monk) => {
       views.push({
         id: monk.id,
-        name: monk.name,
         hue: monk.hue,
         x: monk.x,
         z: monk.z,
@@ -258,10 +258,10 @@ export class App {
         mode: monk.mode,
         cushionId: monk.cushionId,
       });
-      watched.push({ id: monk.id, name: monk.name, x: monk.x, z: monk.z, mode: monk.mode });
+      watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
-        name: monk.name,
+        slot: monk.slot,
         mode: monk.mode,
         cushionId: monk.cushionId,
         bowCount: monk.bowCount,
@@ -287,13 +287,13 @@ export class App {
     this.world.applyMonks(views, now);
     this.world.setOccupancy(occupied);
 
-    rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.name.localeCompare(b.name, "ko"));
+    rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
     this.syncHallCount(rows.length);
 
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
-    for (const name of report.greeters) this.hud.toast(`${name}님이 인사했어요`);
+    for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 
   private syncHallCount(count: number): void {
@@ -337,14 +337,6 @@ export class App {
 
   private stand(): void {
     if (this.self && this.self.mode !== "stand") this.session?.stand();
-  }
-
-  private rename(name: string): void {
-    if (!this.profile) return;
-    this.profile = { ...this.profile, name };
-    saveProfile(this.profile);
-    this.session?.rename(name);
-    this.hud.toast(`이제 ${name}(이)라고 불려요`);
   }
 
   private updateSettings(next: Settings): void {
