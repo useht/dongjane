@@ -37,6 +37,8 @@ export interface SessionHandlers {
 }
 
 const MIN_UPTIME_MS = 1000;
+// Retry about as long as the server holds a dropped monk; the SDK's default gives up after a minute.
+const MAX_RECONNECT_RETRIES = 40;
 
 export class WorldSession {
   private closed = false;
@@ -47,6 +49,7 @@ export class WorldSession {
     private readonly handlers: SessionHandlers,
   ) {
     room.reconnection.minUptime = MIN_UPTIME_MS;
+    room.reconnection.maxRetries = MAX_RECONNECT_RETRIES;
     room.onStateChange(() => {
       if (!this.closed) handlers.onState(room.state);
     });
