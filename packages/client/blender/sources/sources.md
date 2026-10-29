@@ -17,4 +17,4 @@ All files are the Poly Haven 1K JPG downloads (diffuse and OpenGL normal) resize
 
 ## Procedural, no external source
 
-The Gatbawi statue (figure, hat stone, pedestal, offering table and chrysanthemum pots), the pines and the maples are modelled in Blender by `gatbawi.py` and `world.py`. No scan or photograph is traced; the two reference press photos in `docs/reference` were looked at for proportions only and are not part of the repository.
+The Gatbawi statue (figure, hat stone, pedestal, offering table and chrysanthemum pots), the pines and the maples are modelled in Blender by `gatbawi.py` and `world.py`. No scan or photograph is traced; the two reference press photos in `docs/reference` were looked at for proportions only and are not used as textures.
