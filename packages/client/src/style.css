@@ -8,7 +8,9 @@
   --quest-drop: 46px;
   --hud-top: calc(var(--safe-top) + 100px + var(--quest-drop));
   --hud-bottom: calc(var(--safe-bottom) + 136px);
+  /* --bow-size scales the icon inside the main button; --main-size is the circle around it. */
   --bow-size: 64px;
+  --main-size: calc(var(--bow-size) + 20px);
   --main-gap: 22px;
   --tool-size: 44px;
   --wood: #1c120b;
@@ -418,7 +420,7 @@ button:disabled {
 .toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + var(--edge) + 138px);
+  bottom: calc(var(--safe-bottom) + var(--edge) + 158px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -472,6 +474,7 @@ button:disabled {
 
 .tool-button {
   color: var(--muted);
+  margin-right: calc((var(--main-size) - var(--tool-size)) / 2);
 }
 
 .tool-button.ready {
@@ -558,20 +561,20 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   gap: var(--main-gap);
-  width: var(--bow-size);
+  width: var(--main-size);
 }
 
 /* Seated, the column keeps its full height so the stand-up button neither drops nor shifts while the main button hides. */
 .bow-actions.seated {
   justify-content: flex-start;
-  min-height: calc(var(--bow-size) + 44px + var(--main-gap));
+  min-height: calc(var(--main-size) + 44px + var(--main-gap));
 }
 
 .bow-button {
   display: grid;
   place-items: center;
-  width: var(--bow-size);
-  height: var(--bow-size);
+  width: var(--main-size);
+  height: var(--main-size);
   padding: 0;
   border-radius: 50%;
   border: 0;
@@ -1513,7 +1516,7 @@ noscript {
   }
 
   .toasts {
-    bottom: calc(var(--safe-bottom) + var(--edge) + 126px);
+    bottom: calc(var(--safe-bottom) + var(--edge) + 146px);
   }
 }
 
