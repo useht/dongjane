@@ -18,25 +18,29 @@ sleeveUpper, sleeveLower, hand, foot and leg are mirror-symmetric about x = 0 be
 The head is shaved: the scalp shade is a smooth vertex-colour gradient on the head itself (no cap mesh, so there is no
 edge to show). "hair" stays as a swappable slot but holds only a tiny scalp-coloured core buried inside the skull, so
 nothing sits above the scalp until a hairstyle is dropped in.
-The robe stops 0.83 H above the sole (a short hem, as in the reference); the "leg" part (skin calf + cream knee sock with a
-folded cuff) fills the gap down to the foot. It hangs from a pivot inside the skirt, and monk-model.ts stretches it from
+The robe stops 0.91 H (0.30) above the sole (a short hem, as in the reference); the "leg" part (skin calf + cream knee sock with
+a folded cuff) fills the gap down to the foot. It hangs from a pivot inside the skirt, and monk-model.ts stretches it from
 that pivot to the ankle every frame, so it follows strides, bobbing and the folded kneeling feet.
 Robe parts (torso, skirt, sleeveUpper, sleeveLower) stay white; the game tints them per monk.
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
 Blender axes: X right, Y forward (the face looks toward +Y), Z up. glTF export maps (x, y, z) -> (x, z, -y).
 
-Reference: docs/reference/images.jpg, panel 4 (bottom right: the full-body chibi avatar, 194x258 px of the 387x516 sheet).
-H = hair top to chin = 66 px (y 37 to 103). Measured, in H:
-    standing height, hair top to sole   3.18     (210 px)
-    head width: face 0.64, with the side locks 0.82 (with the twin tails 1.1)
-    shoulder breadth, outer, arms down  0.72 .. 0.76
-    chin to waist (top of the skirt)    0.68     (a very short torso)
-    waist to sole                       1.50
-    hem above the sole                  0.83     (bare calves and socks below the skirt)
-    waist width 0.33 .. 0.40, chest 0.55, skirt hem width 0.83
-    foot width 0.30, foot centres 0.19 either side of the middle, hand width 0.20
-(An earlier version used a seated stone Buddha photo; its statue ratios, shoulders 1.55 H and chin to hip 1.40 H, are gone.)
+Reference: docs/reference/img.jpg (734x413, the girl on the right: a full-body chibi seen from the front).
+H = head height without hair (crown of the skull to the chin) = 74 px. Measured, in H:
+    standing height, skull top to sole   3.78     (the monk keeps the overall height of about 1.145 instead: 3.47 H at H = 0.33)
+    shoulder joint above the sole        2.33
+    fingertip above the sole, arm down   1.40
+    shoulder joint to fingertip          0.96     (0.92 .. 0.96; the monk: 0.93)
+    wrist to fingertip                   0.31     (the hand)
+    upper arm 0.34, forearm 0.30         the elbow sits 35 .. 40 % of the way down the arm, and the arm hangs straight
+    hip above the sole                   1.51 .. 1.59
+    chin to hip                          0.92     (what is left of the torso after head, standing height and legs)
+    hem above the sole                   1.22     (the monk: 0.91, bare calves and cream socks show from about 0.75)
+    head width, bob hair included        0.93     (the monk: skull plus ears 0.94, shaved)
+Because the standing height is kept, the shoulder joint is only 0.14 H below the chin; the arms are long, so praying
+swings them forward and yaws them inward (POSE below) and the fingertips meet just under the chin.
+(An earlier version used docs/reference/images.jpg, panel 4: standing height 3.18 H, chin to waist 0.68 H, waist to sole 1.50 H.)
 """
 
 import bmesh
@@ -56,25 +60,28 @@ from mathutils.bvhtree import BVHTree
 # CONFIG - change numbers here and rebuild. Lengths are scene units (1 unit = the game's world unit).
 # ----------------------------------------------------------------------------------------------------------------------
 
-HEAD_H = 0.36  # crown to chin (the lowest jaw vertex); the unit of every ratio below. Standing crown = 3.18 H, kneeling on the cushion 2.8 H.
+HEAD_H = 0.33  # crown to chin (the lowest jaw vertex) of the shaved skull; the unit of every ratio below. Standing crown = 3.47 H.
 
 RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
-    "head_width": 0.86,  # skull plus ears (face 0.64, with the side locks 0.82)
-    "head_depth": 0.84,
-    "shoulder_breadth": 0.80,  # outer edge to outer edge, sleeves included (0.72 .. 0.76 measured, puffed sleeves add a bit)
-    "neck": 0.07,  # chin down to the base of the neck (chibi: almost none)
-    "chin_to_hip": 0.68,  # chin down to the hip pivot (waist belt sits just above it)
-    "waist_to_sole": 1.50,  # hip pivot height when standing
+    "head_width": 0.94,  # skull plus ears: 0.31 absolute (the reference's 0.93 h includes the bob hair)
+    "head_depth": 0.916,  # 0.302 absolute
+    "shoulder_breadth": 0.873,  # outer edge to outer edge, sleeves included: 0.288 absolute
+    "neck": 0.076,  # chin down to the base of the neck (chibi: almost none), 0.025 absolute
+    "chin_to_shoulder": 0.14,  # chin down to the shoulder joint: what is left of the torso after the head and the standing height
+    "chin_to_hip": 0.92,  # chin down to the hip pivot (waist belt sits just above it)
+    "waist_to_sole": 1.55,  # hip pivot height when standing
+    "upper_arm": 0.345,  # shoulder joint to elbow pivot
+    "fore_arm": 0.31,  # elbow pivot to wrist pivot (the hand hangs on below it)
 }
 
 RIG = {  # pivots and lengths the animation code uses
     "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
-    "hipKneel": 0.27,
-    "skirtDrop": 0.24,  # hem 0.30 (= 0.83 H) above the ground, so calves and socks show below it
+    "hipKneel": 0.24,  # 0.03 lower than the old 0.27 because the torso grew by 0.06: the kneeling crown stays at the same height
+    "skirtDrop": 0.0,  # set below: the hem stays 0.30 above the ground, so calves and socks show below it
     "shoulderX": 0.095,
-    "shoulderDrop": 0.045,  # shoulder joint below the neck base
-    "upperArm": 0.08,
-    "foreArm": 0.06,
+    "shoulderDrop": 0.0,  # set below: shoulder joint below the neck base
+    "upperArm": round(RATIO["upper_arm"] * HEAD_H, 3),  # the elbow sits at 37 % of the way from the shoulder to the fingertip
+    "foreArm": round(RATIO["fore_arm"] * HEAD_H, 3),
     "footX": 0.07,
     "footY": 0.042,
     "footForward": 0.03,  # standing: the ankle sits this far in front of the hip, the toes reach a hand further
@@ -86,14 +93,29 @@ RIG = {  # pivots and lengths the animation code uses
     "kneelSkirtLift": 0.0,
     "cushionTop": 0.13,
 }
+HEM_ABOVE_SOLE = 0.30
+RIG["skirtDrop"] = round(RIG["hipStand"] - HEM_ABOVE_SOLE, 3)
+RIG["shoulderDrop"] = round((RATIO["chin_to_shoulder"] - RATIO["neck"]) * HEAD_H, 4)
 RIG["legLength"] = round(RIG["hipStand"] - RIG["legTopDrop"] - RIG["footY"], 4)  # top pivot down to the ankle pivot, standing
+
+HAND = {"reach": 0.09}  # wrist pivot down to the fingertip (the reference: wrist to fingertip 0.31 h)
+
+POSE = {  # arm angles of the idle and praying poses (radians); a copy of the numbers in monk-model.ts, used by the previews
+    "idle_x": 0.08,
+    "idle_z": 0.0,
+    "idle_elbow": 0.1,
+    "pray_x": 0.39,  # the whole arm swings forward ...
+    "pray_y": 0.37,  # ... and yaws inward, so the elbow flexes toward the middle of the chest ...
+    "pray_z": 0.23,
+    "pray_elbow": 1.98,  # ... and the fingertips meet just below the chin
+}
 
 LEG = {
     "sock_top": 0.192,  # the cuff's top edge above the ankle pivot (0.234 above the ground)
     "radius": 0.0295,
 }
 
-FACE_K = HEAD_H / 0.32  # the face was drawn for a 0.32 head; every absolute size in it scales with the head
+FACE_K = 0.36 / 0.32  # the face was drawn for a 0.32 head and sized for the 0.36 one; its features keep that absolute size
 
 
 def fk(*values):
@@ -665,8 +687,8 @@ def build_sleeve_upper():
     r = SHOULDER_R
     arm = RIG["upperArm"]
     tube = [
-        ring_xy(0.0, 0.0, -arm, r * 1.12, r * 1.12, n),
-        ring_xy(0.0, 0.0, -arm * 0.6, r * 1.06, r * 1.06, n),
+        ring_xy(0.0, 0.0, -arm, r * 1.07, r * 1.07, n),
+        ring_xy(0.0, 0.0, -arm * 0.6, r * 1.04, r * 1.04, n),
         ring_xy(0.0, 0.0, -arm * 0.2, r * 1.0, r * 1.0, n),
     ]
     dome = dome_rings(r, n, 3, squash=SHOULDER_DOME)
@@ -678,8 +700,8 @@ def build_sleeve_lower():
     p = Part("sleeveLower")
     n = SEGMENTS["sleeve"]
     fore = RIG["foreArm"]
-    top_r = SHOULDER_R * 1.14
-    cuff = top_r + 0.022
+    top_r = SHOULDER_R * 1.07  # continues the upper sleeve, so the elbow shows no step
+    cuff = top_r + 0.006  # a mild trumpet: the cuff reaches no further out than the shoulders
     end = -(fore - 0.012)
     rings = [
         ring_xy(0.0, 0.0, end - 0.004, 0.032, 0.032, n),
@@ -710,8 +732,10 @@ def build_hand():
         (0.008, 0.026, 0.022),
         (0.021, 0.026, 0.022),
     ]
-    rings = [ring_xy(0.0, 0.0, z, w, d, n) for z, w, d in profile]
-    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, -0.074)), cap_last=True)
+    tip = -0.074
+    stretch = -HAND["reach"] / tip  # the part below the wrist is lengthened to the reference's wrist-to-fingertip reach
+    rings = [ring_xy(0.0, 0.0, z * stretch if z < 0 else z, w, d, n) for z, w, d in profile]
+    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, tip * stretch)), cap_last=True)
     return p.to_object()
 
 
@@ -897,17 +921,28 @@ def check_proportions(parts):
     hip, neck = RIG["hipStand"], NECK_Y
     sole = RIG["footY"] + min(foot)
     hem = hip + skirt_bottom
+    shoulder = hip + SHOULDER_Y
+    upper = -min(v.co.z for v in parts["sleeveUpper"].data.vertices)  # the sleeve's lower edge sits on the elbow pivot
+    fingertip = shoulder - upper - RIG["foreArm"] + min(v.co.z for v in parts["hand"].data.vertices)  # arms hanging straight
+    reach = shoulder - fingertip
     measured = {
         "H (crown to chin, m)": (size, HEAD_H, 0.002),
-        "standing height / H": ((hip + neck + crown - sole) / size, 3.18, 0.05),
-        "chin to hip / H": ((neck + chin) / size, 0.68, 0.03),
-        "hip to sole / H": ((hip - sole) / size, 1.50, 0.05),
-        "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, 0.86, 0.03),
-        "hem above sole / H": ((hem - sole) / size, 0.83, 0.05),
+        "standing height / H": ((hip + neck + crown - sole) / size, 3.47, 0.05),
+        "hip / H (hip to sole)": ((hip - sole) / size, 1.55, 0.05),
+        "chin to hip / H": ((neck + chin) / size, 0.92, 0.03),
+        "shoulder joint / H": ((shoulder - sole) / size, 2.33, 0.03),
+        "fingertip / H": ((fingertip - sole) / size, 1.40, 0.03),
+        "upper arm / H": (upper / size, 0.34, 0.03),
+        "forearm / H": (RIG["foreArm"] / size, 0.30, 0.03),
+        "shoulder to fingertip / H": (reach / size, 0.94, 0.03),
+        "elbow along the arm": (upper / reach, 0.38, 0.03),
+        "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, 0.94, 0.03),
+        "hem above sole / H": ((hem - sole) / size, HEM_ABOVE_SOLE / HEAD_H, 0.05),
     }
     for label, (value, want, tol) in measured.items():
-        print("MEASURED %-24s %.4f (want %.4f +- %.3f)" % (label, value, want, tol))
+        print("MEASURED %-28s %.4f (want %.4f +- %.3f)" % (label, value, want, tol))
         assert abs(value - want) <= tol, "%s is %.4f, wanted %.4f +- %.3f" % (label, value, want, tol)
+    print("MEASURED hem above sole (m): %.4f, standing crown (m): %.4f" % (hem - sole, hip + neck + crown - sole))
     foot_top_y = RIG["footY"] + max(foot)
     assert foot_top_y < hem, "the foot must stay below the hem so the socks show"
     leg_top, leg_bottom = hip - RIG["legTopDrop"] + max(leg), hip - RIG["legTopDrop"] + min(leg)
@@ -926,6 +961,25 @@ def check_kneel_clearance(parts):
         print("KNEEL lowest %-12s %.4f above the cushion" % (part, z - cushion))
         assert z >= cushion - 0.0005, "%s sinks %.4f into the cushion" % (part, cushion - z)
     assert lowest["skirt"] - cushion < 0.02, "the kneeling hem hovers over the cushion"
+
+
+def check_kneel_hands(parts):
+    """The praying hands stay outside the robe and the neck, below the chin, and do not cross the middle of the chest."""
+    mats = pose_matrices(1.0, RIG["cushionTop"])
+    to_torso = mats["torso"][0].inverted()
+    torso = TorsoSurface()
+    chin = NECK_Y + CHIN_Z
+    worst_torso, worst_neck = 1.0, 1.0
+    for side, m in enumerate(mats["hand"]):
+        for v in parts["hand"].data.vertices:
+            p = to_torso @ (m @ v.co)
+            worst_torso = min(worst_torso, torso.clearance(p))
+            worst_neck = min(worst_neck, math.hypot(p.x, p.y - 0.004) - 0.046) if p.z > NECK_Y - 0.025 else worst_neck
+            assert p.z < chin, "a praying fingertip rises above the chin (%.4f)" % (p.z - chin)
+            assert (p.x <= 0.012) if side == 0 else (p.x >= -0.012), "the praying hands cross the middle by %.4f" % abs(p.x)
+    print("KNEEL hand clearance: robe %.4f, neck %.4f (praying)" % (worst_torso, worst_neck))
+    assert worst_torso >= -0.002, "the praying hands sink %.4f into the robe" % -worst_torso
+    assert worst_neck >= -0.002, "the praying hands sink %.4f into the neck" % -worst_neck
 
 
 def rig_dict():
@@ -984,7 +1038,8 @@ C4 = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))  # three.
 
 
 def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
-    return Matrix.Translation(Vector(pos)) @ euler_matrix(rot) @ Matrix.Diagonal(Vector((*scale, 1.0)))
+    three_euler = Euler(rot, "ZYX").to_matrix().to_4x4()  # three.js "XYZ" multiplies Rx @ Ry @ Rz, which is Blender's "ZYX"
+    return Matrix.Translation(Vector(pos)) @ three_euler @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
 def pose_matrices(kneel, cushion, stride=0.0):
@@ -1001,8 +1056,11 @@ def pose_matrices(kneel, cushion, stride=0.0):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
-        shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (lerp(0.1, 0.62, kneel), 0, -sign * lerp(0.12, 0.5, kneel)))
-        elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (lerp(0.22, 1.95, kneel), 0, 0))
+        arm_x = lerp(POSE["idle_x"], POSE["pray_x"], kneel)
+        arm_y = sign * POSE["pray_y"] * kneel
+        arm_z = -sign * lerp(POSE["idle_z"], POSE["pray_z"], kneel)
+        shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
+        elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel), 0, 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
         foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel)
         foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * sign * 0.2
@@ -1135,6 +1193,7 @@ def main():
     total = report_parts(parts)
     check_proportions(parts)
     check_kneel_clearance(parts)
+    check_kneel_hands(parts)
 
     glb = os.path.join(HERE, "monk.glb")
     export_glb(parts_coll, glb)

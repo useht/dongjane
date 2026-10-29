@@ -175,12 +175,15 @@ export class MonkAvatar {
       const elbow = this.elbows[side] as Object3D;
       const armSwing = (side === 0 ? swing : swingBack) * 0.75 * walk;
 
-      const idleX = 0.1 + breathe * 0.02;
-      const idleZ = -sign * 0.12;
-      const idleElbow = 0.22;
-      const prayX = 0.62;
-      const prayZ = -sign * 0.5;
-      const prayElbow = 1.95;
+      // The arm hangs straight at rest; praying swings it forward and yaws it inward so the fingertips meet under the chin
+      // (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
+      const idleX = 0.08 + breathe * 0.02;
+      const idleZ = 0;
+      const idleElbow = 0.1;
+      const prayX = 0.39;
+      const prayY = sign * 0.37;
+      const prayZ = -sign * 0.23;
+      const prayElbow = 1.98;
       const bowX = 2.45;
       const bowZ = -sign * 0.32;
       const bowElbow = 0.1;
@@ -188,6 +191,7 @@ export class MonkAvatar {
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;
       shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel);
+      shoulder.rotation.y = prayY * prayMix;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
       elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel);
