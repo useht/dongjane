@@ -142,10 +142,6 @@ export class StageScreen {
     this.controller.resume();
   }
 
-  setHidden(hidden: boolean): void {
-    this.controller.setHidden(hidden);
-  }
-
   setReduceMotion(value: boolean): void {
     this.reduceMotion = value;
     this.box.style.opacity = value ? "0" : "";

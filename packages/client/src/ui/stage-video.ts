@@ -126,7 +126,6 @@ export class StageVideoController {
   private lastVolumeAt = Number.NEGATIVE_INFINITY;
   private volumeDue = false;
   private gestured = false;
-  private hidden = false;
   private playerMuted: boolean | null = null;
   private duration = 0;
   private time = 0;
@@ -243,21 +242,6 @@ export class StageVideoController {
     this.updateStall();
   }
 
-  setHidden(hidden: boolean): void {
-    if (hidden === this.hidden) return;
-    this.hidden = hidden;
-    if (!this.ready) return;
-    if (hidden) {
-      this.out.send("pauseVideo");
-    } else if (!this.quiet) {
-      this.needSeek = true;
-      this.out.send("playVideo");
-      this.lastPlayAt = this.now();
-      this.maybeSeek();
-    }
-    this.updateStall();
-  }
-
   private reset(): void {
     this.ready = false;
     this.playerMuted = null;
@@ -279,15 +263,15 @@ export class StageVideoController {
     this.setAudible(false);
   }
 
-  // Paused on purpose, by the tab being hidden or by nobody being in earshot.
+  // Paused on purpose, because nobody is in earshot.
   private holding(): boolean {
-    return this.hidden || this.quiet;
+    return this.quiet;
   }
 
   private wake(): void {
     this.quiet = false;
     this.needSeek = true;
-    if (!this.ready || this.hidden) return;
+    if (!this.ready) return;
     this.out.send("playVideo");
     this.lastPlayAt = this.now();
     this.maybeSeek();
