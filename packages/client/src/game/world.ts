@@ -14,6 +14,7 @@ import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { PointerInput, type StickState } from "./input.ts";
+import type { MonkAssets } from "./monk-assets.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
@@ -92,6 +93,7 @@ export class World {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: WorldCallbacks,
+    monkAssets: MonkAssets,
   ) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.quality = detectQuality({
@@ -112,7 +114,7 @@ export class World {
 
     this.hall = new Hall(this.renderer, this.quality);
     this.scene.add(this.hall.group);
-    this.pool = new MonkPool(this.scene, MAX_MONKS);
+    this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     this.rig = new CameraRig(this.camera, HALL_BOUNDS);
     this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);

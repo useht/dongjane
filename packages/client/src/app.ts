@@ -14,6 +14,7 @@ import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
+import type { MonkAssets } from "./game/monk-assets.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -79,16 +80,20 @@ export class App {
   private inSolo = false;
   private soloReturnHall: number | null = null;
 
-  constructor() {
+  constructor(monkAssets: MonkAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
     this.ui = document.getElementById("ui") as HTMLElement;
 
     this.joystick = new Joystick(this.ui);
-    this.world = new World(this.canvas, {
-      onFrame: (dt, now) => this.frame(dt, now),
-      onRendered: () => this.updateSeatHints(),
-      onStick: (stick) => this.joystick.set(stick),
-    });
+    this.world = new World(
+      this.canvas,
+      {
+        onFrame: (dt, now) => this.frame(dt, now),
+        onRendered: () => this.updateSeatHints(),
+        onStick: (stick) => this.joystick.set(stick),
+      },
+      monkAssets,
+    );
     this.world.setReduceMotion(this.settings.reduceMotion);
 
     this.hud = new Hud(this.ui, {

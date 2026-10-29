@@ -1,25 +1,13 @@
-import {
-  type BufferGeometry,
-  CapsuleGeometry,
-  Color,
-  CylinderGeometry,
-  Group,
-  InstancedMesh,
-  MeshLambertMaterial,
-  Object3D,
-  SphereGeometry,
-  TorusGeometry,
-  BoxGeometry,
-  DynamicDrawUsage,
-  InstancedBufferAttribute,
-} from "three";
+import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute } from "three";
 import { BOW_MS } from "@dongjane/shared";
-import { GeometryBuilder } from "./geometry.ts";
+import rig from "../../assets/monk/monk-rig.json";
+import type { MonkAssets } from "./monk-assets.ts";
 import { PoseBlend, approach, bowDepth } from "./pose.ts";
 
 export const PART_NAMES = [
   "head",
   "face",
+  "hair",
   "skirt",
   "torso",
   "trim",
@@ -33,6 +21,7 @@ export type PartName = (typeof PART_NAMES)[number];
 const PART_COPIES: Record<PartName, number> = {
   head: 1,
   face: 1,
+  hair: 1,
   skirt: 1,
   torso: 1,
   trim: 1,
@@ -44,79 +33,23 @@ const PART_COPIES: Record<PartName, number> = {
 
 const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
-const SKIN = 0xf3cba2;
-const WHITE = 0xffffff;
-
-const HIP_STAND = 0.4;
-const HIP_KNEEL = 0.2;
-const SKIRT_DROP = 0.36;
-const TORSO_HEIGHT = 0.38;
-const NECK_Y = TORSO_HEIGHT;
-const SHOULDER_X = 0.165;
-const SHOULDER_Y = 0.33;
-const UPPER_ARM = 0.18;
-const FORE_ARM = 0.16;
+// Rig numbers come from build_monk.py (assets/monk/monk-rig.json), so the model and the animation always agree.
+const HIP_STAND = rig.hipStand;
+const HIP_KNEEL = rig.hipKneel;
+const NECK_Y = rig.neckY;
+const SHOULDER_X = rig.shoulderX;
+const SHOULDER_Y = rig.shoulderY;
+const UPPER_ARM = rig.upperArm;
+const FORE_ARM = rig.foreArm;
+const FOOT_X = rig.footX;
+const FOOT_Y = rig.footY;
 const CUSHION_TOP = 0.13;
-
-function buildPartGeometries(): Record<PartName, BufferGeometry> {
-  const head = new GeometryBuilder()
-    .add(new SphereGeometry(0.19, 22, 16), SKIN, { y: 0.22 })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: -0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: 0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new CylinderGeometry(0.06, 0.07, 0.1, 10), SKIN, { y: 0.02 })
-    .build();
-
-  const face = new GeometryBuilder()
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: -0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: 0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: -0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: 0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new TorusGeometry(0.03, 0.0065, 5, 10, Math.PI), 0x9a4a3c, { y: 0.158, z: -0.178, rz: Math.PI })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: -0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: 0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { y: 0.408, z: 0.03 })
-    .build();
-
-  const skirt = new GeometryBuilder()
-    .add(new CylinderGeometry(0.17, 0.27, SKIRT_DROP, 22, 1), WHITE, { y: -SKIRT_DROP / 2 })
-    .build();
-
-  const torso = new GeometryBuilder()
-    .add(new CylinderGeometry(0.15, 0.19, TORSO_HEIGHT, 20, 1), WHITE, { y: TORSO_HEIGHT / 2 })
-    .add(new SphereGeometry(0.15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), WHITE, { y: TORSO_HEIGHT - 0.01, sy: 0.35 })
-    .build();
-
-  const trim = new GeometryBuilder()
-    .add(new TorusGeometry(0.19, 0.024, 8, 24), 0xc99a3a, { y: 0.03, rx: Math.PI / 2 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: -0.045, y: 0.28, z: -0.154, rz: 0.78 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: 0.045, y: 0.28, z: -0.154, rz: -0.78 })
-    .build();
-
-  const sleeveUpper = new GeometryBuilder()
-    .add(new CylinderGeometry(0.07, 0.085, UPPER_ARM, 12, 1), WHITE, { y: -UPPER_ARM / 2 })
-    .add(new SphereGeometry(0.07, 10, 8), WHITE)
-    .build();
-
-  const sleeveLower = new GeometryBuilder()
-    .add(new CylinderGeometry(0.085, 0.108, FORE_ARM + 0.01, 12, 1), WHITE, { y: -FORE_ARM / 2 })
-    .build();
-
-  const hand = new GeometryBuilder().add(new SphereGeometry(0.046, 10, 8), SKIN, { y: -0.01 }).build();
-
-  const foot = new GeometryBuilder()
-    .add(new CapsuleGeometry(0.05, 0.1, 4, 8), 0xf4eee0, { rx: Math.PI / 2, sy: 1, sz: 0.8, z: -0.03 })
-    .build();
-
-  return { head, face, skirt, torso, trim, sleeveUpper, sleeveLower, hand, foot };
-}
 
 interface Binding {
   part: PartName;
   copy: number;
   node: Object3D;
 }
-
-let sharedGeometries: Record<PartName, BufferGeometry> | null = null;
 
 export class MonkAvatar {
   readonly id: string;
@@ -160,7 +93,7 @@ export class MonkAvatar {
       hand.position.y = -FORE_ARM;
       shoulder.add(elbow);
       elbow.add(hand);
-      (this.feet[side] as Object3D).position.set(sign * 0.085, 0.045, 0);
+      (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
 
     const bind = (part: PartName, node: Object3D, copy = 0): void => {
@@ -168,6 +101,7 @@ export class MonkAvatar {
     };
     bind("head", this.headNode);
     bind("face", this.headNode);
+    bind("hair", this.headNode);
     bind("skirt", this.skirtNode);
     bind("torso", this.torsoNode);
     bind("trim", this.torsoNode);
@@ -245,7 +179,7 @@ export class MonkAvatar {
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
       foot.position.z = stride * 0.2 + 0.2 * kneel;
-      foot.position.y = 0.045 + lift * 0.07;
+      foot.position.y = FOOT_Y + lift * 0.07;
       foot.rotation.x = kneel * 0.5;
     }
 
@@ -269,14 +203,17 @@ export class MonkPool {
   private readonly robe = new Color();
   private readonly white = new Color(1, 1, 1);
 
-  constructor(private readonly host: Object3D, capacity = 40) {
+  constructor(
+    private readonly host: Object3D,
+    assets: MonkAssets,
+    capacity = 40,
+  ) {
     this.capacity = capacity;
     host.add(this.group);
-    sharedGeometries ??= buildPartGeometries();
     const material = new MeshLambertMaterial({ vertexColors: true });
     for (const part of PART_NAMES) {
       const size = capacity * PART_COPIES[part];
-      const mesh = new InstancedMesh(sharedGeometries[part], material, size);
+      const mesh = new InstancedMesh(assets.parts[part], material, size);
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(size * 3).fill(1), 3);
       mesh.instanceColor.setUsage(DynamicDrawUsage);
