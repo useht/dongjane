@@ -130,10 +130,6 @@ export class Hud {
     this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
   }
 
-  setVisible(visible: boolean): void {
-    this.root.classList.toggle("hidden", !visible);
-  }
-
   closeSheets(): boolean {
     return Sheet.closeOpen();
   }

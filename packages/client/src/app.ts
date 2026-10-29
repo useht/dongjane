@@ -1,4 +1,4 @@
-import { type HallInfo, type SeatResponse, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
+import { type HallInfo, type SeatResponse, type TempleState, defaultName, hallName, parseHallParam } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
@@ -8,11 +8,10 @@ import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
-import { type Profile, type Settings, loadProfile, loadSettings, saveProfile, saveSettings } from "./storage.ts";
+import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
-import { runIntro } from "./ui/intro.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SettingsSheet } from "./ui/settings.ts";
 
@@ -105,10 +104,8 @@ export class App {
 
   async start(): Promise<void> {
     if (!this.profile) {
-      this.world.setIdleSpin(true);
-      this.hud.setVisible(false);
-      this.profile = await runIntro(this.ui, () => this.audio.unlock());
-      this.hud.setVisible(true);
+      this.profile = { name: defaultName(), hue: newHue() };
+      saveProfile(this.profile);
     }
     this.settingsSheet.setName(this.profile.name);
     this.world.setIdleSpin(false);
