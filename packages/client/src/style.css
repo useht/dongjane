@@ -322,7 +322,11 @@ button:disabled {
 }
 
 .status-line {
-  margin: 0;
+  display: none;
+}
+
+.status:has(.bow-tally:empty) {
+  display: none;
 }
 
 .bow-tally {
