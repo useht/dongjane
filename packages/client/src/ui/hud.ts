@@ -24,7 +24,6 @@ export interface HudHandlers {
   onSwitchHall(hall: number): void;
   onOpenHalls(): void;
   onBow(times: 1 | 3): void;
-  onStand(): void;
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
@@ -48,7 +47,6 @@ export class Hud {
   private readonly bowTally = h("span", "bow-tally");
   private readonly bowButton: HTMLButtonElement;
   private readonly samBaeButton: HTMLButtonElement;
-  private readonly standButton: HTMLButtonElement;
   private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · 3 삼배 · Esc 일어서기 · Q/E 돌리기");
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
@@ -88,11 +86,14 @@ export class Hud {
       h("div", "top-actions", invite, this.visitorsButton, this.soundButton, settings),
     );
 
-    this.bowButton = button("절하기", "action", () => handlers.onBow(1));
-    this.samBaeButton = button("삼배", "action", () => handlers.onBow(3));
-    this.standButton = button("일어서기", "action quiet", () => handlers.onStand());
-    const actions = h("div", "actions", this.bowButton, this.samBaeButton, this.standButton);
-    const bottom = h("div", "bottombar", h("div", "status", this.statusLine, this.bowTally), actions, this.keyHint);
+    this.bowButton = button("절하기", "bow-button", () => handlers.onBow(1));
+    this.samBaeButton = button("삼배", "triple-button", () => handlers.onBow(3));
+    const bottom = h(
+      "div",
+      "bottombar",
+      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally), this.keyHint),
+      h("div", "bow-actions", this.samBaeButton, this.bowButton),
+    );
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";
@@ -168,7 +169,6 @@ export class Hud {
     const bowing = self.mode === "bow";
     this.bowButton.disabled = !seated || bowing;
     this.samBaeButton.disabled = !seated || bowing;
-    this.standButton.disabled = self.mode === "stand";
     this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
     this.statusLine.textContent = seated
       ? bowing
@@ -176,7 +176,7 @@ export class Hud {
         : "방석에 앉았어요. 절을 해 보세요"
       : self.cushionId >= 0
         ? "방석으로 가는 중이에요"
-        : "방석을 눌러 앉아 보세요";
+        : "방석 가까이 가서 앉기 버튼을 눌러 보세요";
   }
 
   setChant(status: ChantStatus | null): void {
