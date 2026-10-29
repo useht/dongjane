@@ -4,6 +4,8 @@ export interface WorldInfo {
   world: number;
   roomId: string;
   clients: number;
+  /** NPC monks in this world; shown in the headcount but never counted toward capacity. */
+  npcs: number;
   capacity: number;
   full: boolean;
   zones: Record<Zone, number>;

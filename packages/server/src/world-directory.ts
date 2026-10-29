@@ -57,6 +57,7 @@ export interface DirectoryRoom {
   readonly roomId: string;
   readonly world: number;
   readonly population: number;
+  readonly npcs: number;
   readonly zones: Readonly<Record<Zone, number>>;
   readonly draining: boolean;
   /** Starts the hand-over; must have cleared `draining` again if it rejects. */
@@ -128,6 +129,7 @@ export class WorldDirectory {
         world: room.world,
         roomId: room.roomId,
         clients: room.population,
+        npcs: room.npcs,
         capacity: WORLD_CAPACITY,
         full: room.population + this.pending(room.world) >= WORLD_CAPACITY,
         zones: { ...room.zones },

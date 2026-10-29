@@ -156,6 +156,7 @@ describe("planWorlds", () => {
 
 class FakeRoom implements DirectoryRoom {
   population = 0;
+  npcs = 6;
   zones = { gatbawi: 0, dharma: 0 };
   draining = false;
   closed = false;
@@ -246,7 +247,7 @@ describe("WorldDirectory", () => {
     rooms.get(1)!.join();
     await settle();
     expect(directory.list()).toEqual([
-      { world: 1, roomId: "room1", clients: 1, capacity: WORLD_CAPACITY, full: false, zones: { gatbawi: 1, dharma: 0 } },
+      { world: 1, roomId: "room1", clients: 1, npcs: 6, capacity: WORLD_CAPACITY, full: false, zones: { gatbawi: 1, dharma: 0 } },
     ]);
   });
 

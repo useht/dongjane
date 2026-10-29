@@ -100,6 +100,12 @@ export class TempleSim {
     return count;
   }
 
+  get npcCount(): number {
+    let count = 0;
+    for (const monk of this.state.monks.values()) if (monk.npc) count += 1;
+    return count;
+  }
+
   // Visitors standing in a zone right now; the NPCs are not counted, so they never take a visitor's place.
   zoneCount(zone: Zone): number {
     let count = 0;
