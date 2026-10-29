@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BUDDHA_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
+import { BORROWS_STONE, BUDDHA_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, headOf, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
 const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
 const EAGER_KEYS = ["buddha", "gatbawi", "venue", "world"];
 const textured: readonly string[] = TEXTURED;
+const borrowsStone: readonly string[] = BORROWS_STONE;
 
 const HEAD = { headTop: [0, 1, 0.04], headRadius: 0.074 };
 
@@ -70,7 +71,11 @@ describe("collectMeshes", () => {
 
   it("rejects a textured mesh that lost its texture", () => {
     expect(() => collectMeshes(group(WORLD_MESHES, false), "world")).toThrow(/has no texture/);
-    expect(() => collectMeshes(group(GATBAWI_MESHES, false), "gatbawi")).toThrow(/has no texture/);
+    expect(() => collectMeshes(group(BUDDHA_MESHES, false), "buddha")).toThrow(/has no texture/);
+  });
+
+  it("lets the hat stone and the pedestal go without a picture: they borrow the rocks'", () => {
+    expect(Object.keys(collectMeshes(group(GATBAWI_MESHES, false), "gatbawi")).sort()).toEqual([...GATBAWI_MESHES].sort());
   });
 });
 
@@ -110,7 +115,8 @@ describe("loadGameAssets", () => {
       for (const [name, mesh] of Object.entries(meshes)) {
         const attributes = Object.keys(mesh.geometry.attributes);
         expect(attributes, `${key}.${name}`).toContain("position");
-        expect(attributes, `${key}.${name}`).toContain(textured.includes(name) ? "uv" : "color");
+        if (borrowsStone.includes(name)) expect(attributes, `${key}.${name}`).toEqual(expect.arrayContaining(["uv", "color"]));
+        else expect(attributes, `${key}.${name}`).toContain(textured.includes(name) ? "uv" : "color");
         if (textured.includes(name)) expect(textureOf(mesh)).toBeInstanceOf(Texture);
       }
     }
@@ -169,6 +175,18 @@ describe("loadGameAssets", () => {
       if (textured.includes(name) && name !== "mat") expect(normalOf(mesh), name).toBeInstanceOf(Texture);
       else expect(normalOf(mesh), name).toBeNull();
     }
+  });
+
+  it("gives the hat stone and the pedestal UVs and vertex colour but no picture, so the game lends them the rocks'", async () => {
+    const { gatbawi, world } = (await loadGameAssets(diskLoader())).models;
+    for (const mesh of [gatbawi.hatStone, gatbawi.pedestal]) {
+      expect(mesh.geometry.hasAttribute("uv"), mesh.name).toBe(true);
+      expect(mesh.geometry.hasAttribute("color"), mesh.name).toBe(true);
+      expect(() => textureOf(mesh), mesh.name).toThrow(/has no texture/);
+      expect(normalOf(mesh), mesh.name).toBeNull();
+    }
+    expect(textureOf(world.rocks)).toBeInstanceOf(Texture);
+    expect(normalOf(world.rocks)).toBeInstanceOf(Texture);
   });
 
   it("gives the shipped Buddha one picture, no vertex colour, and the head the game seats the hat stone on", async () => {

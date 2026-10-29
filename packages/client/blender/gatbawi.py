@@ -3,8 +3,8 @@
 The Buddha himself is buddha.glb (buddha.py); the game stands it on the pedestal's top. Everything here is drawn
 in the game's own coordinates (Y up, the face toward +Z) through a Part whose frame is GAME, around one origin:
 the middle of the pedestal's foot, which the game stands on the platform at GATBAWI_Z. The hat stone and the
-pedestal share one rock picture (box-projected UVs, vertex colours multiply it); the offerings are plain vertex
-colours. The hat stone is drawn one metre in radius, centred on its underside: the game scales it to the statue's
+pedestal carry UVs for the rock picture that world.glb already holds (box-projected; the game multiplies the vertex
+colours into it), so this file stores no picture of its own; the offerings are plain vertex colours. The hat stone is drawn one metre in radius, centred on its underside: the game scales it to the statue's
 head (its size comes from the head buddha.py measured) and sets it on the crown, and its picture is laid out
 to match the size it will have.
 """
@@ -17,7 +17,6 @@ from mathutils import Matrix, Vector
 import common
 from common import GAME, SPIN_Y, Part, at, fbm, mix, rgb, scaled, smoothstep, spun
 
-SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
 STONE_TILE = 1.6  # metres of statue per repeat of the rock picture
 
 PEDESTAL_TIERS = ((3.4, 0.4, 1.9), (3.0, 0.32, 1.6))  # width, height, depth; stacked from y = 0
@@ -134,15 +133,14 @@ def build(inputs, out_dir, head):
     if abs(sum(height for _, height, _ in PEDESTAL_TIERS) - statue["seatY"]) > 1e-6:
         raise RuntimeError("the pedestal is not as tall as the statue's seat in GATBAWI_STATUE")
     hat_radius = statue["hatHeads"] * head["headRadius"] * statue["height"]
-    stone = common.textured_material("gatbawi", os.path.join(SOURCES, "rock_boulder_dry_diff.jpg"), os.path.join(SOURCES, "rock_boulder_dry_nor_gl.jpg"))
-    plain = common.vertex_color_material("offerings")
+    plain = common.vertex_color_material("gatbawi")
     # The hat stone is drawn at the origin, inside the pedestal: it is shaded alone, then kept out of the others' light.
-    hat = hat_stone(c, hat_radius).build(stone)
+    hat = hat_stone(c, hat_radius).build(plain)
     common.bake_vertex_occlusion([hat], distance=0.45 / hat_radius, samples=64, floor=0.45)
     hat.hide_render = True
     objects = {
         "hatStone": hat,
-        "pedestal": pedestal(c, statue["seatZ"]).build(stone),
+        "pedestal": pedestal(c, statue["seatZ"]).build(plain),
         "offerings": offerings(c).build(plain),
     }
     common.bake_vertex_occlusion([objects["pedestal"], objects["offerings"]], distance=0.45, samples=64, floor=0.45)

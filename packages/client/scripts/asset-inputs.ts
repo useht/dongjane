@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { COURT_AREA, DHARMA_ORIGIN, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import {
+  BORROWS_STONE,
   BUDDHA,
   BUDDHA_MESHES,
   DHARMA_MESHES,
@@ -75,6 +76,7 @@ export function assetInputs() {
       DHARMA_MESHES,
       DHARMA_PROTOTYPES,
       TEXTURED,
+      BORROWS_STONE,
     },
   };
 }

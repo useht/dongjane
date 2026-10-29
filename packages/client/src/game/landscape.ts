@@ -235,7 +235,7 @@ export class Landscape {
     this.sky.add(this.sunSprite, this.moonSprite);
     this.group.add(this.sky);
 
-    this.group.add(this.buildStatue(gatbawi, buddha.buddha, anisotropy));
+    this.group.add(this.buildStatue(gatbawi, buddha.buddha, world.rocks, anisotropy));
     this.add(world.ground, this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
     this.add(world.steps, this.surface(world.steps, anisotropy, LIFT.stone), { cast: true, receive: true });
     this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
@@ -350,10 +350,11 @@ export class Landscape {
     return material;
   }
 
-  // Gatbawi stands on the platform; the glb draws the pedestal around the middle of its foot. The scanned Buddha is scaled to
+  // Gatbawi stands on the platform; the glb draws the pedestal around the middle of its foot, and its hat stone and pedestal wear
+  // the rock picture of the world's `rocks` (`rock`), which the glb of the statue does not repeat. The scanned Buddha is scaled to
   // the statue's height and seated on the pedestal's top; the hat stone, drawn one metre in radius, is scaled to the Buddha's
   // head (the glb says where it is) and set on the crown, its underside sunk a little so the topknot is under it.
-  private buildStatue(meshes: ModelMeshes<"gatbawi">, scan: Mesh, anisotropy: number): Group {
+  private buildStatue(meshes: ModelMeshes<"gatbawi">, scan: Mesh, rock: Mesh, anisotropy: number): Group {
     const statue = new Group();
     statue.name = "gatbawi";
     statue.position.set(0, PLATFORM.topY, GATBAWI_Z);
@@ -362,10 +363,10 @@ export class Landscape {
     figure.scale.setScalar(height);
     figure.position.set(0, seatY, seatZ);
     const head = headOf(scan);
-    const hat = this.add(meshes.hatStone, this.stoneOf(meshes.hatStone, anisotropy), { cast: true, receive: true }, statue);
+    const hat = this.add(meshes.hatStone, this.stoneOf(rock, anisotropy), { cast: true, receive: true }, statue);
     hat.scale.setScalar(hatHeads * head.radius * height);
     hat.position.set(head.top[0] * height, seatY + (head.top[1] - hatSink * head.radius) * height, seatZ + head.top[2] * height);
-    this.add(meshes.pedestal, this.stoneOf(meshes.pedestal, anisotropy), { cast: true, receive: true }, statue);
+    this.add(meshes.pedestal, this.stoneOf(rock, anisotropy), { cast: true, receive: true }, statue);
     const offerings = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, envMap: this.environment });
     this.envMaterials.push(offerings);
     this.add(meshes.offerings, offerings, { cast: true, receive: true }, statue);

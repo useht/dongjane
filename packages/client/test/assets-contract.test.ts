@@ -1,18 +1,20 @@
+import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
-import { BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
+import { BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
-import { type Glb, type GlbNode, colors, jpegSize, loadGlb, positions, rootNodes } from "./glb.ts";
+import { type Glb, type GlbNode, colors, imageBytes, jpegSize, loadGlb, positions, rootNodes } from "./glb.ts";
 
 const MODELS = new URL("../src/assets/models/", import.meta.url);
 const TOLERANCE = 0.03;
 const COLOR_TOLERANCE = 0.004;
 
 const textured: readonly string[] = TEXTURED;
+const borrowsStone: readonly string[] = BORROWS_STONE;
 
 type MaterialToken = keyof typeof THEME.material;
 
@@ -50,6 +52,9 @@ function expectContract(glb: Glb, names: readonly string[]): GlbNode[] {
     if (textured.includes(node.name)) {
       expect(node.attributes, node.name).toContain("TEXCOORD_0");
       expect(node.hasTexture, `${node.name} carries a texture`).toBe(true);
+    } else if (borrowsStone.includes(node.name)) {
+      expect(node.attributes, node.name).toEqual(expect.arrayContaining(["TEXCOORD_0", "COLOR_0"]));
+      expect(node.hasTexture, `${node.name} borrows the world's rock picture and carries none`).toBe(false);
     } else {
       expect(node.attributes, node.name).toContain("COLOR_0");
       expect(node.hasTexture, `${node.name} is vertex coloured`).toBe(false);
@@ -126,6 +131,12 @@ describe("gatbawi.glb", () => {
   it("stays inside its size budget", () => {
     expect(nodes.reduce((sum, node) => sum + node.triangles, 0)).toBeLessThanOrEqual(BUDGET.gatbawi.tris);
     expect(glb.bytes).toBeLessThanOrEqual(BUDGET.gatbawi.bytes);
+  });
+
+  it("stores no picture: the hat stone and the pedestal wear the rock picture world.glb holds", () => {
+    expect(glb.json.images ?? []).toEqual([]);
+    expect(glb.json.textures ?? []).toEqual([]);
+    expect(BORROWS_STONE).toEqual(["hatStone", "pedestal"]);
   });
 
   it("is centred on the pedestal's foot, so the group can stand at GATBAWI_Z", () => {
@@ -623,10 +634,28 @@ describe("the model set", () => {
   // The glbs the game loads before its first frame; dharma.glb is fetched after it and has a budget of its own.
   const EAGER = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
   const LAZY = ["dharma.glb"];
+  // main.ts loads the Korean monk beside the models above, before the first frame: it counts too, though main's own script builds it.
+  const MONK = new URL("../assets/monk/monk.glb", import.meta.url);
 
-  it("fits the total byte budget, counted in the files' actual sizes", () => {
-    const total = EAGER.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, 0);
+  it("fits the total byte budget, counted in the files' actual sizes and with the monk", () => {
+    const total = EAGER.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
+  });
+
+  it("keeps the monk inside his own byte budget", () => {
+    expect(statSync(MONK).size).toBeLessThanOrEqual(BUDGET.monk.bytes);
+  });
+
+  it("stores no picture twice among the files the first frame loads", () => {
+    const seen = new Map<string, string>();
+    for (const file of EAGER) {
+      for (const [index, bytes] of imageBytes(loadGlb(new URL(file, MODELS))).entries()) {
+        const hash = createHash("sha256").update(bytes).digest("hex");
+        expect(seen.get(hash), `${file} image ${index} is already in ${seen.get(hash)}`).toBeUndefined();
+        seen.set(hash, file);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(0);
   });
 
   it("has no glb the game does not load", () => {

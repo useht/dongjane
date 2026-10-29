@@ -6,7 +6,7 @@ All files are the Poly Haven 1K JPG downloads (diffuse and OpenGL normal) resize
 
 | File | Asset | Author | Licence | Used for |
 | --- | --- | --- | --- | --- |
-| `rock_boulder_dry_diff.jpg`, `rock_boulder_dry_nor_gl.jpg` | https://polyhaven.com/a/rock_boulder_dry | Dimitrios Savva (photography), Rico Cilliers (processing) | CC0 1.0 | hat stone, pedestal, steps, rocks |
+| `rock_boulder_dry_diff.jpg`, `rock_boulder_dry_nor_gl.jpg` | https://polyhaven.com/a/rock_boulder_dry | Dimitrios Savva (photography), Rico Cilliers (processing) | CC0 1.0 | steps, rocks; the hat stone and pedestal wear the same picture, which `world.glb` holds |
 | `grey_stone_path_diff.jpg`, `grey_stone_path_nor_gl.jpg` | https://polyhaven.com/a/grey_stone_path | Amal Kumar | CC0 1.0 | plaza and ground |
 | `tatami_mat_diff.jpg` | https://polyhaven.com/a/tatami_mat | Charlotte Baglioni | CC0 1.0 | the woven mat (돗자리), tinted straw by the material |
 

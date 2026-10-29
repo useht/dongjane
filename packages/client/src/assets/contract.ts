@@ -36,15 +36,21 @@ export const DHARMA_MESHES = ["floor", "structure", "ceiling", "paper", "mural",
 export const DHARMA_PROTOTYPES = ["seat"] as const;
 
 // Carry TEXCOORD_0 and a texture; every other mesh carries COLOR_0 instead.
-export const TEXTURED = ["buddha", "hatStone", "pedestal", "ground", "steps", "rocks", "mat"] as const;
+export const TEXTURED = ["buddha", "ground", "steps", "rocks", "mat"] as const;
+
+// Carry TEXCOORD_0 and COLOR_0 but no picture of their own: the game gives them the rock picture of world.glb's steps and
+// rocks, so each picture is stored once in the files the first frame loads.
+export const BORROWS_STONE = ["hatStone", "pedestal"] as const;
 
 export const BUDGET = {
-  gatbawi: { bytes: 360_000, tris: 6_000 },
+  gatbawi: { bytes: 250_000, tris: 6_000 },
   buddha: { bytes: 750_000, tris: BUDDHA.maxTriangles },
   world: { bytes: 2_000_000, tris: 46_000 },
   venue: { bytes: 450_000, tris: 25_000 },
   dharma: { bytes: 1_000_000, tris: 45_000 },
+  // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
+  monk: { bytes: 95_000 },
   // The sum of the actual file sizes of every glb loaded before the first frame (gatbawi, buddha, world,
-  // venue); the lazy one (dharma) is held to its own budget instead.
+  // venue and the monk); the lazy one (dharma) is held to its own budget instead.
   totalBytes: 3_000_000,
 } as const;

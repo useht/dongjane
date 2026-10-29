@@ -196,6 +196,15 @@ export function positions(glb: Glb, nodeName: string): { count: number; size: nu
   return attribute(glb, nodeName, "POSITION");
 }
 
+// The bytes of each embedded picture, in the order the glb lists them.
+export function imageBytes(glb: Glb): Uint8Array[] {
+  return (glb.json.images ?? []).map((image, index) => {
+    const view = glb.json.bufferViews?.[image.bufferView ?? -1];
+    if (!view) throw new Error(`image ${index} has no buffer view`);
+    return glb.bin.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength);
+  });
+}
+
 // The pixel size of an embedded JPEG, read from its start-of-frame marker.
 export function jpegSize(glb: Glb, imageIndex: number): { width: number; height: number } {
   const view = glb.json.bufferViews?.[glb.json.images?.[imageIndex]?.bufferView ?? -1];
