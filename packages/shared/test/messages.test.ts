@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBow, parseMove, parseRelocate, parseSit } from "../src/index.ts";
+import { EMOTE_COUNT, isValidEmote, parseBow, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -42,6 +42,21 @@ describe("message parsers", () => {
     expect(parseBow({ times: 1.5 })).toBeNull();
     expect(parseBow({ times: Number.POSITIVE_INFINITY })).toBeNull();
     expect(parseBow({})).toBeNull();
+  });
+
+  it("accepts only integer emoticon ids inside the catalog", () => {
+    expect(EMOTE_COUNT).toBe(8);
+    for (let id = 0; id < EMOTE_COUNT; id += 1) expect(parseEmote({ id })).toEqual({ id });
+    for (const id of [-1, EMOTE_COUNT, 8, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "3", null, [2], undefined]) {
+      expect(parseEmote({ id })).toBeNull();
+    }
+    expect(parseEmote({})).toBeNull();
+    expect(parseEmote(undefined)).toBeNull();
+    expect(parseEmote(null)).toBeNull();
+    expect(parseEmote(3)).toBeNull();
+    expect(parseEmote([3])).toBeNull();
+    expect(isValidEmote(7)).toBe(true);
+    expect(isValidEmote(8)).toBe(false);
   });
 
   it("accepts only a positive integer hall to relocate to", () => {

@@ -393,6 +393,16 @@ button:disabled {
   gap: 12px;
 }
 
+.bottom-actions {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+}
+
+.emote-button {
+  color: var(--gold);
+}
+
 .bow-actions {
   flex: none;
   display: flex;
@@ -403,6 +413,7 @@ button:disabled {
 
 /* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
 .bow-actions.seated {
+  margin-left: 10px;
   justify-content: flex-start;
   min-width: var(--bow-size);
   min-height: calc(var(--bow-size) + 46px);
@@ -478,6 +489,83 @@ button:disabled {
 
 .seat-hint:active {
   background: rgba(70, 44, 24, 0.9);
+}
+
+.emote-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.emote-pin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
+}
+
+.emote-pin.off {
+  visibility: hidden;
+}
+
+.emote-bubble {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  background: var(--panel-solid);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  transform-origin: 50% 100%;
+  animation:
+    emote-pop 0.28s cubic-bezier(0.3, 1.4, 0.5, 1) both,
+    emote-fade 0.4s ease-in calc(var(--emote-show, 2500ms) - 0.4s) forwards;
+}
+
+.emote-bubble img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.emote-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 8px;
+  padding-top: 6px;
+}
+
+.emote-choice {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 2px 6px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255, 240, 210, 0.06);
+}
+
+.emote-choice:active {
+  background: rgba(70, 44, 24, 0.9);
+  border-color: var(--gold);
+}
+
+.emote-choice img {
+  display: block;
+  width: 100%;
+  max-width: 64px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.emote-name {
+  font-size: 12px;
+  color: var(--cream);
+  white-space: nowrap;
 }
 
 .joystick {
@@ -1017,6 +1105,27 @@ noscript {
   to {
     transform: none;
     opacity: 1;
+  }
+}
+
+@keyframes emote-pop {
+  from {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes emote-fade {
+  to {
+    opacity: 0;
   }
 }
 

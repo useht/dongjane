@@ -4,6 +4,7 @@ import type { LinkState } from "../net/session.ts";
 import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
+import { EmotePicker } from "./emote-picker.ts";
 import { type ChantStatus, modeLabel } from "./format.ts";
 import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
@@ -27,6 +28,7 @@ export interface HudHandlers {
   onOpenHalls(): void;
   onBow(): void;
   onStand(): void;
+  onEmote(emote: number): void;
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
@@ -58,6 +60,7 @@ export class Hud {
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
   private readonly visitorSheet: Sheet;
+  private readonly emotePicker: EmotePicker;
   private readonly hallList = h("ul", "list");
   private readonly hallInput = h("input", "name-input");
   private readonly visitorList = h("ul", "list");
@@ -91,7 +94,10 @@ export class Hud {
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
     this.bowActions.append(this.standButton, this.bowButton);
-    const bottom = h("div", "bottombar", this.bowActions);
+    this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
+    const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
+    emoteButton.setAttribute("aria-haspopup", "dialog");
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions));
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";
