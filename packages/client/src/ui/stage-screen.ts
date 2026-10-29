@@ -128,6 +128,10 @@ export class StageScreen {
     this.controller.setSound(on, volume);
   }
 
+  setLevel(level: number): void {
+    this.controller.setLevel(level);
+  }
+
   userGesture(): void {
     this.controller.userGesture();
   }

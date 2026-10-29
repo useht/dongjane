@@ -22,7 +22,8 @@ import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
-import { SutraPlayer } from "./audio/music.ts";
+import sutraUrl from "./assets/audio/sutra.mp3?url";
+import { SyncedLoop, areaMix } from "./audio/music.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
@@ -103,7 +104,7 @@ export class App {
   private readonly seatHints: SeatHints;
   private readonly stage: StageScreen;
   private readonly soundChip: SoundChip;
-  private readonly sutra: SutraPlayer;
+  private readonly sutra: SyncedLoop;
   private readonly visitorTitles: VisitorTitles;
   private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
@@ -184,11 +185,7 @@ export class App {
       },
     );
     this.stage.setReduceMotion(this.settings.reduceMotion);
-    this.sutra = new SutraPlayer(
-      this.audio,
-      () => this.world.serverNowAt(performance.now()),
-      async () => (await import("./assets/audio/sutra.mp3?url")).default,
-    );
+    this.sutra = new SyncedLoop(this.audio, () => this.world.serverNowAt(performance.now()), sutraUrl);
 
     this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -213,7 +210,12 @@ export class App {
     );
     this.hud.setReduceMotion(this.settings.reduceMotion);
     this.hud.setCollection(this.bows);
-    this.soundChip = new SoundChip(this.ui, () => this.stage.openTapWindow());
+    this.soundChip = new SoundChip(this.ui, () => {
+      this.audio.unlock();
+      this.stage.userGesture();
+      this.sutra.prime();
+      this.stage.openTapWindow();
+    });
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
       this.session?.sit(this.zone, id);
@@ -533,14 +535,15 @@ export class App {
     else window.setTimeout(load, INDOOR_PREFETCH_DELAY_MS);
   }
 
-  // What belongs to where the visitor stands: the concert video and the wind outdoors, the sutra in the 법당.
+  // The concert video and the sutra both run for as long as the visitor is in the world; where they stand (see tickMix) only
+  // decides which of the two is heard. The wind belongs to the open air.
   private syncZoneSound(): void {
     const outdoors = this.zone === "gatbawi";
-    const live = outdoors && this.session !== null && !this.inSolo;
+    const live = this.session !== null && !this.inSolo;
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();
     this.world.setScreenMode(this.stage.mounted && !this.settings.reduceMotion ? "video" : "poster");
-    this.sutra.setIndoors(this.zone === "dharma" && this.session !== null);
+    this.sutra.setActive(this.session !== null);
     this.audio.setWindAllowed(outdoors && !this.videoAudible);
   }
 
@@ -663,6 +666,7 @@ export class App {
     const unlock = (): void => {
       this.audio.unlock();
       this.stage.userGesture();
+      this.sutra.prime();
       if (this.audio.unlocked) {
         window.removeEventListener("pointerdown", unlock, true);
         window.removeEventListener("keydown", unlock, true);
@@ -715,6 +719,7 @@ export class App {
       bellCount: () => this.audio.bellCount,
       stage: () => ({ status: this.stage.status, mounted: this.stage.mounted, audible: this.videoAudible }),
       sutraPlaying: () => this.sutra.playing,
+      sutraMix: () => this.sutra.mix,
       zone: () => this.zone,
       sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
       serverNow: () => this.world.serverNowAt(performance.now()),
@@ -796,11 +801,20 @@ export class App {
     if (nowMs >= this.nextChantTick) {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
+      this.tickMix();
     }
     if (nowMs >= this.nextSkyTick) {
       this.nextSkyTick = nowMs + SKY_TICK_MS;
       this.tickSky();
     }
+  }
+
+  // Where the visitor stands sets the share of the two soundtracks: the sutra's inside the 법당, the concert's out on the plaza.
+  private tickMix(): void {
+    const at = this.world.selfPosition;
+    const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
+    this.sutra.setMix(mix);
+    this.stage.setLevel(1 - mix);
   }
 
   private driveMovement(dt: number, realDt: number, nowMs: number): void {

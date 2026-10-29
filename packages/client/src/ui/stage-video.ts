@@ -1,4 +1,4 @@
-import { loopPosition } from "../audio/music.ts";
+import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../audio/music.ts";
 
 export const STAGE_VIDEO_ID = "ykT0Ezc9k-E";
 export const PLAYER_ORIGIN = "https://www.youtube-nocookie.com";
@@ -7,9 +7,12 @@ export const PLAYER_CHANNEL = "dongjane-stage";
 export const READY_TIMEOUT_MS = 8000;
 export const UNMUTE_CHECK_MS = 1000;
 export const TAP_WINDOW_MS = 6000;
-const DRIFT_SECONDS = 3;
+// The player only plays at whole speeds, so drift is cured by jumping, and not more often than this.
+const DRIFT_SECONDS = 1;
 const RESYNC_MIN_MS = 10_000;
 const RETRY_PLAY_MS = 4000;
+// The crossfade with the sutra moves the volume every frame; the player is told at most this often.
+const VOLUME_GAP_MS = 250;
 
 // The player reports these when the video cannot be shown here at all.
 const BLOCKING_ERRORS: ReadonlySet<number> = new Set([2, 5, 100, 101, 150, 153]);
@@ -114,6 +117,11 @@ export class StageVideoController {
   private ready = false;
   private wantSound = false;
   private volume = 0;
+  private level = 1;
+  private quietSince: number | null = null;
+  private quiet = false;
+  private lastVolumeAt = Number.NEGATIVE_INFINITY;
+  private volumeDue = false;
   private gestured = false;
   private hidden = false;
   private playerMuted: boolean | null = null;
@@ -157,7 +165,7 @@ export class StageVideoController {
     }
     this.markReady();
     if (event.kind === "ready") return;
-    if (event.duration !== undefined) this.duration = event.duration;
+    if (event.duration !== undefined) this.duration = Math.round(event.duration * 10) / 10;
     if (event.time !== undefined) this.time = event.time;
     if (event.muted !== undefined) this.playerMuted = event.muted;
     if (event.state !== undefined) this.onState(event.state);
@@ -172,7 +180,12 @@ export class StageVideoController {
       return;
     }
     if (this.current !== "loading" && this.current !== "playing") return;
-    if (this.ready && !this.hidden && this.state !== PLAYING && now - this.lastPlayAt >= RETRY_PLAY_MS) {
+    if (this.volumeDue) this.applyAudio(false);
+    if (this.ready && !this.quiet && this.quietSince !== null && now - this.quietSince >= QUIET_PAUSE_MS) {
+      this.quiet = true;
+      this.out.send("pauseVideo");
+    }
+    if (this.ready && !this.holding() && this.state !== PLAYING && now - this.lastPlayAt >= RETRY_PLAY_MS) {
       this.out.send("playVideo");
       this.lastPlayAt = now;
     }
@@ -191,8 +204,24 @@ export class StageVideoController {
     this.applyAudio(false);
   }
 
+  // How much of the concert the visitor is meant to hear, 0 to 1: it is the sutra's share turned round. At 0 for long enough
+  // the video is paused, and it is moved to the right place in the loop when it is wanted again.
+  setLevel(level: number): void {
+    const next = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0));
+    if (next === this.level) return;
+    this.level = next;
+    if (next > 0) {
+      this.quietSince = null;
+      if (this.quiet) this.wake();
+    } else if (this.quietSince === null) {
+      this.quietSince = this.now();
+    }
+    this.applyAudio(false, true);
+  }
+
   userGesture(): void {
     this.gestured = true;
+    this.needSeek = true;
     this.applyAudio(true);
   }
 
@@ -202,7 +231,7 @@ export class StageVideoController {
     if (!this.ready) return;
     if (hidden) {
       this.out.send("pauseVideo");
-    } else {
+    } else if (!this.quiet) {
       this.needSeek = true;
       this.out.send("playVideo");
       this.lastPlayAt = this.now();
@@ -221,8 +250,26 @@ export class StageVideoController {
     this.needSeek = true;
     this.lastSeekAt = Number.NEGATIVE_INFINITY;
     this.lastPlayAt = Number.NEGATIVE_INFINITY;
+    this.lastVolumeAt = Number.NEGATIVE_INFINITY;
+    this.volumeDue = false;
+    this.quiet = false;
+    this.quietSince = this.level === 0 ? this.now() : null;
     this.setTap(false);
     this.setAudible(false);
+  }
+
+  // Paused on purpose, by the tab being hidden or by nobody being in earshot.
+  private holding(): boolean {
+    return this.hidden || this.quiet;
+  }
+
+  private wake(): void {
+    this.quiet = false;
+    this.needSeek = true;
+    if (!this.ready || this.hidden) return;
+    this.out.send("playVideo");
+    this.lastPlayAt = this.now();
+    this.maybeSeek();
   }
 
   // The first word from the player, whatever it is, means it can be steered.
@@ -252,7 +299,7 @@ export class StageVideoController {
       this.setStatus("playing");
       return;
     }
-    if (this.hidden || !this.ready) return;
+    if (this.holding() || !this.ready) return;
     // A tap that landed on the player pauses it, and a one-shot video ends; either way keep the concert going.
     if (state === PAUSED || state === ENDED) {
       this.out.send("playVideo");
@@ -261,15 +308,30 @@ export class StageVideoController {
     }
   }
 
+  private percent(): number {
+    return Math.round(this.volume * this.level * 100);
+  }
+
   private wantsAudible(): boolean {
-    return this.ready && this.wantSound && this.gestured;
+    return this.ready && this.wantSound && this.gestured && this.percent() > 0;
   }
 
   // Muted is how the video starts; sound is asked for only after a gesture (autoplay policy) and only while the setting is on.
-  private applyAudio(force: boolean): void {
+  private applyAudio(force: boolean, throttled = false): void {
     if (!this.ready) return;
-    const key = this.wantsAudible() ? `on|${Math.round(this.volume * 100)}` : "off";
-    if (key === this.appliedKey && !force) return;
+    const key = this.wantsAudible() ? `on|${this.percent()}` : "off";
+    if (key === this.appliedKey && !force) {
+      this.volumeDue = false;
+      return;
+    }
+    const now = this.now();
+    if (throttled && !force && key !== "off" && this.appliedKey !== "off" && now - this.lastVolumeAt < VOLUME_GAP_MS) {
+      this.volumeDue = true;
+      return;
+    }
+    this.volumeDue = false;
+    this.lastVolumeAt = now;
+    const wasOn = this.appliedKey.startsWith("on|");
     this.appliedKey = key;
     if (key === "off") {
       this.out.send("mute");
@@ -278,7 +340,8 @@ export class StageVideoController {
       this.setAudible(false);
       return;
     }
-    this.out.send("setVolume", [Math.round(this.volume * 100)]);
+    this.out.send("setVolume", [this.percent()]);
+    if (wasOn && !force) return;
     this.out.send("unMute");
     this.unmuteAt = this.now();
   }
@@ -306,7 +369,7 @@ export class StageVideoController {
 
   // Everyone's player is moved to the same spot of the loop; a live stream has no duration and is left alone.
   private maybeSeek(): void {
-    if (this.hidden || this.duration <= 0 || this.state !== PLAYING) return;
+    if (this.holding() || this.duration <= 0 || this.state !== PLAYING) return;
     const now = this.now();
     const target = loopPosition(this.serverNow(), this.duration);
     const off = Math.abs(this.time - target);
@@ -315,6 +378,6 @@ export class StageVideoController {
     if (!due) return;
     this.needSeek = false;
     this.lastSeekAt = now;
-    if (gap > 0.5) this.out.send("seekTo", [target, true]);
+    if (gap > 0.5) this.out.send("seekTo", [aimAhead(target, this.duration), true]);
   }
 }

@@ -1311,6 +1311,19 @@ button:disabled {
   font-size: 12px;
 }
 
+.credits summary {
+  cursor: pointer;
+}
+
+.credit-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.credit-list a {
+  color: inherit;
+}
+
 .quest-list {
   list-style: none;
   margin: 0;

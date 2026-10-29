@@ -1,4 +1,5 @@
 import type { Settings } from "../storage.ts";
+import { CREDITS, creditLine } from "./credits.ts";
 import { h } from "./dom.ts";
 
 export interface SettingsHandlers {
@@ -11,6 +12,17 @@ function toggleRow(label: string, hint: string, checked: boolean, onChange: (val
   input.checked = checked;
   input.addEventListener("change", () => onChange(input.checked));
   return h("label", "row toggle", h("span", "row-text", h("strong", "", label), h("small", "", hint)), input, h("span", "switch"));
+}
+
+function creditsList(): HTMLDetailsElement {
+  const items = CREDITS.map((credit) => {
+    const link = h("a", "", creditLine(credit));
+    link.href = credit.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return h("li", "", link);
+  });
+  return h("details", "credits fine-print", h("summary", "", "소리와 모델 출처"), h("ul", "credit-list", ...items));
 }
 
 // The settings rows; the phone's settings app shows `root`.
@@ -45,7 +57,7 @@ export class SettingsPanel {
     );
     this.reduce = reduceRow.querySelector("input") as HTMLInputElement;
 
-    this.root.append(ambientRow, effectRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."));
+    this.root.append(ambientRow, effectRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."), creditsList());
     this.sync(initial);
   }
 

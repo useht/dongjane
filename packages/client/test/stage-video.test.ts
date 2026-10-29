@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loopPosition } from "../src/audio/music.ts";
+import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../src/audio/music.ts";
 import {
   PLAYER_ORIGIN,
   READY_TIMEOUT_MS,
@@ -220,10 +220,7 @@ describe("StageVideoController sound", () => {
     t.controller.userGesture();
     t.clear();
     t.controller.setSound(true, 0.25);
-    expect(t.sent).toEqual([
-      { func: "setVolume", args: [25] },
-      { func: "unMute", args: [] },
-    ]);
+    expect(t.sent).toEqual([{ func: "setVolume", args: [25] }]);
     t.clear();
     t.controller.setSound(true, 0.25);
     expect(t.sent).toEqual([]);
@@ -337,7 +334,7 @@ describe("StageVideoController loop position", () => {
     const target = loopPosition(1_000_000, 300);
     const seek = t.sent.find((entry) => entry.func === "seekTo");
     expect(seek).toBeDefined();
-    expect(seek?.args[0]).toBeCloseTo(target, 6);
+    expect(seek?.args[0]).toBeCloseTo(aimAhead(target, 300), 6);
     expect(seek?.args[1]).toBe(true);
   });
 
@@ -360,17 +357,19 @@ describe("StageVideoController loop position", () => {
     expect(t.funcs()).not.toContain("seekTo");
   });
 
-  it("corrects drift beyond three seconds, but not more often than every ten", () => {
+  it("corrects drift beyond one second, but not more often than every ten", () => {
     const t = rig(1_000_000);
     t.controller.open();
     t.controller.receive({ kind: "ready" });
     t.controller.receive(info({ state: 1, duration: 300, time: loopPosition(1_000_000, 300) }));
     t.clear();
     t.advance(2000);
-    t.controller.receive(info({ state: 1, time: loopPosition(1_002_000, 300) + 5 }));
+    t.controller.receive(info({ state: 1, time: loopPosition(1_002_000, 300) + 2 }));
     expect(t.funcs()).toEqual([]);
     t.advance(9000);
-    t.controller.receive(info({ state: 1, time: loopPosition(1_011_000, 300) + 5 }));
+    t.controller.receive(info({ state: 1, time: loopPosition(1_011_000, 300) + 0.9 }));
+    expect(t.funcs()).toEqual([]);
+    t.controller.receive(info({ state: 1, time: loopPosition(1_011_000, 300) + 2 }));
     expect(t.funcs()).toEqual(["seekTo"]);
   });
 
@@ -381,5 +380,115 @@ describe("StageVideoController loop position", () => {
     t.clear();
     t.controller.receive(info({ state: 1, duration: 0, time: 12 }));
     expect(t.funcs()).not.toContain("seekTo");
+  });
+});
+
+describe("StageVideoController level", () => {
+  const listening = (t: ReturnType<typeof rig>, volume = 0.5) => {
+    t.controller.open();
+    t.controller.receive({ kind: "ready" });
+    t.controller.receive(info({ state: 1, duration: 100, time: loopPosition(1_000_000, 100), muted: true }));
+    t.controller.setSound(true, volume);
+    t.controller.userGesture();
+    t.controller.receive(info({ muted: false, state: 1 }));
+    t.advance(300);
+    t.clear();
+  };
+
+  it("scales the volume by the level and does not unmute again", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0.5);
+    expect(t.sent).toEqual([{ func: "setVolume", args: [25] }]);
+  });
+
+  it("tells the player at most every quarter of a second, and sends the last value on the next tick", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0.8);
+    expect(t.sent).toEqual([{ func: "setVolume", args: [40] }]);
+    t.clear();
+    t.advance(100);
+    t.controller.setLevel(0.6);
+    t.controller.setLevel(0.4);
+    expect(t.sent).toEqual([]);
+    t.advance(150);
+    t.controller.tick();
+    expect(t.sent).toEqual([{ func: "setVolume", args: [20] }]);
+    t.clear();
+    t.advance(1000);
+    t.controller.tick();
+    expect(t.sent).toEqual([]);
+  });
+
+  it("mutes at level 0 at once, and asks for sound again when the level comes back", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    expect(t.funcs()).toEqual(["mute"]);
+    t.clear();
+    t.controller.setLevel(0.5);
+    expect(t.sent).toEqual([
+      { func: "setVolume", args: [25] },
+      { func: "unMute", args: [] },
+    ]);
+  });
+
+  it("pauses the video after twenty seconds at level 0, and leaves it paused", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.clear();
+    t.advance(QUIET_PAUSE_MS - 1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["pauseVideo"]);
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    t.advance(60_000);
+    t.controller.tick();
+    expect(t.funcs()).toEqual([]);
+  });
+
+  it("plays again and moves to the loop's place when the level rises after a pause", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    t.controller.receive(info({ state: 2, time: 10 }));
+    t.advance(90_000);
+    t.clear();
+    t.controller.setLevel(0.5);
+    expect(t.funcs()).toContain("playVideo");
+    t.controller.receive(info({ state: 1, time: 50 }));
+    const seek = t.sent.find((entry) => entry.func === "seekTo");
+    expect(seek?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_000_000 + 300 + QUIET_PAUSE_MS + 90_000, 100), 100), 6);
+  });
+
+  it("does not pause for a dip of the level that comes back within twenty seconds", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.advance(QUIET_PAUSE_MS - 1000);
+    t.controller.setLevel(0.3);
+    t.clear();
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    expect(t.funcs()).not.toContain("pauseVideo");
+  });
+
+  it("counts the twenty seconds from the start when it is opened at level 0", () => {
+    const t = rig();
+    t.controller.setLevel(0);
+    t.controller.open();
+    t.controller.receive({ kind: "ready" });
+    t.controller.receive(info({ state: 1, duration: 100, time: loopPosition(1_000_000, 100) }));
+    t.clear();
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["pauseVideo"]);
   });
 });

@@ -1,21 +1,26 @@
 # Audio sources
 
-`sutra.mp3` is the only recording in the game: the Heart Sutra (반야심경) read aloud, looped under the 법당 roof.
+`sutra.mp3` is the only recording in the game's files: a Korean Buddhist chant (염불) with 목탁 strikes, looped under the 법당 roof and heard faintly from the court in front of it.
 
-- Work: "Bore Xinjing 般若心经 (Heart Sutra) in Mandarin recited by a Chinese Buddhist layperson", Wikimedia Commons.
-- Page: https://commons.wikimedia.org/wiki/File:Bore_Xinjing_%E8%88%AC%E8%8B%A5%E5%BF%83%E7%BB%8F_%28Heart_Sutra%29_in_Mandarin_recited_by_a_Chinese_Buddhist_layperson.ogg
-- Author: Nyarlathotep1001.
-- Licence: **CC0 1.0**, public domain dedication, no attribution required. The credit is given anyway.
-- Original: the 132.8 s Ogg Vorbis file from that page (sha256 `f7276ce71341143188389f208d5f8a20d7f4eddd80a940db2a8eda38c2981392`).
-- Loop: the asset scout trimmed the leading and trailing silence so the file repeats without a gap (131.9 s, Ogg Vorbis 96 kbps, sha256 `48b00935b6d5826397f98413ff0d541cafb29ad0fdd4e7d52c405528b069ac72`).
-- Shipped file: that loop re-encoded to mono MP3 at 56 kbps (about 0.9 MB, sha256 `68d4ae9b9e23ac5718c2ecf6e8f5d9fc5b7def225ba039018b1dc06cf87037fa`), because every browser the game targets decodes MP3 and the file is fetched only when someone steps into the 법당.
+- Work: 「염불소리1」, 공유마당 (한국저작권위원회).
+- Page: https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?wrtSn=13254274&menuNo=200020
+- Author: 김용배.
+- Language: `ko`.
+- Licence: **CC BY**, attribution required. The page's wording is 김용배 의 "염불소리1" 은 CC BY 라이선스로 제공됩니다. It does not say which version of CC BY, so none is claimed here. The credit is shown in the game's settings sheet (설정의 「소리와 모델 출처」).
+- Not heard by a person: the asset scout could not listen to it, so that it is a Korean chant with 목탁 strikes comes from the catalogue's tags and description only. Someone should listen before the game is shown to the public.
+- Original: the 공유마당 WAV (48 kHz, stereo, 119.4 s, 22.9 MB, sha256 `affd68ec279cd7302c04ecde02f9c153bd1efe7d5498b706f208151833a98efa`). It is not in this repository.
+- Cut: the asset scout trimmed it to 116.0 s and encoded Ogg Vorbis 96 kbps (sha256 `ffa472510a03871966bf23071b9667bb50d96c63976e1db537f3616f9ec843e0`). That file is not in this repository either.
+- Shipped file: that cut as mono MP3, CBR 128 kbps, 44.1 kHz, 1,856,991 bytes, sha256 `45bd58c1fe5a75cc683c7c9d60222df4af756e81a405696d07c2d2d5476b0033`. Every browser the game targets decodes MP3, and a constant bit rate makes every browser agree on its length, which the visitors' shared place in the loop depends on.
+- Length: 116.000 s once decoded (5,115,600 samples at 44.1 kHz), which is `SUTRA_SECONDS` in `src/audio/music.ts`. `test/audio-contract.test.ts` holds the file to it.
+- Level: −17.96 LUFS integrated, −1.87 dBTP true peak, measured on the decoded MP3 with ffmpeg's `loudnorm` filter in measuring mode. The recording is 21 dB from its peaks to its loudness, so `loudnorm` itself could not reach −18 LUFS under −1 dBTP (it stopped near −25 LUFS); a fixed gain and a look-ahead limiter did.
+- Edges: a 0.5 s fade in and a 0.5 s fade out, so the loop has no click at its seam.
 
 Encode command (ffmpeg 8.0.1, libmp3lame):
 
 ```
-ffmpeg -i heartsutra_mandarin_CC0_Nyarlathotep1001_1_trim_loop.ogg -vn -map_metadata -1 -ac 1 -ar 44100 -c:a libmp3lame -b:a 56k -write_id3v2 0 sutra.mp3
+ffmpeg -i gongu_염불소리1_CC-BY_kimyongbae_trim116s_96k.ogg -vn -map_metadata -1 -ac 1 -ar 44100 -af "volume=19.5dB,alimiter=limit=0.708:attack=8:release=120:level=disabled,afade=t=in:st=0:d=0.5,afade=t=out:st=115.5:d=0.5,atrim=end=116" -c:a libmp3lame -b:a 128k -id3v2_version 0 sutra.mp3
 ```
 
-The Japanese reading on Commons is CC BY 3.0 and is deliberately not used.
+The file is fetched when a visitor first taps the page, not before, and the service worker does not precache it.
 
 The concert video on the open-air stage is not a file in this repository: it is the YouTube embed `ykT0Ezc9k-E`, played from YouTube's own player. Whoever runs the game needs the rights (or the uploader's embedding permission) for that recording.
