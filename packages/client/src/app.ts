@@ -38,6 +38,7 @@ import {
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
+import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
@@ -155,6 +156,7 @@ export class App {
     });
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
+    new InstallBanner(this.ui, () => this.fitCameraToHud());
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
