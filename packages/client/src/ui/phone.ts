@@ -1,3 +1,4 @@
+import { homeTitleName } from "../collection/titles.ts";
 import { CollectionApp } from "./collection.ts";
 import { type IconName, button, h, icon, swapIcon } from "./dom.ts";
 import type { ClockView } from "./format.ts";
@@ -49,6 +50,8 @@ export class Phone {
   private readonly visitorBadge = h("span", "badge", "0");
   private readonly sound: AppTile;
   private lastIcon: IconName | null = null;
+  private homeTitle = HOME_TITLE;
+  private current: AppId | null = null;
 
   constructor(host: HTMLElement, handlers: PhoneHandlers, contents: PhoneContents) {
     this.sheet = new Sheet(host, HOME_TITLE, { phone: true });
@@ -99,6 +102,12 @@ export class Phone {
     }
   }
 
+  setBows(total: number): void {
+    this.collection.setBows(total);
+    this.homeTitle = homeTitleName(total) ?? HOME_TITLE;
+    if (this.current === null) this.sheet.setTitle(this.homeTitle);
+  }
+
   setVisitorCount(count: number): void {
     this.visitorBadge.textContent = String(count);
   }
@@ -109,9 +118,10 @@ export class Phone {
   }
 
   private show(app: AppId | null): void {
+    this.current = app;
     this.home.classList.toggle("hidden", app !== null);
     for (const id of Object.keys(this.screens) as AppId[]) this.screens[id].root.classList.toggle("hidden", id !== app);
-    this.sheet.setTitle(app ? this.screens[app].title : HOME_TITLE);
+    this.sheet.setTitle(app ? this.screens[app].title : this.homeTitle);
     this.sheet.setBack(app ? () => this.show(null) : null);
     this.sheet.body.scrollTop = 0;
   }

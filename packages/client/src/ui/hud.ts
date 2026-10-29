@@ -206,7 +206,7 @@ export class Hud {
   }
 
   setCollection(bows: number): void {
-    this.phone.collection.setBows(bows);
+    this.phone.setBows(bows);
   }
 
   setQuests(views: readonly QuestView[]): void {
