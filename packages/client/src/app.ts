@@ -143,7 +143,6 @@ export class App {
         onJump: () => this.jump(),
         onEmote: (emote) => this.session?.emote(emote),
         onInvite: () => void this.copyInvite(),
-        onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
         onCancelReturn: () => this.holdReturn(),
         onReturnNow: () => void this.enter(this.soloReturnHall),
       },
@@ -169,7 +168,6 @@ export class App {
     });
 
     this.applyAudio();
-    this.hud.setSoundOn(this.settings.sound);
     this.bindAudioUnlock();
     this.bindLifecycle();
     this.fitCameraToHud();
@@ -481,13 +479,12 @@ export class App {
     this.settings = next;
     saveSettings(next);
     this.settingsPanel.sync(next);
-    this.hud.setSoundOn(next.sound);
     this.world.setReduceMotion(next.reduceMotion);
     this.applyAudio();
   }
 
   private applyAudio(): void {
-    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume, this.settings.sound, this.settings.wind);
+    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume);
   }
 
   private bindAudioUnlock(): void {

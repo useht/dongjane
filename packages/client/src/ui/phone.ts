@@ -6,7 +6,6 @@ import { Sheet } from "./sheet.ts";
 
 export interface PhoneHandlers {
   onInvite(): void;
-  onToggleSound(): void;
 }
 
 export interface PhoneContents {
@@ -24,18 +23,16 @@ interface AppScreen {
 interface AppTile {
   node: HTMLButtonElement;
   iconHolder: HTMLElement;
-  label: HTMLElement;
 }
 
 const HOME_TITLE = "동자네";
 
 function appTile(name: IconName, label: string, onClick: () => void): AppTile {
   const iconHolder = h("span", "app-tile-icon", icon(name));
-  const labelNode = h("span", "app-tile-label", label);
-  const node = h("button", "app-tile", iconHolder, labelNode);
+  const node = h("button", "app-tile", iconHolder, h("span", "app-tile-label", label));
   node.type = "button";
   node.addEventListener("click", onClick);
-  return { node, iconHolder, label: labelNode };
+  return { node, iconHolder };
 }
 
 // The top-right clock opens this: a home screen with the sky clock and an app grid.
@@ -48,7 +45,6 @@ export class Phone {
   private readonly heroTime = h("strong", "clock-hero-time");
   private readonly heroNote = h("p", "clock-hero-note");
   private readonly visitorBadge = h("span", "badge", "0");
-  private readonly sound: AppTile;
   private lastIcon: IconName | null = null;
   private homeTitle = HOME_TITLE;
   private current: AppId | null = null;
@@ -72,14 +68,13 @@ export class Phone {
       this.sheet.close();
       handlers.onInvite();
     });
-    this.sound = appTile("soundOn", "소리 끄기", () => handlers.onToggleSound());
     const settingsTile = appTile("gear", "설정", () => this.show("settings"));
 
     this.home = h(
       "div",
       "phone-home",
       h("div", "clock-hero", this.heroIcon, this.heroTime, this.heroNote),
-      h("div", "app-grid", collectionTile.node, visitorsTile.node, inviteTile.node, this.sound.node, settingsTile.node),
+      h("div", "app-grid", collectionTile.node, visitorsTile.node, inviteTile.node, settingsTile.node),
     );
     this.sheet.body.append(this.home, this.screens.collection.root, this.screens.visitors.root, this.screens.settings.root);
   }
@@ -110,11 +105,6 @@ export class Phone {
 
   setVisitorCount(count: number): void {
     this.visitorBadge.textContent = String(count);
-  }
-
-  setSoundOn(on: boolean): void {
-    swapIcon(this.sound.iconHolder, on ? "soundOn" : "soundOff");
-    this.sound.label.textContent = on ? "소리 끄기" : "소리 켜기";
   }
 
   private show(app: AppId | null): void {
