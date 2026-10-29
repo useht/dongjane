@@ -90,6 +90,7 @@ export async function startGameServer(options: GameServerOptions = {}): Promise<
     ...(clientDir ? { express: (app) => void app.use(createStaticHandler(clientDir)) } : {}),
   });
 
+  server.onBeforeShutdown(() => directory.close());
   await server.listen(options.port ?? 0, options.hostname);
 
   const address = server.transport.server?.address() as AddressInfo | null | undefined;
@@ -99,7 +100,6 @@ export async function startGameServer(options: GameServerOptions = {}): Promise<
     server,
     port,
     async stop() {
-      await directory.close();
       await server.gracefullyShutdown(false);
     },
   };
