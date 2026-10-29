@@ -292,7 +292,7 @@ describe("monk assets", () => {
       const points = worldVertices(nodeOf(avatar, "hand", side), parts.hand);
       expect(Math.max(...points.map((v) => v.y)), `hand ${side} stays below the chin`).toBeLessThan(chinWorld);
       expect(Math.max(...points.map((v) => v.z)), `hand ${side} stays in front of the chest`).toBeLessThan(-0.05);
-      expect(Math.max(...points.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeLessThan(0.012);
+      expect(Math.min(...points.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeGreaterThan(-0.012);
       tips.push(points.reduce((top, v) => (v.y > top.y ? v : top)));
     }
     expect(Math.abs((tips[0] as Vector3).x - (tips[1] as Vector3).x), "the fingertips meet").toBeLessThan(0.06);
