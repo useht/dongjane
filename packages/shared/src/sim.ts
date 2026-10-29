@@ -6,9 +6,11 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
+  EMOTE_COOLDOWN_MS,
   HALL_CAPACITY,
   WALK_SPEED,
 } from "./constants.ts";
+import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
 import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
 import { type NpcActions, type NpcBrain, createNpcBrain, thinkNpc } from "./npc.ts";
@@ -26,6 +28,7 @@ interface Runtime {
   bowsLeft: number;
   nextBowAt: number;
   lastBowEndedAt: number;
+  nextEmoteAt: number;
   brain: NpcBrain | null;
 }
 
@@ -90,7 +93,15 @@ export class TempleSim {
       bowCount: 0,
     });
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, { target: null, bowEndsAt: 0, bowsLeft: 0, nextBowAt: 0, lastBowEndedAt: 0, brain: null });
+    this.runtimes.set(id, {
+      target: null,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      nextEmoteAt: 0,
+      brain: null,
+    });
     return monk;
   }
 
@@ -151,6 +162,20 @@ export class TempleSim {
 
     runtime.bowsLeft = times - 1;
     this.beginBow(monk, runtime, now);
+    return true;
+  }
+
+  emote(id: string, index: number): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || !isValidEmote(index)) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextEmoteAt) return false;
+
+    monk.emote = index;
+    monk.emoteSeq += 1;
+    runtime.nextEmoteAt = now + EMOTE_COOLDOWN_MS;
     return true;
   }
 
@@ -218,6 +243,7 @@ export class TempleSim {
       bowsLeft: 0,
       nextBowAt: 0,
       lastBowEndedAt: 0,
+      nextEmoteAt: 0,
       brain: createNpcBrain(random, this.clock()),
     });
   }

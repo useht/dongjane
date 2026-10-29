@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   BOW_MS,
   CHANT_MS,
+  EMOTE_COOLDOWN_MS,
   HALLS_PATH,
   HALL_CAPACITY,
   HALL_SPARE_AT,
@@ -308,6 +309,37 @@ describe("two clients in one hall", () => {
     await waitFor(() => seenByB.bowCount === 3, "three bows", 3 * BOW_MS + 3000, 25);
     await waitFor(() => seenByB.mode === "kneel", "back to kneel", 1000);
   }, 20_000);
+
+  it("shows A's emoticon to B and to A, and ignores bad payloads and a repeat inside the cooldown", async () => {
+    const a = await rig.enter(1);
+    const b = await rig.enter(1);
+    await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
+    const seenByB = b.state.monks.get(a.sessionId)!;
+    const own = a.state.monks.get(a.sessionId)!;
+    expect(seenByB.emoteSeq).toBe(0);
+
+    a.send(MSG.emote, { id: 99 });
+    a.send(MSG.emote, { id: "1" });
+    a.send(MSG.emote, null);
+    await sleep(300);
+    expect(seenByB.emoteSeq).toBe(0);
+
+    a.send(MSG.emote, { id: 5 });
+    await waitFor(() => seenByB.emoteSeq === 1, "B sees A's emoticon", 1000);
+    expect(seenByB.emote).toBe(5);
+    expect(seenByB.mode).toBe("stand");
+    await waitFor(() => own.emoteSeq === 1, "A sees its own emoticon", 1000);
+
+    a.send(MSG.emote, { id: 2 });
+    await sleep(300);
+    expect(seenByB.emoteSeq).toBe(1);
+    expect(seenByB.emote).toBe(5);
+
+    await sleep(EMOTE_COOLDOWN_MS);
+    a.send(MSG.emote, { id: 2 });
+    await waitFor(() => seenByB.emoteSeq === 2, "B sees the next emoticon", 1000);
+    expect(seenByB.emote).toBe(2);
+  });
 
   it("rejects a bow while standing and keeps bowCount at zero", async () => {
     const a = await rig.enter(1);
