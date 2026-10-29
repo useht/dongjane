@@ -58,6 +58,8 @@ const WOOD_DARK = 0x3a2112;
 const BEAD = 0x6b3f26;
 const BEAD_MARK = 0xc99a3a;
 const BEAD_COUNT = 11;
+const BEAD_RING_CENTER = { y: -0.105, z: 0.01 };
+const BEADS_TURN_RATE = 1;
 const WHITE = 0xffffff;
 
 const HIP_STAND = 0.4;
@@ -143,8 +145,7 @@ function buildPartGeometries(): Record<PartName, BufferGeometry> {
     const angle = (i / BEAD_COUNT) * Math.PI * 2;
     beadRing.add(new SphereGeometry(i === 0 ? 0.024 : 0.018, 7, 5), i === 0 ? BEAD_MARK : BEAD, {
       x: Math.cos(angle) * 0.055,
-      y: -0.105 + Math.sin(angle) * 0.055,
-      z: 0.01,
+      y: Math.sin(angle) * 0.055,
     });
   }
   const beads = beadRing.build();
@@ -181,11 +182,13 @@ export class MonkAvatar {
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
+  private readonly beadsNode = new Object3D();
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
   private chantMix = 0;
+  private beadTurn = 0;
   private knockAt = Number.NEGATIVE_INFINITY;
   private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
@@ -211,6 +214,8 @@ export class MonkAvatar {
       elbow.add(hand);
       (this.feet[side] as Object3D).position.set(sign * 0.085, 0.045, 0);
     }
+    this.beadsNode.position.set(0, BEAD_RING_CENTER.y, BEAD_RING_CENTER.z);
+    (this.handNodes[0] as Object3D).add(this.beadsNode);
 
     const bind = (part: PartName, node: Object3D, copy = 0, item?: number): void => {
       this.bindings.push({ part, copy, node, item });
@@ -227,7 +232,7 @@ export class MonkAvatar {
       bind("foot", this.feet[side] as Object3D, side);
     }
     bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
-    bind("beads", this.handNodes[0], 0, ITEM_CHANT);
+    bind("beads", this.beadsNode, 0, ITEM_CHANT);
   }
 
   setMode(mode: string, nowMs: number): void {
@@ -264,6 +269,8 @@ export class MonkAvatar {
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
     this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
     const chant = this.chantMix * kneel;
+    this.beadTurn = reduceMotion ? 0 : (this.beadTurn + dt * BEADS_TURN_RATE * chant) % (Math.PI * 2);
+    this.beadsNode.rotation.z = this.beadTurn;
     const knockProgress = (nowMs - this.knockAt) / KNOCK_MS;
     const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
