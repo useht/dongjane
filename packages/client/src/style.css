@@ -5,18 +5,7 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --hud-top: calc(var(--safe-top) + 100px);
   --hud-bottom: calc(var(--safe-bottom) + 132px);
-  --wood: #1c120b;
-  --wood-soft: #2b1b10;
-  --panel: rgba(38, 24, 14, 0.78);
-  --panel-solid: #2b1b10;
-  --line: rgba(255, 224, 160, 0.18);
-  --cream: #f4e3c0;
-  --muted: #c4ad88;
-  --gold: #ffd27a;
-  --gold-deep: #d9993a;
-  --lotus: #f2b5bd;
-  --ink: #2a1a10;
-  font-family: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  font-family: var(--font);
   color-scheme: dark;
 }
 
@@ -106,7 +95,7 @@ button {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--jade);
   outline-offset: 2px;
 }
 
@@ -145,7 +134,7 @@ button:disabled {
 .icon-button {
   min-height: 44px;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   color: var(--cream);
@@ -180,7 +169,7 @@ button:disabled {
 
 .icon-button:active,
 .hall-button:active {
-  background: rgba(70, 44, 24, 0.9);
+  background: color-mix(in srgb, var(--gold-pale) 12%, var(--panel));
 }
 
 .badge {
@@ -207,7 +196,7 @@ button:disabled {
   padding: 6px 14px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
   font-size: 13px;
   white-space: nowrap;
   max-width: calc(100vw - 24px);
@@ -220,7 +209,7 @@ button:disabled {
 }
 
 .chant-pill.soon {
-  border-color: rgba(255, 210, 122, 0.5);
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
 }
 
 .chant-pill.active {
@@ -231,7 +220,7 @@ button:disabled {
 
 .link-banner {
   top: calc(var(--safe-top) + 100px);
-  background: rgba(120, 52, 28, 0.9);
+  background: color-mix(in srgb, var(--ember) 90%, transparent);
 }
 
 .toasts {
@@ -251,7 +240,7 @@ button:disabled {
   padding: 8px 14px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
   font-size: 14px;
   animation: rise 0.28s ease-out both;
   transition: opacity 0.35s ease;
@@ -278,7 +267,7 @@ button:disabled {
   gap: 10px;
   padding: 6px 14px;
   border-radius: 16px;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
   border: 1px solid var(--line);
   font-size: 13px;
 }
@@ -306,12 +295,12 @@ button:disabled {
   min-height: 52px;
   padding: 0 18px;
   border-radius: 26px;
-  border: 1px solid rgba(255, 224, 160, 0.4);
-  background: linear-gradient(180deg, #ffe0a0, var(--gold-deep));
+  border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
+  background: linear-gradient(180deg, var(--gold-pale), var(--gold-deep));
   color: var(--ink);
   font-size: 17px;
   font-weight: 800;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px color-mix(in srgb, black 35%, transparent);
   transition: transform 0.1s ease, opacity 0.2s ease, filter 0.2s ease;
 }
 
@@ -327,7 +316,7 @@ button:disabled {
 
 .action.quiet {
   min-width: 88px;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
   color: var(--cream);
   font-weight: 700;
   border-color: var(--line);
@@ -339,7 +328,7 @@ button:disabled {
   margin: 0;
   font-size: 12px;
   color: var(--muted);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  text-shadow: 0 1px 3px color-mix(in srgb, black 80%, transparent);
 }
 
 .stats {
@@ -349,8 +338,8 @@ button:disabled {
   margin: 0;
   padding: 6px 8px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #bdf5c8;
+  background: color-mix(in srgb, black 55%, transparent);
+  color: var(--jade);
   font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
   pointer-events: none;
 }
@@ -362,7 +351,7 @@ button:disabled {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(10, 6, 3, 0.5);
+  background: color-mix(in srgb, black 50%, transparent);
   pointer-events: auto;
 }
 
@@ -371,7 +360,7 @@ button:disabled {
   max-height: min(80vh, 600px);
   display: flex;
   flex-direction: column;
-  background: var(--panel-solid);
+  background: var(--wood-soft);
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 22px 22px 0 0;
@@ -426,7 +415,7 @@ button:disabled {
   padding: 8px 14px;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: rgba(255, 240, 210, 0.06);
+  background: color-mix(in srgb, var(--cream) 6%, transparent);
   text-align: left;
 }
 
@@ -452,11 +441,11 @@ button:disabled {
   min-height: 44px;
   padding: 8px 12px;
   border-radius: 12px;
-  background: rgba(255, 240, 210, 0.05);
+  background: color-mix(in srgb, var(--cream) 5%, transparent);
 }
 
 .item.self {
-  border: 1px solid rgba(255, 210, 122, 0.45);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
 }
 
 .item-main {
@@ -479,8 +468,8 @@ button:disabled {
   min-height: 46px;
   padding: 0 22px;
   border-radius: 23px;
-  border: 1px solid rgba(255, 224, 160, 0.4);
-  background: linear-gradient(180deg, #ffe0a0, var(--gold-deep));
+  border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
+  background: linear-gradient(180deg, var(--gold-pale), var(--gold-deep));
   color: var(--ink);
   font-weight: 800;
   font-size: 16px;
@@ -542,7 +531,7 @@ button:disabled {
   width: 50px;
   height: 30px;
   border-radius: 15px;
-  background: rgba(255, 240, 210, 0.18);
+  background: color-mix(in srgb, var(--cream) 18%, transparent);
   transition: background 0.18s ease;
 }
 
@@ -567,7 +556,7 @@ button:disabled {
 }
 
 .toggle input:focus-visible + .switch {
-  outline: 2px solid var(--gold);
+  outline: 2px solid var(--jade);
   outline-offset: 2px;
 }
 
@@ -589,7 +578,7 @@ button:disabled {
   padding: 0 14px;
   border-radius: 12px;
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, black 30%, transparent);
   color: var(--cream);
   font: inherit;
   font-size: 16px;
@@ -608,7 +597,7 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: calc(var(--safe-top) + 20px) calc(var(--safe-right) + 20px) calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 20px);
-  background: rgba(20, 12, 7, 0.88);
+  background: color-mix(in srgb, var(--wood) 88%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
   pointer-events: auto;
@@ -642,7 +631,7 @@ button:disabled {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: radial-gradient(circle, #fff0c4 0%, var(--gold) 38%, rgba(255, 210, 122, 0) 72%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--gold-pale) 60%, white) 0%, var(--gold) 38%, transparent 72%);
   opacity: 0.85;
 }
 
@@ -657,7 +646,11 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: calc(var(--safe-top) + 20px) calc(var(--safe-right) + 20px) calc(var(--safe-bottom) + 20px) calc(var(--safe-left) + 20px);
-  background: radial-gradient(ellipse at 50% 40%, rgba(60, 38, 20, 0.72), rgba(14, 8, 4, 0.94) 72%);
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    color-mix(in srgb, var(--gold-deep) 14%, var(--wood-soft)),
+    color-mix(in srgb, var(--wood) 94%, transparent) 72%
+  );
   pointer-events: auto;
   transition: opacity 0.6s ease;
 }
@@ -723,7 +716,12 @@ button:disabled {
   position: absolute;
   inset: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle, #fff3cf 0%, rgba(255, 210, 122, 0.75) 38%, rgba(255, 210, 122, 0) 70%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--gold-pale) 55%, white) 0%,
+    color-mix(in srgb, var(--gold) 75%, transparent) 38%,
+    transparent 70%
+  );
   animation: pulse 2.8s ease-in-out infinite;
 }
 
@@ -742,10 +740,10 @@ button:disabled {
   height: 56px;
   margin-left: -17px;
   border-radius: 50% 50% 50% 50% / 70% 70% 30% 30%;
-  background: linear-gradient(180deg, #ffe3e6, var(--lotus));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--lotus) 55%, white), var(--lotus));
   transform-origin: 50% 100%;
   transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.3, 1);
-  box-shadow: 0 0 14px rgba(242, 181, 189, 0.45);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--lotus) 45%, transparent);
 }
 
 .bud-petals::before {
@@ -802,10 +800,10 @@ noscript {
 @keyframes glow {
   0%,
   100% {
-    box-shadow: 0 0 0 rgba(255, 210, 122, 0);
+    box-shadow: 0 0 0 transparent;
   }
   50% {
-    box-shadow: 0 0 16px rgba(255, 210, 122, 0.5);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--gold) 50%, transparent);
   }
 }
 
