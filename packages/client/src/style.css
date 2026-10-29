@@ -342,9 +342,10 @@ button:disabled {
   gap: 10px;
 }
 
-/* Seated, the column keeps its full height so the stand-up button does not drop while the bow button hides. */
+/* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
 .bow-actions.seated {
   justify-content: flex-start;
+  min-width: var(--bow-size);
   min-height: calc(var(--bow-size) + 46px);
 }
 
