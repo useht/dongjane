@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
-import { type BufferGeometry, Box3, type Object3D, Vector3 } from "three";
+import { type BufferGeometry, Box3, Color, type Object3D, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
-import { MonkAvatar, PART_NAMES, type PartName } from "../src/game/monk-model.ts";
+import { MonkAvatar, PART_NAMES, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 
 const COPIES: Record<PartName, number> = {
   head: 1,
   face: 1,
   hair: 1,
-  skirt: 1,
+  pelvis: 1,
   torso: 1,
   trim: 1,
   sleeveUpper: 2,
@@ -17,8 +17,12 @@ const COPIES: Record<PartName, number> = {
   hand: 2,
   foot: 2,
   leg: 2,
+  trousers: 2,
 };
-const ROBE_PARTS: PartName[] = ["skirt", "torso", "sleeveUpper", "sleeveLower"];
+// The jacket (torso, sleeves) and the trousers (pelvis seat, trouser legs) are the tinted garment.
+const JACKET_PARTS: PartName[] = ["torso", "sleeveUpper", "sleeveLower"];
+const TROUSER_PARTS: PartName[] = ["pelvis", "trousers"];
+const ROBE_PARTS: PartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
 function readGlb(): ArrayBuffer {
   const file = readFileSync(new URL("../assets/monk/monk.glb", import.meta.url));
@@ -83,16 +87,56 @@ describe("monk assets", () => {
     }
   });
 
-  it("keeps the robe white so the per-monk tint shows", async () => {
+  it("tints exactly the jacket and the trousers per monk", () => {
+    expect([...MODEL_ROBE_PARTS].sort()).toEqual([...ROBE_PARTS].sort());
+  });
+
+  it("bakes the jacket and the trousers as ash grey (the 동자승 outfit), the jacket lighter than the trousers", async () => {
     const parts = await loadParts();
-    for (const name of ROBE_PARTS) {
-      const color = (parts[name] as BufferGeometry).getAttribute("color");
+    const mean = (geometry: BufferGeometry): Color => {
+      const color = geometry.getAttribute("color");
+      const sum = new Color(0, 0, 0);
       for (let i = 0; i < color.count; i += 1) {
-        expect(color.getX(i)).toBeCloseTo(1, 3);
-        expect(color.getY(i)).toBeCloseTo(1, 3);
-        expect(color.getZ(i)).toBeCloseTo(1, 3);
+        // Every vertex is the same flat shade: the garment carries no pattern of its own, the tint does the rest.
+        expect(color.getX(i)).toBeCloseTo(color.getX(0), 3);
+        expect(color.getY(i)).toBeCloseTo(color.getY(0), 3);
+        expect(color.getZ(i)).toBeCloseTo(color.getZ(0), 3);
+        sum.r += color.getX(i);
+        sum.g += color.getY(i);
+        sum.b += color.getZ(i);
       }
+      return sum.multiplyScalar(1 / color.count);
+    };
+    for (const name of ROBE_PARTS) {
+      const base = mean(parts[name]);
+      const hsl = base.getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+      expect(hsl.s, `${name} is grey, not coloured`).toBeLessThan(0.1);
+      expect(hsl.l, `${name} is neither white nor black`).toBeGreaterThan(0.35);
+      expect(hsl.l, `${name} is neither white nor black`).toBeLessThan(0.7);
     }
+    const lightness = (name: PartName): number => mean(parts[name]).getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace).l;
+    for (const name of JACKET_PARTS) expect(lightness(name), `${name} matches the jacket`).toBeCloseTo(lightness("torso"), 3);
+    for (const name of TROUSER_PARTS) expect(lightness(name), `${name} matches the trousers`).toBeCloseTo(lightness("trousers"), 3);
+    expect(lightness("torso"), "the jacket is the lighter grey").toBeGreaterThan(lightness("trousers") + 0.04);
+  });
+
+  it("tints the grey with a faint hint of the monk's hue, never a saturated robe", async () => {
+    const parts = await loadParts();
+    const color = parts.torso.getAttribute("color");
+    const base = new Color(color.getX(0), color.getY(0), color.getZ(0));
+    const tint = new Color();
+    const seen = new Set<string>();
+    for (let hue = 0; hue < 360; hue += 30) {
+      robeColor(hue, tint);
+      const shown = base.clone().multiply(tint);
+      const hsl = shown.getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+      expect(hsl.s, `jacket saturation at hue ${hue}`).toBeLessThan(0.3);
+      expect(hsl.l, `jacket lightness at hue ${hue}`).toBeGreaterThan(0.4);
+      expect(hsl.l, `jacket lightness at hue ${hue}`).toBeLessThan(0.7);
+      seen.add(shown.getHexString());
+    }
+    expect(seen.size, "different hues still look different").toBeGreaterThan(6);
+    expect(robeColor(-210, new Color()).getHex(), "hues wrap around").toBe(robeColor(150, new Color()).getHex());
   });
 
   it("colours the trim, face and feet instead of leaving them white", async () => {
@@ -128,7 +172,7 @@ describe("monk assets", () => {
 
   it("stays mirror-symmetric where one geometry serves both sides", async () => {
     const parts = await loadParts();
-    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot", "leg"] as const) {
+    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers", "pelvis", "torso"] as const) {
       const box = bounds(parts[name]);
       expect(box.min.x, name).toBeCloseTo(-box.max.x, 4);
     }
@@ -140,7 +184,8 @@ describe("monk assets", () => {
     expect(head.max.y).toBeCloseTo(monkRig.crownY, 1);
     expect(head.min.y).toBeLessThan(0.02);
     expect(bounds(parts.foot).min.y).toBeCloseTo(-monkRig.footY, 2);
-    expect(bounds(parts.skirt).min.y).toBeCloseTo(-monkRig.skirtDrop, 3);
+    expect(bounds(parts.torso).min.y, "the jacket hem hangs jacketDrop below the hip pivot").toBeCloseTo(-monkRig.jacketDrop, 3);
+    expect(bounds(parts.pelvis).min.y, "the seat of the trousers reaches pelvisDrop below the hip pivot").toBeCloseTo(-monkRig.pelvisDrop, 3);
   });
 
   it("keeps the whole monk within the triangle budget", async () => {
@@ -154,7 +199,8 @@ describe("monk assets", () => {
     for (const key of [
       "hipStand",
       "hipKneel",
-      "skirtDrop",
+      "jacketDrop",
+      "pelvisDrop",
       "torsoHeight",
       "neckY",
       "shoulderX",
@@ -169,13 +215,17 @@ describe("monk assets", () => {
       "footKneelTilt",
       "legTopDrop",
       "legLength",
-      "kneelSkirtGrow",
-      "kneelSkirtScaleY",
+      "kneelPelvisGrow",
+      "kneelPelvisScaleY",
       "cushionTop",
+      "robeTintSaturation",
+      "robeTintLightness",
     ] as const) {
       expect(monkRig[key], key).toBeGreaterThan(0);
     }
-    expect(monkRig.kneelSkirtLift).toBeGreaterThanOrEqual(0);
+    expect(monkRig.kneelPelvisLift).toBeGreaterThanOrEqual(0);
+    expect(monkRig.robeTintSaturation).toBeLessThanOrEqual(1);
+    expect(monkRig.robeTintLightness).toBeLessThanOrEqual(1);
   });
 
   it("keeps the rig pivots consistent with the geometry hung on them", async () => {
@@ -239,32 +289,71 @@ describe("monk assets", () => {
     expect(Math.abs(reach / H - 0.97), "shoulder to fingertip").toBeLessThanOrEqual(0.03);
     expect(Math.abs(upper / reach - 0.36), "elbow along the arm, from the shoulder").toBeLessThanOrEqual(0.03);
 
-    // The head keeps its size; the body grew to 4 heads (1.32 standing), and the kneeling crown follows.
+    // The head keeps its size; the body is 4 heads (1.32 standing). Kneeling, the seat of the trousers (pelvisDrop below the hip)
+    // rests on the cushion, so the hip drops to cushion + pelvisDrop and the crown to about 0.81 of the standing crown (1.068).
     const kneelingCrown = monkRig.cushionTop + monkRig.hipKneel + monkRig.neckY + crown;
     expect(Math.abs(crownWorld - 1.32), "standing crown").toBeLessThanOrEqual(0.03);
-    expect(Math.abs(kneelingCrown - 1.153), "kneeling crown").toBeLessThanOrEqual(0.03);
+    expect(Math.abs(kneelingCrown - 1.068), "kneeling crown").toBeLessThanOrEqual(0.03);
+    expect(monkRig.hipKneel - monkRig.pelvisDrop * monkRig.kneelPelvisScaleY, "the seat rests on the cushion").toBeLessThan(0.02);
   });
 
-  it("shows the cream socks: the hem is high above the sole, the foot sits below it and a leg bridges the gap", async () => {
+  it("dresses the 동자승 in a hip-length jacket over baggy trousers gathered above the ankle, the foot showing below the cuff", async () => {
     const parts = await loadParts();
     const H = monkRig.headHeight;
-    const skirt = bounds(parts.skirt);
+    const jacket = bounds(parts.torso);
+    const pelvis = bounds(parts.pelvis);
+    const trousers = bounds(parts.trousers);
     const foot = bounds(parts.foot);
     const leg = bounds(parts.leg);
 
-    const hem = monkRig.hipStand + skirt.min.y;
     const sole = monkRig.footY + foot.min.y;
     const footTop = monkRig.footY + foot.max.y;
-    expect((hem - sole) / H, "sock gap between hem and sole").toBeGreaterThanOrEqual(0.5);
-    expect(Math.abs((hem - sole) / H - 1), "sock gap between hem and sole (1 H = 0.33 above the sole)").toBeLessThanOrEqual(0.05);
-    expect(footTop, "the foot stays below the hem").toBeLessThan(hem);
+    const hem = monkRig.hipStand + jacket.min.y;
+    const crotch = monkRig.hipStand + pelvis.min.y;
+    const legPivot = monkRig.hipStand - monkRig.legTopDrop;
+    const cuff = legPivot + trousers.min.y;
 
-    // The leg hangs from a pivot inside the skirt and reaches down to the foot, so no gap shows between hem and sole.
-    const legTop = monkRig.hipStand - monkRig.legTopDrop + leg.max.y;
-    const legBottom = monkRig.hipStand - monkRig.legTopDrop + leg.min.y;
-    expect(legTop, "the leg top is hidden inside the skirt").toBeGreaterThan(hem);
+    // The jacket ends just below the hip (not a robe down to the shins), the crotch hangs lower, and the cuff is just above the ankle.
+    expect(Math.abs((hem - sole) / H - 1.49), "jacket hem above the sole (1.49 H, just below the hip at 1.75 H)").toBeLessThanOrEqual(0.04);
+    expect(hem, "the hem is below the hip pivot").toBeLessThan(monkRig.hipStand);
+    expect(monkRig.hipStand - hem, "the hem is only just below the hip pivot").toBeLessThan(0.3 * H);
+    expect(crotch, "the crotch hangs below the jacket hem").toBeLessThan(hem);
+    expect(Math.abs((crotch - sole) / H - 1.18), "crotch above the sole").toBeLessThanOrEqual(0.04);
+    expect(Math.abs((cuff - sole) / H - 0.335), "trouser cuff above the sole").toBeLessThanOrEqual(0.04);
+    expect(footTop, "the foot shows below the cuff").toBeLessThan(cuff);
+    expect((cuff - footTop) / H, "the cuff clears the foot by a visible band of ankle").toBeGreaterThan(0.045);
+
+    // The leg hangs from a pivot inside the trouser leg and reaches down to the foot, so no gap shows between cuff and foot.
+    const legTop = legPivot + leg.max.y;
+    const legBottom = legPivot + leg.min.y;
+    expect(legTop, "the leg top is hidden inside the trousers").toBeGreaterThan(cuff);
     expect(legBottom, "the leg reaches the foot").toBeLessThanOrEqual(footTop);
     expect(monkRig.legLength).toBeCloseTo(monkRig.hipStand - monkRig.legTopDrop - monkRig.footY, 3);
+
+    // The trouser leg hangs from the same pivot and tops out inside the seat, so the two join without a gap.
+    expect(legPivot + trousers.max.y, "the trouser leg reaches up into the seat").toBeGreaterThan(monkRig.hipStand + pelvis.min.y);
+    expect(legPivot + trousers.max.y, "the trouser leg reaches up into the seat").toBeLessThan(monkRig.hipStand + pelvis.max.y);
+  });
+
+  it("makes the trousers wide at the thigh, gathered at the ankle", async () => {
+    const parts = await loadParts();
+    const trousers = bounds(parts.trousers);
+    const leg = bounds(parts.leg);
+    const position = parts.trousers.getAttribute("position");
+    let cuffRadius = 0;
+    for (let i = 0; i < position.count; i += 1) {
+      if (position.getY(i) < trousers.min.y + 0.004) cuffRadius = Math.max(cuffRadius, Math.abs(position.getX(i)));
+    }
+    // The bare leg's radius is read off the lowest part of the leg (below the sock's folded cuff, which bulges out higher up).
+    const legPosition = parts.leg.getAttribute("position");
+    let legRadius = 0;
+    for (let i = 0; i < legPosition.count; i += 1) {
+      if (legPosition.getY(i) < leg.min.y + 0.05) legRadius = Math.max(legRadius, Math.abs(legPosition.getX(i)));
+    }
+    expect(trousers.max.x / legRadius, "baggy: the thigh is 1.5 to 1.8 times the bare leg's radius").toBeGreaterThan(1.4);
+    expect(trousers.max.x / legRadius, "baggy: the thigh is 1.5 to 1.8 times the bare leg's radius").toBeLessThan(1.9);
+    expect(cuffRadius, "the cuff hugs the ankle").toBeLessThan(legRadius * 1.2);
+    expect(trousers.max.x / cuffRadius, "the leg is gathered in below the knee").toBeGreaterThan(1.3);
   });
 
   it("lets the arms hang straight when standing: no crease at the elbow, the fingertips at 1.58 H", async () => {
@@ -326,21 +415,62 @@ describe("monk assets", () => {
     expect(triangles(parts.hair)).toBeLessThan(20);
   });
 
-  it("keeps the hem off the ground and clear of the cushion, with the toes showing past it", async () => {
+  it("keeps the jacket and trousers off the ground and clear of the cushion, with the toes showing past the seat", async () => {
     const parts = await loadParts();
-    const skirt = bounds(parts.skirt);
+    const pelvis = bounds(parts.pelvis);
+    const jacket = bounds(parts.torso);
     const foot = bounds(parts.foot);
 
-    const hemStanding = monkRig.hipStand + skirt.min.y;
-    expect(hemStanding).toBeGreaterThan(0.25);
-    expect(hemStanding).toBeLessThan(0.35);
-    const hemKneeling = monkRig.cushionTop + monkRig.hipKneel + monkRig.kneelSkirtLift + skirt.min.y * monkRig.kneelSkirtScaleY;
-    expect(hemKneeling).toBeGreaterThanOrEqual(monkRig.cushionTop);
-    expect(hemKneeling - monkRig.cushionTop, "the kneeling hem rests on the cushion").toBeLessThan(0.02);
+    const hemStanding = monkRig.hipStand + jacket.min.y;
+    expect(hemStanding).toBeGreaterThan(0.4);
+    expect(hemStanding).toBeLessThan(0.55);
+    const seatKneeling = monkRig.cushionTop + monkRig.hipKneel + monkRig.kneelPelvisLift + pelvis.min.y * monkRig.kneelPelvisScaleY;
+    expect(seatKneeling).toBeGreaterThanOrEqual(monkRig.cushionTop);
+    expect(seatKneeling - monkRig.cushionTop, "the kneeling seat rests on the cushion").toBeLessThan(0.02);
+    const hemKneeling = monkRig.cushionTop + monkRig.hipKneel + jacket.min.y;
+    expect(hemKneeling - monkRig.cushionTop, "the jacket hem stays above the spread seat").toBeGreaterThan(0.05);
 
-    // Kneeling, the foot is turned over behind the hip: its top rests on the cushion, the toes show past the back hem.
+    // Kneeling, the foot is turned over behind the hip: its top rests on the cushion, the toes show past the back of the seat.
     expect(monkRig.footKneelY - foot.max.y).toBeGreaterThanOrEqual(0);
-    expect(monkRig.footKneelZ - foot.min.z).toBeGreaterThan(skirt.max.z * (1 + monkRig.kneelSkirtGrow) + 0.02);
+    expect(monkRig.footKneelZ - foot.min.z).toBeGreaterThan(pelvis.max.z * (1 + monkRig.kneelPelvisGrow) + 0.02);
+  });
+
+  it("folds the trousers behind the knees when kneeling without sinking into the cushion", async () => {
+    const parts = await loadParts();
+    const avatar = posedAvatar("kneel");
+    const lowest = (part: PartName): number => {
+      let low = Infinity;
+      for (let copy = 0; copy < COPIES[part]; copy += 1) {
+        low = Math.min(low, ...worldVertices(nodeOf(avatar, part, copy), parts[part]).map((v) => v.y));
+      }
+      return low;
+    };
+    for (const part of ["pelvis", "trousers", "leg", "foot"] as const) {
+      expect(lowest(part), `${part} rests on the cushion, not in it`).toBeGreaterThanOrEqual(monkRig.cushionTop - 0.002);
+      expect(lowest(part) - monkRig.cushionTop, `${part} sits right on the cushion`).toBeLessThan(0.03);
+    }
+    const jacketHem = Math.min(...worldVertices(nodeOf(avatar, "torso", 0), parts.torso).map((v) => v.y));
+    expect(jacketHem, "the jacket hangs clear above the cushion").toBeGreaterThan(monkRig.cushionTop + 0.05);
+
+    // The trouser cuff folds back with the foot: behind the knee (toward +Z, the back), not out in front of the monk.
+    for (const side of [0, 1]) {
+      const cuffZ = Math.max(...worldVertices(nodeOf(avatar, "trousers", side), parts.trousers).map((v) => v.z));
+      expect(cuffZ, `trouser leg ${side} folds back`).toBeGreaterThan(0.1);
+    }
+  });
+
+  it("makes the trouser cuff follow the foot while walking", async () => {
+    const parts = await loadParts();
+    const avatar = new MonkAvatar("walker", 0, false);
+    avatar.setMode("walk", 0);
+    for (let i = 0; i < 40; i += 1) avatar.animate(0.05, 50 * (i + 1), 3, true);
+    for (const side of [0, 1]) {
+      const footNode = nodeOf(avatar, "foot", side);
+      const foot = new Vector3().setFromMatrixPosition(footNode.matrixWorld);
+      const cuff = worldVertices(nodeOf(avatar, "trousers", side), parts.trousers).reduce((low, v) => (v.y < low.y ? v : low));
+      expect(Math.hypot(cuff.x - foot.x, cuff.z - foot.z), `the cuff of leg ${side} stays above its foot`).toBeLessThan(0.08);
+      expect(cuff.y, `the cuff of leg ${side} stays above the foot`).toBeGreaterThan(foot.y);
+    }
   });
 
   it("fades the scalp tint in smoothly instead of leaving a cap seam", async () => {

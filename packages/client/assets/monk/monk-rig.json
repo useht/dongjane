@@ -4,8 +4,9 @@
   "crownY": 0.35508,
   "chinY": 0.02508,
   "hipStand": 0.578,
-  "hipKneel": 0.28,
-  "skirtDrop": 0.248,
+  "hipKneel": 0.195,
+  "jacketDrop": 0.086,
+  "pelvisDrop": 0.188,
   "torsoHeight": 0.38742,
   "neckY": 0.38742,
   "shoulderX": 0.095,
@@ -20,8 +21,10 @@
   "footKneelTilt": 3.14159,
   "legTopDrop": 0.1,
   "legLength": 0.436,
-  "kneelSkirtGrow": 0.45,
-  "kneelSkirtScaleY": 1.1,
-  "kneelSkirtLift": 0.0,
-  "cushionTop": 0.13
+  "kneelPelvisGrow": 0.4,
+  "kneelPelvisScaleY": 1.0,
+  "kneelPelvisLift": 0.0,
+  "cushionTop": 0.13,
+  "robeTintSaturation": 0.6,
+  "robeTintLightness": 0.92
 }

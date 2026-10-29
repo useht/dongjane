@@ -13,15 +13,21 @@ Writes next to this script:
 and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo).
 
 Parts (one mesh object each, named exactly like the slot in monk-model.ts), each built in the local frame of its pivot:
-    head, face, hair, torso, skirt, trim, sleeveUpper, sleeveLower, hand, foot, leg
-sleeveUpper, sleeveLower, hand, foot and leg are mirror-symmetric about x = 0 because one geometry serves both sides.
+    head, face, hair, torso, pelvis, trousers, trim, sleeveUpper, sleeveLower, hand, foot, leg
+sleeveUpper, sleeveLower, hand, foot, leg and trousers are mirror-symmetric about x = 0 because one geometry serves both sides.
 The head is shaved: the scalp shade is a smooth vertex-colour gradient on the head itself (no cap mesh, so there is no
 edge to show). "hair" stays as a swappable slot but holds only a tiny scalp-coloured core buried inside the skull, so
 nothing sits above the scalp until a hairstyle is dropped in.
-The robe stops 1.0 H (0.33) above the sole (a short hem, as in the reference); the "leg" part (skin calf + cream knee sock with
-a folded cuff) fills the gap down to the foot. It hangs from a pivot inside the skirt, and monk-model.ts stretches it from
-that pivot to the ankle every frame, so it follows strides, bobbing and the folded kneeling feet.
-Robe parts (torso, skirt, sleeveUpper, sleeveLower) stay white; the game tints them per monk.
+The outfit is the Korean child-monk set from docs/reference/862068_96416_1639.jpg: an ash-grey jacket and darker grey
+baggy trousers (no skirt). "torso" is the jacket (crossed front with the left panel over the right, a side tie, long sleeves
+in sleeveUpper / sleeveLower), "trim" its collar, crossing edges and tie. The trousers are two parts: "trousers" is one baggy
+leg that hangs from the same pivot as "leg" (the bare calf + cream knee sock inside it, mostly hidden) and is stretched with it,
+so it follows strides, bobbing and the folded kneeling feet; "pelvis" is the seat of the trousers below the jacket hem,
+bound to the hips, which closes the gap between the two legs and rests on the cushion when kneeling.
+The jacket ends JACKET_HEM below the hip pivot, the trouser cuff stops CUFF_ABOVE_ANKLE above the ankle, and the cream sock
+shows below it.
+Robe parts (torso, pelvis, trousers, sleeveUpper, sleeveLower) are light and dark grey; the game tints them per monk by
+multiplying a near-white pastel into that grey (robe_tint below mirrors monk-model.ts).
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
 Blender axes: X right, Y forward (the face looks toward +Y), Z up. glTF export maps (x, y, z) -> (x, z, -y).
@@ -36,7 +42,8 @@ the skull to the chin); everything is laid out in H (H = 0.33, so the monk is 1.
     fingertip above the sole, arm down   1.58     (0.17 below the hip pivot, the reference 0.15)
     shoulder joint to fingertip          0.97     (the reference 0.96)
     upper arm 0.35, forearm 0.31, hand 0.31       the elbow sits 36 % of the way down the arm, and the arm hangs straight
-    hem above the sole                   1.00     (the reference 1.22; bare calves and cream socks show from about 0.7)
+    jacket hem above the sole            1.49     (0.26 below the hip pivot, where the reference's jacket ends at the crotch)
+    trouser cuff above the sole          0.34     (the cream sock shows below it, as the reference's sneakers do)
     head width, ears included            0.94     (the reference's 0.93 includes the bob hair; the monk is shaved)
 The face has eyes, nose and mouth only: no blush on the cheeks.
 Praying swings the arms forward and yaws them inward (POSE below), and the fingertips meet just under the chin.
@@ -76,11 +83,15 @@ RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
     "hand": 0.31,  # wrist pivot down to the fingertip
 }
 STAND_H = 4.0  # standing height in head heights: 4등신
+JACKET_HEM = 0.26  # in H: the jacket hem hangs this far below the hip pivot (the reference: the jacket ends at the crotch)
+PELVIS_DEPTH = 0.57  # in H: the crotch of the trousers hangs this far below the hip pivot
+CUFF_ABOVE_ANKLE = 0.07  # the trouser cuff stops this far above the ankle pivot, so the foot shows below it
 
 RIG = {  # pivots and lengths the animation code uses
     "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
-    "hipKneel": 0.0,  # set below: the stretched skirt hem rests on the cushion
-    "skirtDrop": 0.0,  # set below: the hem stays 0.30 above the ground, so calves and socks show below it
+    "hipKneel": 0.0,  # set below: the kneeling pelvis rests on the cushion
+    "jacketDrop": round(JACKET_HEM * HEAD_H, 3),  # the jacket hem hangs this far below the hip pivot
+    "pelvisDrop": round(PELVIS_DEPTH * HEAD_H, 3),  # the crotch of the trousers hangs this far below the hip pivot
     "shoulderX": 0.095,
     "shoulderDrop": 0.0,  # set below: shoulder joint below the neck base
     "upperArm": round(RATIO["upper_arm"] * HEAD_H, 3),  # the elbow sits at 36 % of the way from the shoulder to the fingertip
@@ -88,17 +99,17 @@ RIG = {  # pivots and lengths the animation code uses
     "footX": 0.07,
     "footY": 0.042,
     "footForward": 0.03,  # standing: the ankle sits this far in front of the hip, the toes reach a hand further
-    "footKneelZ": 0.17,  # kneeling: the foot folds sole-up behind the hip, toes peeking out under the back of the skirt
+    "footKneelZ": 0.17,  # kneeling: the foot folds sole-up behind the hip, toes peeking out behind the trousers
     "footKneelTilt": pi,
-    "legTopDrop": 0.10,  # the leg's top pivot hangs this far below the hip pivot, inside the skirt
-    "kneelSkirtGrow": 0.45,  # kneeling spreads the skirt sideways ...
-    "kneelSkirtScaleY": 1.1,  # ... and stretches it a little so the hem rests on the cushion
-    "kneelSkirtLift": 0.0,
+    "legTopDrop": 0.10,  # the leg's top pivot hangs this far below the hip pivot, inside the pelvis of the trousers
+    "kneelPelvisGrow": 0.4,  # kneeling spreads the trousers' pelvis sideways ...
+    "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the cushion
+    "kneelPelvisLift": 0.0,
     "cushionTop": 0.13,
+    "robeTintSaturation": 0.6,  # the game multiplies HSL(hue, this, that) into the grey robe: a near-white pastel keeps the grey grey
+    "robeTintLightness": 0.92,
 }
-HEM_ABOVE_SOLE = 0.33
-RIG["skirtDrop"] = round(RIG["hipStand"] - HEM_ABOVE_SOLE, 3)
-RIG["hipKneel"] = round(RIG["skirtDrop"] * RIG["kneelSkirtScaleY"] + 0.007, 3)  # the kneeling hem hangs 7 mm over the cushion
+RIG["hipKneel"] = round(RIG["pelvisDrop"] * RIG["kneelPelvisScaleY"] + 0.007, 3)  # the kneeling crotch hangs 7 mm over the cushion
 RIG["shoulderDrop"] = round((RATIO["chin_to_shoulder"] - RATIO["neck"]) * HEAD_H, 4)
 RIG["legLength"] = round(RIG["hipStand"] - RIG["legTopDrop"] - RIG["footY"], 4)  # top pivot down to the ankle pivot, standing
 
@@ -152,18 +163,18 @@ HAIR = {  # shaved head: the scalp of the head part just turns a shade darker to
 }
 
 OUTFIT = {
-    "belt_knot": True,
-    "collar_ring": True,
-    "sash": True,  # the cream V of the crossed collar
-    "sash_width": 0.019,
+    "collar_ring": True,  # the dark collar band round the neck
+    "lapel_width": 0.016,  # the crossing edge of the jacket (깃)
+    "lapel_lift": 0.0035,  # how far the lapel band floats above the jacket (it is a decal, not a 3D strap)
+    "tie": True,  # the fabric string that ties the jacket at the wearer's right side
 }
-SASH_LIFT = 0.002  # how far the cream lapel ribbon floats above the robe (it is a decal, not a 3D strap)
 
 PALETTE = {  # sRGB hex
     "skin": 0xF3CBA2,
-    "robe": 0xFFFFFF,  # white on purpose: tinted at runtime
-    "gold": 0xC99A3A,
-    "cream": 0xF6ECD2,
+    "jacket": 0x9CA0A8,  # the 승복 jacket: ash grey, tinted at runtime like the rest of the robe
+    "trousers": 0x7F8288,  # the wide trousers: a darker grey, tinted the same way
+    "seam": 0x6E727A,  # collar band, crossing edge and tie of the jacket: neutral, never tinted
+    "cream": 0xF1ECDF,  # the undershirt in the V of the neck
     "sock": 0xFAF5E8,
     "eye": 0x2B1A12,
     "mouth": 0x9A4A3C,
@@ -171,7 +182,7 @@ PALETTE = {  # sRGB hex
     "scalp": 0xDDB693,
 }
 
-SEGMENTS = {"head": 20, "torso": 20, "skirt": 24, "belt": 24, "sleeve": 12, "hand": 10, "foot": 10, "leg": 8}
+SEGMENTS = {"head": 20, "torso": 20, "pelvis": 16, "trousers": 12, "sleeve": 12, "hand": 10, "foot": 10, "leg": 8}
 
 PREVIEW_HUE = 150  # degrees, only used for the preview renders
 PREVIEW_SIZE = (480, 640)
@@ -200,21 +211,22 @@ SKULL_CY = fk(0.02)  # the skull sits a little forward of the neck, which also k
 COLOR_LAYER = "Col"
 HERE = os.path.dirname(os.path.abspath(__file__))
 PREVIEW_DIR = os.environ.get("MONK_PREVIEW_DIR") or os.path.join(tempfile.gettempdir(), "monk-preview")
-PART_ORDER = ["head", "face", "hair", "torso", "skirt", "trim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg"]
-SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot", "leg"]
-COPIES = {"sleeveUpper": 2, "sleeveLower": 2, "hand": 2, "foot": 2, "leg": 2}
+PART_ORDER = ["head", "face", "hair", "pelvis", "torso", "trim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
+SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
+COPIES = {"sleeveUpper": 2, "sleeveLower": 2, "hand": 2, "foot": 2, "leg": 2, "trousers": 2}
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------------------------------------------------
 
 
-def srgb_to_linear(hex_value):
-    def lin(c):
-        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+def linear_channel(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
+
+def srgb_to_linear(hex_value):
     r, g, b = ((hex_value >> 16) & 255) / 255, ((hex_value >> 8) & 255) / 255, (hex_value & 255) / 255
-    return (lin(r), lin(g), lin(b), 1.0)
+    return (linear_channel(r), linear_channel(g), linear_channel(b), 1.0)
 
 
 def clamp(v, lo, hi):
@@ -486,15 +498,20 @@ def build_hair():
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Robe (frame: origin at the hip pivot)
+# Jacket and trousers (frame: origin at the hip pivot)
 # ----------------------------------------------------------------------------------------------------------------------
 
-TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. Waist 0.45 H wide, chest 0.6 H; the widest row sits just below the shoulder joint, then the shoulders slope up to a narrow neck
-    (0.000, 0.080, 0.068, 2.3),
-    (0.030, 0.077, 0.066, 2.3),
-    (0.090, 0.086, 0.069, 2.4),
-    (0.165, 0.097, 0.069, 2.6),
-    (SHOULDER_Y - 0.012, 0.100, 0.066, 2.8),
+JACKET_DROP = RIG["jacketDrop"]
+PELVIS_DROP = RIG["pelvisDrop"]
+
+TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: a loose straight body that flares a little at the hem, widest just below the shoulder joint, then the shoulders slope up to a narrow neck
+    (-JACKET_DROP, 0.118, 0.096, 2.4),
+    (-JACKET_DROP + 0.014, 0.115, 0.093, 2.4),
+    (-0.035, 0.108, 0.086, 2.4),
+    (0.030, 0.102, 0.079, 2.4),
+    (0.100, 0.100, 0.074, 2.5),
+    (0.165, 0.100, 0.070, 2.6),
+    (SHOULDER_Y - 0.012, 0.101, 0.066, 2.8),
     (SHOULDER_Y + 0.036, 0.086, 0.060, 2.5),
     (SHOULDER_Y + 0.082, 0.066, 0.054, 2.2),
     (TORSO_H, 0.056, 0.050, 2.0),
@@ -523,8 +540,9 @@ def torso_rings():
 
 
 def build_torso():
+    """The jacket body, from the hem (just below the hip pivot) up to the base of the neck."""
     p = Part("torso")
-    p.loft(torso_rings(), "robe", cap_first=True, cap_last=True)
+    p.loft(torso_rings(), "jacket", cap_first=True, cap_last=True)
     return p.to_object()
 
 
@@ -555,109 +573,153 @@ class TorsoSurface:
         return dist if (point - hit).dot(normal) >= 0 else -dist
 
 
-def build_skirt():
-    p = Part("skirt")
-    n = SEGMENTS["skirt"]
-    drop = RIG["skirtDrop"]
-    folds = 6
-    hem_w, hem_d, waist_w, waist_d = 0.150, 0.142, 0.084, 0.072  # hem 0.83 H wide, like the reference's flared skirt
-    stations = [  # z, half-width, half-depth, fold amplitude
-        (-drop, hem_w, hem_d, 0.0),
-        (-drop + 0.004, hem_w + 0.0055, hem_d + 0.0055, 0.0),
-        (-drop + 0.012, hem_w + 0.0045, hem_d + 0.0045, 0.005),
-        (-0.80 * drop, 0.148, 0.140, 0.0045),
-        (-0.56 * drop, 0.137, 0.129, 0.004),
-        (-0.32 * drop, 0.118, 0.110, 0.003),
-        (-0.10 * drop, 0.096, 0.084, 0.002),
-        (0.0, waist_w, waist_d, 0.0),
+PELVIS_PROFILE = [  # z, half-width, half-depth. The seat of the trousers: tucked under the jacket, bulging a little below its hem, then rounding off into the crotch
+    (-PELVIS_DROP, 0.060, 0.050),
+    (-PELVIS_DROP + 0.016, 0.088, 0.066),
+    (-0.140, 0.100, 0.074),
+    (-0.100, 0.100, 0.075),
+    (-JACKET_DROP + 0.005, 0.095, 0.074),
+    (-0.020, 0.088, 0.070),
+    (0.030, 0.080, 0.066),
+]
+
+
+def build_pelvis():
+    p = Part("pelvis")
+    n = SEGMENTS["pelvis"]
+    rings = [ring_xy(0.0, 0.0, z, w, d, n, 2.3) for z, w, d in PELVIS_PROFILE]
+    p.loft(rings, "trousers", cap_first=True, cap_last=True)
+    return p.to_object()
+
+
+def build_trousers():
+    """One baggy trouser leg. Frame: origin at the leg's top pivot (legTopDrop below the hip), the leg hangs toward -Z for
+    legLength down to the ankle pivot, and monk-model.ts stretches it with the leg. It is wide at the thigh (about 1.5 times the
+    bare leg's radius), full at the knee, and gathers in just above the ankle so the foot shows below the cuff."""
+    p = Part("trousers")
+    n = SEGMENTS["trousers"]
+    length = RIG["legLength"]
+    cuff = -length + CUFF_ABOVE_ANKLE
+    stations = [  # z, half-width (x), half-depth (y)
+        (cuff, 0.0350, 0.0360),  # the cuff hugs the sock inside
+        (cuff + 0.005, 0.0385, 0.0400),
+        (cuff + 0.024, 0.0480, 0.0520),  # the fabric billows out of the gather ...
+        (cuff + 0.070, 0.0535, 0.0600),  # ... and hangs full to the knee
+        (-0.190, 0.0545, 0.0700),
+        (-0.110, 0.0535, 0.0790),
+        (-0.050, 0.0525, 0.0850),  # thigh: as deep as the seat it hangs from, so legs and seat read as one garment
+        (0.000, 0.0505, 0.0820),
     ]
-    rings = []
-    for z, w, d, amp in stations:
-        ring = []
-        for k in range(n):
-            a = 2 * pi * k / n
-            wob = 1 + amp * cos(folds * a) / max(w, 1e-6) * 3
-            ring.append(Vector((w * wob * cos(a), d * wob * sin(a), z)))
-        rings.append(ring)
-    inner = ring_xy(0.0, 0.0, -drop + 0.008, hem_w - 0.016, hem_d - 0.016, n)
-    p.loft([inner] + rings, "robe", cap_last=True)  # a lid at the waist, so the kneeling skirt never shows a see-through slit
+    rings = [ring_xy(0.0, 0.0, z, w, d, n, 2.3) for z, w, d in stations]
+    p.loft(rings, "trousers", cap_last=Vector((0.0, 0.0, 0.012)))
     return p.to_object()
 
 
 def build_trim():
     p = Part("trim")
-    n = SEGMENTS["belt"]
-    z0 = 0.003
-    belt = []
-    for z, grow in ((z0, 0.003), (z0 + 0.009, 0.010), (z0 + 0.036, 0.010), (z0 + 0.045, 0.003)):
-        hw, hd, power = torso_at(z)
-        belt.append(ring_xy(0.0, 0.0, z, hw + grow, hd + grow, n, power))
-    p.loft(belt, "gold", cap_first=False, cap_last=False)
-
-    if OUTFIT["belt_knot"]:
-        zc = z0 + 0.0225
-        hw, hd, _ = torso_at(zc)
-        y = hd + 0.009
-        p.ellipsoid(Vector((0.0, y + 0.002, zc)), (0.013, 0.009, 0.012), "gold", u=8, v=4)
-        for side in (-1, 1):
-            p.ellipsoid(Vector((side * 0.02, y, zc + 0.003)), (0.011, 0.006, 0.009), "gold", rot=(0, side * radians(-25), 0), u=8, v=4)
-
+    surface = TorsoSurface()
     if OUTFIT["collar_ring"]:
         collar = []
-        for z, grow in ((TORSO_H - 0.012, 0.009), (TORSO_H - 0.003, 0.008), (TORSO_H + 0.009, 0.0)):
+        for z, grow in ((TORSO_H - 0.012, 0.007), (TORSO_H - 0.003, 0.006), (TORSO_H + 0.009, 0.0)):
             hw, hd, power = torso_at(min(z, TORSO_H))
             collar.append(ring_xy(0.0, 0.0, z, hw + grow, hd + grow, 16, 2.0))
-        p.loft(collar, "cream")
-
-    if OUTFIT["sash"]:
-        build_sash(p, z0 + 0.052)
+        p.loft(collar, "seam")
+    build_lapels(p, surface)
+    if OUTFIT["tie"]:
+        build_tie(p, surface)
     return p.to_object()
 
 
-def build_sash(p, tip_z):
-    """The two cream lapels crossing the chest in a V. They are decals: every vertex sits SASH_LIFT above the faceted
-    torso (ray-cast onto it), and the rows sit on the torso's own ring heights so no row straddles a crease."""
-    surface = TorsoSurface()
-    width = OUTFIT["sash_width"]
-    start_z = TORSO_H - 0.006
-    rows_z = [start_z] + [z for z, *_ in reversed(TORSO_PROFILE) if tip_z + 0.008 < z < start_z - 0.004] + [tip_z]
+LAPEL_TOP_Z = TORSO_H - 0.006
+LAPEL_TOP_X = 0.040  # where the two collar edges leave the neck, either side of the centre line
+LAPEL_END = (0.083, 0.046)  # x, z: the over edge ends at the wearer's right flank, where the tie is
+LAPEL_CROSS = (0.014, 0.232)  # x, z: the under edge slides beneath the over edge here
+
+
+def over_edge_x(z):
+    """x of the over edge at height z: the left panel's free edge runs from the left of the neck across the chest to the right flank."""
+    t = (LAPEL_TOP_Z - z) / (LAPEL_TOP_Z - LAPEL_END[1])
+    return lerp(-LAPEL_TOP_X, LAPEL_END[0], t)
+
+
+def under_edge_x(z):
+    t = (LAPEL_TOP_Z - z) / (LAPEL_TOP_Z - LAPEL_CROSS[1])
+    return lerp(LAPEL_TOP_X, LAPEL_CROSS[0], t)
+
+
+def torso_ring_heights(lo, hi):
+    return [z for z, *_ in reversed(TORSO_PROFILE) if lo + 0.008 < z < hi - 0.004]
+
+
+def build_lapels(p, surface):
+    """The crossed front: the left panel wraps over the right. Two dark bands (the over edge and the under edge) and the cream
+    undershirt in the V between them. They are decals: every vertex sits a few millimetres above the faceted torso (ray-cast
+    onto it), and the rows sit on the torso's own ring heights so no row straddles a crease."""
+    width, lift = OUTFIT["lapel_width"], OUTFIT["lapel_lift"]
     low, high = 1.0, -1.0
-    for side in (-1, 1):
-        start_x = side * 0.04
-        dx, dz = -start_x, tip_z - start_z
-        ln = sqrt(dx * dx + dz * dz)
-        px, pz = -dz / ln, dx / ln
+
+    def band(z_from, z_to, edge_x, key, band_lift, band_width):
+        nonlocal low, high
+        rows_z = [z_from] + torso_ring_heights(z_to, z_from) + [z_to]
         rings = []
         for z in rows_z:
-            t = (start_z - z) / (start_z - tip_z)
-            cx = lerp(start_x, 0.0, t)
+            cx = edge_x(z)
+            dz = (edge_x(z + 0.01) - edge_x(z - 0.01)) / 0.02  # dx per dz: the band's direction
+            norm = sqrt(1 + dz * dz)
+            px, pz = 1 / norm, -dz / norm  # perpendicular, in the x-z plane
             row = []
             for off in (-0.5, 0.0, 0.5):
-                x, zz = cx + px * width * off, z + pz * width * off
+                x, zz = cx + px * band_width * off, z + pz * band_width * off
                 hit, normal = surface.front(x, zz)
-                row.append(hit + normal * SASH_LIFT)
+                row.append(hit + normal * band_lift)
             rings.append(row)
-        sash_strip(p, rings)
-        for a, b in zip(rings, rings[1:]):  # sample the ribbon between its vertices, where a flat quad could dip under
+        strip(p, rings, key)
+        for a, b in zip(rings, rings[1:]):
             for j in range(3):
                 mid = (a[j] + b[j]) / 2
                 c = surface.clearance(mid)
                 low, high = min(low, c), max(high, c)
-    print("SASH clearance over the torso: min %.4f max %.4f" % (low, high))
-    assert low > 0.0003 and high < 0.0035, "the sash must lie on the torso, not sink into it or float off it"
+
+    # the undershirt shows in the V above the crossing, under both bands
+    v_rows = [LAPEL_TOP_Z] + torso_ring_heights(LAPEL_CROSS[1], LAPEL_TOP_Z) + [LAPEL_CROSS[1] + 0.004]
+    v_rings = []
+    for z in v_rows:
+        xl, xr = over_edge_x(z), under_edge_x(z)
+        row = []
+        for x in (xl, (xl + xr) / 2, xr):
+            hit, normal = surface.front(x, z)
+            row.append(hit + normal * lift * 0.3)
+        v_rings.append(row)
+    strip(p, v_rings, "cream")
+
+    band(LAPEL_TOP_Z, LAPEL_END[1], over_edge_x, "seam", lift, width)
+    band(LAPEL_TOP_Z, LAPEL_CROSS[1], under_edge_x, "seam", lift * 0.8, width * 0.85)
+    print("LAPEL clearance over the torso: min %.4f max %.4f" % (low, high))
+    assert low > 0.0003 and high < 0.0045, "the lapels must lie on the torso, not sink into it or float off it"
 
 
-def sash_strip(p, rows):
+def strip(p, rows, key):
     """A flat ribbon over the chest; every quad is wound so it faces the front (+Y)."""
     bm = p.bm
     vr = [[bm.verts.new(v) for v in row] for row in rows]
     for i in range(len(vr) - 1):
         for j in range(2):
             quad = [vr[i][j], vr[i][j + 1], vr[i + 1][j + 1], vr[i + 1][j]]
-            f = p.face(quad, "cream")
+            f = p.face(quad, key)
             f.normal_update()
             if f.normal.y < 0:
                 f.normal_flip()
+
+
+def build_tie(p, surface):
+    """The jacket's string: a small knot where the over edge ends, at the wearer's right side, with two short tails."""
+    x, z = LAPEL_END
+    hit, normal = surface.front(x, z)
+    out = normal.normalized()
+    p.ellipsoid(hit + out * 0.004, (0.0085, 0.0065, 0.0085), "seam", u=8, v=4)
+    for dx, dz, tilt in ((-0.004, -0.030, 0.30), (0.008, -0.026, -0.22)):
+        tail, tail_n = surface.front(clamp(x + dx, -0.098, 0.093), z + dz)
+        p.ellipsoid(tail + tail_n.normalized() * 0.0035, (0.0055, 0.0030, 0.0220), "seam", rot=(0, tilt, 0), u=6, v=4)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -675,6 +737,7 @@ def dome_rings(radius, n, steps, z_centre=0.0, squash=1.0):
 
 
 SHOULDER_DOME = 0.5  # height of the shoulder cap over the joint, as a fraction of the sleeve radius
+SLEEVE_FLARE = 0.014  # how much wider the cuff is than the sleeve at the elbow
 
 
 def build_sleeve_upper():
@@ -688,7 +751,7 @@ def build_sleeve_upper():
         ring_xy(0.0, 0.0, -arm * 0.2, r * 1.0, r * 1.0, n),
     ]
     dome = dome_rings(r, n, 3, squash=SHOULDER_DOME)
-    p.loft(tube + dome, "robe", cap_first=True, cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))
+    p.loft(tube + dome, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))
     return p.to_object()
 
 
@@ -697,7 +760,7 @@ def build_sleeve_lower():
     n = SEGMENTS["sleeve"]
     fore = RIG["foreArm"]
     top_r = SHOULDER_R * 1.07  # continues the upper sleeve, so the elbow shows no step
-    cuff = top_r + 0.006  # a mild trumpet: the cuff reaches no further out than the shoulders
+    cuff = top_r + SLEEVE_FLARE  # the long loose sleeve widens toward the wrist and ends in an open cuff
     end = -(fore - 0.012)
     rings = [
         ring_xy(0.0, 0.0, end - 0.004, 0.032, 0.032, n),
@@ -712,7 +775,7 @@ def build_sleeve_lower():
         ring_xy(0.0, 0.0, top_r * 0.7 * sin((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), n)
         for i in range(1, 3)
     ]
-    p.loft(rings + elbow_dome, "robe", cap_last=Vector((0.0, 0.0, top_r * 0.7)))
+    p.loft(rings + elbow_dome, "jacket", cap_last=Vector((0.0, 0.0, top_r * 0.7)))
     return p.to_object()
 
 
@@ -778,7 +841,7 @@ def build_foot():
 
 
 def build_leg():
-    """Bare calf under a cream knee sock with a folded cuff. Frame: origin at the top pivot (inside the skirt, legTopDrop below
+    """Bare calf under a cream knee sock with a folded cuff. Frame: origin at the top pivot (inside the trousers, legTopDrop below
     the hip), the leg hangs toward -Z for legLength down to the ankle pivot. monk-model.ts stretches it from the hip to the
     ankle every frame, so only its length changes (cuff and sock stay round, never sheared)."""
     p = Part("leg")
@@ -817,14 +880,15 @@ BUILDERS = {
     "head": build_head,
     "face": build_face,
     "hair": build_hair,
+    "pelvis": build_pelvis,
     "torso": build_torso,
-    "skirt": build_skirt,
     "trim": build_trim,
     "sleeveUpper": build_sleeve_upper,
     "sleeveLower": build_sleeve_lower,
     "hand": build_hand,
     "foot": build_foot,
     "leg": build_leg,
+    "trousers": build_trousers,
 }
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -911,12 +975,16 @@ def check_proportions(parts):
     crown = max(v.z for v in head)
     chin = min(v.z for v in head if v.y > JAW_FRONT)  # Blender +Y is the face side
     size = crown - chin
-    skirt_bottom = min(v.co.z for v in parts["skirt"].data.vertices)
+    jacket_bottom = min(v.co.z for v in parts["torso"].data.vertices)
+    pelvis_bottom = min(v.co.z for v in parts["pelvis"].data.vertices)
+    cuff_bottom = min(v.co.z for v in parts["trousers"].data.vertices)
     foot = [v.co.z for v in parts["foot"].data.vertices]
     leg = [v.co.z for v in parts["leg"].data.vertices]
     hip, neck = RIG["hipStand"], NECK_Y
     sole = RIG["footY"] + min(foot)
-    hem = hip + skirt_bottom
+    hem = hip + jacket_bottom  # the jacket's lower edge
+    crotch = hip + pelvis_bottom
+    cuff = hip - RIG["legTopDrop"] + cuff_bottom  # the trouser cuff, legs straight
     shoulder = hip + SHOULDER_Y
     upper = -min(v.co.z for v in parts["sleeveUpper"].data.vertices)  # the sleeve's lower edge sits on the elbow pivot
     fingertip = shoulder - upper - RIG["foreArm"] + min(v.co.z for v in parts["hand"].data.vertices)  # arms hanging straight
@@ -933,16 +1001,19 @@ def check_proportions(parts):
         "shoulder to fingertip / H": (reach / size, 0.97, 0.03),
         "elbow along the arm": (upper / reach, 0.36, 0.03),
         "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, 0.94, 0.03),
-        "hem above sole / H": ((hem - sole) / size, HEM_ABOVE_SOLE / HEAD_H, 0.05),
+        "jacket hem above sole / H": ((hem - sole) / size, RATIO["waist_to_sole"] - JACKET_HEM, 0.03),
+        "crotch above sole / H": ((crotch - sole) / size, RATIO["waist_to_sole"] - PELVIS_DEPTH, 0.03),
+        "trouser cuff above sole / H": ((cuff - sole) / size, (RIG["footY"] + CUFF_ABOVE_ANKLE) / HEAD_H, 0.03),
     }
     for label, (value, want, tol) in measured.items():
         print("MEASURED %-28s %.4f (want %.4f +- %.3f)" % (label, value, want, tol))
         assert abs(value - want) <= tol, "%s is %.4f, wanted %.4f +- %.3f" % (label, value, want, tol)
-    print("MEASURED hem above sole (m): %.4f, standing crown (m): %.4f" % (hem - sole, hip + neck + crown - sole))
+    print("MEASURED jacket hem above sole (m): %.4f, trouser cuff: %.4f, standing crown (m): %.4f" % (hem - sole, cuff - sole, hip + neck + crown - sole))
     foot_top_y = RIG["footY"] + max(foot)
-    assert foot_top_y < hem, "the foot must stay below the hem so the socks show"
+    assert foot_top_y < cuff, "the foot must stay below the trouser cuff so the sock shows"
+    assert crotch < hem and hem < hip, "the trousers' seat must hang below the jacket hem, which hangs below the hip"
     leg_top, leg_bottom = hip - RIG["legTopDrop"] + max(leg), hip - RIG["legTopDrop"] + min(leg)
-    assert leg_top > hem and leg_bottom < foot_top_y, "the leg must bridge the hem and the foot"
+    assert leg_top > cuff and leg_bottom < foot_top_y, "the leg must bridge the trouser cuff and the foot"
     print("MEASURED hair top above head crown: %.4f" % (max(v.co.z for v in parts["hair"].data.vertices) - crown))
 
 
@@ -956,7 +1027,7 @@ def check_kneel_clearance(parts):
     for part, z in lowest.items():
         print("KNEEL lowest %-12s %.4f above the cushion" % (part, z - cushion))
         assert z >= cushion - 0.0005, "%s sinks %.4f into the cushion" % (part, cushion - z)
-    assert lowest["skirt"] - cushion < 0.02, "the kneeling hem hovers over the cushion"
+    assert lowest["pelvis"] - cushion < 0.02, "the kneeling seat of the trousers hovers over the cushion"
 
 
 def check_kneel_hands(parts):
@@ -986,7 +1057,8 @@ def rig_dict():
         "chinY": round(CHIN_Z, 5),
         "hipStand": RIG["hipStand"],
         "hipKneel": RIG["hipKneel"],
-        "skirtDrop": RIG["skirtDrop"],
+        "jacketDrop": RIG["jacketDrop"],
+        "pelvisDrop": RIG["pelvisDrop"],
         "torsoHeight": round(TORSO_H, 5),
         "neckY": round(NECK_Y, 5),
         "shoulderX": RIG["shoulderX"],
@@ -1001,10 +1073,12 @@ def rig_dict():
         "footKneelTilt": round(RIG["footKneelTilt"], 5),
         "legTopDrop": RIG["legTopDrop"],
         "legLength": RIG["legLength"],
-        "kneelSkirtGrow": RIG["kneelSkirtGrow"],
-        "kneelSkirtScaleY": RIG["kneelSkirtScaleY"],
-        "kneelSkirtLift": RIG["kneelSkirtLift"],
+        "kneelPelvisGrow": RIG["kneelPelvisGrow"],
+        "kneelPelvisScaleY": RIG["kneelPelvisScaleY"],
+        "kneelPelvisLift": RIG["kneelPelvisLift"],
         "cushionTop": RIG["cushionTop"],
+        "robeTintSaturation": RIG["robeTintSaturation"],
+        "robeTintLightness": RIG["robeTintLightness"],
     }
 
 
@@ -1043,12 +1117,12 @@ def pose_matrices(kneel, cushion, stride=0.0):
     stride (-1 .. 1) swings the feet like the walk cycle does, so the stretched legs can be checked."""
     lift = cushion * kneel
     hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), 0))
-    grow = 1 + RIG["kneelSkirtGrow"] * kneel
-    skirt = hips @ tmat((0, RIG["kneelSkirtLift"] * kneel, 0), scale=(grow, lerp(1, RIG["kneelSkirtScaleY"], kneel), grow))
+    grow = 1 + RIG["kneelPelvisGrow"] * kneel
+    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, 0), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
     torso = hips
     head = torso @ tmat((0, NECK_Y, 0))
-    out = {"head": [head], "face": [head], "hair": [head], "skirt": [skirt], "torso": [torso], "trim": [torso]}
-    for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg"):
+    out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "trim": [torso]}
+    for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
@@ -1071,6 +1145,7 @@ def pose_matrices(kneel, cushion, stride=0.0):
             (1, sqrt(reach_y**2 + reach_z**2) / RIG["legLength"], 1),
         )
         out["leg"].append(leg)
+        out["trousers"].append(leg)
         out["sleeveUpper"].append(shoulder)
         out["sleeveLower"].append(elbow)
         out["hand"].append(hand)
@@ -1079,23 +1154,24 @@ def pose_matrices(kneel, cushion, stride=0.0):
 
 
 def robe_tint(hue):
-    r, g, b = colorsys.hls_to_rgb((hue % 360) / 360.0, 0.62, 0.42)
-    return (r, g, b, 1.0)
+    """The colour monk-model.ts multiplies into the robe's vertex colours for a monk of this hue (HSL in sRGB, as three.js reads it)."""
+    r, g, b = colorsys.hls_to_rgb((hue % 360) / 360.0, RIG["robeTintLightness"], RIG["robeTintSaturation"])
+    return (linear_channel(r), linear_channel(g), linear_channel(b), 1.0)
 
 
 def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["cushionTop"], stride=0.0):
     coll = new_collection(name)
     mats = pose_matrices(kneel, cushion, stride)
-    robe = {"torso", "skirt", "sleeveUpper", "sleeveLower"}
+    robe = {"torso", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
         data = src.data
         if tint_hue is not None and part in robe:
             data = src.data.copy()
-            colour = robe_tint(tint_hue)
+            tint = robe_tint(tint_hue)
             attr = data.color_attributes[COLOR_LAYER]
             for item in attr.data:
-                item.color = colour
+                item.color = [c * t for c, t in zip(item.color, tint)]
         for i, m in enumerate(matrices):
             obj = bpy.data.objects.new("%s_%d" % (part, i), data)
             obj.matrix_world = m

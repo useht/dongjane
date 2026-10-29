@@ -8,7 +8,7 @@ export const PART_NAMES = [
   "head",
   "face",
   "hair",
-  "skirt",
+  "pelvis",
   "torso",
   "trim",
   "sleeveUpper",
@@ -16,6 +16,7 @@ export const PART_NAMES = [
   "hand",
   "foot",
   "leg",
+  "trousers",
 ] as const;
 export type PartName = (typeof PART_NAMES)[number];
 
@@ -23,7 +24,7 @@ const PART_COPIES: Record<PartName, number> = {
   head: 1,
   face: 1,
   hair: 1,
-  skirt: 1,
+  pelvis: 1,
   torso: 1,
   trim: 1,
   sleeveUpper: 2,
@@ -31,9 +32,11 @@ const PART_COPIES: Record<PartName, number> = {
   hand: 2,
   foot: 2,
   leg: 2,
+  trousers: 2,
 };
 
-const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
+// The jacket (torso, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
+export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "trousers", "sleeveUpper", "sleeveLower"]);
 
 // Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
 // so the model and the animation always agree. Only pose angles and walk timing live in animate().
@@ -52,9 +55,11 @@ const FOOT_KNEEL_Y = rig.footKneelY;
 const FOOT_KNEEL_TILT = rig.footKneelTilt;
 const LEG_TOP_DROP = rig.legTopDrop;
 const LEG_LENGTH = rig.legLength;
-const KNEEL_SKIRT_GROW = rig.kneelSkirtGrow;
-const KNEEL_SKIRT_SCALE_Y = rig.kneelSkirtScaleY;
-const KNEEL_SKIRT_LIFT = rig.kneelSkirtLift;
+const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
+const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
+const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
+const ROBE_TINT_SATURATION = rig.robeTintSaturation;
+const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
 const CUSHION_TOP = rig.cushionTop;
 const HEAD_TOP_OFFSET = rig.crownY;
 const EMOTE_ANCHOR_Y = rig.crownY + 0.04;
@@ -78,7 +83,7 @@ export class MonkAvatar {
   slot = -1;
 
   private readonly hips = new Object3D();
-  private readonly skirtNode = new Object3D();
+  private readonly pelvisNode = new Object3D();
   private readonly torsoNode = new Object3D();
   private readonly headNode = new Object3D();
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
@@ -98,7 +103,7 @@ export class MonkAvatar {
     this.isSelf = isSelf;
 
     this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
-    this.hips.add(this.skirtNode, this.torsoNode);
+    this.hips.add(this.pelvisNode, this.torsoNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
@@ -120,7 +125,7 @@ export class MonkAvatar {
     bind("head", this.headNode);
     bind("face", this.headNode);
     bind("hair", this.headNode);
-    bind("skirt", this.skirtNode);
+    bind("pelvis", this.pelvisNode);
     bind("torso", this.torsoNode);
     bind("trim", this.torsoNode);
     for (let side = 0; side < 2; side += 1) {
@@ -129,6 +134,7 @@ export class MonkAvatar {
       bind("hand", this.handNodes[side] as Object3D, side);
       bind("foot", this.feet[side] as Object3D, side);
       bind("leg", this.legs[side] as Object3D, side);
+      bind("trousers", this.legs[side] as Object3D, side);
     }
   }
 
@@ -167,10 +173,11 @@ export class MonkAvatar {
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
 
-    const skirtY = 1 + (KNEEL_SKIRT_SCALE_Y - 1) * kneel;
-    const skirtXZ = 1 + KNEEL_SKIRT_GROW * kneel;
-    this.skirtNode.scale.set(skirtXZ, skirtY, skirtXZ);
-    this.skirtNode.position.y = KNEEL_SKIRT_LIFT * kneel;
+    // Kneeling, the seat of the trousers spreads over the cushion while the trouser legs fold behind with the legs.
+    const pelvisY = 1 + (KNEEL_PELVIS_SCALE_Y - 1) * kneel;
+    const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
+    this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
+    this.pelvisNode.position.y = KNEEL_PELVIS_LIFT * kneel;
 
     this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
     this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk;
@@ -212,7 +219,8 @@ export class MonkAvatar {
       foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
       foot.rotation.x = kneel * FOOT_KNEEL_TILT;
 
-      // The leg hangs from a pivot inside the skirt and is stretched to the ankle, so it follows strides, bobbing and the folded kneel.
+      // The leg (and the trouser leg hung on it) hangs from a pivot inside the pelvis and is stretched to the ankle, so it follows
+      // strides, bobbing and the folded kneel.
       const leg = this.legs[side] as Object3D;
       const topY = this.hips.position.y - LEG_TOP_DROP;
       const reachY = foot.position.y - topY;
@@ -239,8 +247,9 @@ export class MonkAvatar {
   }
 }
 
-function robeColor(hue: number, into: Color): Color {
-  return into.setHSL((((hue % 360) + 360) % 360) / 360, 0.42, 0.62);
+// The jacket and trousers are baked ash grey, so the tint is a near-white pastel of the monk's hue: grey times pastel stays grey with a hint of colour.
+export function robeColor(hue: number, into: Color): Color {
+  return into.setHSL((((hue % 360) + 360) % 360) / 360, ROBE_TINT_SATURATION, ROBE_TINT_LIGHTNESS);
 }
 
 export class MonkPool {
