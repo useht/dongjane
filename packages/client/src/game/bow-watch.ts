@@ -1,6 +1,6 @@
 export interface WatchedMonk {
   id: string;
-  name: string;
+  slot: number;
   x: number;
   z: number;
   mode: string;
@@ -8,7 +8,7 @@ export interface WatchedMonk {
 
 export interface BowReport {
   selfStarted: boolean;
-  greeters: string[];
+  greeters: number[];
 }
 
 export const NEARBY_METERS = 5;
@@ -47,7 +47,7 @@ export class BowWatcher {
       if (now - this.lastReport < GLOBAL_QUIET_MS) continue;
       this.spoke.set(monk.id, now);
       this.lastReport = now;
-      report.greeters.push(monk.name);
+      report.greeters.push(monk.slot);
     }
 
     for (const id of [...this.modes.keys()]) {

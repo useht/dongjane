@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBow, parseMove, parseRelocate, parseSetName, parseSit } from "../src/index.ts";
+import { parseBow, parseMove, parseRelocate, parseSit } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -41,12 +41,5 @@ describe("message parsers", () => {
     expect(parseRelocate({ hall: "3" })).toBeNull();
     expect(parseRelocate({})).toBeNull();
     expect(parseRelocate(null)).toBeNull();
-  });
-
-  it("requires a string name and caps absurd lengths", () => {
-    expect(parseSetName({ name: "동자" })).toEqual({ name: "동자" });
-    expect(parseSetName({ name: 5 })).toBeNull();
-    expect(parseSetName("동자")).toBeNull();
-    expect(parseSetName({ name: "x".repeat(10_000) })?.name.length).toBeLessThanOrEqual(64);
   });
 });

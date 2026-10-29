@@ -103,10 +103,6 @@ export class HallSession {
     this.send(MSG.bow, { times });
   }
 
-  rename(name: string): void {
-    this.send(MSG.setName, { name });
-  }
-
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;

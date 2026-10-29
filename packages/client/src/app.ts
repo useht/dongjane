@@ -1,4 +1,4 @@
-import { type HallInfo, type SeatResponse, type TempleState, defaultName, hallName, parseHallParam } from "@dongjane/shared";
+import { type HallInfo, type SeatResponse, type TempleState, hallName, parseHallParam, seatLabel } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
@@ -81,7 +81,6 @@ export class App {
     });
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
-      onRename: (name) => this.rename(name),
     });
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
@@ -104,10 +103,9 @@ export class App {
 
   async start(): Promise<void> {
     if (!this.profile) {
-      this.profile = { name: defaultName(), hue: newHue() };
+      this.profile = { hue: newHue() };
       saveProfile(this.profile);
     }
-    this.settingsSheet.setName(this.profile.name);
     this.world.setIdleSpin(false);
     const requested = parseHallParam(this.params.get("hall"));
     await this.enter(requested);
@@ -151,7 +149,7 @@ export class App {
           this.base,
           seat.roomId,
           seat.hall,
-          { name: profile.name, hue: profile.hue },
+          { hue: profile.hue },
           {
             onState: (state) => {
               if (token === this.joinToken) this.handleState(state);
@@ -231,7 +229,6 @@ export class App {
     state.monks.forEach((monk) => {
       views.push({
         id: monk.id,
-        name: monk.name,
         hue: monk.hue,
         x: monk.x,
         z: monk.z,
@@ -239,10 +236,10 @@ export class App {
         mode: monk.mode,
         cushionId: monk.cushionId,
       });
-      watched.push({ id: monk.id, name: monk.name, x: monk.x, z: monk.z, mode: monk.mode });
+      watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
-        name: monk.name,
+        slot: monk.slot,
         mode: monk.mode,
         cushionId: monk.cushionId,
         bowCount: monk.bowCount,
@@ -268,13 +265,13 @@ export class App {
     this.world.applyMonks(views, now);
     this.world.setOccupancy(occupied);
 
-    rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.name.localeCompare(b.name, "ko"));
+    rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
     this.syncHallCount(rows.length);
 
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
-    for (const name of report.greeters) this.hud.toast(`${name}님이 인사했어요`);
+    for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 
   private syncHallCount(count: number): void {
@@ -330,14 +327,6 @@ export class App {
 
   private stand(): void {
     if (this.self && this.self.mode !== "stand") this.session?.stand();
-  }
-
-  private rename(name: string): void {
-    if (!this.profile) return;
-    this.profile = { ...this.profile, name };
-    saveProfile(this.profile);
-    this.session?.rename(name);
-    this.hud.toast(`이제 ${name}(이)라고 불려요`);
   }
 
   private updateSettings(next: Settings): void {

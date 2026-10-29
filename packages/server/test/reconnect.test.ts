@@ -63,7 +63,7 @@ describe("reconnection window", () => {
   }, 20_000);
 
   it("keeps the seat and identity when the socket drops and comes back in time", async () => {
-    const a = await rig.enter(1, { name: "돌아옴" });
+    const a = await rig.enter(1);
     const b = await rig.enter(1);
     a.send("sit", { cushionId: 7 });
     await waitFor(() => b.state.monks.get(a.sessionId)?.mode === "kneel", "A kneels", 6000);

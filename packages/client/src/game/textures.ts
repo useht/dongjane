@@ -284,31 +284,3 @@ export function flameGlowTexture(): CanvasTexture {
   texture.colorSpace = SRGBColorSpace;
   return texture;
 }
-
-export function nameTexture(name: string, tint: string): { texture: CanvasTexture; aspect: number } {
-  const height = 72;
-  const font = `600 38px "Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif`;
-  const [probe, pctx] = makeCanvas(8, 8);
-  void probe;
-  pctx.font = font;
-  const textWidth = Math.ceil(pctx.measureText(name).width);
-  const width = Math.max(96, textWidth + 48);
-  const [canvas, ctx] = makeCanvas(width, height);
-  ctx.fillStyle = "rgba(34,20,10,0.62)";
-  ctx.beginPath();
-  ctx.roundRect(2, 6, width - 4, height - 12, 28);
-  ctx.fill();
-  ctx.strokeStyle = tint;
-  ctx.globalAlpha = 0.55;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-  ctx.font = font;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillStyle = "#fff4dc";
-  ctx.fillText(name, width / 2, height / 2 + 2);
-  const texture = new CanvasTexture(canvas);
-  texture.colorSpace = SRGBColorSpace;
-  return { texture, aspect: width / height };
-}

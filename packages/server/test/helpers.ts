@@ -64,7 +64,7 @@ export class TestRig {
     return (await response.json()) as SeatResponse;
   }
 
-  async join(seat: SeatResponse, options: { name?: string; hue?: number } = {}): Promise<HallClientRoom> {
+  async join(seat: SeatResponse, options: { hue?: number } = {}): Promise<HallClientRoom> {
     const room = await this.client.joinById<TempleState>(seat.roomId, options, TempleState);
     room.reconnection.minUptime = 0;
     this.rooms.push(room);
@@ -73,13 +73,13 @@ export class TestRig {
   }
 
   // Asks for a seat the way the page does and reports where the server actually put the visitor.
-  async arrive(requested: number | null, options: { name?: string; hue?: number } = {}) {
+  async arrive(requested: number | null, options: { hue?: number } = {}) {
     const seat = await this.seat(requested);
     return { seat, room: await this.join(seat, options) };
   }
 
   // Enters a hall that must already be open (or be the next one to open).
-  async enter(hall: number, options: { name?: string; hue?: number } = {}): Promise<HallClientRoom> {
+  async enter(hall: number, options: { hue?: number } = {}): Promise<HallClientRoom> {
     const { seat, room } = await this.arrive(hall, options);
     if (seat.hall !== hall) throw new Error(`asked for hall ${hall} but was seated in hall ${seat.hall}`);
     return room;

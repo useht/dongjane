@@ -6,7 +6,6 @@ import {
   HALLS_PATH,
   HALL_CAPACITY,
   HALL_SPARE_AT,
-  NAME_MAX_LENGTH,
   MSG,
   SEAT_PATH,
   isHallFullError,
@@ -173,7 +172,7 @@ describe("merging halls", () => {
     const seat = await rig.seat(relocations[0]!);
     expect(seat).toMatchObject({ hall: 1, fellBack: false });
     await lone.leave(true);
-    const moved = await rig.join(seat, { name: "옮긴이" });
+    const moved = await rig.join(seat);
     expect(moved.state.monks.size).toBe(HALL_CAPACITY);
 
     const halls = await eventually(
@@ -255,12 +254,12 @@ describe("merging halls", () => {
 
 describe("two clients in one hall", () => {
   it("shows A sitting and bowing to B within the time budget", async () => {
-    const a = await rig.enter(1, { name: "가온", hue: 40 });
-    const b = await rig.enter(1, { name: "나래", hue: 200 });
+    const a = await rig.enter(1, { hue: 40 });
+    const b = await rig.enter(1, { hue: 200 });
 
     await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
     const seenByB = b.state.monks.get(a.sessionId)!;
-    expect(seenByB.name).toBe("가온");
+    expect(seenByB.slot).toBe(1);
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
     expect(b.state.cushions.size).toBe(8);
@@ -414,31 +413,21 @@ describe("hardening", () => {
     expect(monk.z).toBeGreaterThanOrEqual(-3);
   }, 15_000);
 
-  it("rate-limits message floods", async () => {
-    const a = await rig.enter(1, { name: "시작" });
-    const monk = a.state.monks.get(a.sessionId)!;
-    for (let i = 0; i < 50; i += 1) a.send("setName", { name: `n${i}` });
-    await sleep(500);
-    const index = Number(monk.name.slice(1));
-    expect(monk.name).toMatch(/^n\d+$/);
-    expect(index).toBeGreaterThanOrEqual(15);
-    expect(index).toBeLessThan(30);
+  it("keeps serving a client after a message flood passes the rate window", async () => {
+    const a = await rig.enter(1);
+    for (let i = 0; i < 50; i += 1) a.send("stand");
+    await sleep(1200);
+    a.send("sit", { cushionId: 0 });
+    await waitFor(() => a.state.monks.get(a.sessionId)?.mode === "kneel", "sit accepted after the flood", 6000);
   });
 
-  it("sanitizes names from join options and setName", async () => {
-    const a = await rig.enter(1, { name: "\u0000  긴이름이정말정말길어요‮  " });
-    const monk = a.state.monks.get(a.sessionId)!;
-    expect(monk.name).toBe("긴이름이정말정말");
-    expect(Array.from(monk.name).length).toBeLessThanOrEqual(NAME_MAX_LENGTH);
-
-    a.send("setName", { name: "a\u0007b​c" });
-    await waitFor(() => monk.name === "abc", "control characters stripped");
-    a.send("setName", { name: " \u0000 " });
-    await sleep(150);
-    expect(monk.name).toBe("abc");
-
-    const b = await rig.enter(1, { name: 12345 as unknown as string });
-    expect(b.state.monks.get(b.sessionId)?.name).toMatch(/^동자\d{2}$/);
+  it("ignores any name a client sends and numbers visitors by arrival", async () => {
+    const a = await rig.enter(1, { name: "무시됨" } as unknown as { hue: number });
+    const b = await rig.enter(1);
+    const monkA = a.state.monks.get(a.sessionId)!;
+    expect(monkA.slot).toBe(1);
+    expect(b.state.monks.get(b.sessionId)?.slot).toBe(2);
+    expect("name" in monkA).toBe(false);
   });
 
   it("clamps hue from join options", async () => {

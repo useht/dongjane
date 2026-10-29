@@ -1,4 +1,4 @@
-import { type HallInfo, hallName } from "@dongjane/shared";
+import { type HallInfo, hallName, seatLabel } from "@dongjane/shared";
 import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
 import { type IconName, button, h, icon, iconButton, swapIcon } from "./dom.ts";
@@ -7,7 +7,7 @@ import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
   id: string;
-  name: string;
+  slot: number;
   mode: string;
   cushionId: number;
   bowCount: number;
@@ -145,7 +145,7 @@ export class Hud {
 
   setVisitors(rows: readonly VisitorRow[]): void {
     this.visitorBadge.textContent = String(rows.length);
-    const key = rows.map((row) => `${row.id}|${row.name}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
+    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
     this.visitorList.replaceChildren(
@@ -153,7 +153,7 @@ export class Hud {
         h(
           "li",
           row.isSelf ? "item self" : "item",
-          h("span", "item-main", h("strong", "", row.name), row.isSelf && h("em", "", "나")),
+          h("span", "item-main", h("strong", "", seatLabel(row.slot)), row.isSelf && h("em", "", "나")),
           h("span", "item-sub", `${modeLabel(row.mode, row.cushionId)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
         ),
       ),

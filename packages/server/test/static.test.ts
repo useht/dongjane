@@ -63,7 +63,7 @@ describe("client static serving", () => {
     expect(empty.halls).toEqual([]);
 
     const rig = new TestRig(game.port);
-    const room = await rig.enter(1, { name: "동자" });
+    const room = await rig.enter(1);
     const body = (await (await fetch(`${base}${HALLS_PATH}`)).json()) as HallListResponse;
     expect(body.halls).toHaveLength(1);
     expect(room.roomId).toBe(body.halls[0]!.roomId);

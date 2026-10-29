@@ -8,16 +8,13 @@ import {
   TICK_MS,
   type RelocateMessage,
   type TempleState,
-  defaultName,
   hallName,
   isValidHall,
   normalizeHue,
   parseBow,
   parseMove,
-  parseSetName,
   parseSit,
   randomHue,
-  sanitizeName,
 } from "@dongjane/shared";
 import { type DirectoryRoom, type HallDirectory, RELOCATION_GRACE_MS } from "./hall-directory.ts";
 import { TempleSim } from "./sim.ts";
@@ -101,11 +98,6 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
       const message = parseBow(payload);
       if (message) this.sim.bow(client.sessionId, message.times);
     });
-    this.onMessage(MSG.setName, (client, payload) => {
-      if (!this.allow(client)) return;
-      const message = parseSetName(payload);
-      if (message) this.sim.setName(client.sessionId, message.name);
-    });
 
     this.hallNumber = hall;
     this.directory = directory;
@@ -113,9 +105,8 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
   }
 
   override onJoin(client: Client, options?: JoinOptions): void {
-    const name = sanitizeName(options?.name) || defaultName();
     const hue = normalizeHue(options?.hue) ?? randomHue();
-    this.sim.join(client.sessionId, name, hue);
+    this.sim.join(client.sessionId, hue);
     this.sendRelocation(client);
     this.directory?.joined(this);
   }
