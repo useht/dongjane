@@ -1,5 +1,6 @@
 import "./style.css";
 import { App } from "./app.ts";
+import { type GameAssets, loadGameAssets } from "./assets/registry.ts";
 import { registerServiceWorker } from "./pwa.ts";
 
 function showFatal(message: string): void {
@@ -29,18 +30,28 @@ function webglAvailable(): boolean {
   }
 }
 
+async function boot(): Promise<void> {
+  let assets: GameAssets;
+  try {
+    assets = await loadGameAssets();
+  } catch (error) {
+    console.error(error);
+    showFatal("법당을 불러오지 못했어요. 다시 시도해 주세요.");
+    return;
+  }
+  document.getElementById("boot")?.remove();
+  try {
+    await new App(assets).start();
+  } catch (error) {
+    console.error(error);
+    showFatal("예상하지 못한 문제가 생겼어요. 다시 시도해 주세요.");
+  }
+}
+
 registerServiceWorker();
 
 if (!webglAvailable()) {
   showFatal("이 기기에서는 3D 화면을 열 수 없어요. 다른 브라우저로 열어 보세요.");
 } else {
-  try {
-    void new App().start().catch((error: unknown) => {
-      console.error(error);
-      showFatal("예상하지 못한 문제가 생겼어요. 다시 시도해 주세요.");
-    });
-  } catch (error) {
-    console.error(error);
-    showFatal("예상하지 못한 문제가 생겼어요. 다시 시도해 주세요.");
-  }
+  void boot();
 }

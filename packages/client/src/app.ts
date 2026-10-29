@@ -1,4 +1,5 @@
 import { type HallInfo, type TempleState, hallName, parseHallParam } from "@dongjane/shared";
+import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
@@ -60,15 +61,19 @@ export class App {
   private lastViews: MonkView[] = [];
   private lost = false;
 
-  constructor() {
+  constructor(assets: GameAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
     this.ui = document.getElementById("ui") as HTMLElement;
 
-    this.world = new World(this.canvas, {
-      onPickCushion: (id) => this.pickCushion(id),
-      onPickFloor: (x, z) => this.session?.move(x, z),
-      onFrame: (dt, now) => this.frame(dt, now),
-    });
+    this.world = new World(
+      this.canvas,
+      {
+        onPickCushion: (id) => this.pickCushion(id),
+        onPickFloor: (x, z) => this.session?.move(x, z),
+        onFrame: (dt, now) => this.frame(dt, now),
+      },
+      assets,
+    );
     this.world.setReduceMotion(this.settings.reduceMotion);
 
     this.hud = new Hud(this.ui, {

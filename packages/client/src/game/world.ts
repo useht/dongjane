@@ -16,6 +16,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { HALL_FRONT_Z, HALL_HALF_WIDTH, lerpAngle, resolveWalkable, SPAWN_POINT } from "@dongjane/shared";
+import type { GameAssets } from "../assets/registry.ts";
 import { CameraRig, DEFAULT_VIEW, configureCamera } from "./camera-rig.ts";
 import { Hall } from "./hall.ts";
 import { HALL_BOUNDS } from "./hall-layout.ts";
@@ -100,6 +101,7 @@ export class World {
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: WorldCallbacks,
+    private readonly assets: GameAssets,
   ) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.quality = detectQuality({
@@ -118,9 +120,9 @@ export class World {
     this.scene.background = new Color(0x1c120b);
     this.scene.fog = new Fog(0x2a1a10, 16, 42);
 
-    this.hall = new Hall(this.renderer, this.quality);
+    this.hall = new Hall(this.renderer, this.quality, assets.models.hall, assets.models.buddha);
     this.scene.add(this.hall.group);
-    this.pool = new MonkPool(this.scene, MAX_MONKS);
+    this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
 
     this.rig = new CameraRig(this.camera, HALL_BOUNDS);
     this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
@@ -276,6 +278,7 @@ export class World {
     this.clear();
     this.pool.dispose();
     this.hall.dispose();
+    this.assets.dispose();
     this.marker.geometry.dispose();
     this.selfRing.geometry.dispose();
     this.renderer.dispose();

@@ -1,25 +1,19 @@
 import {
-  type BufferGeometry,
-  CapsuleGeometry,
   Color,
-  CylinderGeometry,
+  DynamicDrawUsage,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   MeshLambertMaterial,
   Object3D,
   type PerspectiveCamera,
-  SphereGeometry,
   Sprite,
   SpriteMaterial,
-  TorusGeometry,
   Vector3,
-  BoxGeometry,
-  DynamicDrawUsage,
-  InstancedBufferAttribute,
 } from "three";
 import { BOW_MS } from "@dongjane/shared";
 import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
-import { GeometryBuilder } from "./geometry.ts";
+import type { ModelMeshes } from "../assets/registry.ts";
 import {
   CUSHION_TOP,
   FOOT_X,
@@ -32,8 +26,6 @@ import {
   PART_COPIES,
   SHOULDER_X,
   SHOULDER_Y,
-  SKIRT_DROP,
-  TORSO_HEIGHT,
   UPPER_ARM,
 } from "./monk-rig.ts";
 import { fitPlate } from "./nameplate-fit.ts";
@@ -42,68 +34,11 @@ import { nameTexture } from "./textures.ts";
 
 const ROBE_PARTS: ReadonlySet<MonkPart> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
-const SKIN = 0xf3cba2;
-const WHITE = 0xffffff;
-
-function buildPartGeometries(): Record<MonkPart, BufferGeometry> {
-  const head = new GeometryBuilder()
-    .add(new SphereGeometry(0.19, 22, 16), SKIN, { y: 0.22 })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: -0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: 0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new CylinderGeometry(0.06, 0.07, 0.1, 10), SKIN, { y: 0.02 })
-    .build();
-
-  const face = new GeometryBuilder()
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: -0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: 0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: -0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: 0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new TorusGeometry(0.03, 0.0065, 5, 10, Math.PI), 0x9a4a3c, { y: 0.158, z: -0.178, rz: Math.PI })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: -0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: 0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { y: 0.408, z: 0.03 })
-    .build();
-
-  const skirt = new GeometryBuilder()
-    .add(new CylinderGeometry(0.17, 0.27, SKIRT_DROP, 22, 1), WHITE, { y: -SKIRT_DROP / 2 })
-    .build();
-
-  const torso = new GeometryBuilder()
-    .add(new CylinderGeometry(0.15, 0.19, TORSO_HEIGHT, 20, 1), WHITE, { y: TORSO_HEIGHT / 2 })
-    .add(new SphereGeometry(0.15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), WHITE, { y: TORSO_HEIGHT - 0.01, sy: 0.35 })
-    .build();
-
-  const trim = new GeometryBuilder()
-    .add(new TorusGeometry(0.19, 0.024, 8, 24), 0xc99a3a, { y: 0.03, rx: Math.PI / 2 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: -0.045, y: 0.28, z: -0.154, rz: 0.78 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: 0.045, y: 0.28, z: -0.154, rz: -0.78 })
-    .build();
-
-  const sleeveUpper = new GeometryBuilder()
-    .add(new CylinderGeometry(0.07, 0.085, UPPER_ARM, 12, 1), WHITE, { y: -UPPER_ARM / 2 })
-    .add(new SphereGeometry(0.07, 10, 8), WHITE)
-    .build();
-
-  const sleeveLower = new GeometryBuilder()
-    .add(new CylinderGeometry(0.085, 0.108, FORE_ARM + 0.01, 12, 1), WHITE, { y: -FORE_ARM / 2 })
-    .build();
-
-  const hand = new GeometryBuilder().add(new SphereGeometry(0.046, 10, 8), SKIN, { y: -0.01 }).build();
-
-  const foot = new GeometryBuilder()
-    .add(new CapsuleGeometry(0.05, 0.1, 4, 8), 0xf4eee0, { rx: Math.PI / 2, sy: 1, sz: 0.8, z: -0.03 })
-    .build();
-
-  return { head, face, skirt, torso, trim, sleeveUpper, sleeveLower, hand, foot };
-}
-
 interface Binding {
   part: MonkPart;
   copy: number;
   node: Object3D;
 }
-
-let sharedGeometries: Record<MonkPart, BufferGeometry> | null = null;
 
 export class MonkAvatar {
   readonly id: string;
@@ -294,17 +229,20 @@ export class MonkPool {
   readonly capacity: number;
   private readonly meshes = new Map<MonkPart, InstancedMesh>();
   private readonly avatars: MonkAvatar[] = [];
+  private readonly material = new MeshLambertMaterial({ vertexColors: true });
   private readonly robe = new Color();
   private readonly white = new Color(1, 1, 1);
 
-  constructor(private readonly host: Object3D, capacity = 40) {
+  constructor(
+    private readonly host: Object3D,
+    parts: ModelMeshes<"monk">,
+    capacity = 40,
+  ) {
     this.capacity = capacity;
     host.add(this.group);
-    sharedGeometries ??= buildPartGeometries();
-    const material = new MeshLambertMaterial({ vertexColors: true });
     for (const part of MONK_PARTS) {
       const size = capacity * PART_COPIES[part];
-      const mesh = new InstancedMesh(sharedGeometries[part], material, size);
+      const mesh = new InstancedMesh(parts[part].geometry, this.material, size);
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(size * 3).fill(1), 3);
       mesh.instanceColor.setUsage(DynamicDrawUsage);
@@ -376,6 +314,7 @@ export class MonkPool {
   dispose(): void {
     for (const avatar of [...this.avatars]) this.remove(avatar);
     for (const mesh of this.meshes.values()) mesh.dispose();
+    this.material.dispose();
     this.group.removeFromParent();
   }
 }

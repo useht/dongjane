@@ -1,14 +1,10 @@
 import {
   AdditiveBlending,
   BackSide,
-  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   Camera,
-  CircleGeometry,
   Color,
-  ConeGeometry,
-  CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   DynamicDrawUsage,
@@ -18,7 +14,7 @@ import {
   type Intersection,
   InstancedBufferAttribute,
   InstancedMesh,
-  LatheGeometry,
+  type Material,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
@@ -33,25 +29,15 @@ import {
   Scene,
   SphereGeometry,
   type Texture,
-  TorusGeometry,
-  Vector2,
   Vector3,
   type WebGLRenderer,
-  IcosahedronGeometry,
 } from "three";
-import { BUDDHA_Z, CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
+import { BUDDHA_Z, CUSHION_SPOTS } from "@dongjane/shared";
+import { type ModelMeshes, textureOf } from "../assets/registry.ts";
+import { THEME } from "../theme.ts";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
-import { GeometryBuilder, type Placement } from "./geometry.ts";
-import { ALTAR_TOP, BACK_Z, CANDLE_SPOTS, HEIGHT, SUN_POSITION as SUN_POSITION_AT, SUN_TARGET as SUN_TARGET_AT, WALL_X } from "./hall-layout.ts";
-import {
-  backdropTexture,
-  beamGlowTexture,
-  cushionTexture,
-  floorTexture,
-  flameGlowTexture,
-  mulberry32,
-  skyTexture,
-} from "./textures.ts";
+import { ALTAR_TOP, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./hall-layout.ts";
+import { flameGlowTexture, mulberry32 } from "./textures.ts";
 
 export interface HallQuality {
   shadows: boolean;
@@ -60,64 +46,20 @@ export interface HallQuality {
   anisotropy: number;
 }
 
-const PLASTER = 0xeadcb9;
-const WOOD_DARK = 0x4a2d1a;
-const WOOD_MID = 0x6b4326;
-const LACQUER = 0x9a2f20;
-const GOLD = 0xd9ad48;
-const GOLD_ACCENT = [0xd9ad48, 0x2f7d6b, 0xe6b43c, 0xc43d2d];
-
-const SUN_POSITION = new Vector3(...SUN_POSITION_AT);
-const SUN_TARGET = new Vector3(...SUN_TARGET_AT);
-
-function buildDoorSection(width: number, window: boolean): { wood: BufferGeometry; paper: BufferGeometry | null } {
-  const wood = new GeometryBuilder();
-  const inner = width - 0.2;
-  const bottom = 0.9;
-  const openHeight = 3.7;
-
-  wood.add(new BoxGeometry(width, bottom, 0.14), WOOD_MID, { y: bottom / 2, z: 0.07 });
-  wood.add(new BoxGeometry(width, HEIGHT - bottom - openHeight, 0.16), 0xd9c59a, {
-    y: bottom + openHeight + (HEIGHT - bottom - openHeight) / 2,
-    z: 0.08,
-  });
-  const stripColors = [0x2f7d6b, 0xc43d2d, 0xe6b43c];
-  stripColors.forEach((color, i) => {
-    wood.add(new BoxGeometry(width, 0.1, 0.19), color, { y: bottom + openHeight + 0.12 + i * 0.13, z: 0.1 });
-  });
-  wood.add(new BoxGeometry(width, 0.1, 0.14), WOOD_DARK, { y: bottom + openHeight + 0.05, z: 0.09 });
-  wood.add(new BoxGeometry(0.1, openHeight, 0.12), WOOD_DARK, { x: -inner / 2, y: bottom + openHeight / 2, z: 0.07 });
-  wood.add(new BoxGeometry(0.1, openHeight, 0.12), WOOD_DARK, { x: inner / 2, y: bottom + openHeight / 2, z: 0.07 });
-
-  const columns = Math.max(2, Math.round(inner / 0.42));
-  for (let i = 1; i < columns; i += 1) {
-    const x = -inner / 2 + (inner * i) / columns;
-    wood.add(new BoxGeometry(0.035, openHeight, 0.05), WOOD_DARK, { x, y: bottom + openHeight / 2, z: 0.08 });
-  }
-  for (let k = 0; k <= 5; k += 1) {
-    wood.add(new BoxGeometry(inner, 0.035, 0.05), WOOD_DARK, { y: bottom + (openHeight * k) / 5, z: 0.08 });
-  }
-  if (window) {
-    wood.add(new BoxGeometry(width + 0.1, 0.08, 0.34), WOOD_MID, { y: bottom + 0.02, z: 0.14 });
-    return { wood: wood.build(), paper: null };
-  }
-  wood.add(new BoxGeometry(0.1, openHeight, 0.1), WOOD_DARK, { y: bottom + openHeight / 2, z: 0.09 });
-
-  const paper = new GeometryBuilder().add(new PlaneGeometry(inner, openHeight), 0xffffff, {
-    y: bottom + openHeight / 2,
-    z: 0.04,
-  });
-  return { wood: wood.build(), paper: paper.build() };
+interface Shadows {
+  cast?: boolean;
+  receive?: boolean;
 }
 
 function buildEnvironment(renderer: WebGLRenderer): Texture {
+  const { scene: palette } = THEME;
   const scene = new Scene();
   const dome = new SphereGeometry(10, 24, 16);
   const position = dome.getAttribute("position");
   const colors = new Float32Array(position.count * 3);
-  const top = new Color(0xfff1d2);
-  const mid = new Color(0xb98a52);
-  const low = new Color(0x2e1c10);
+  const top = new Color(palette.envTop);
+  const mid = new Color(palette.envMid);
+  const low = new Color(palette.envLow);
   const mix = new Color();
   for (let i = 0; i < position.count; i += 1) {
     const t = position.getY(i) / 10;
@@ -128,12 +70,17 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
     colors[i * 3 + 2] = mix.b;
   }
   dome.setAttribute("color", new BufferAttribute(colors, 3));
-  scene.add(new Mesh(dome, new MeshBasicMaterial({ vertexColors: true, side: BackSide })));
-  const lamp = new Mesh(new PlaneGeometry(5, 4), new MeshBasicMaterial({ color: new Color(1, 0.9, 0.7).multiplyScalar(7), side: DoubleSide }));
+  const domeMaterial = new MeshBasicMaterial({ vertexColors: true, side: BackSide });
+  scene.add(new Mesh(dome, domeMaterial));
+  const panels = new PlaneGeometry(5, 4);
+  const lampMaterial = new MeshBasicMaterial({ color: new Color(palette.envLamp).multiplyScalar(7), side: DoubleSide });
+  const lamp = new Mesh(panels, lampMaterial);
   lamp.position.set(8, 4, 0);
   lamp.rotation.y = -Math.PI / 2;
   scene.add(lamp);
-  const candle = new Mesh(new PlaneGeometry(3, 2), new MeshBasicMaterial({ color: new Color(1, 0.62, 0.3).multiplyScalar(4), side: DoubleSide }));
+  const candleGeometry = new PlaneGeometry(3, 2);
+  const candleMaterial = new MeshBasicMaterial({ color: new Color(palette.envCandle).multiplyScalar(4), side: DoubleSide });
+  const candle = new Mesh(candleGeometry, candleMaterial);
   candle.position.set(0, 2, 8);
   candle.rotation.y = Math.PI;
   scene.add(candle);
@@ -141,7 +88,8 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   const generator = new PMREMGenerator(renderer);
   const target = generator.fromScene(scene, 0.03);
   generator.dispose();
-  dome.dispose();
+  for (const geometry of [dome, panels, candleGeometry]) geometry.dispose();
+  for (const material of [domeMaterial, lampMaterial, candleMaterial]) material.dispose();
   return target.texture;
 }
 
@@ -158,26 +106,27 @@ export class Hall {
   private readonly dustSeeds: Float32Array;
   private readonly cushionBody: InstancedMesh;
   private readonly cushionTop: InstancedMesh;
+  private readonly glow: Texture;
+  private readonly materials: Material[] = [];
   private readonly occupied = new Set<number>();
   private readonly tmpMatrix = new Matrix4();
   private readonly tmpQuat = new Quaternion();
   private readonly tmpScale = new Vector3();
   private readonly tmpPos = new Vector3();
   private readonly tint = new Color();
-  private readonly textures: Texture[] = [];
 
-  constructor(renderer: WebGLRenderer, quality: HallQuality) {
+  constructor(renderer: WebGLRenderer, quality: HallQuality, meshes: ModelMeshes<"hall">, buddha: ModelMeshes<"buddha">) {
+    const { scene: palette } = THEME;
     this.group.name = "hall";
     this.environment = buildEnvironment(renderer);
-    this.buddha = buildBuddha(this.environment);
-    const anisotropy = quality.anisotropy;
+    this.buddha = buildBuddha(buddha, this.environment);
+    const { anisotropy } = quality;
 
-    const hemisphere = new HemisphereLight(0xffe2b4, 0x6b4a2a, 1.25);
-    this.group.add(hemisphere);
+    this.group.add(new HemisphereLight(palette.hemiSky, palette.hemiGround, 1.25));
 
-    this.sun = new DirectionalLight(0xffd8a0, 3.1);
-    this.sun.position.copy(SUN_POSITION);
-    this.sun.target.position.copy(SUN_TARGET);
+    this.sun = new DirectionalLight(palette.sun, 3.1);
+    this.sun.position.set(...SUN_POSITION);
+    this.sun.target.position.set(...SUN_TARGET);
     this.sun.castShadow = quality.shadows;
     if (quality.shadows) {
       this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
@@ -193,57 +142,56 @@ export class Hall {
     }
     this.group.add(this.sun, this.sun.target);
 
-    this.candleLight = new PointLight(0xffb066, 9, 11, 2);
+    this.candleLight = new PointLight(palette.candle, 9, 11, 2);
     this.candleLight.position.set(0, 1.7, BUDDHA_Z + 1.4);
     this.group.add(this.candleLight);
 
-    const structure = this.buildStructure();
-    const structureMesh = new Mesh(structure.opaque, new MeshLambertMaterial({ vertexColors: true }));
-    structureMesh.castShadow = true;
-    structureMesh.receiveShadow = true;
-    structureMesh.name = "structure";
-    this.group.add(structureMesh);
+    const lit = (): MeshLambertMaterial => new MeshLambertMaterial({ vertexColors: true });
+    this.add(meshes.structure, lit(), { cast: true, receive: true });
+    this.add(meshes.beams, lit());
+    this.add(meshes.paper, new MeshLambertMaterial({ vertexColors: true, emissive: palette.paperGlow, emissiveIntensity: 0.55 }));
+    this.add(meshes.outdoor, lit());
+    this.add(meshes.lanterns, new MeshBasicMaterial({ vertexColors: true, fog: false }));
 
-    const paperMesh = new Mesh(
-      structure.paper,
-      new MeshLambertMaterial({ vertexColors: true, color: 0xf7e6bd, emissive: 0xc79a55, emissiveIntensity: 0.55 }),
+    const floorMap = textureOf(meshes.floor);
+    const backdropMap = textureOf(meshes.backdrop);
+    const cushionMap = textureOf(meshes.cushionTop);
+    for (const map of [floorMap, backdropMap, cushionMap]) map.anisotropy = anisotropy;
+    this.add(meshes.floor, new MeshLambertMaterial({ map: floorMap }), { receive: true });
+    this.add(
+      meshes.backdrop,
+      new MeshLambertMaterial({ map: backdropMap, emissive: palette.muralGlow, emissiveMap: backdropMap, emissiveIntensity: 0.55 }),
+      { receive: true },
     );
-    paperMesh.name = "paper";
-    this.group.add(paperMesh);
-
-    const floorMap = floorTexture(anisotropy);
-    floorMap.repeat.set(2, 2.1);
-    const floor = new Mesh(new PlaneGeometry(HALL_HALF_WIDTH * 2, HALL_FRONT_Z - BACK_Z), new MeshLambertMaterial({ map: floorMap }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, 0, (HALL_FRONT_Z + BACK_Z) / 2);
-    floor.receiveShadow = true;
-    floor.name = "floor";
-    this.group.add(floor);
-
-    const backdropMap = backdropTexture(anisotropy);
-    const backdrop = new Mesh(new PlaneGeometry(HALL_HALF_WIDTH * 2, 6), new MeshLambertMaterial({ map: backdropMap, emissive: 0x2a1c0c, emissiveMap: backdropMap, emissiveIntensity: 0.55 }));
-    backdrop.position.set(0, 3, BACK_Z + 0.02);
-    backdrop.receiveShadow = true;
-    backdrop.name = "backdrop";
-    this.group.add(backdrop);
+    this.add(meshes.sky, new MeshBasicMaterial({ map: textureOf(meshes.sky), fog: false, toneMapped: false }));
+    this.add(
+      meshes.sunbeams,
+      new MeshBasicMaterial({
+        map: textureOf(meshes.sunbeams),
+        color: palette.beamTint,
+        transparent: true,
+        opacity: 0.32,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+        fog: false,
+      }),
+    );
 
     this.buddha.group.position.set(0, ALTAR_TOP, BUDDHA_Z - 0.5);
     this.group.add(this.buddha.group);
 
-    this.buildOutdoors();
-    this.buildBeams();
-
-    const cushions = this.buildCushions(anisotropy);
-    this.cushionBody = cushions.body;
-    this.cushionTop = cushions.top;
+    this.cushionBody = this.instance(meshes.cushionBody, lit(), "cushion-body", { cast: true, receive: true });
+    this.cushionTop = this.instance(meshes.cushionTop, new MeshLambertMaterial({ map: cushionMap }), "cushion-top", { receive: true });
+    this.placeCushions();
     this.pickables.push(this.cushionBody, this.cushionTop);
 
+    this.glow = flameGlowTexture();
     this.flames = this.buildCandles();
 
     const dustCount = quality.dust;
     this.dustSeeds = new Float32Array(dustCount * 4);
     const rand = mulberry32(31);
-    const dustPositions = new Float32Array(dustCount * 3);
     for (let i = 0; i < dustCount; i += 1) {
       this.dustSeeds[i * 4] = rand() * Math.PI * 2;
       this.dustSeeds[i * 4 + 1] = 0.2 + rand() * 0.5;
@@ -251,255 +199,59 @@ export class Hall {
       this.dustSeeds[i * 4 + 3] = rand();
     }
     const dustGeometry = new BufferGeometry();
-    dustGeometry.setAttribute("position", new Float32BufferAttribute(dustPositions, 3));
-    const dustMap = flameGlowTexture();
-    this.textures.push(floorMap, backdropMap, dustMap);
-    this.dust = new Points(
-      dustGeometry,
-      new PointsMaterial({
-        map: dustMap,
-        size: 0.09,
-        transparent: true,
-        opacity: 0.55,
-        depthWrite: false,
-        blending: AdditiveBlending,
-        color: 0xfff0c8,
-        fog: false,
-      }),
-    );
+    dustGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(dustCount * 3), 3));
+    const dustMaterial = new PointsMaterial({
+      map: this.glow,
+      size: 0.09,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      color: palette.dust,
+      fog: false,
+    });
+    this.materials.push(dustMaterial);
+    this.dust = new Points(dustGeometry, dustMaterial);
     this.dust.frustumCulled = false;
     this.group.add(this.dust);
     this.update(0, null, true);
   }
 
-  private buildStructure(): { opaque: BufferGeometry; paper: BufferGeometry } {
-    const opaque = new GeometryBuilder();
-    const paper = new GeometryBuilder();
-    const wallDepth = 0.5;
-
-    opaque.add(new BoxGeometry(wallDepth, HEIGHT + 0.4, HALL_FRONT_Z - BACK_Z + 1), PLASTER, {
-      x: -WALL_X - wallDepth / 2,
-      y: HEIGHT / 2,
-      z: (HALL_FRONT_Z + BACK_Z) / 2,
-    });
-    opaque.add(new BoxGeometry(HALL_HALF_WIDTH * 2 + 1, HEIGHT + 0.4, wallDepth), PLASTER, { y: HEIGHT / 2, z: HALL_FRONT_Z + wallDepth / 2 });
-    opaque.add(new BoxGeometry(HALL_HALF_WIDTH * 2 + 1, HEIGHT + 0.4, wallDepth), PLASTER, { y: HEIGHT / 2, z: BACK_Z - wallDepth / 2 });
-
-    const windowFrom = -2.1;
-    const windowTo = 2.0;
-    const rightBack = windowFrom - BACK_Z;
-    const rightFront = HALL_FRONT_Z - windowTo;
-    opaque.add(new BoxGeometry(wallDepth, HEIGHT + 0.4, rightBack), PLASTER, { x: WALL_X + wallDepth / 2, y: HEIGHT / 2, z: BACK_Z + rightBack / 2 });
-    opaque.add(new BoxGeometry(wallDepth, HEIGHT + 0.4, rightFront), PLASTER, { x: WALL_X + wallDepth / 2, y: HEIGHT / 2, z: windowTo + rightFront / 2 });
-    opaque.add(new BoxGeometry(wallDepth, 0.9, windowTo - windowFrom), PLASTER, { x: WALL_X + wallDepth / 2, y: 0.45, z: (windowFrom + windowTo) / 2 });
-    opaque.add(new BoxGeometry(wallDepth, HEIGHT - 4.6, windowTo - windowFrom), PLASTER, {
-      x: WALL_X + wallDepth / 2,
-      y: 4.6 + (HEIGHT - 4.6) / 2,
-      z: (windowFrom + windowTo) / 2,
-    });
-
-    const addSection = (width: number, window: boolean, at: Placement): void => {
-      const section = buildDoorSection(width, window);
-      opaque.addBuilt(section.wood, at);
-      if (section.paper) paper.addBuilt(section.paper, at);
-    };
-    const sideSections: ReadonlyArray<readonly [number, number, boolean]> = [
-      [-4.25, 4.3, false],
-      [-0.05, 4.1, true],
-      [4.0, 4.0, false],
-    ];
-    for (const [z, width, isWindow] of sideSections) {
-      addSection(width, false, { x: -WALL_X + 0.0, z, ry: Math.PI / 2 });
-      addSection(width, isWindow, { x: WALL_X - 0.0, z, ry: -Math.PI / 2 });
-    }
-    for (const [x, width] of [[-4.25, 4.3], [0, 4.2], [4.25, 4.3]] as const) {
-      addSection(width, false, { x, z: HALL_FRONT_Z, ry: Math.PI });
-    }
-
-    const pillarZ = [-6.4, -2.1, 2.0, 6.0];
-    const pillarX = WALL_X - 0.45;
-    const pillar = (x: number, z: number): void => {
-      opaque.add(new CylinderGeometry(0.25, 0.27, HEIGHT, 18), LACQUER, { x, y: HEIGHT / 2, z });
-      opaque.add(new CylinderGeometry(0.34, 0.38, 0.28, 18), 0x8b8070, { x, y: 0.14, z });
-      opaque.add(new TorusGeometry(0.26, 0.03, 6, 18), GOLD, { x, y: HEIGHT - 0.55, z, rx: Math.PI / 2 });
-      opaque.add(new BoxGeometry(0.7, 0.3, 0.7), 0x2f7d6b, { x, y: HEIGHT - 0.2, z });
-    };
-    for (const z of pillarZ) {
-      pillar(-pillarX, z);
-      pillar(pillarX, z);
-    }
-    for (const x of [-pillarX, pillarX]) pillar(x, 7.4);
-
-    const altarWidth = 7.8;
-    opaque.add(new BoxGeometry(altarWidth, 0.32, 3.2), LACQUER, { y: 0.16, z: BUDDHA_Z - 0.3 });
-    opaque.add(new BoxGeometry(altarWidth + 0.1, 0.05, 3.3), GOLD, { y: 0.34, z: BUDDHA_Z - 0.3 });
-    opaque.add(new BoxGeometry(6.8, 0.26, 2.6), 0x7a2418, { y: 0.32 + 0.13 + 0.02, z: BUDDHA_Z - 0.3 });
-    opaque.add(new BoxGeometry(6.9, 0.05, 2.7), GOLD, { y: ALTAR_TOP - 0.01, z: BUDDHA_Z - 0.3 });
-    for (let i = 0; i < 7; i += 1) {
-      opaque.add(new BoxGeometry(0.6, 0.18, 0.04), GOLD_ACCENT[i % GOLD_ACCENT.length] as number, {
-        x: -3.0 + i * 1.0,
-        y: 0.16,
-        z: BUDDHA_Z - 0.3 + 1.61,
-      });
-    }
-
-    opaque.add(
-      new LatheGeometry(
-        [new Vector2(0.001, 0), new Vector2(0.24, 0.02), new Vector2(0.3, 0.1), new Vector2(0.24, 0.2), new Vector2(0.3, 0.26), new Vector2(0.27, 0.28), new Vector2(0.001, 0.26)],
-        20,
-      ),
-      0x8a6428,
-      { y: ALTAR_TOP, z: BUDDHA_Z + 0.85 },
-    );
-    for (const [x, z] of CANDLE_SPOTS) {
-      opaque.add(new CylinderGeometry(0.13, 0.15, 0.06, 12), 0x8a6428, { x, y: ALTAR_TOP + 0.03, z });
-      opaque.add(new CylinderGeometry(0.05, 0.055, 0.34, 10), 0xf6ecd8, { x, y: ALTAR_TOP + 0.23, z });
-      opaque.add(new CylinderGeometry(0.004, 0.004, 0.05, 4), 0x2b1a12, { x, y: ALTAR_TOP + 0.425, z });
-    }
-
-    return { opaque: opaque.build(), paper: paper.build() };
+  private add(source: Mesh, material: Material, shadows: Shadows = {}): void {
+    const mesh = new Mesh(source.geometry, material);
+    mesh.name = source.name;
+    mesh.castShadow = shadows.cast ?? false;
+    mesh.receiveShadow = shadows.receive ?? false;
+    this.materials.push(material);
+    this.group.add(mesh);
   }
 
-  private buildBeams(): void {
-    const b = new GeometryBuilder();
-    b.add(new BoxGeometry(HALL_HALF_WIDTH * 2 + 1.4, 0.3, HALL_FRONT_Z - BACK_Z + 1.4), 0x33200f, { y: HEIGHT + 0.15, z: (HALL_FRONT_Z + BACK_Z) / 2 });
-    for (const z of [-6.4, -2.1, 2.0, 6.0, 7.4]) {
-      b.add(new BoxGeometry(HALL_HALF_WIDTH * 2, 0.42, 0.36), WOOD_DARK, { y: HEIGHT - 0.55, z });
-      b.add(new BoxGeometry(HALL_HALF_WIDTH * 2, 0.07, 0.4), 0x2f7d6b, { y: HEIGHT - 0.8, z });
-      b.add(new BoxGeometry(HALL_HALF_WIDTH * 2, 0.05, 0.4), 0xc43d2d, { y: HEIGHT - 0.87, z });
-    }
-    for (const x of [-WALL_X + 0.45, -3.4, 0, 3.4, WALL_X - 0.45]) {
-      b.add(new BoxGeometry(0.34, 0.42, HALL_FRONT_Z - BACK_Z), WOOD_MID, { x, y: HEIGHT - 0.2, z: (HALL_FRONT_Z + BACK_Z) / 2 });
-    }
-    const beams = new Mesh(b.build(), new MeshLambertMaterial({ vertexColors: true }));
-    beams.name = "beams";
-    this.group.add(beams);
-
-    const lanterns = new GeometryBuilder();
-    lanterns.add(
-      new LatheGeometry(
-        [new Vector2(0.001, -0.3), new Vector2(0.12, -0.28), new Vector2(0.24, -0.15), new Vector2(0.28, 0), new Vector2(0.24, 0.15), new Vector2(0.12, 0.28), new Vector2(0.001, 0.3)],
-        14,
-      ),
-      0xffffff,
-    );
-    lanterns.add(new CylinderGeometry(0.1, 0.1, 0.06, 10), 0x4a2c18, { y: 0.31 });
-    lanterns.add(new CylinderGeometry(0.012, 0.012, 1.3, 4), 0x4a2c18, { y: 0.99 });
-    lanterns.add(new CylinderGeometry(0.07, 0.01, 0.34, 6), 0xe6b43c, { y: -0.47 });
-    const spots: Array<[number, number]> = [];
-    for (const x of [-4.4, -1.5, 1.5, 4.4]) {
-      for (const z of [-3.2, 0.8, 4.8]) spots.push([x, z]);
-    }
-    const lanternMesh = new InstancedMesh(lanterns.build(), new MeshBasicMaterial({ vertexColors: true, fog: false }), spots.length);
-    const palette = [0xff8a5a, 0xffc15a, 0xff7a8a, 0xffd88a];
-    const m = new Matrix4();
-    const color = new Color();
-    spots.forEach(([x, z], i) => {
-      lanternMesh.setMatrixAt(i, m.makeTranslation(x, 4.5 + ((i * 7) % 3) * 0.12, z));
-      lanternMesh.setColorAt(i, color.setHex(palette[i % palette.length] as number));
-    });
-    lanternMesh.name = "lanterns";
-    lanternMesh.frustumCulled = false;
-    this.group.add(lanternMesh);
+  private instance(source: Mesh, material: Material, name: string, shadows: Shadows): InstancedMesh {
+    const mesh = new InstancedMesh(source.geometry, material, CUSHION_SPOTS.length);
+    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(CUSHION_SPOTS.length * 3).fill(1), 3);
+    mesh.instanceColor.setUsage(DynamicDrawUsage);
+    mesh.castShadow = shadows.cast ?? false;
+    mesh.receiveShadow = shadows.receive ?? false;
+    mesh.frustumCulled = false;
+    mesh.name = name;
+    this.materials.push(material);
+    this.group.add(mesh);
+    return mesh;
   }
 
-  private buildOutdoors(): void {
-    const skyMap = skyTexture();
-    this.textures.push(skyMap);
-    const sky = new Mesh(new PlaneGeometry(70, 16), new MeshBasicMaterial({ map: skyMap, fog: false, toneMapped: false }));
-    sky.position.set(32, 5.5, 0);
-    sky.rotation.y = -Math.PI / 2;
-    sky.name = "sky";
-    this.group.add(sky);
-
-    const ground = new Mesh(new PlaneGeometry(90, 90), new MeshLambertMaterial({ color: 0x5b7640 }));
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(30, -0.06, 0);
-    ground.name = "ground";
-    this.group.add(ground);
-
-    const rand = mulberry32(11);
-    const trees = new GeometryBuilder();
-    const foliage = [0xd8602f, 0xe3a23a, 0x4f8040, 0x3d6b3a, 0xc2432b];
-    for (let i = 0; i < 16; i += 1) {
-      const x = 9.5 + rand() * 11;
-      const z = -9 + rand() * 18;
-      const size = 0.8 + rand() * 0.9;
-      const tone = foliage[Math.floor(rand() * foliage.length)] as number;
-      trees.add(new CylinderGeometry(0.12 * size, 0.18 * size, 2.2 * size, 6), 0x4a3020, { x, y: 1.1 * size, z });
-      trees.add(new IcosahedronGeometry(1.15 * size, 1), tone, { x, y: 2.9 * size, z, sy: 1.15 });
-      trees.add(new IcosahedronGeometry(0.8 * size, 1), tone, { x: x + 0.6 * size, y: 2.3 * size, z: z + 0.3 * size });
-    }
-    for (let i = 0; i < 6; i += 1) {
-      const x = 8.6 + rand() * 3;
-      const z = -4 + rand() * 8;
-      trees.add(new ConeGeometry(0.7, 2.2, 7), 0x2f5d3a, { x, y: 1.1, z });
-    }
-    const treeMesh = new Mesh(trees.build(), new MeshLambertMaterial({ vertexColors: true }));
-    treeMesh.name = "trees";
-    this.group.add(treeMesh);
-
-    const beam = beamGlowTexture();
-    this.textures.push(beam);
-    const rays = new GeometryBuilder();
-    const along = new Vector3().copy(SUN_TARGET).sub(SUN_POSITION).normalize();
-    const length = 11;
-    const quat = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), along.clone().negate());
-    for (const z of [-1.5, -0.1, 1.3]) {
-      for (const twist of [0, Math.PI / 2]) {
-        const plane = new PlaneGeometry(0.9, length);
-        plane.rotateY(twist);
-        plane.translate(0, -length / 2, 0);
-        plane.applyQuaternion(quat);
-        plane.translate(WALL_X - 0.2, 2.8, z);
-        rays.add(plane, 0xfff0c8);
-      }
-    }
-    const rayMesh = new Mesh(
-      rays.build(),
-      new MeshBasicMaterial({ map: beam, transparent: true, opacity: 0.32, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, vertexColors: true, fog: false }),
-    );
-    rayMesh.name = "sunbeams";
-    this.group.add(rayMesh);
-  }
-
-  private buildCushions(anisotropy: number): { body: InstancedMesh; top: InstancedMesh } {
-    const map = cushionTexture(anisotropy);
-    this.textures.push(map);
-    const bodyGeometry = new CylinderGeometry(0.42, 0.46, 0.12, 28);
-    bodyGeometry.translate(0, 0.06, 0);
-    const body = new InstancedMesh(bodyGeometry, new MeshLambertMaterial({ color: 0xb87a22 }), CUSHION_SPOTS.length);
-    const topGeometry = new CircleGeometry(0.4, 28);
-    topGeometry.rotateX(-Math.PI / 2);
-    topGeometry.translate(0, 0.122, 0);
-    const top = new InstancedMesh(topGeometry, new MeshLambertMaterial({ map }), CUSHION_SPOTS.length);
-    for (const mesh of [body, top]) {
-      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(CUSHION_SPOTS.length * 3).fill(1), 3);
-      mesh.instanceColor.setUsage(DynamicDrawUsage);
-      mesh.castShadow = mesh === body;
-      mesh.receiveShadow = true;
-      mesh.frustumCulled = false;
-    }
-    body.name = "cushion-body";
-    top.name = "cushion-top";
+  private placeCushions(): void {
     const m = new Matrix4();
     for (const spot of CUSHION_SPOTS) {
       m.makeTranslation(spot.x, 0, spot.z);
-      body.setMatrixAt(spot.id, m);
-      top.setMatrixAt(spot.id, m);
+      this.cushionBody.setMatrixAt(spot.id, m);
+      this.cushionTop.setMatrixAt(spot.id, m);
     }
-    this.group.add(body, top);
-    return { body, top };
   }
 
   private buildCandles(): InstancedMesh {
-    const map = flameGlowTexture();
-    this.textures.push(map);
-    const flames = new InstancedMesh(
-      new PlaneGeometry(0.5, 0.62),
-      new MeshBasicMaterial({ map, transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false }),
-      CANDLE_SPOTS.length,
-    );
+    const material = new MeshBasicMaterial({ map: this.glow, transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false });
+    this.materials.push(material);
+    const flames = new InstancedMesh(new PlaneGeometry(0.5, 0.62), material, CANDLE_SPOTS.length);
     flames.frustumCulled = false;
     flames.name = "flames";
     this.group.add(flames);
@@ -561,16 +313,14 @@ export class Hall {
     attribute.needsUpdate = true;
   }
 
+  // The geometries and textures that came with the glb belong to the loaded assets; only what the hall made is released here.
   dispose(): void {
-    this.group.traverse((object) => {
-      const mesh = object as Mesh;
-      if (mesh.geometry) mesh.geometry.dispose();
-      const material = mesh.material;
-      if (Array.isArray(material)) for (const entry of material) entry.dispose();
-      else if (material) material.dispose();
-    });
+    for (const material of this.materials) material.dispose();
+    this.flames.geometry.dispose();
+    this.dust.geometry.dispose();
+    for (const mesh of [this.flames, this.cushionBody, this.cushionTop]) mesh.dispose();
+    this.glow.dispose();
     this.buddha.dispose();
-    for (const texture of this.textures) texture.dispose();
     this.environment.dispose();
     this.group.removeFromParent();
   }

@@ -18,7 +18,9 @@
   <body>
     <div id="app">
       <canvas id="stage" aria-label="법당 3D 화면"></canvas>
-      <div id="ui"></div>
+      <div id="ui">
+        <div id="boot" class="overlay" role="status"><div class="overlay-card"><div class="overlay-lamp busy"></div><h2 class="overlay-title">법당 문을 여는 중이에요</h2></div></div>
+      </div>
     </div>
     <noscript>동자네는 자바스크립트가 필요해요.</noscript>
     <script type="module" src="/src/main.ts"></script>
