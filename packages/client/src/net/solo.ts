@@ -1,9 +1,10 @@
 import {
   type BowMessage,
-  NPC_PER_HALL,
+  NPC_PER_ZONE,
   TICK_MS,
   TempleSim,
   type TempleState,
+  type Zone,
   normalizeHue,
   randomHue,
 } from "@dongjane/shared";
@@ -13,7 +14,7 @@ const SOLO_ID = "solo";
 
 export class SoloSession {
   readonly sessionId = SOLO_ID;
-  private readonly sim = new TempleSim({ npcCount: NPC_PER_HALL });
+  private readonly sim = new TempleSim({ npcCount: NPC_PER_ZONE });
   private readonly timer: ReturnType<typeof setInterval>;
   private closed = false;
 
@@ -41,8 +42,8 @@ export class SoloSession {
     if (!this.closed) this.sim.move(SOLO_ID, x, z, seq);
   }
 
-  sit(cushionId: number): void {
-    if (!this.closed) this.sim.sit(SOLO_ID, cushionId);
+  sit(zone: Zone, seatId: number): void {
+    if (!this.closed) this.sim.sit(SOLO_ID, zone, seatId);
   }
 
   stand(): void {
@@ -59,6 +60,18 @@ export class SoloSession {
 
   emote(id: number): void {
     if (!this.closed) this.sim.emote(SOLO_ID, id);
+  }
+
+  knock(): void {
+    if (!this.closed) this.sim.knock(SOLO_ID);
+  }
+
+  chant(on: boolean): void {
+    if (!this.closed) this.sim.chant(SOLO_ID, on);
+  }
+
+  equip(item: number): void {
+    if (!this.closed) this.sim.equip(SOLO_ID, item);
   }
 
   async leave(): Promise<void> {

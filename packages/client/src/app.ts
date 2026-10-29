@@ -1,30 +1,44 @@
 import {
-  CUSHION_SPOTS,
-  type HallInfo,
+  ITEM_CHANT,
+  ITEM_MOKT,
+  ITEM_NONE,
+  KNOCK_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
+  type WorldInfo,
   WALK_SPEED,
-  hallName,
-  parseHallParam,
-  resolveWalkable,
+  ZONES,
+  ZONE_SEATS,
+  type Zone,
+  isZone,
+  parseWorldParam,
+  planPath,
   seatLabel,
   skyAt,
   visitorTitle,
+  worldName,
+  zoneAt,
 } from "@dongjane/shared";
+import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
+import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
+import sutraUrl from "./assets/audio/sutra.mp3?url";
+import { SyncedLoop, areaMix } from "./audio/music.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
-import { combineAxes, directionToward, floorDirection, KeyboardInput } from "./game/input.ts";
+import { heldAction, isSeated } from "./game/held-action.ts";
+import { combineAxes, floorDirection, headingAlong, KeyboardInput } from "./game/input.ts";
 import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
+import type { MonkAssets } from "./game/monk-assets.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
-import { fetchHalls, requestSeat } from "./net/halls.ts";
+import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { ReturnCountdown } from "./net/return-countdown.ts";
-import { HallSession, JoinError, type LinkState } from "./net/session.ts";
+import { WorldSession, JoinError, type LinkState } from "./net/session.ts";
 import { SoloSession } from "./net/solo.ts";
 import {
   type Profile,
@@ -39,13 +53,15 @@ import {
 } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
-import { describeChant } from "./ui/format.ts";
+import { describeChant, seatName } from "./ui/format.ts";
 import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsPanel } from "./ui/settings.ts";
+import { SoundChip } from "./ui/sound-chip.ts";
+import { StageScreen } from "./ui/stage-screen.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
@@ -54,17 +70,21 @@ const TITLE_REACH = SEAT_HINT_REACH;
 const TITLE_GAP = 0.1;
 const CHANT_TICK_MS = 250;
 const SKY_TICK_MS = 1000;
-const HALL_POLL_MS = 10_000;
+const WORLD_POLL_MS = 10_000;
 const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 const TAP_ARRIVE_DISTANCE = 0.1;
+const INDOOR_PREFETCH_DELAY_MS = 2500;
+const INDOOR_PREFETCH_IDLE_TIMEOUT_MS = 4000;
 
 interface SelfSnapshot {
   x: number;
   z: number;
   mode: string;
-  cushionId: number;
+  seatId: number;
+  chanting: boolean;
+  item: number;
 }
 
 export class App {
@@ -85,6 +105,9 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly stage: StageScreen;
+  private readonly soundChip: SoundChip;
+  private readonly sutra: SyncedLoop;
   private readonly visitorTitles: VisitorTitles;
   private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
@@ -94,14 +117,17 @@ export class App {
   private profile: Profile | null = loadProfile();
   private bows: number = loadBows();
   private lastSelfBows: number | null = null;
-  private session: HallSession | SoloSession | null = null;
-  private halls: HallInfo[] = [];
-  private currentHall = 0;
+  private session: WorldSession | SoloSession | null = null;
+  private worlds: WorldInfo[] = [];
+  private currentWorld = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
-  private occupiedCushions = new Set<number>();
+  // The part of the world the camera is in, which the seat hints, the sounds and the greetings belong to.
+  private zone: Zone = "gatbawi";
+  private seatOwners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
+  private nextKnockAt = 0;
   private readonly prediction = new SelfPrediction();
-  private tapDestination: { x: number; z: number } | null = null;
+  private tapPath: { x: number; z: number }[] = [];
   private lastFrameMs = 0;
   private nextJumpAt = 0;
   private nextChantTick = 0;
@@ -109,33 +135,62 @@ export class App {
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
+  private videoAudible = false;
+  private stageToasted = false;
   private inSolo = false;
-  private soloReturnHall: number | null = null;
+  private soloReturnWorld: number | null = null;
   private returnHeld = false;
   private readonly returnCountdown = new ReturnCountdown(
     (seconds) => this.hud.setSolo({ kind: "countdown", seconds }),
-    () => void this.returnToHall(),
+    () => void this.returnToWorld(),
   );
 
-  constructor() {
+  constructor(assets: GameAssets, monkAssets: MonkAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
     this.ui = document.getElementById("ui") as HTMLElement;
 
     this.joystick = new Joystick(this.ui);
-    this.world = new World(this.canvas, {
-      onFrame: (dt, now) => this.frame(dt, now),
-      onRendered: (nowMs) => {
-        this.updateSeatHints();
-        this.updateVisitorTitles();
-        this.emoteBubbles.update(nowMs);
+    this.world = new World(
+      this.canvas,
+      {
+        onFrame: (dt, now) => this.frame(dt, now),
+        onRendered: (nowMs) => {
+          this.updateSeatHints();
+          this.updateVisitorTitles();
+          this.emoteBubbles.update(nowMs);
+          if (this.stage.mounted) this.stage.place(this.world.screenQuad());
+        },
+        onStick: (stick) => this.joystick.set(stick),
+        onZone: (zone) => this.setZone(zone),
+        onFloorTap: (x, z) => this.walkTo(x, z),
       },
-      onStick: (stick) => this.joystick.set(stick),
-      onFloorTap: (x, z) => {
-        if (this.session && this.self) this.tapDestination = resolveWalkable(x, z);
-      },
-    });
+      assets,
+      monkAssets,
+    );
     this.world.setReduceMotion(this.settings.reduceMotion);
     this.emoteBubbles = new EmoteBubbles(this.ui, this.world.emotes, (id, out) => this.world.projectEmoteAnchor(id, out));
+
+    this.stage = new StageScreen(
+      this.canvas,
+      { width: this.world.quality.videoWidth, height: this.world.quality.videoHeight },
+      () => this.world.serverNowAt(performance.now()),
+      {
+        onStatus: (status) => {
+          if (status === "blocked" && !this.stageToasted) {
+            this.stageToasted = true;
+            this.hud.toast("무대 영상을 열 수 없어요");
+          }
+          this.syncZoneSound();
+        },
+        onTapNeeded: (needed) => this.soundChip.show(needed),
+        onAudible: (audible) => {
+          this.videoAudible = audible;
+          this.syncZoneSound();
+        },
+      },
+    );
+    this.stage.setReduceMotion(this.settings.reduceMotion);
+    this.sutra = new SyncedLoop(this.audio, () => this.world.serverNowAt(performance.now()), sutraUrl);
 
     this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -143,22 +198,32 @@ export class App {
     this.hud = new Hud(
       this.ui,
       {
-        onSwitchHall: (hall) => void this.enter(hall),
-        onOpenHalls: () => void this.refreshHalls(),
+        onSwitchWorld: (world) => void this.enter(world),
+        onOpenWorlds: () => void this.refreshWorlds(),
         onBow: () => this.bow(),
         onStand: () => this.stand(),
         onJump: () => this.jump(),
         onEmote: (emote) => this.session?.emote(emote),
+        onKnock: () => this.knock(),
+        onChant: (on) => this.chant(on),
+        onEquip: (item) => this.equip(item),
         onInvite: () => void this.copyInvite(),
         onCancelReturn: () => this.holdReturn(),
-        onReturnNow: () => void this.enter(this.soloReturnHall),
+        onReturnNow: () => void this.enter(this.soloReturnWorld),
       },
       this.settingsPanel.root,
     );
+    this.hud.setReduceMotion(this.settings.reduceMotion);
     this.hud.setCollection(this.bows);
+    this.soundChip = new SoundChip(this.ui, () => {
+      this.audio.unlock();
+      this.stage.userGesture();
+      this.sutra.prime();
+      this.stage.openTapWindow();
+    });
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.stopWalking();
-      this.session?.sit(id);
+      this.session?.sit(this.zone, id);
     });
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
@@ -166,7 +231,7 @@ export class App {
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
-        if (this.self && this.self.cushionId >= 0) this.bow();
+        if (this.self && this.self.seatId >= 0) this.act();
         else this.jump();
       },
       onStand: () => {
@@ -175,6 +240,7 @@ export class App {
     });
 
     this.applyAudio();
+    this.syncZoneSound();
     this.bindAudioUnlock();
     this.bindLifecycle();
     this.fitCameraToHud();
@@ -186,9 +252,9 @@ export class App {
   async start(): Promise<void> {
     this.ensureProfile();
     this.world.setIdleSpin(false);
-    const requested = parseHallParam(this.params.get("hall"));
+    const requested = parseWorldParam(this.params.get("world"));
     await this.enter(requested);
-    window.setInterval(() => void this.pollHalls(), HALL_POLL_MS);
+    window.setInterval(() => void this.pollWorlds(), WORLD_POLL_MS);
   }
 
   private async enter(requested: number | null): Promise<void> {
@@ -207,12 +273,12 @@ export class App {
     this.self = null;
     this.hud.setSelf(null);
     this.stopWalking();
-    this.occupiedCushions.clear();
+    this.clearSeatOwners();
     this.hud.setLink("online");
-    this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
+    this.overlay.loading("월드로 들어가는 중이에요", "잠시만 기다려 주세요");
 
-    const returnHall = requested ?? (this.currentHall || null);
-    const retry = { label: "다시 시도", run: () => void this.enter(returnHall) };
+    const returnWorld = requested ?? (this.currentWorld || null);
+    const retry = { label: "다시 시도", run: () => void this.enter(returnWorld) };
 
     let busyFailures = 0;
     let transportFailures = 0;
@@ -224,16 +290,16 @@ export class App {
           onRetry: () => this.overlay.loading("서버에 연결하는 중이에요", "잠시만 기다려 주세요"),
         });
       } catch (error) {
-        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction(returnHall)]);
+        if (token === this.joinToken && !(error instanceof RetryCancelled)) this.showUnreachable([retry, this.soloAction(returnWorld)]);
         return;
       }
       if (token !== this.joinToken) return;
 
       try {
-        const session = await HallSession.join(
+        const session = await WorldSession.join(
           this.base,
           seat.roomId,
-          seat.hall,
+          seat.world,
           { hue: profile.hue },
           {
             onState: (state) => {
@@ -242,10 +308,10 @@ export class App {
             onLink: (link) => {
               if (token === this.joinToken) this.handleLink(link);
             },
-            onRelocate: (hall) => {
+            onRelocate: (world) => {
               if (token !== this.joinToken) return;
-              this.hud.toast(`법당이 합쳐져서 ${hallName(hall)}으로 옮겨 드려요`);
-              void this.enter(hall);
+              this.hud.toast(`월드가 합쳐져서 ${worldName(world)}로 옮겨 드려요`);
+              void this.enter(world);
             },
           },
         );
@@ -253,7 +319,7 @@ export class App {
           void session.leave();
           return;
         }
-        this.attach(session, seat.hall, seat.fellBack ? requested : null);
+        this.attach(session, seat.world, seat.fellBack ? requested : null);
         return;
       } catch (error) {
         if (token !== this.joinToken) return;
@@ -263,7 +329,7 @@ export class App {
         }
         const delay = JOIN_RETRY_DELAYS_MS[transportFailures];
         if (delay === undefined) {
-          this.showUnreachable([retry, this.soloAction(returnHall)]);
+          this.showUnreachable([retry, this.soloAction(returnWorld)]);
           return;
         }
         transportFailures += 1;
@@ -273,7 +339,7 @@ export class App {
       }
     }
     if (token === this.joinToken) {
-      this.overlay.problem("법당에 들어가지 못했어요", "법당이 바쁜 것 같아요. 잠시 뒤 다시 시도해 주세요.", [retry]);
+      this.overlay.problem("월드에 들어가지 못했어요", "월드가 바쁜 것 같아요. 잠시 뒤 다시 시도해 주세요.", [retry]);
     }
   }
 
@@ -285,11 +351,11 @@ export class App {
     return this.profile;
   }
 
-  private soloAction(returnHall: number | null): { label: string; run(): void } {
-    return { label: "혼자 법당에서 쉬기", run: () => void this.enterSolo(returnHall) };
+  private soloAction(returnWorld: number | null): { label: string; run(): void } {
+    return { label: "혼자 월드에서 쉬기", run: () => void this.enterSolo(returnWorld) };
   }
 
-  private async enterSolo(returnHall: number | null): Promise<void> {
+  private async enterSolo(returnWorld: number | null): Promise<void> {
     const profile = this.ensureProfile();
     this.returnCountdown.cancel();
     this.returnHeld = false;
@@ -298,7 +364,7 @@ export class App {
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
     this.inSolo = true;
-    this.soloReturnHall = returnHall;
+    this.soloReturnWorld = returnWorld;
 
     this.world.clear();
     this.bowWatch.reset();
@@ -306,7 +372,7 @@ export class App {
     this.self = null;
     this.hud.setSelf(null);
     this.stopWalking();
-    this.occupiedCushions.clear();
+    this.clearSeatOwners();
 
     const session = new SoloSession(profile.hue, {
       onState: (state) => {
@@ -314,30 +380,34 @@ export class App {
       },
     });
     this.session = session;
-    this.currentHall = 0;
+    this.syncZoneSound();
+    this.currentWorld = 0;
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
     this.world.seedServerTime(Date.now(), performance.now());
     this.hud.setSolo({ kind: "idle" });
     this.overlay.hide();
+    this.prefetchIndoors();
     this.handleState(session.state);
   }
 
-  private attach(session: HallSession, hall: number, fellBackFrom: number | null): void {
+  private attach(session: WorldSession, world: number, fellBackFrom: number | null): void {
     this.session = session;
-    this.currentHall = hall;
+    this.syncZoneSound();
+    this.currentWorld = world;
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
-    this.hud.setHalls(this.halls, hall);
-    void this.refreshHalls();
+    this.hud.setWorlds(this.worlds, world);
+    void this.refreshWorlds();
 
     const url = new URL(window.location.href);
-    url.searchParams.set("hall", String(hall));
+    url.searchParams.set("world", String(world));
     window.history.replaceState(null, "", url);
 
     this.overlay.hide();
+    this.prefetchIndoors();
     if (fellBackFrom !== null) {
-      this.hud.toast(`${hallName(fellBackFrom)}은 없거나 비어 있거나 가득 차서 ${hallName(hall)}으로 모셨어요`);
+      this.hud.toast(`${worldName(fellBackFrom)}는 없거나 비어 있거나 가득 차서 ${worldName(world)}로 모셨어요`);
     }
     this.handleState(session.state);
   }
@@ -357,6 +427,7 @@ export class App {
     const views: MonkView[] = [];
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
+    const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
     const visitorIds = new Set<string>();
     state.monks.forEach((monk) => {
       views.push({
@@ -366,49 +437,60 @@ export class App {
         z: monk.z,
         yaw: monk.yaw,
         mode: monk.mode,
-        cushionId: monk.cushionId,
+        seatId: monk.seatId,
         npc: monk.npc,
         bowCount: monk.bowCount,
         emote: monk.emote,
         emoteSeq: monk.emoteSeq,
+        knockSeq: monk.knockSeq,
+        chanting: monk.chanting,
+        item: monk.item,
         jumpSeq: monk.jumpSeq,
       });
+      // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
       if (monk.npc) return;
+      // Where a monk is decides which zone they count in: the 법당 is whoever stands inside its door.
+      const monkZone = zoneAt(monk.x, monk.z);
+      counts[monkZone] += 1;
       visitorIds.add(monk.id);
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
         slot: monk.slot,
         mode: monk.mode,
-        cushionId: monk.cushionId,
+        zone: monkZone,
+        seatId: monk.seatId,
         bowCount: monk.bowCount,
         isSelf: monk.id === selfId,
       });
       if (monk.id === selfId) {
-        this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
+        this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId });
+        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item });
         this.creditBows(monk.bowCount);
-        for (const quest of this.quests.observe(selfId, monk, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
+        for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone: monkZone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
     });
     this.hud.setQuests(this.quests.view(state.serverTime));
     this.lastViews = views;
     this.visitorTitles.retain(visitorIds);
 
-    const occupied = new Set<number>();
-    state.cushions.forEach((cushion) => {
-      if (cushion.occupantId !== "") occupied.add(cushion.id);
+    const owners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
+    const occupied: Record<Zone, Set<number>> = { gatbawi: new Set(), dharma: new Set() };
+    state.seats.forEach((seat) => {
+      if (!isZone(seat.zone) || seat.occupantId === "") return;
+      occupied[seat.zone].add(seat.id);
+      if (!state.monks.get(seat.occupantId)?.npc) owners[seat.zone].set(seat.id, seat.occupantId);
     });
-    this.occupiedCushions = occupied;
+    this.seatOwners = owners;
 
     this.world.setSelfPrediction(this.prediction.display());
-    this.world.applyMonks(views, now, state.serverTime);
-    this.world.setOccupancy(occupied);
+    this.playKnocks(this.world.applyMonks(views, now, state.serverTime));
+    for (const zone of ZONES) this.world.setOccupancy(zone, occupied[zone]);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
-    this.syncHallCount(rows.length);
+    this.syncWorldCount(rows.length, counts);
 
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
@@ -426,12 +508,48 @@ export class App {
     for (const title of titlesCrossed(before, this.bows)) this.hud.toast(`‘${title.name}’ 칭호를 얻었어요`);
   }
 
-  private syncHallCount(count: number): void {
-    const info = this.halls.find((entry) => entry.hall === this.currentHall);
-    if (!info || info.clients === count) return;
+  private syncWorldCount(count: number, zones: Record<Zone, number>): void {
+    const info = this.worlds.find((entry) => entry.world === this.currentWorld);
+    if (!info) return;
+    const same = info.clients === count && ZONES.every((zone) => info.zones[zone] === zones[zone]);
+    if (same) return;
     info.clients = count;
+    info.zones = { ...zones };
     info.full = count >= info.capacity;
-    this.hud.setHalls(this.halls, this.currentHall);
+    this.hud.setWorlds(this.worlds, this.currentWorld);
+  }
+
+  // The camera went in at the 법당's door or out of it: the seat hints, the label and the sounds follow it.
+  private setZone(zone: Zone): void {
+    if (zone === this.zone) return;
+    this.zone = zone;
+    this.seatHints.hideAll();
+    this.syncZoneSound();
+  }
+
+  private clearSeatOwners(): void {
+    this.seatOwners = { gatbawi: new Map(), dharma: new Map() };
+  }
+
+  // The 법당's inside is a big file, so it is fetched once the browser is idle after the visitor has settled in, not before they
+  // can see anything. A visitor who saves data gets it when they walk up to the door instead.
+  private prefetchIndoors(): void {
+    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+    const load = (): void => void this.world.ensureDharma();
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(load, { timeout: INDOOR_PREFETCH_IDLE_TIMEOUT_MS });
+    else window.setTimeout(load, INDOOR_PREFETCH_DELAY_MS);
+  }
+
+  // The concert video and the sutra both run for as long as the visitor is in the world; where they stand (see tickMix) only
+  // decides which of the two is heard. The wind belongs to the open air.
+  private syncZoneSound(): void {
+    const outdoors = this.zone === "gatbawi";
+    const live = this.session !== null && !this.inSolo;
+    if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
+    else if (!live && this.stage.mounted) this.stage.unmount();
+    this.world.setScreenMode(this.stage.mounted && !this.settings.reduceMotion ? "video" : "poster");
+    this.sutra.setActive(this.session !== null);
+    this.audio.setWindAllowed(outdoors && !this.videoAudible);
   }
 
   private handleLink(link: LinkState): void {
@@ -439,19 +557,21 @@ export class App {
     if (link !== "lost") return;
     this.lost = true;
     this.session = null;
+    this.syncZoneSound();
     this.stopWalking();
     this.world.clear();
-    this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
-      { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
-      this.soloAction(this.currentHall || null),
+    this.overlay.problem("연결이 끊어졌어요", "월드와의 연결이 끊겼어요. 다시 들어가 볼까요?", [
+      { label: "다시 들어가기", run: () => void this.enter(this.currentWorld || null) },
+      this.soloAction(this.currentWorld || null),
     ]);
   }
 
   private showUnreachable(actions: { label: string; run(): void }[]): void {
+    this.syncZoneSound();
     if (!navigator.onLine) {
       this.overlay.problem("인터넷에 연결되어 있지 않아요", "연결을 확인한 뒤 다시 시도해 주세요.", actions);
     } else {
-      this.overlay.problem("법당 문을 열지 못했어요", "서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.", actions);
+      this.overlay.problem("월드를 열지 못했어요", "서버에 연결할 수 없어요. 잠시 뒤 다시 시도해 주세요.", actions);
     }
   }
 
@@ -459,18 +579,67 @@ export class App {
     const session = this.session;
     if (!session) return;
     this.audio.unlock();
-    const seated = this.self && this.self.cushionId >= 0 && this.self.mode === "kneel";
+    const seated = this.self && this.self.seatId >= 0 && this.self.mode === "kneel";
     if (!seated) {
-      if (this.self?.mode !== "bow") this.hud.toast("방석에 앉아야 절할 수 있어요");
+      if (this.self?.mode !== "bow") this.hud.toast(`${seatName(this.zone)}에 앉아야 절할 수 있어요`);
       return;
     }
     session.bow(1);
   }
 
+  // Space and the action button both land here: the held item's action when seated with one, else a bow.
+  private act(): void {
+    const action = heldAction(this.self);
+    if (action === "knock") this.knock();
+    else if (action === "chant") this.chant(!this.self?.chanting);
+    else this.bow();
+  }
+
+  private knock(): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || self.item !== ITEM_MOKT || !isSeated(self)) return;
+    const now = performance.now();
+    if (self.mode !== "kneel" || now < this.nextKnockAt) return;
+    this.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    session.knock();
+    this.world.knock(session.sessionId, now);
+    this.audio.knock();
+  }
+
+  private chant(on: boolean): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    const self = this.self;
+    if (!self || !isSeated(self) || (on && self.item !== ITEM_CHANT)) return;
+    session.chant(on);
+  }
+
+  private equip(item: number): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    session.equip(item);
+    if (item !== ITEM_NONE && !(this.self && isSeated(this.self))) this.hud.toast("방석에 앉으면 쓸 수 있어요");
+  }
+
+  // The player's own knock already sounded on the click; only other monks' knocks reach here, quieter with distance.
+  private playKnocks(knockers: readonly MonkView[]): void {
+    const self = this.self;
+    if (!self) return;
+    for (const knocker of knockers) {
+      const gain = knockGain(Math.hypot(knocker.x - self.x, knocker.z - self.z));
+      if (gain > KNOCK_AUDIBLE_GAIN) this.audio.knock(gain);
+    }
+  }
+
   private jump(): void {
     const session = this.session;
     const now = performance.now();
-    if (!session || !this.self || this.self.cushionId >= 0 || now < this.nextJumpAt) return;
+    if (!session || !this.self || this.self.seatId >= 0 || now < this.nextJumpAt) return;
     this.audio.unlock();
     this.nextJumpAt = now + JUMP_COOLDOWN_MS;
     this.world.hopSelf(now);
@@ -484,24 +653,37 @@ export class App {
 
   private stopWalking(): void {
     this.prediction.cancel();
-    this.tapDestination = null;
+    this.tapPath = [];
+  }
+
+  // A tap on the floor walks the monk there (never sits them); the path bends through the doorway when the spot is in the other part of the world.
+  private walkTo(x: number, z: number): void {
+    const at = this.prediction.display() ?? this.world.selfPosition;
+    if (!this.session || !this.self || !at) return;
+    this.tapPath = planPath(at, { x, z });
   }
 
   private updateSettings(next: Settings): void {
     this.settings = next;
     saveSettings(next);
     this.settingsPanel.sync(next);
+    this.hud.setReduceMotion(next.reduceMotion);
     this.world.setReduceMotion(next.reduceMotion);
+    this.stage.setReduceMotion(next.reduceMotion);
     this.applyAudio();
+    this.syncZoneSound();
   }
 
   private applyAudio(): void {
     this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume);
+    this.stage.setSound(true, this.settings.ambientVolume);
   }
 
   private bindAudioUnlock(): void {
     const unlock = (): void => {
       this.audio.unlock();
+      this.stage.userGesture();
+      this.sutra.prime();
       if (this.audio.unlocked) {
         window.removeEventListener("pointerdown", unlock, true);
         window.removeEventListener("keydown", unlock, true);
@@ -520,10 +702,13 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && this.lost) void this.enter(this.currentHall || null);
+      const hidden = document.visibilityState !== "visible";
+      this.stage.setHidden(hidden);
+      this.sutra.setHidden(hidden);
+      if (!hidden && this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("online", () => {
-      if (this.lost) void this.enter(this.currentHall || null);
+      if (this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("pagehide", () => {
       void this.session?.leave();
@@ -547,18 +732,23 @@ export class App {
       monks: () => this.lastViews,
       self: () => this.self,
       sessionId: () => this.session?.sessionId ?? null,
-      hall: () => this.currentHall,
+      worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
+      stage: () => ({ status: this.stage.status, mounted: this.stage.mounted, audible: this.videoAudible }),
+      sutraPlaying: () => this.sutra.playing,
+      sutraMix: () => this.sutra.mix,
+      zone: () => this.zone,
+      sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
       serverNow: () => this.world.serverNowAt(performance.now()),
     };
   }
 
-  private async refreshHalls(): Promise<boolean> {
+  private async refreshWorlds(): Promise<boolean> {
     try {
-      this.halls = await fetchHalls(this.base, undefined, undefined, (serverTime) =>
+      this.worlds = await fetchWorlds(this.base, undefined, undefined, (serverTime) =>
         this.world.seedServerTime(serverTime, performance.now()),
       );
-      if (this.currentHall) this.hud.setHalls(this.halls, this.currentHall);
+      if (this.currentWorld) this.hud.setWorlds(this.worlds, this.currentWorld);
       return true;
     } catch {
       // the list keeps its last known counts; joining reports a real failure
@@ -566,18 +756,18 @@ export class App {
     }
   }
 
-  private async pollHalls(): Promise<void> {
+  private async pollWorlds(): Promise<void> {
     if (document.visibilityState !== "visible" || !this.session) return;
-    const reachable = await this.refreshHalls();
+    const reachable = await this.refreshWorlds();
     if (reachable && this.inSolo && !this.returnHeld && !this.returnCountdown.running) {
       this.returnCountdown.start(RETURN_COUNTDOWN_SECONDS);
     }
   }
 
-  private async returnToHall(): Promise<void> {
-    const reachable = await this.refreshHalls();
+  private async returnToWorld(): Promise<void> {
+    const reachable = await this.refreshWorlds();
     if (!this.inSolo || this.returnHeld) return;
-    if (reachable) void this.enter(this.soloReturnHall);
+    if (reachable) void this.enter(this.soloReturnWorld);
     else this.hud.setSolo({ kind: "idle" });
   }
 
@@ -588,11 +778,11 @@ export class App {
   }
 
   private async copyInvite(): Promise<void> {
-    if (!this.currentHall) return;
+    if (!this.currentWorld) return;
     const url = new URL(window.location.href);
     url.search = "";
     url.hash = "";
-    url.searchParams.set("hall", String(this.currentHall));
+    url.searchParams.set("world", String(this.currentWorld));
     const link = url.toString();
     let copied = false;
     try {
@@ -601,7 +791,7 @@ export class App {
     } catch {
       copied = this.copyWithSelection(link);
     }
-    this.hud.toast(copied ? `${hallName(this.currentHall)} 초대 링크를 복사했어요` : link);
+    this.hud.toast(copied ? `${worldName(this.currentWorld)} 초대 링크를 복사했어요` : link);
   }
 
   private copyWithSelection(text: string): boolean {
@@ -628,11 +818,20 @@ export class App {
     if (nowMs >= this.nextChantTick) {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
+      this.tickMix();
     }
     if (nowMs >= this.nextSkyTick) {
       this.nextSkyTick = nowMs + SKY_TICK_MS;
       this.tickSky();
     }
+  }
+
+  // Where the visitor stands sets the share of the two soundtracks: the sutra's inside the 법당, the concert's out on the plaza.
+  private tickMix(): void {
+    const at = this.world.selfPosition;
+    const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
+    this.sutra.setMix(mix);
+    this.stage.setLevel(1 - mix);
   }
 
   private driveMovement(dt: number, realDt: number, nowMs: number): void {
@@ -642,18 +841,19 @@ export class App {
     const session = this.session;
     const displayed = this.world.selfPosition;
     if (!session || !this.self || !displayed) {
-      this.tapDestination = null;
+      this.tapPath = [];
       return;
     }
     const axes = combineAxes(this.keyboard.axes(), this.joystick.axes());
     const moving = axes.forward !== 0 || axes.right !== 0;
     let dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
     if (moving) {
-      this.tapDestination = null;
-    } else if (this.tapDestination) {
-      const step = WALK_SPEED * Math.min(MAX_FRAME_DT_S, realDt);
-      dir = directionToward(this.prediction.display() ?? displayed, this.tapDestination, Math.max(TAP_ARRIVE_DISTANCE, step));
-      if (!dir) this.tapDestination = null;
+      this.tapPath = [];
+    } else if (this.tapPath.length > 0) {
+      const reach = Math.max(TAP_ARRIVE_DISTANCE, WALK_SPEED * Math.min(MAX_FRAME_DT_S, realDt));
+      const heading = headingAlong(this.tapPath, this.prediction.display() ?? displayed, reach);
+      dir = heading.dir;
+      this.tapPath = heading.rest;
     }
     const target = this.prediction.frame(realDt, nowMs, dir, displayed);
     this.world.setSelfPrediction(this.prediction.display());
@@ -662,12 +862,12 @@ export class App {
 
   private updateSeatHints(): void {
     const self = this.self;
-    if (!this.session || !self || self.cushionId >= 0) {
+    if (!this.session || !self || self.seatId >= 0) {
       this.seatHints.hideAll();
       return;
     }
-    for (const spot of CUSHION_SPOTS) {
-      const reachable = !this.occupiedCushions.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+    for (const spot of ZONE_SEATS[this.zone]) {
+      const reachable = !this.seatOwners[this.zone].has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
       if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
         this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
       } else {

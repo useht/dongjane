@@ -1,128 +1,93 @@
-import {
-  type BufferGeometry,
-  CapsuleGeometry,
-  Color,
-  CylinderGeometry,
-  Group,
-  InstancedMesh,
-  MeshLambertMaterial,
-  Object3D,
-  SphereGeometry,
-  TorusGeometry,
-  BoxGeometry,
-  DynamicDrawUsage,
-  InstancedBufferAttribute,
-  Vector3,
-} from "three";
-import { BOW_MS, JUMP_MS } from "@dongjane/shared";
-import { GeometryBuilder } from "./geometry.ts";
+import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
+import { BOW_MS, ITEM_CHANT, ITEM_MOKT, JUMP_MS } from "@dongjane/shared";
+import rig from "../../assets/monk/monk-rig.json";
+import type { MonkAssets } from "./monk-assets.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
-export const PART_NAMES = [
+// The body parts come from the baked monk.glb; the held items (mokt, beads) are built in monk-items.ts.
+export const BODY_PART_NAMES = [
   "head",
   "face",
-  "skirt",
+  "hair",
+  "pelvis",
   "torso",
   "trim",
   "sleeveUpper",
   "sleeveLower",
   "hand",
   "foot",
+  "leg",
+  "trousers",
 ] as const;
+export const ITEM_PART_NAMES = ["mokt", "beads"] as const;
+export const PART_NAMES = [...BODY_PART_NAMES, ...ITEM_PART_NAMES] as const;
+export type BodyPartName = (typeof BODY_PART_NAMES)[number];
+export type ItemPartName = (typeof ITEM_PART_NAMES)[number];
 export type PartName = (typeof PART_NAMES)[number];
 
 const PART_COPIES: Record<PartName, number> = {
   head: 1,
   face: 1,
-  skirt: 1,
+  hair: 1,
+  pelvis: 1,
   torso: 1,
   trim: 1,
   sleeveUpper: 2,
   sleeveLower: 2,
   hand: 2,
   foot: 2,
+  leg: 2,
+  trousers: 2,
+  mokt: 1,
+  beads: 1,
 };
 
-const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
+// The jacket (torso, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
+export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "trousers", "sleeveUpper", "sleeveLower"]);
 
-const SKIN = 0xf3cba2;
-const WHITE = 0xffffff;
-
-const HIP_STAND = 0.4;
-const HIP_KNEEL = 0.2;
-const SKIRT_DROP = 0.36;
-const TORSO_HEIGHT = 0.38;
-const NECK_Y = TORSO_HEIGHT;
-const HEAD_CENTER_Y = 0.22;
-const HEAD_RADIUS = 0.19;
-const HEAD_TOP_OFFSET = HEAD_CENTER_Y + HEAD_RADIUS;
-const SHOULDER_X = 0.165;
-const SHOULDER_Y = 0.33;
-const UPPER_ARM = 0.18;
-const FORE_ARM = 0.16;
-const CUSHION_TOP = 0.13;
-const EMOTE_ANCHOR_Y = 0.45;
+// Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
+// so the model and the animation always agree. Only pose angles and walk timing live in animate().
+const HIP_STAND = rig.hipStand;
+const HIP_KNEEL = rig.hipKneel;
+const NECK_Y = rig.neckY;
+const SHOULDER_X = rig.shoulderX;
+const SHOULDER_Y = rig.shoulderY;
+const UPPER_ARM = rig.upperArm;
+const FORE_ARM = rig.foreArm;
+const FOOT_X = rig.footX;
+const FOOT_Y = rig.footY;
+const FOOT_FORWARD = rig.footForward;
+const FOOT_KNEEL_Z = rig.footKneelZ;
+const FOOT_KNEEL_Y = rig.footKneelY;
+const FOOT_KNEEL_TILT = rig.footKneelTilt;
+const LEG_TOP_DROP = rig.legTopDrop;
+const LEG_LENGTH = rig.legLength;
+const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
+const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
+const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
+const ROBE_TINT_SATURATION = rig.robeTintSaturation;
+const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
+// The lift of a kneeling monk on a 방석; on a 돗자리 it is less.
+export const SEAT_TOP = rig.seatTop;
+const HEAD_TOP_OFFSET = rig.crownY;
+const EMOTE_ANCHOR_Y = rig.crownY + 0.04;
+const BEAD_RING_CENTER = { y: -0.105, z: 0.01 };
+const BEADS_TURN_RATE = 1;
+const KNOCK_MS = 220;
+const KNOCK_REDUCED_SHARE = 0.3;
+const CHANT_NOD_HZ = 0.8;
+const CHANT_NOD = 0.06;
+const CHANT_SWAY_HZ = 0.4;
+const CHANT_SWAY = 0.025;
 const HOP_HEIGHT = 0.35;
-
-function buildPartGeometries(): Record<PartName, BufferGeometry> {
-  const head = new GeometryBuilder()
-    .add(new SphereGeometry(HEAD_RADIUS, 22, 16), SKIN, { y: HEAD_CENTER_Y })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: -0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: 0.186, y: 0.22, sx: 0.55, sy: 1.15 })
-    .add(new CylinderGeometry(0.06, 0.07, 0.1, 10), SKIN, { y: 0.02 })
-    .build();
-
-  const face = new GeometryBuilder()
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: -0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.024, 8, 6), 0x2b1a12, { x: 0.066, y: 0.245, z: -0.172, sy: 1.25 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: -0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new SphereGeometry(0.04, 8, 6), 0xf0948a, { x: 0.108, y: 0.172, z: -0.15, sz: 0.3 })
-    .add(new TorusGeometry(0.03, 0.0065, 5, 10, Math.PI), 0x9a4a3c, { y: 0.158, z: -0.178, rz: Math.PI })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: -0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { x: 0.03, y: 0.405, z: -0.01 })
-    .add(new SphereGeometry(0.009, 5, 4), 0x6a3a2a, { y: 0.408, z: 0.03 })
-    .build();
-
-  const skirt = new GeometryBuilder()
-    .add(new CylinderGeometry(0.17, 0.27, SKIRT_DROP, 22, 1), WHITE, { y: -SKIRT_DROP / 2 })
-    .build();
-
-  const torso = new GeometryBuilder()
-    .add(new CylinderGeometry(0.15, 0.19, TORSO_HEIGHT, 20, 1), WHITE, { y: TORSO_HEIGHT / 2 })
-    .add(new SphereGeometry(0.15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), WHITE, { y: TORSO_HEIGHT - 0.01, sy: 0.35 })
-    .build();
-
-  const trim = new GeometryBuilder()
-    .add(new TorusGeometry(0.19, 0.024, 8, 24), 0xc99a3a, { y: 0.03, rx: Math.PI / 2 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: -0.045, y: 0.28, z: -0.154, rz: 0.78 })
-    .add(new BoxGeometry(0.17, 0.024, 0.012), 0xf6ecd2, { x: 0.045, y: 0.28, z: -0.154, rz: -0.78 })
-    .build();
-
-  const sleeveUpper = new GeometryBuilder()
-    .add(new CylinderGeometry(0.07, 0.085, UPPER_ARM, 12, 1), WHITE, { y: -UPPER_ARM / 2 })
-    .add(new SphereGeometry(0.07, 10, 8), WHITE)
-    .build();
-
-  const sleeveLower = new GeometryBuilder()
-    .add(new CylinderGeometry(0.085, 0.108, FORE_ARM + 0.01, 12, 1), WHITE, { y: -FORE_ARM / 2 })
-    .build();
-
-  const hand = new GeometryBuilder().add(new SphereGeometry(0.046, 10, 8), SKIN, { y: -0.01 }).build();
-
-  const foot = new GeometryBuilder()
-    .add(new CapsuleGeometry(0.05, 0.1, 4, 8), 0xf4eee0, { rx: Math.PI / 2, sy: 1, sz: 0.8, z: -0.03 })
-    .build();
-
-  return { head, face, skirt, torso, trim, sleeveUpper, sleeveLower, hand, foot };
-}
+const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
 
 interface Binding {
   part: PartName;
   copy: number;
   node: Object3D;
+  item?: number;
 }
-
-let sharedGeometries: Record<PartName, BufferGeometry> | null = null;
 
 export class MonkAvatar {
   readonly id: string;
@@ -134,18 +99,29 @@ export class MonkAvatar {
   mode = "stand";
   modeSince = 0;
   slot = -1;
+  chanting = false;
+  item = 0;
+  // A monk in another part of the world than the camera's is still animated but not drawn.
+  hidden = false;
+  // How high the seat under this monk is: a kneeling monk is lifted by it.
+  seatTop = SEAT_TOP;
 
   private readonly hips = new Object3D();
-  private readonly skirtNode = new Object3D();
+  private readonly pelvisNode = new Object3D();
   private readonly torsoNode = new Object3D();
   private readonly headNode = new Object3D();
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
+  private readonly beadsNode = new Object3D();
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
+  private readonly legs: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private chantMix = 0;
+  private beadTurn = 0;
+  private knockAt = Number.NEGATIVE_INFINITY;
   private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
 
@@ -154,8 +130,8 @@ export class MonkAvatar {
     this.hue = hue;
     this.isSelf = isSelf;
 
-    this.root.add(this.hips, this.feet[0], this.feet[1]);
-    this.hips.add(this.skirtNode, this.torsoNode);
+    this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
+    this.hips.add(this.pelvisNode, this.torsoNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
@@ -168,15 +144,18 @@ export class MonkAvatar {
       hand.position.y = -FORE_ARM;
       shoulder.add(elbow);
       elbow.add(hand);
-      (this.feet[side] as Object3D).position.set(sign * 0.085, 0.045, 0);
+      (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
+    this.beadsNode.position.set(0, BEAD_RING_CENTER.y, BEAD_RING_CENTER.z);
+    (this.handNodes[0] as Object3D).add(this.beadsNode);
 
-    const bind = (part: PartName, node: Object3D, copy = 0): void => {
-      this.bindings.push({ part, copy, node });
+    const bind = (part: PartName, node: Object3D, copy = 0, item?: number): void => {
+      this.bindings.push({ part, copy, node, item });
     };
     bind("head", this.headNode);
     bind("face", this.headNode);
-    bind("skirt", this.skirtNode);
+    bind("hair", this.headNode);
+    bind("pelvis", this.pelvisNode);
     bind("torso", this.torsoNode);
     bind("trim", this.torsoNode);
     for (let side = 0; side < 2; side += 1) {
@@ -184,13 +163,21 @@ export class MonkAvatar {
       bind("sleeveLower", this.elbows[side] as Object3D, side);
       bind("hand", this.handNodes[side] as Object3D, side);
       bind("foot", this.feet[side] as Object3D, side);
+      bind("leg", this.legs[side] as Object3D, side);
+      bind("trousers", this.legs[side] as Object3D, side);
     }
+    bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
+    bind("beads", this.beadsNode, 0, ITEM_CHANT);
   }
 
   setMode(mode: string, nowMs: number): void {
     if (mode === this.mode) return;
     this.mode = mode;
     this.modeSince = nowMs;
+  }
+
+  knock(nowMs: number): void {
+    this.knockAt = nowMs;
   }
 
   hop(nowMs: number): void {
@@ -208,13 +195,19 @@ export class MonkAvatar {
     this.pose.update(this.mode, dt, !reduceMotion);
     const kneel = this.pose.kneel;
     const walk = this.pose.walk;
-    this.liftedBy = approach(this.liftedBy, this.mode === "stand" || this.mode === "walk" ? 0 : CUSHION_TOP, dt, reduceMotion ? 1000 : 10);
+    this.liftedBy = approach(this.liftedBy, this.mode === "stand" || this.mode === "walk" ? 0 : this.seatTop, dt, reduceMotion ? 1000 : 10);
 
     if (this.mode === "walk") this.phase += dt * Math.min(speed, 3.5) * 4.4;
     const swing = Math.sin(this.phase);
     const swingBack = Math.sin(this.phase + Math.PI);
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
+    this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
+    const chant = this.chantMix * kneel;
+    this.beadTurn = reduceMotion ? 0 : (this.beadTurn + dt * BEADS_TURN_RATE * chant) % (Math.PI * 2);
+    this.beadsNode.rotation.z = this.beadTurn;
+    const knockProgress = (nowMs - this.knockAt) / KNOCK_MS;
+    const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
     this.root.position.y = this.liftedBy * kneel + hop;
@@ -222,13 +215,15 @@ export class MonkAvatar {
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
 
-    const skirtY = 1 + (0.56 - 1) * kneel;
-    const skirtXZ = 1 + 0.38 * kneel;
-    this.skirtNode.scale.set(skirtXZ, skirtY, skirtXZ);
-    this.skirtNode.position.y = 0.01 * kneel;
+    // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs.
+    const pelvisY = 1 + (KNEEL_PELVIS_SCALE_Y - 1) * kneel;
+    const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
+    this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
+    this.pelvisNode.position.y = KNEEL_PELVIS_LIFT * kneel;
 
     this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
-    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk;
+    this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
+    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -237,29 +232,46 @@ export class MonkAvatar {
       const elbow = this.elbows[side] as Object3D;
       const armSwing = (side === 0 ? swing : swingBack) * 0.75 * walk;
 
-      const idleX = 0.1 + breathe * 0.02;
-      const idleZ = -sign * 0.12;
-      const idleElbow = 0.22;
-      const prayX = 0.62;
-      const prayZ = -sign * 0.5;
-      const prayElbow = 1.95;
+      // The arm hangs straight at rest; praying swings it forward, yaws it inward and rolls the forearm so the palms meet under the chin
+      // (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
+      const idleX = 0.08 + breathe * 0.02;
+      const idleZ = 0;
+      const idleElbow = 0.1;
+      const prayX = 0.9;
+      const prayY = sign * 0.35;
+      const prayZ = -sign * 0.28;
+      const prayElbow = 1.93;
+      const prayTwist = -sign * 0.94;
       const bowX = 2.45;
       const bowZ = -sign * 0.32;
       const bowElbow = 0.1;
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;
-      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel);
+      const strike = side === 1 ? knock * prayMix : 0;
+      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel) + strike * 0.12;
+      shoulder.rotation.y = prayY * prayMix;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
-      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel);
+      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.55;
+      elbow.rotation.y = prayTwist * prayMix;
 
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
-      foot.position.z = stride * 0.2 + 0.2 * kneel;
-      foot.position.y = 0.045 + lift * 0.07;
-      foot.rotation.x = kneel * 0.5;
+      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel;
+      foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
+      foot.rotation.x = kneel * FOOT_KNEEL_TILT;
+
+      // The leg (and the trouser leg hung on it) hangs from a pivot inside the pelvis and is stretched to the ankle, so it follows
+      // strides, bobbing and the folded kneel.
+      const leg = this.legs[side] as Object3D;
+      const topY = this.hips.position.y - LEG_TOP_DROP;
+      const reachY = foot.position.y - topY;
+      const reachZ = foot.position.z - this.hips.position.z;
+      leg.position.set(sign * FOOT_X, topY, this.hips.position.z);
+      leg.rotation.x = Math.atan2(-reachZ, -reachY);
+      leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
     }
 
     this.root.updateMatrixWorld(true);
@@ -279,8 +291,10 @@ export class MonkAvatar {
   }
 }
 
-function robeColor(hue: number, into: Color): Color {
-  return into.setHSL((((hue % 360) + 360) % 360) / 360, 0.42, 0.62);
+// The jacket and trousers are baked ash grey; the tint is multiplied into that grey (three.js reads the HSL as linear channel values),
+// giving every monk a muted version of its hue that still reads as a grey 승복.
+export function robeColor(hue: number, into: Color): Color {
+  return into.setHSL((((hue % 360) + 360) % 360) / 360, ROBE_TINT_SATURATION, ROBE_TINT_LIGHTNESS);
 }
 
 export class MonkPool {
@@ -291,14 +305,17 @@ export class MonkPool {
   private readonly robe = new Color();
   private readonly white = new Color(1, 1, 1);
 
-  constructor(private readonly host: Object3D, capacity = 40) {
+  constructor(
+    private readonly host: Object3D,
+    assets: MonkAssets,
+    capacity = 40,
+  ) {
     this.capacity = capacity;
     host.add(this.group);
-    sharedGeometries ??= buildPartGeometries();
     const material = new MeshLambertMaterial({ vertexColors: true });
     for (const part of PART_NAMES) {
       const size = capacity * PART_COPIES[part];
-      const mesh = new InstancedMesh(sharedGeometries[part], material, size);
+      const mesh = new InstancedMesh(assets.parts[part], material, size);
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(size * 3).fill(1), 3);
       mesh.instanceColor.setUsage(DynamicDrawUsage);
@@ -346,9 +363,10 @@ export class MonkPool {
 
   flush(): void {
     for (const avatar of this.avatars) {
-      for (const { part, copy, node } of avatar.bindings) {
+      for (const { part, copy, node, item } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
-        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, node.matrixWorld);
+        const shown = !avatar.hidden && (item === undefined || item === avatar.item);
+        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, shown ? node.matrixWorld : HIDDEN_MATRIX);
       }
     }
     for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;

@@ -9,11 +9,13 @@ import {
   PointsMaterial,
   type Texture,
 } from "three";
+import { THEME } from "../theme.ts";
 import { mulberry32 } from "./textures.ts";
 
-const X_MIN = 8.5;
-const X_SPAN = 12;
-const Z_MIN = -7;
+// The falling volume sits over the plaza and the steps, where the camera looks.
+const X_MIN = -8;
+const X_SPAN = 16;
+const Z_MIN = -5;
 const Z_SPAN = 14;
 const Y_TOP = 11;
 const RAIN_SPEED = 13;
@@ -38,7 +40,7 @@ export class Precipitation {
     rainGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(count * 6), 3));
     this.rain = new LineSegments(
       rainGeometry,
-      new LineBasicMaterial({ color: 0xd8e4f0, transparent: true, opacity: 0.6, depthWrite: false, fog: false }),
+      new LineBasicMaterial({ color: THEME.scene.precipDay, transparent: true, opacity: 0.6, depthWrite: false, fog: false }),
     );
     this.rain.name = "rain";
 
@@ -46,7 +48,7 @@ export class Precipitation {
     snowGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(count * 3), 3));
     this.snow = new Points(
       snowGeometry,
-      new PointsMaterial({ map: flake, color: 0xd8e4f0, size: 0.22, transparent: true, opacity: 0.9, depthWrite: false, fog: false }),
+      new PointsMaterial({ map: flake, color: THEME.scene.precipDay, size: 0.22, transparent: true, opacity: 0.9, depthWrite: false, fog: false }),
     );
     this.snow.name = "snow";
 
@@ -69,6 +71,14 @@ export class Precipitation {
       (this.snow.material as PointsMaterial).color.setHex(tint);
       this.fillSnow(Math.ceil(this.count * Math.min(1, snow)));
     }
+  }
+
+  dispose(): void {
+    for (const object of [this.rain, this.snow]) {
+      object.geometry.dispose();
+      (object.material as LineBasicMaterial | PointsMaterial).dispose();
+    }
+    this.group.removeFromParent();
   }
 
   private seed(i: number, k: number): number {

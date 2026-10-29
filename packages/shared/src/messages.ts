@@ -1,7 +1,8 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
-import { isValidHall } from "./hall.ts";
-import { CUSHION_COUNT } from "./layout.ts";
+import { type Item, isValidItem } from "./item.ts";
+import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
+import { isValidWorld } from "./world.ts";
 
 export const MSG = {
   move: "move",
@@ -9,6 +10,9 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   emote: "emote",
+  knock: "knock",
+  chant: "chant",
+  equip: "equip",
   jump: "jump",
   relocate: "relocate",
 } as const;
@@ -19,7 +23,8 @@ export interface MoveMessage {
   seq?: number;
 }
 export interface SitMessage {
-  cushionId: number;
+  zone: Zone;
+  seatId: number;
 }
 export type StandMessage = Record<string, never>;
 export interface BowMessage {
@@ -28,17 +33,27 @@ export interface BowMessage {
 export interface EmoteMessage {
   id: number;
 }
+export type KnockMessage = Record<string, never>;
+export interface ChantMessage {
+  on: boolean;
+}
+export interface EquipMessage {
+  item: Item;
+}
 export interface ClientToServerMessages {
   move: MoveMessage;
   sit: SitMessage;
   stand: StandMessage;
   bow: BowMessage;
   emote: EmoteMessage;
+  knock: KnockMessage;
+  chant: ChantMessage;
+  equip: EquipMessage;
   jump: Record<string, never>;
 }
 
 export interface RelocateMessage {
-  hall: number;
+  world: number;
 }
 
 export interface JoinOptions {
@@ -63,10 +78,10 @@ export function parseMove(payload: unknown): (MoveMessage & { seq: number }) | n
 }
 
 export function parseSit(payload: unknown): SitMessage | null {
-  if (!isRecord(payload) || !finite(payload.cushionId)) return null;
-  const id = payload.cushionId;
-  if (!Number.isInteger(id) || id < 0 || id >= CUSHION_COUNT) return null;
-  return { cushionId: id };
+  if (!isRecord(payload) || !isZone(payload.zone) || !finite(payload.seatId)) return null;
+  const id = payload.seatId;
+  if (!Number.isInteger(id) || id < 0 || id >= SEAT_COUNT) return null;
+  return { zone: payload.zone, seatId: id };
 }
 
 export function parseBow(payload: unknown): BowMessage | null {
@@ -81,7 +96,17 @@ export function parseEmote(payload: unknown): EmoteMessage | null {
   return { id: payload.id };
 }
 
+export function parseChant(payload: unknown): ChantMessage | null {
+  if (!isRecord(payload) || typeof payload.on !== "boolean") return null;
+  return { on: payload.on };
+}
+
+export function parseEquip(payload: unknown): EquipMessage | null {
+  if (!isRecord(payload) || !isValidItem(payload.item)) return null;
+  return { item: payload.item };
+}
+
 export function parseRelocate(payload: unknown): RelocateMessage | null {
-  if (!isRecord(payload) || !isValidHall(payload.hall)) return null;
-  return { hall: payload.hall };
+  if (!isRecord(payload) || !isValidWorld(payload.world)) return null;
+  return { world: payload.world };
 }

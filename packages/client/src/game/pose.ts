@@ -7,7 +7,7 @@ function smooth(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
-// 0 = upright on the cushion, 1 = forehead to the floor. Runs once per server "bow" period.
+// 0 = upright on the mat, 1 = forehead to the floor. Runs once per server "bow" period.
 export function bowDepth(elapsedMs: number, eased: boolean, bowMs: number = BOW_MS): number {
   if (!(elapsedMs > 0) || elapsedMs >= bowMs) return 0;
   const u = elapsedMs / bowMs;

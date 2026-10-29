@@ -1,14 +1,15 @@
 import { Client, type Room } from "@colyseus/sdk";
 import {
-  type HallInfo,
-  type HallListResponse,
+  type JoinOptions,
+  type WorldInfo,
+  type WorldListResponse,
   type SeatResponse,
-  HALLS_PATH,
+  WORLDS_PATH,
   SEAT_PATH,
   TempleState,
 } from "@dongjane/shared";
 
-export type HallClientRoom = Room<any, TempleState>;
+export type WorldClientRoom = Room<any, TempleState>;
 
 export async function waitFor(
   predicate: () => boolean,
@@ -35,36 +36,38 @@ export async function eventually<T>(read: () => Promise<T>, ok: (value: T) => bo
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const FILL_BATCH = 25;
+
 export class TestRig {
   readonly client: Client;
-  readonly rooms: HallClientRoom[] = [];
+  readonly rooms: WorldClientRoom[] = [];
 
   constructor(readonly port: number) {
     this.client = new Client(`ws://127.0.0.1:${port}`);
   }
 
-  async halls(): Promise<HallInfo[]> {
-    const response = await fetch(`http://127.0.0.1:${this.port}${HALLS_PATH}`);
-    return ((await response.json()) as HallListResponse).halls;
+  async worlds(): Promise<WorldInfo[]> {
+    const response = await fetch(`http://127.0.0.1:${this.port}${WORLDS_PATH}`);
+    return ((await response.json()) as WorldListResponse).worlds;
   }
 
-  async hall(hall: number): Promise<HallInfo> {
-    const info = (await this.halls()).find((entry) => entry.hall === hall);
-    if (!info) throw new Error(`hall ${hall} is not open`);
+  async world(world: number): Promise<WorldInfo> {
+    const info = (await this.worlds()).find((entry) => entry.world === world);
+    if (!info) throw new Error(`world ${world} is not open`);
     return info;
   }
 
-  async seat(hall: number | null): Promise<SeatResponse> {
+  async seat(world: number | null): Promise<SeatResponse> {
     const response = await fetch(`http://127.0.0.1:${this.port}${SEAT_PATH}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ hall }),
+      body: JSON.stringify({ world }),
     });
     if (!response.ok) throw new Error(`seat request failed with ${response.status}`);
     return (await response.json()) as SeatResponse;
   }
 
-  async join(seat: SeatResponse, options: { hue?: number } = {}): Promise<HallClientRoom> {
+  async join(seat: SeatResponse, options: JoinOptions = {}): Promise<WorldClientRoom> {
     const room = await this.client.joinById<TempleState>(seat.roomId, options, TempleState);
     room.reconnection.minUptime = 0;
     this.rooms.push(room);
@@ -73,22 +76,25 @@ export class TestRig {
   }
 
   // Asks for a seat the way the page does and reports where the server actually put the visitor.
-  async arrive(requested: number | null, options: { hue?: number } = {}) {
+  async arrive(requested: number | null, options: JoinOptions = {}) {
     const seat = await this.seat(requested);
     return { seat, room: await this.join(seat, options) };
   }
 
-  // Enters a hall that must already be open (or be the next one to open).
-  async enter(hall: number, options: { hue?: number } = {}): Promise<HallClientRoom> {
-    const { seat, room } = await this.arrive(hall, options);
-    if (seat.hall !== hall) throw new Error(`asked for hall ${hall} but was seated in hall ${seat.hall}`);
+  // Enters a world that must already be open (or be the next one to open).
+  async enter(world: number, options: JoinOptions = {}): Promise<WorldClientRoom> {
+    const { seat, room } = await this.arrive(world, options);
+    if (seat.world !== world) throw new Error(`asked for world ${world} but was seated in world ${seat.world}`);
     return room;
   }
 
-  // Brings a hall to `count` visitors, opening it if it is the next hall.
-  async fill(hall: number, count: number): Promise<HallClientRoom[]> {
-    const rooms: HallClientRoom[] = [];
-    for (let i = 0; i < count; i += 1) rooms.push(await this.enter(hall));
+  // Brings a world to `count` visitors, opening it if it is the next world. They arrive in batches so a hundred do not wait in single file.
+  async fill(world: number, count: number, options: JoinOptions = {}): Promise<WorldClientRoom[]> {
+    const rooms: WorldClientRoom[] = [];
+    for (let done = 0; done < count; done += FILL_BATCH) {
+      const batch = Math.min(FILL_BATCH, count - done);
+      rooms.push(...(await Promise.all(Array.from({ length: batch }, () => this.enter(world, options)))));
+    }
     return rooms;
   }
 

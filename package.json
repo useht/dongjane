@@ -13,7 +13,8 @@
     "start": "pnpm --filter @dongjane/server start",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck",
-    "icons": "pnpm --filter @dongjane/client icons"
+    "icons": "pnpm --filter @dongjane/client icons",
+    "assets": "pnpm --filter @dongjane/client assets"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

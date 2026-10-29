@@ -1,25 +1,24 @@
-import {
-  ACESFilmicToneMapping,
-  Color,
-  Fog,
-  PerspectiveCamera,
-  Raycaster,
-  Scene,
-  Vector2,
-  Vector3,
-  WebGLRenderer,
-} from "three";
-import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
-import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
+import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
+import { ARRIVAL, DHARMA_ORIGIN, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import type { GameAssets } from "../assets/registry.ts";
+import { THEME } from "../theme.ts";
+import type { Quad } from "../ui/stage-quad.ts";
+import { CameraRig, DHARMA_KEEP_OUT, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
+import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
+import { DHARMA } from "./dharma-layout.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
-import { HALL_BOUNDS, Hall } from "./hall.ts";
+import { pickFloor } from "./floor-pick.ts";
+import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { JumpTracker } from "./jump-tracker.ts";
-import { MonkAvatar, MonkPool } from "./monk-model.ts";
+import { KnockTracker } from "./knock-tracker.ts";
+import type { MonkAssets } from "./monk-assets.ts";
+import { MonkAvatar, MonkPool, SEAT_TOP } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
 import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
 import { RemoteTrack, ServerClock, type Sample } from "./snapshot.ts";
+import { screenCorners } from "./venue-layout.ts";
 
 export interface MonkView {
   id: string;
@@ -28,11 +27,14 @@ export interface MonkView {
   z: number;
   yaw: number;
   mode: string;
-  cushionId: number;
+  seatId: number;
   npc: boolean;
   bowCount: number;
   emote: number;
   emoteSeq: number;
+  knockSeq: number;
+  chanting: boolean;
+  item: number;
   jumpSeq: number;
 }
 
@@ -40,7 +42,10 @@ export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
   onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
+  // The visitor tapped or clicked the floor of the part of the world the camera is in, at this spot.
   onFloorTap(x: number, z: number): void;
+  // The visitor's monk crossed the 법당's threshold: this is the part of the world the camera is in now.
+  onZone(zone: Zone): void;
 }
 
 export interface WorldStats {
@@ -62,7 +67,11 @@ interface Entry {
   targetYaw: number;
 }
 
-const MAX_MONKS = 40;
+// Every monk of the world is in the scene, so the pool holds a world full of visitors and every zone's computer-driven monks.
+const MAX_MONKS = WORLD_CAPACITY + ZONES.length * NPC_PER_ZONE;
+// How long the camera takes to slide between the open ground's box and the room's box when the monk crosses the doorway,
+// and the light to change from the sun's to the room's.
+const REGION_BLEND_SECONDS = 0.5;
 
 export class World {
   readonly scene = new Scene();
@@ -70,12 +79,23 @@ export class World {
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
   readonly emotes = new EmoteTracker();
+  private readonly knocks = new KnockTracker();
+  private readonly remoteKnockers: MonkView[] = [];
   selfId: string | null = null;
 
+  // Where the camera is: the 법당 once the followed monk is inside its door, the open ground otherwise.
+  private area: Zone = "gatbawi";
+  // How far the light has gone over from the open ground's to the room's, 0 to 1, moving toward the area at a steady pace.
+  private indoor = 0;
+  private readonly occupied: Record<Zone, ReadonlySet<number>> = { gatbawi: new Set(), dharma: new Set() };
   private readonly renderer: WebGLRenderer;
-  private readonly background = new Color(packRgb(DAY_LOOK.background));
+  private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
-  private readonly hall: Hall;
+  private readonly landscape: Landscape;
+  private dharma: DharmaScene | null = null;
+  private dharmaLoading: Promise<boolean> | null = null;
+  private disposed = false;
+  private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly jumps = new JumpTracker();
@@ -99,12 +119,21 @@ export class World {
   private idleSpin = true;
   private hudTop = 0;
   private hudBottom = 0;
+  private readonly screenCorners = screenCorners();
+  private readonly screenPoints: [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: WorldCallbacks,
+    private readonly assets: GameAssets,
+    monkAssets: MonkAssets,
   ) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
     this.quality = detectQuality({
       devicePixelRatio: window.devicePixelRatio,
       cores: navigator.hardwareConcurrency,
@@ -121,12 +150,13 @@ export class World {
     this.scene.background = this.background;
     this.scene.fog = this.fog;
 
-    this.hall = new Hall(this.renderer, this.quality);
-    this.scene.add(this.hall.group);
-    this.pool = new MonkPool(this.scene, MAX_MONKS);
+    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.buddha, assets.models.venue);
+    this.scene.add(this.landscape.group);
+    this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
-    this.rig = new CameraRig(this.camera, HALL_BOUNDS);
-    this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
+    const region = regionFor(this.area);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits, [DHARMA_KEEP_OUT]);
+    this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
     this.input = new PointerInput(canvas, {
       onOrbit: (dx, dy) => {
@@ -157,20 +187,21 @@ export class World {
     if (rect.width <= 0 || rect.height <= 0) return null;
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const hit = this.hall.pickFloor(this.raycaster);
+    const hit = pickFloor(this.raycaster, this.dharma ? [this.landscape.surfaces, this.dharma.surfaces] : [this.landscape.surfaces]);
     return hit ? { x: hit.x, z: hit.z } : null;
   }
 
   displayedPosition(id: string, out: { x: number; z: number }): boolean {
     const entry = this.entries.get(id);
-    if (!entry) return false;
+    if (!entry || entry.avatar.hidden) return false;
     out.x = entry.x;
     out.z = entry.z;
     return true;
   }
 
   headTopOf(id: string): number | null {
-    return this.entries.get(id)?.avatar.headTopY() ?? null;
+    const entry = this.entries.get(id);
+    return entry && !entry.avatar.hidden ? entry.avatar.headTopY() : null;
   }
 
   get currentStats(): WorldStats {
@@ -181,20 +212,68 @@ export class World {
     return this.entries.size;
   }
 
+  get currentZone(): Zone {
+    return this.area;
+  }
+
+  // The 법당's inside is fetched while the visitor settles in, and at the latest when they reach its door. Resolves false when it
+  // could not be had; asking again retries.
+  ensureDharma(): Promise<boolean> {
+    if (this.dharma) return Promise.resolve(true);
+    if (this.dharmaLoading) return this.dharmaLoading;
+    const loading = this.assets
+      .loadDharma()
+      .then((meshes) => {
+        if (this.disposed) return false;
+        const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.buddha.buddha, this.assets.models.venue.lantern);
+        scene.setPresence(this.indoorShare());
+        this.scene.add(scene.group);
+        this.dharma = scene;
+        this.applyOccupancy("dharma");
+        return true;
+      })
+      .catch(() => false);
+    this.dharmaLoading = loading;
+    void loading.then((ok) => {
+      if (!ok && this.dharmaLoading === loading) this.dharmaLoading = null;
+    });
+    return loading;
+  }
+
+  // The camera goes where the followed monk stands. The 법당's inside has to be here before the camera enters it, so a monk
+  // who walks in early is followed from outside until it has arrived.
+  private followArea(x: number, z: number): void {
+    const wanted = zoneAt(x, z);
+    if (wanted === this.area) return;
+    if (wanted === "dharma" && !this.dharma) {
+      void this.ensureDharma();
+      return;
+    }
+    this.setArea(wanted);
+  }
+
+  private setArea(zone: Zone): void {
+    if (zone === this.area) return;
+    this.area = zone;
+    const region = regionFor(zone);
+    this.rig.setRegion(region.bounds, region.limits, REGION_BLEND_SECONDS);
+    this.callbacks.onZone(zone);
+  }
+
   setReduceMotion(value: boolean): void {
     this.reduceMotion = value;
     this.rig.reduceMotion = value;
   }
 
   setSky(sky: SkyState): void {
-    this.hall.setSky(skyLook(sky));
+    this.landscape.setSky(skyLook(sky));
   }
 
   serverNowAt(localMs: number): number | null {
     return this.clock.serverNowAt(localMs);
   }
 
-  // A hall-list reply carries a whole HTTP round trip, so it may only seed an empty clock; later it would read as jitter and stretch the remote-monk delay.
+  // A world-list reply carries a whole HTTP round trip, so it may only seed an empty clock; later it would read as jitter and stretch the remote-monk delay.
   seedServerTime(serverMs: number, localMs: number): void {
     if (this.clock.serverNowAt(localMs) === null) this.clock.observe(serverMs, localMs);
   }
@@ -220,9 +299,12 @@ export class World {
     this.selfPrediction = display;
   }
 
-  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): void {
+  // Returns the other monks who struck their wooden fish since the last call (the array is reused); the caller plays the sound.
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): readonly MonkView[] {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
+    const remoteKnockers = this.remoteKnockers;
+    remoteKnockers.length = 0;
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
@@ -257,6 +339,14 @@ export class World {
       entry.targetYaw = view.yaw;
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      entry.avatar.chanting = view.chanting;
+      entry.avatar.item = view.item;
+      entry.avatar.seatTop = zoneAt(view.x, view.z) === "dharma" ? SEAT_TOP : GATBAWI_SEAT_TOP;
+      // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
+      if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
+        entry.avatar.knock(nowMs);
+        remoteKnockers.push(view);
+      }
       if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
@@ -264,6 +354,12 @@ export class World {
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+    return remoteKnockers;
+  }
+
+  // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.
+  knock(monkId: string, nowMs: number): void {
+    this.entries.get(monkId)?.avatar.knock(nowMs);
   }
 
   // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
@@ -272,22 +368,37 @@ export class World {
     entry?.avatar.hop(nowMs);
   }
 
-  setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < 8; id += 1) this.hall.setOccupied(id, occupied.has(id));
+  // Which seats of a zone are taken. The 법당's are remembered until its inside has arrived.
+  setOccupancy(zone: Zone, occupied: ReadonlySet<number>): void {
+    this.occupied[zone] = occupied;
+    this.applyOccupancy(zone);
+  }
+
+  private applyOccupancy(zone: Zone): void {
+    const occupied = this.occupied[zone];
+    for (let id = 0; id < SEAT_COUNT; id += 1) {
+      if (zone === "dharma") this.dharma?.setOccupied(id, occupied.has(id));
+      else this.landscape.setOccupied(id, occupied.has(id));
+    }
   }
 
   clear(): void {
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
+    this.knocks.reset();
     this.selfId = null;
     this.selfPrediction = null;
     this.clock.reset();
-    this.setOccupancy(new Set());
+    for (const zone of ZONES) this.setOccupancy(zone, new Set());
+    this.setArea("gatbawi");
+    this.indoor = 0;
+    this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
   }
 
   resetCamera(): void {
-    this.rig.yaw = DEFAULT_VIEW.yaw;
-    this.rig.pitch = DEFAULT_VIEW.pitch;
-    this.rig.distance = DEFAULT_VIEW.distance;
+    const view = viewFor(this.area, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
+    this.rig.yaw = view.yaw;
+    this.rig.pitch = view.pitch;
+    this.rig.distance = view.distance;
   }
 
   setHudInsets(top: number, bottom: number): void {
@@ -301,24 +412,44 @@ export class World {
     this.idleSpin = value;
   }
 
+  setScreenMode(mode: ScreenMode): void {
+    this.landscape.setScreenMode(mode);
+  }
+
+  // Where the concert screen's corners are on the canvas (bottom-left, bottom-right, top-right, top-left), or null
+  // when the camera is inside the 법당 or any corner is behind the camera. The points are reused between calls.
+  screenQuad(): Quad | null {
+    if (this.area !== "gatbawi") return null;
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    for (let i = 0; i < this.screenCorners.length; i += 1) {
+      const corner = this.screenCorners[i] as (typeof this.screenCorners)[number];
+      if (!projectUnclipped(this.camera, corner.x, corner.y, corner.z, width, height, this.screenPoints[i] as { x: number; y: number })) return null;
+    }
+    return this.screenPoints;
+  }
+
   projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
     return projectToCanvas(this.camera, x, y, z, this.canvas.clientWidth, this.canvas.clientHeight, out);
   }
 
   projectEmoteAnchor(monkId: string, out: { x: number; y: number }): boolean {
     const entry = this.entries.get(monkId);
-    if (!entry) return false;
+    if (!entry || entry.avatar.hidden) return false;
     entry.avatar.emoteAnchor(this.anchor);
     return this.projectToScreen(this.anchor.x, this.anchor.y, this.anchor.z, out);
   }
 
   dispose(): void {
+    this.disposed = true;
     this.stop();
     this.input.dispose();
     this.resizeObserver.disconnect();
     this.clear();
     this.pool.dispose();
-    this.hall.dispose();
+    this.dharma?.dispose();
+    this.landscape.dispose();
+    this.assets.dispose();
     this.renderer.dispose();
   }
 
@@ -329,15 +460,34 @@ export class World {
     entry.avatar.dispose();
     this.entries.delete(id);
     this.emotes.forget(id);
+    this.knocks.forget(id);
     this.jumps.forget(id);
   }
 
-  private applyAtmosphere(): void {
-    const look = this.hall.look;
-    this.background.setHex(packRgb(look.background));
-    this.fog.color.setHex(packRgb(look.fogColor));
-    this.fog.near = look.fogNear;
-    this.fog.far = look.fogFar;
+  private indoorShare(): number {
+    return this.indoor * this.indoor * (3 - 2 * this.indoor);
+  }
+
+  // The camera is in the room itself, not just following someone who is: only then are the front wall and the roof in the way.
+  private cameraInRoom(): boolean {
+    const { x, y, z } = this.camera.position;
+    return (
+      Math.abs(x - DHARMA_ORIGIN.x) < DHARMA.halfWidth &&
+      z > DHARMA_ORIGIN.z + DHARMA.backZ &&
+      z < DHARMA_ORIGIN.z + DHARMA.frontZ &&
+      y < DHARMA.ceilingHeight
+    );
+  }
+
+  // The air, the lights and the colour behind the world go over from the open ground's to the room's as the share rises.
+  private applyAtmosphere(share: number): void {
+    const look = this.landscape.look;
+    this.background.setHex(packRgb(look.fogColor)).lerp(this.indoorColor, share);
+    this.fog.color.copy(this.background);
+    this.fog.near = look.fogNear + (DHARMA_FOG.near - look.fogNear) * share;
+    this.fog.far = look.fogFar + (DHARMA_FOG.far - look.fogFar) * share;
+    this.landscape.setIndoor(share);
+    this.dharma?.setPresence(share);
   }
 
   private resize(): void {
@@ -379,9 +529,14 @@ export class World {
       entry.avatar.place(entry.x, entry.z, entry.yaw);
       entry.avatar.animate(dt, nowMs, speed, this.reduceMotion);
     }
-    this.pool.flush();
 
     const self = this.selfId ? this.entries.get(this.selfId) : undefined;
+    if (self) this.followArea(self.x, self.z);
+    for (const entry of this.entries.values()) {
+      entry.avatar.hidden = entry !== self && zoneAt(entry.x, entry.z) !== this.area;
+    }
+    this.pool.flush();
+
     if (self) {
       this.rig.follow(self.x, self.z, dt);
     } else if (this.idleSpin && !this.reduceMotion) {
@@ -390,8 +545,13 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    this.hall.update(this.time, dt, this.camera, this.reduceMotion);
-    this.applyAtmosphere();
+    const wanted = this.area === "dharma" ? 1 : 0;
+    const step = this.reduceMotion ? 1 : dt / REGION_BLEND_SECONDS;
+    this.indoor = wanted > this.indoor ? Math.min(wanted, this.indoor + step) : Math.max(wanted, this.indoor - step);
+    this.landscape.setCutaway(this.area === "dharma" && !this.cameraInRoom());
+    this.applyAtmosphere(this.indoorShare());
+    this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
+    this.dharma?.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered(nowMs);
 

@@ -7,30 +7,39 @@ import {
   CHANT_EVERY_MS,
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
-  HALL_CAPACITY,
   JUMP_COOLDOWN_MS,
+  KNOCK_COOLDOWN_MS,
   WALK_SPEED,
+  WORLD_CAPACITY,
 } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
-import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
-import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, thinkNpc } from "./npc.ts";
+import { ITEM_CHANT, ITEM_MOKT, isValidItem } from "./item.ts";
+import { ARRIVAL, SEAT_YAW, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yawFromDirection } from "./layout.ts";
+import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
-import { Cushion, Monk, TempleState } from "./schema.ts";
+import { Monk, Seat, TempleState } from "./schema.ts";
+import { HOME_AREAS, type Point, clampToHome, planPath, resolveWalkable, zoneAt } from "./walk.ts";
 
-interface Target {
-  x: number;
-  z: number;
-  cushionId: number;
+// The corners left to walk, in order; the last is where the walk ends, and `seatId` is the seat it ends on (or -1).
+interface Route {
+  path: Point[];
+  end: Point;
+  seatId: number;
 }
 
 interface Runtime {
-  target: Target | null;
+  route: Route | null;
+  // the zone of the seat the monk holds, when it holds one
+  seatZone: Zone | null;
+  // a computer-driven monk's own zone, which it never leaves
+  home: Zone | null;
   bowEndsAt: number;
   bowsLeft: number;
   nextBowAt: number;
   lastBowEndedAt: number;
   nextEmoteAt: number;
+  nextKnockAt: number;
   nextJumpAt: number;
   brain: NpcBrain | null;
 }
@@ -54,7 +63,10 @@ export class TempleSim {
   private readonly chantMs: number;
   private readonly npcActions: NpcActions = {
     move: (id, x, z) => this.move(id, x, z),
-    sit: (id, cushionId) => this.sit(id, cushionId),
+    sit: (id, seatId) => {
+      const home = this.runtimes.get(id)?.home;
+      return home != null && this.sit(id, home, seatId);
+    },
     stand: (id) => this.stand(id),
     bow: (id, times) => this.bow(id, times),
   };
@@ -66,17 +78,32 @@ export class TempleSim {
     this.chantMs = options.chantMs ?? CHANT_MS;
     this.state.serverTime = this.clock();
 
-    for (const spot of CUSHION_SPOTS) {
-      this.state.cushions.set(String(spot.id), new Cushion({ id: spot.id, occupantId: "" }));
+    for (const zone of ZONES) {
+      for (const spot of ZONE_SEATS[zone]) {
+        this.state.seats.set(seatKey(zone, spot.id), new Seat({ zone, id: spot.id, occupantId: "" }));
+      }
     }
     this.updateChant();
 
-    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`, options.personas?.[n - 1]);
+    let n = 0;
+    for (const zone of ZONES) {
+      for (let i = 0; i < (options.npcCount ?? 0); i += 1) {
+        n += 1;
+        this.spawnNpc(`npc-${n}`, zone, options.personas?.[n - 1]);
+      }
+    }
   }
 
   get humanCount(): number {
     let count = 0;
     for (const monk of this.state.monks.values()) if (!monk.npc) count += 1;
+    return count;
+  }
+
+  // Visitors standing in a zone right now; the NPCs are not counted, so they never take a visitor's place.
+  zoneCount(zone: Zone): number {
+    let count = 0;
+    for (const monk of this.state.monks.values()) if (!monk.npc && zoneAt(monk.x, monk.z) === zone) count += 1;
     return count;
   }
 
@@ -88,29 +115,21 @@ export class TempleSim {
     const taken = new Set<number>();
     for (const other of this.state.monks.values()) taken.add(other.slot);
     let slot = 1;
-    while (slot <= HALL_CAPACITY && taken.has(slot)) slot += 1;
+    while (slot <= WORLD_CAPACITY && taken.has(slot)) slot += 1;
     const monk = new Monk({
       id,
       slot,
       hue,
-      x: SPAWN_POINT.x + (this.random() - 0.5) * 4,
-      z: SPAWN_POINT.z,
+      x: 0,
+      z: 0,
       yaw: 0,
       mode: "stand",
-      cushionId: -1,
+      seatId: -1,
       bowCount: 0,
     });
+    this.placeAtArrival(monk);
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, {
-      target: null,
-      bowEndsAt: 0,
-      bowsLeft: 0,
-      nextBowAt: 0,
-      lastBowEndedAt: 0,
-      nextEmoteAt: 0,
-      nextJumpAt: 0,
-      brain: null,
-    });
+    this.runtimes.set(id, this.runtime(null, null));
     return monk;
   }
 
@@ -128,24 +147,30 @@ export class TempleSim {
     if (!monk || !runtime || !Number.isFinite(x) || !Number.isFinite(z)) return false;
 
     this.releaseSeat(monk);
-    const point = resolveWalkable(x, z);
-    this.startWalk(monk, runtime, { x: point.x, z: point.z, cushionId: -1 });
+    this.startWalk(monk, runtime, planPath(monk, { x, z }), -1);
     return true;
   }
 
-  sit(id: string, cushionId: number): boolean {
+  // A seat can be asked for from anywhere in the world: the monk walks there, through the doorway if need be.
+  sit(id: string, zone: Zone, seatId: number): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    const spot = cushionSpot(cushionId);
-    const cushion = this.state.cushions.get(String(cushionId));
-    if (!monk || !runtime || !spot || !cushion) return false;
-    if (monk.cushionId === cushionId) return true;
-    if (cushion.occupantId !== "") return false;
+    if (!monk || !runtime || (runtime.home && runtime.home !== zone)) return false;
+    const spot = seatSpot(zone, seatId);
+    const seat = this.state.seats.get(seatKey(zone, seatId));
+    if (!spot || !seat) return false;
+    if (seat.occupantId === id) return true;
+    if (seat.occupantId !== "") {
+      const holder = this.state.monks.get(seat.occupantId);
+      if (monk.npc || !holder?.npc) return false;
+      this.evict(holder);
+    }
 
     this.releaseSeat(monk);
-    cushion.occupantId = id;
-    monk.cushionId = cushionId;
-    this.startWalk(monk, runtime, { x: spot.x, z: spot.z, cushionId });
+    seat.occupantId = id;
+    monk.seatId = seatId;
+    runtime.seatZone = zone;
+    this.startWalk(monk, runtime, planPath(monk, spot), seatId);
     return true;
   }
 
@@ -154,7 +179,7 @@ export class TempleSim {
     const runtime = this.runtimes.get(id);
     if (!monk || !runtime) return false;
     this.releaseSeat(monk);
-    runtime.target = null;
+    runtime.route = null;
     monk.mode = "stand";
     return true;
   }
@@ -164,7 +189,7 @@ export class TempleSim {
     const runtime = this.runtimes.get(id);
     if (!monk || !runtime) return false;
     if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return false;
-    if (monk.mode !== "kneel" || monk.cushionId < 0 || runtime.bowsLeft > 0) return false;
+    if (monk.mode !== "kneel" || monk.seatId < 0 || runtime.bowsLeft > 0) return false;
 
     const now = this.clock();
     if (now < runtime.lastBowEndedAt + BOW_COOLDOWN_MS) return false;
@@ -188,10 +213,45 @@ export class TempleSim {
     return true;
   }
 
+  equip(id: string, item: number): boolean {
+    const monk = this.state.monks.get(id);
+    if (!monk || !isValidItem(item)) return false;
+    monk.item = item;
+    if (item !== ITEM_CHANT) monk.chanting = false;
+    return true;
+  }
+
+  knock(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || monk.item !== ITEM_MOKT || monk.mode !== "kneel" || monk.seatId < 0) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextKnockAt) return false;
+
+    monk.knockSeq += 1;
+    runtime.nextKnockAt = now + KNOCK_COOLDOWN_MS;
+    return true;
+  }
+
+  chant(id: string, on: boolean): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime) return false;
+    if (!on) {
+      monk.chanting = false;
+      return true;
+    }
+    if (monk.item !== ITEM_CHANT || monk.seatId < 0) return false;
+    if (monk.mode !== "kneel" && monk.mode !== "bow") return false;
+    monk.chanting = true;
+    return true;
+  }
+
   jump(id: string): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    if (!monk || !runtime || monk.cushionId >= 0) return false;
+    if (!monk || !runtime || monk.seatId >= 0) return false;
 
     const now = this.clock();
     if (now < runtime.nextJumpAt) return false;
@@ -224,7 +284,9 @@ export class TempleSim {
         this.beginBow(monk, runtime, now);
       }
 
-      if (runtime.brain && now >= runtime.brain.nextThinkAt) this.think(monk, runtime.brain, now);
+      if (runtime.brain && runtime.home && now >= runtime.brain.nextThinkAt) {
+        this.think(monk, runtime.brain, runtime.home, now);
+      }
     }
   }
 
@@ -240,19 +302,44 @@ export class TempleSim {
     return Math.max(50, chantEndsAt(next) - now + 20);
   }
 
-  private visitors(): NpcVisitor[] {
+  private visitors(zone: Zone): NpcVisitor[] {
     const visitors: NpcVisitor[] = [];
     for (const monk of this.state.monks.values()) {
-      if (!monk.npc) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
+      if (!monk.npc && zoneAt(monk.x, monk.z) === zone) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
     }
     return visitors;
   }
 
-  private spawnNpc(id: string, persona: Persona | undefined): void {
+  private evict(npc: Monk): void {
+    this.releaseSeat(npc);
+    npc.mode = "stand";
+    const brain = this.runtimes.get(npc.id)?.brain;
+    if (brain) disturbNpc(brain, this.clock(), this.random);
+  }
+
+  private runtime(brain: NpcBrain | null, home: Zone | null): Runtime {
+    return {
+      route: null,
+      seatZone: null,
+      home,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      nextEmoteAt: 0,
+      nextKnockAt: 0,
+      nextJumpAt: 0,
+      brain,
+    };
+  }
+
+  private spawnNpc(id: string, zone: Zone, persona: Persona | undefined): void {
     const random = this.random;
-    const spot = resolveWalkable(
-      WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
-      WALK_BOUNDS.minZ + random() * (WALK_BOUNDS.maxZ - WALK_BOUNDS.minZ),
+    const bounds = HOME_AREAS[zone];
+    const spot = clampToHome(
+      zone,
+      bounds.minX + random() * (bounds.maxX - bounds.minX),
+      bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
     );
     const monk = new Monk({
       id,
@@ -262,35 +349,28 @@ export class TempleSim {
       z: spot.z,
       yaw: (random() * 2 - 1) * Math.PI,
       mode: "stand",
-      cushionId: -1,
+      seatId: -1,
       bowCount: 0,
       npc: true,
     });
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, {
-      target: null,
-      bowEndsAt: 0,
-      bowsLeft: 0,
-      nextBowAt: 0,
-      lastBowEndedAt: 0,
-      nextEmoteAt: 0,
-      nextJumpAt: 0,
-      brain: createNpcBrain(persona ?? generatePersona(random), random, this.clock()),
-    });
+    const brain = createNpcBrain(persona ?? generatePersona(random), random, this.clock());
+    this.runtimes.set(id, this.runtime(brain, zone));
   }
 
-  private think(monk: Monk, brain: NpcBrain, now: number): void {
+  private think(monk: Monk, brain: NpcBrain, zone: Zone, now: number): void {
     const chant = this.state.chant;
     const chanting = now >= chant.startsAt && now < chantEndsAt(chant);
     thinkNpc(
       brain,
       monk,
       {
+        zone,
         now,
         random: this.random,
         chantEndsAt: chanting ? chantEndsAt(chant) : null,
-        visitors: this.visitors(),
-        isFree: (cushionId) => this.state.cushions.get(String(cushionId))?.occupantId === "",
+        visitors: this.visitors(zone),
+        isFree: (seatId) => this.state.seats.get(seatKey(zone, seatId))?.occupantId === "",
       },
       this.npcActions,
     );
@@ -301,11 +381,13 @@ export class TempleSim {
     runtime.bowEndsAt = now + BOW_MS;
   }
 
-  private startWalk(monk: Monk, runtime: Runtime, target: Target): void {
-    runtime.target = target;
-    const dx = target.x - monk.x;
-    const dz = target.z - monk.z;
-    if (Math.hypot(dx, dz) <= ARRIVE_DISTANCE) {
+  private startWalk(monk: Monk, runtime: Runtime, path: Point[], seatId: number): void {
+    const end = path[path.length - 1] ?? { x: monk.x, z: monk.z };
+    runtime.route = { path, end, seatId };
+    const first = path[0] ?? end;
+    const dx = first.x - monk.x;
+    const dz = first.z - monk.z;
+    if (path.length <= 1 && Math.hypot(dx, dz) <= ARRIVE_DISTANCE) {
       this.arrive(monk, runtime);
       return;
     }
@@ -314,34 +396,42 @@ export class TempleSim {
   }
 
   private advanceWalk(monk: Monk, runtime: Runtime, dt: number): void {
-    const target = runtime.target;
-    if (!target) {
+    const route = runtime.route;
+    if (!route) {
       monk.mode = "stand";
       return;
     }
-    const dx = target.x - monk.x;
-    const dz = target.z - monk.z;
-    const distance = Math.hypot(dx, dz);
-    const step = WALK_SPEED * dt;
-    if (distance <= Math.max(step, ARRIVE_DISTANCE)) {
-      this.arrive(monk, runtime);
-      return;
+    let reach = WALK_SPEED * dt;
+    for (let corner = route.path[0]; corner; corner = route.path[0]) {
+      const dx = corner.x - monk.x;
+      const dz = corner.z - monk.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > Math.max(reach, ARRIVE_DISTANCE)) {
+        monk.x += (dx / distance) * reach;
+        monk.z += (dz / distance) * reach;
+        return;
+      }
+      reach = Math.max(0, reach - distance);
+      monk.x = corner.x;
+      monk.z = corner.z;
+      route.path.shift();
+      const next = route.path[0];
+      if (next) monk.yaw = yawFromDirection(next.x - monk.x, next.z - monk.z);
     }
-    monk.x += (dx / distance) * step;
-    monk.z += (dz / distance) * step;
+    this.arrive(monk, runtime);
   }
 
   private arrive(monk: Monk, runtime: Runtime): void {
-    const target = runtime.target;
-    runtime.target = null;
-    if (!target) {
+    const route = runtime.route;
+    runtime.route = null;
+    if (!route) {
       monk.mode = "stand";
       return;
     }
-    monk.x = target.x;
-    monk.z = target.z;
-    if (target.cushionId >= 0 && monk.cushionId === target.cushionId) {
-      monk.yaw = 0;
+    monk.x = route.end.x;
+    monk.z = route.end.z;
+    if (route.seatId >= 0 && monk.seatId === route.seatId) {
+      monk.yaw = SEAT_YAW;
       monk.mode = "kneel";
     } else {
       monk.mode = "stand";
@@ -349,15 +439,24 @@ export class TempleSim {
   }
 
   private releaseSeat(monk: Monk): void {
+    monk.chanting = false;
     const runtime = this.runtimes.get(monk.id);
     if (runtime) {
       runtime.bowsLeft = 0;
-      runtime.target = null;
+      runtime.route = null;
+      if (monk.seatId >= 0 && runtime.seatZone) {
+        const seat = this.state.seats.get(seatKey(runtime.seatZone, monk.seatId));
+        if (seat && seat.occupantId === monk.id) seat.occupantId = "";
+      }
+      runtime.seatZone = null;
     }
-    if (monk.cushionId >= 0) {
-      const cushion = this.state.cushions.get(String(monk.cushionId));
-      if (cushion && cushion.occupantId === monk.id) cushion.occupantId = "";
-      monk.cushionId = -1;
-    }
+    monk.seatId = -1;
+  }
+
+  private placeAtArrival(monk: Monk): void {
+    const point = resolveWalkable(ARRIVAL.x + (this.random() - 0.5) * ARRIVAL.spread, ARRIVAL.z);
+    monk.x = point.x;
+    monk.z = point.z;
+    monk.yaw = 0;
   }
 }

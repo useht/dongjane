@@ -1,4 +1,4 @@
-import { WALK_SPEED, lerpAngle, resolveWalkable } from "@dongjane/shared";
+import { WALK_SPEED, lerpAngle, slideWalkable } from "@dongjane/shared";
 
 export interface Snapshot {
   t: number;
@@ -105,7 +105,7 @@ function extrapolate(last: Snapshot, overshootMs: number, out: Sample): void {
   out.yaw = last.yaw;
   if (!last.walking) return;
   const reach = (WALK_SPEED * Math.min(overshootMs, EXTRAPOLATION_MAX_MS)) / 1000;
-  const point = resolveWalkable(last.x - Math.sin(last.yaw) * reach, last.z - Math.cos(last.yaw) * reach);
+  const point = slideWalkable(last, -Math.sin(last.yaw) * reach, -Math.cos(last.yaw) * reach);
   out.x = point.x;
   out.z = point.z;
 }

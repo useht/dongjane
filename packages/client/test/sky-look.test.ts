@@ -7,8 +7,10 @@ import {
   cloneLook,
   easeLook,
   packRgb,
+  hexToRgb,
   skyLook,
 } from "../src/game/sky-look.ts";
+import { THEME } from "../src/theme.ts";
 
 const sky = (daylight: number, weather: Weather = "clear"): SkyState => ({
   hour: 12,
@@ -17,49 +19,62 @@ const sky = (daylight: number, weather: Weather = "clear"): SkyState => ({
   weather,
 });
 
+const packed = (hex: string): number => packRgb(hexToRgb(hex));
+
+describe("hexToRgb and packRgb", () => {
+  it("round-trip a theme colour", () => {
+    expect(hexToRgb("#ffd29a")).toEqual([255, 210, 154]);
+    expect(packRgb(hexToRgb("#ffd29a"))).toBe(0xffd29a);
+  });
+});
+
 describe("skyLook at full daylight and clear weather", () => {
   const look = skyLook(sky(1));
+  const { scene } = THEME;
 
-  it("matches the hall as it was before the sky followed the clock", () => {
-    expect(look.sunIntensity).toBe(3.1);
-    expect(packRgb(look.sunColor)).toBe(0xffd8a0);
-    expect(look.hemisphereIntensity).toBe(1.25);
-    expect(packRgb(look.hemisphereSky)).toBe(0xffe2b4);
-    expect(packRgb(look.hemisphereGround)).toBe(0x6b4a2a);
-    expect(packRgb(look.background)).toBe(0x1c120b);
-    expect(packRgb(look.fogColor)).toBe(0x2a1a10);
-    expect(look.fogNear).toBe(16);
-    expect(look.fogFar).toBe(42);
-    expect(look.sunbeamOpacity).toBeCloseTo(0.32, 12);
+  it("is the daylight palette of the theme", () => {
+    expect(packRgb(look.sunColor)).toBe(packed(scene.sun));
+    expect(packRgb(look.hemisphereSky)).toBe(packed(scene.hemiSky));
+    expect(packRgb(look.hemisphereGround)).toBe(packed(scene.hemiGround));
+    expect(packRgb(look.skyTop)).toBe(packed(scene.skyTop));
+    expect(packRgb(look.skyMid)).toBe(packed(scene.skyMid));
+    expect(packRgb(look.fogColor)).toBe(packed(scene.skyHorizon));
+    expect(packRgb(look.cloudTint)).toBe(packed(scene.cloudDay));
+    expect(packRgb(look.precipTint)).toBe(packed(scene.precipDay));
+  });
+
+  it("shows the sun and no stars, cloud or precipitation", () => {
+    expect(look.sunGlow).toBe(1);
     expect(look.nightSky).toBe(0);
-    expect(look.candleBoost).toBe(1);
     expect(look.cloudCover).toBe(0);
     expect(look.rain).toBe(0);
     expect(look.snow).toBe(0);
   });
 
-  it("is what the hall starts from", () => {
+  it("is what the world starts from", () => {
     expect(DAY_LOOK).toEqual(look);
   });
 });
 
 describe("skyLook at night", () => {
-  it("turns the sunbeams off and shows the night sky", () => {
+  it("hides the sun and shows the stars", () => {
     for (const weather of ["clear", "cloudy", "rain", "snow"] as const) {
       const look = skyLook(sky(0, weather));
-      expect(look.sunbeamOpacity).toBe(0);
+      expect(look.sunGlow).toBe(0);
       expect(look.nightSky).toBe(1);
     }
   });
 
-  it("is darker than the day and brightens the candles", () => {
+  it("is darker than the day but never pitch black", () => {
     const night = skyLook(sky(0));
     const day = skyLook(sky(1));
-    expect(night.sunIntensity).toBeLessThan(day.sunIntensity * 0.2);
+    expect(night.sunIntensity).toBeLessThan(day.sunIntensity * 0.3);
+    expect(night.sunIntensity).toBeGreaterThan(0.2);
     expect(night.hemisphereIntensity).toBeLessThan(day.hemisphereIntensity);
-    expect(night.candleBoost).toBeGreaterThan(day.candleBoost);
-    expect(night.paperGlow).toBeLessThan(day.paperGlow);
-    expect(night.background[2]).toBeGreaterThan(night.background[0]);
+    expect(night.hemisphereIntensity).toBeGreaterThan(0.5);
+    expect(night.envIntensity).toBeLessThan(day.envIntensity);
+    expect(night.fogColor[2]).toBeGreaterThan(night.fogColor[0]);
+    expect(packRgb(night.fogColor)).toBe(packed(THEME.scene.skyHorizonNight));
   });
 
   it("has no rain or snow when the weather is clear or cloudy", () => {
@@ -68,6 +83,15 @@ describe("skyLook at night", () => {
       expect(look.rain).toBe(0);
       expect(look.snow).toBe(0);
     }
+  });
+});
+
+describe("skyLook at twilight", () => {
+  it("warms the horizon between the night and the day colours", () => {
+    const look = skyLook(sky(0.5));
+    expect(packRgb(look.fogColor)).toBe(packed(THEME.scene.skyHorizonTwilight));
+    expect(packRgb(look.sunColor)).toBe(packed(THEME.scene.sunTwilight));
+    expect(look.fogColor[0]).toBeGreaterThan(look.fogColor[2]);
   });
 });
 
@@ -83,13 +107,21 @@ describe("skyLook weather", () => {
     expect(skyLook(sky(1, "snow")).rain).toBe(0);
   });
 
-  it("covers the sky with cloud, dims the sun and hides the sunbeams in overcast weather", () => {
+  it("covers the sky with cloud, dims the sun and hides the sun disc in overcast weather", () => {
     const clear = skyLook(sky(1, "clear"));
     for (const weather of ["cloudy", "rain", "snow"] as const) {
       const look = skyLook(sky(1, weather));
       expect(look.cloudCover).toBeGreaterThan(0.5);
       expect(look.sunIntensity).toBeLessThan(clear.sunIntensity);
-      expect(look.sunbeamOpacity).toBeLessThan(clear.sunbeamOpacity);
+      expect(look.sunGlow).toBeLessThan(clear.sunGlow);
+    }
+  });
+
+  it("dims the horizon under cloud", () => {
+    const total = (color: readonly number[]): number => color.reduce((sum, channel) => sum + channel, 0);
+    const clear = skyLook(sky(1, "clear"));
+    for (const weather of ["cloudy", "rain", "snow"] as const) {
+      expect(total(skyLook(sky(1, weather)).fogColor)).toBeLessThan(total(clear.fogColor));
     }
   });
 
@@ -99,6 +131,12 @@ describe("skyLook weather", () => {
       const look = skyLook(sky(1, weather));
       expect(look.fogNear).toBeLessThan(clear.fogNear);
       expect(look.fogFar).toBeLessThan(clear.fogFar);
+    }
+  });
+
+  it("keeps the whole walkable plaza and the statue clear of fog in the rain", () => {
+    for (const weather of ["clear", "rain", "snow"] as const) {
+      expect(skyLook(sky(1, weather)).fogNear).toBeGreaterThan(14);
     }
   });
 });
@@ -117,15 +155,15 @@ describe("skyLook across the day", () => {
     }
   });
 
-  it("fades the night sky out and the sunbeams in with daylight", () => {
+  it("fades the stars out and the sun in with daylight", () => {
     let nightSky = Infinity;
-    let sunbeams = -Infinity;
+    let sunGlow = -Infinity;
     for (const daylight of steps) {
       const look = skyLook(sky(daylight));
       expect(look.nightSky).toBeLessThanOrEqual(nightSky);
-      expect(look.sunbeamOpacity).toBeGreaterThanOrEqual(sunbeams);
+      expect(look.sunGlow).toBeGreaterThanOrEqual(sunGlow);
       nightSky = look.nightSky;
-      sunbeams = look.sunbeamOpacity;
+      sunGlow = look.sunGlow;
     }
   });
 
@@ -176,7 +214,7 @@ describe("easeLook", () => {
   it("does not touch the look it was cloned from", () => {
     const copy = cloneLook(DAY_LOOK);
     easeLook(copy, skyLook(sky(0, "snow")), 1);
-    expect(packRgb(DAY_LOOK.background)).toBe(0x1c120b);
+    expect(packRgb(DAY_LOOK.fogColor)).toBe(packed(THEME.scene.skyHorizon));
     expect(DAY_LOOK.snow).toBe(0);
   });
 });

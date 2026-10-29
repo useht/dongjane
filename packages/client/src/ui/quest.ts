@@ -1,5 +1,6 @@
 import { type QuestView, questSummary } from "../game/quest-tracker.ts";
-import { h, icon } from "./dom.ts";
+import { h } from "./dom.ts";
+import { icon } from "./icons.ts";
 import { Sheet } from "./sheet.ts";
 
 function questRow(view: QuestView): HTMLLIElement {
@@ -19,7 +20,7 @@ function questRow(view: QuestView): HTMLLIElement {
   );
 }
 
-// The strip under the hall name sums up today's quests; its sheet lists each one and how far it has come.
+// The strip under the world name sums up today's quests; its sheet lists each one and how far it has come.
 export class QuestPanel {
   readonly button = h("button", "quest-strip hidden");
   private readonly sheet: Sheet;

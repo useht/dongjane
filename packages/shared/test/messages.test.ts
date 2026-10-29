@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { EMOTE_COUNT, isValidEmote, parseBow, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
+import {
+  EMOTE_COUNT,
+  ITEM_CHANT,
+  ITEM_MOKT,
+  ITEM_NONE,
+  isValidEmote,
+  isValidItem,
+  parseBow,
+  parseChant,
+  parseEmote,
+  parseEquip,
+  parseMove,
+  parseRelocate,
+  parseSit,
+} from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -23,14 +37,17 @@ describe("message parsers", () => {
     expect(parseMove({ x: Number.NaN, z: 2, seq: 3 })).toBeNull();
   });
 
-  it("accepts only integer cushion ids 0..7", () => {
-    expect(parseSit({ cushionId: 0 })).toEqual({ cushionId: 0 });
-    expect(parseSit({ cushionId: 7 })).toEqual({ cushionId: 7 });
-    expect(parseSit({ cushionId: 8 })).toBeNull();
-    expect(parseSit({ cushionId: -1 })).toBeNull();
-    expect(parseSit({ cushionId: 2.5 })).toBeNull();
-    expect(parseSit({ cushionId: Number.NaN })).toBeNull();
-    expect(parseSit({ cushionId: "3" })).toBeNull();
+  it("accepts only a known zone with an integer seat id 0..49", () => {
+    expect(parseSit({ zone: "gatbawi", seatId: 0 })).toEqual({ zone: "gatbawi", seatId: 0 });
+    expect(parseSit({ zone: "dharma", seatId: 49 })).toEqual({ zone: "dharma", seatId: 49 });
+    expect(parseSit({ zone: "gatbawi", seatId: 50 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: -1 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: 2.5 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: Number.NaN })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: "3" })).toBeNull();
+    expect(parseSit({ zone: "garden", seatId: 3 })).toBeNull();
+    expect(parseSit({ seatId: 3 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi" })).toBeNull();
     expect(parseSit(undefined)).toBeNull();
   });
 
@@ -59,11 +76,41 @@ describe("message parsers", () => {
     expect(isValidEmote(8)).toBe(false);
   });
 
-  it("accepts only a positive integer hall to relocate to", () => {
-    expect(parseRelocate({ hall: 3 })).toEqual({ hall: 3 });
-    expect(parseRelocate({ hall: 0 })).toBeNull();
-    expect(parseRelocate({ hall: 1.5 })).toBeNull();
-    expect(parseRelocate({ hall: "3" })).toBeNull();
+  it("accepts only a boolean chanting flag in an object payload", () => {
+    expect(parseChant({ on: true })).toEqual({ on: true });
+    expect(parseChant({ on: false })).toEqual({ on: false });
+    expect(parseChant({ on: true, extra: 1 })).toEqual({ on: true });
+    for (const on of [1, 0, "true", "false", null, undefined, [true], {}]) expect(parseChant({ on })).toBeNull();
+    expect(parseChant({})).toBeNull();
+    expect(parseChant(true)).toBeNull();
+    expect(parseChant(null)).toBeNull();
+    expect(parseChant(undefined)).toBeNull();
+    expect(parseChant([true])).toBeNull();
+    expect(parseChant("on")).toBeNull();
+  });
+
+  it("accepts only the known items in an object payload", () => {
+    expect(parseEquip({ item: ITEM_NONE })).toEqual({ item: 0 });
+    expect(parseEquip({ item: ITEM_MOKT })).toEqual({ item: 1 });
+    expect(parseEquip({ item: ITEM_CHANT })).toEqual({ item: 2 });
+    expect(parseEquip({ item: 1, extra: true })).toEqual({ item: 1 });
+    for (const item of [3, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "1", true, null, undefined, [1], {}]) {
+      expect(parseEquip({ item })).toBeNull();
+    }
+    expect(parseEquip({})).toBeNull();
+    expect(parseEquip(1)).toBeNull();
+    expect(parseEquip(null)).toBeNull();
+    expect(parseEquip(undefined)).toBeNull();
+    expect(parseEquip([1])).toBeNull();
+    expect(isValidItem(2)).toBe(true);
+    expect(isValidItem(3)).toBe(false);
+  });
+
+  it("accepts only a positive integer world to relocate to", () => {
+    expect(parseRelocate({ world: 3 })).toEqual({ world: 3 });
+    expect(parseRelocate({ world: 0 })).toBeNull();
+    expect(parseRelocate({ world: 1.5 })).toBeNull();
+    expect(parseRelocate({ world: "3" })).toBeNull();
     expect(parseRelocate({})).toBeNull();
     expect(parseRelocate(null)).toBeNull();
   });

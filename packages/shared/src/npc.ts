@@ -1,20 +1,20 @@
 import { BOW_COOLDOWN_MS, BOW_MAX_TIMES, BOW_MS, WALK_SPEED } from "./constants.ts";
-import { CUSHION_SPOTS, WALK_BOUNDS, resolveWalkable } from "./layout.ts";
-import type { CushionSpot } from "./layout.ts";
+import { ZONE_SEATS, type SeatSpot, type Zone } from "./layout.ts";
 import type { Persona } from "./persona.ts";
+import { HOME_AREAS, clampToHome } from "./walk.ts";
 
 export interface NpcBody {
   readonly id: string;
   readonly mode: string;
   readonly x: number;
   readonly z: number;
-  readonly cushionId: number;
+  readonly seatId: number;
   readonly bowCount: number;
 }
 
 export interface NpcActions {
   move(id: string, x: number, z: number): boolean;
-  sit(id: string, cushionId: number): boolean;
+  sit(id: string, seatId: number): boolean;
   stand(id: string): boolean;
   bow(id: string, times: number): boolean;
 }
@@ -27,11 +27,13 @@ export interface NpcVisitor {
 }
 
 export interface NpcWorld {
+  // the zone the monk lives in; it never walks out of it
+  zone: Zone;
   now: number;
   random: () => number;
   chantEndsAt: number | null;
   visitors: readonly NpcVisitor[];
-  isFree(cushionId: number): boolean;
+  isFree(seatId: number): boolean;
 }
 
 interface Point {
@@ -45,7 +47,7 @@ interface Nearby {
 }
 
 interface Seat {
-  cushionId: number;
+  seatId: number;
   bows: number;
   bowBase: number;
   bowsAsked: boolean;
@@ -65,6 +67,7 @@ export interface NpcBrain {
 type Range = readonly [number, number];
 
 const FIRST_THINK_MS: Range = [1000, 4000];
+const EVICTED_MS: Range = [1000, 2500];
 const PAUSE_MS: Range = [1500, 5000];
 const STROLL_REACH_M: Range = [1.5, 3.5];
 const SETTLE_MS: Range = [1000, 3000];
@@ -104,11 +107,18 @@ export function createNpcBrain(persona: Persona, random: () => number, now: numb
   };
 }
 
+export function disturbNpc(brain: NpcBrain, now: number, random: () => number): void {
+  brain.seat = null;
+  brain.greetAt = 0;
+  brain.nextThinkAt = now + span(random, EVICTED_MS);
+}
+
 export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
-  if (monk.cushionId < 0) {
+  const zone = world.zone;
+  if (monk.seatId < 0) {
     brain.seat = null;
-  } else if (brain.seat?.cushionId !== monk.cushionId) {
-    brain.seat = { cushionId: monk.cushionId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, leaveAt: 0 };
+  } else if (brain.seat?.seatId !== monk.seatId) {
+    brain.seat = { seatId: monk.seatId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, leaveAt: 0 };
     brain.greetAt = 0;
   }
 
@@ -123,7 +133,7 @@ export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, action
       if (brain.greetAt > 0) brain.nextThinkAt = Math.min(brain.nextThinkAt, brain.greetAt);
     }
   } else {
-    thinkStanding(brain, monk, world, actions);
+    thinkStanding(brain, monk, zone, world, actions);
   }
 }
 
@@ -215,35 +225,35 @@ function thinkSeated(
   brain.nextThinkAt = now + span(random, AFTER_STAND_MS);
 }
 
-function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
+function thinkStanding(brain: NpcBrain, monk: NpcBody, zone: Zone, world: NpcWorld, actions: NpcActions): void {
   const { now, random } = world;
   const { persona } = brain;
 
   const near = nearestVisitor(monk, world.visitors);
   if (near && near.distance <= TOO_CLOSE_M) {
     if (random() < persona.shyness) {
-      const away = stepAway(monk, near.visitor, random);
+      const away = stepAway(monk, zone, near.visitor, random);
       if (Math.hypot(away.x - monk.x, away.z - monk.z) >= MIN_RETREAT_M) {
         walkTo(brain, monk, world, actions, away);
         return;
       }
     }
   } else if (near && near.distance <= NEAR_M && random() < persona.sociability * APPROACH_FACTOR) {
-    walkTo(brain, monk, world, actions, approach(monk, near.visitor, random));
+    walkTo(brain, monk, world, actions, approach(monk, zone, near.visitor, random));
     return;
   }
 
   const chanting = world.chantEndsAt !== null;
   const sitChance = 0.04 + 0.12 * (1 - persona.restless) + 0.05 * persona.devotion + (chanting ? CHANT_SIT_BOOST : 0);
   if (random() < sitChance) {
-    const spot = pickSeat(persona, world);
+    const spot = pickSeat(zone, persona, world);
     if (spot && actions.sit(monk.id, spot.id)) {
       brain.nextThinkAt = now + travelMs(monk, spot.x, spot.z) + ARRIVE_SLACK_MS;
       return;
     }
   }
 
-  walkTo(brain, monk, world, actions, pickStrollTarget(monk, random));
+  walkTo(brain, monk, world, actions, pickStrollTarget(monk, zone, random));
 }
 
 function walkTo(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions, target: Point): void {
@@ -270,39 +280,45 @@ function directionFrom(visitor: NpcVisitor, monk: NpcBody, random: () => number)
   return { x: Math.cos(angle), z: Math.sin(angle) };
 }
 
-function stepAway(monk: NpcBody, visitor: NpcVisitor, random: () => number): Point {
+function stepAway(monk: NpcBody, zone: Zone, visitor: NpcVisitor, random: () => number): Point {
   const away = directionFrom(visitor, monk, random);
   const reach = span(random, AWAY_M);
-  return resolveWalkable(monk.x + away.x * reach, monk.z + away.z * reach);
+  return clampToHome(zone, monk.x + away.x * reach, monk.z + away.z * reach);
 }
 
-function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Point {
+function approach(monk: NpcBody, zone: Zone, visitor: NpcVisitor, random: () => number): Point {
   const side = directionFrom(visitor, monk, random);
   const gap = span(random, APPROACH_GAP_M);
-  return resolveWalkable(visitor.x + side.x * gap, visitor.z + side.z * gap);
+  return clampToHome(zone, visitor.x + side.x * gap, visitor.z + side.z * gap);
 }
 
-function pickSeat(persona: Persona, world: NpcWorld): CushionSpot | undefined {
-  const free = CUSHION_SPOTS.filter((spot) => world.isFree(spot.id));
-  const front = world.random() < persona.frontRow ? free.filter((spot) => spot.z < 0) : free;
+// "In front" is the half of the zone's rows nearest the Buddha, whichever zone the walker is in.
+function pickSeat(zone: Zone, persona: Persona, world: NpcWorld): SeatSpot | undefined {
+  const spots = ZONE_SEATS[zone];
+  const free = spots.filter((spot) => world.isFree(spot.id));
+  const rows = spots.map((spot) => spot.z);
+  const middle = (Math.min(...rows) + Math.max(...rows)) / 2;
+  const front = world.random() < persona.frontRow ? free.filter((spot) => spot.z <= middle) : free;
   const pool = front.length > 0 ? front : free;
   return pool[Math.floor(world.random() * pool.length)];
 }
 
-function pickStrollTarget(monk: NpcBody, random: () => number): Point {
+function pickStrollTarget(monk: NpcBody, zone: Zone, random: () => number): Point {
   if (random() < FAR_STROLL_CHANCE) {
-    return resolveWalkable(
-      WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
-      WALK_BOUNDS.minZ + random() * (WALK_BOUNDS.maxZ - WALK_BOUNDS.minZ),
+    const bounds = HOME_AREAS[zone];
+    return clampToHome(
+      zone,
+      bounds.minX + random() * (bounds.maxX - bounds.minX),
+      bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
     );
   }
   const angle = random() * Math.PI * 2;
   const reach = span(random, STROLL_REACH_M);
   const dx = Math.cos(angle) * reach;
   const dz = Math.sin(angle) * reach;
-  const ahead = resolveWalkable(monk.x + dx, monk.z + dz);
+  const ahead = clampToHome(zone, monk.x + dx, monk.z + dz);
   if (Math.hypot(ahead.x - monk.x, ahead.z - monk.z) >= reach / 2) return ahead;
-  return resolveWalkable(monk.x - dx, monk.z - dz);
+  return clampToHome(zone, monk.x - dx, monk.z - dz);
 }
 
 function rollBows(brain: NpcBrain, random: () => number): number {

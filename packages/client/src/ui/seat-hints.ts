@@ -1,5 +1,6 @@
-import { CUSHION_COUNT } from "@dongjane/shared";
-import { h, icon } from "./dom.ts";
+import { SEAT_COUNT } from "@dongjane/shared";
+import { h } from "./dom.ts";
+import { icon } from "./icons.ts";
 
 interface Hint {
   node: HTMLButtonElement;
@@ -8,13 +9,13 @@ interface Hint {
   shown: boolean;
 }
 
-// One sit button per cushion, floated above it; the DOM is only touched when a hint appears, vanishes or moves a pixel.
+// One sit button per seat, floated above it; the DOM is only touched when a hint appears, vanishes or moves a pixel.
 export class SeatHints {
   private readonly root = h("div", "seat-hints");
   private readonly hints: Hint[];
 
-  constructor(host: HTMLElement, onSit: (cushionId: number) => void) {
-    this.hints = Array.from({ length: CUSHION_COUNT }, (_, id) => {
+  constructor(host: HTMLElement, onSit: (seatId: number) => void) {
+    this.hints = Array.from({ length: SEAT_COUNT }, (_, id) => {
       const node = h("button", "seat-hint hidden", icon("sit"));
       node.type = "button";
       node.setAttribute("aria-label", "여기 앉기");

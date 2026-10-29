@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import { classifyJoinError } from "../src/net/session.ts";
 
 describe("classifyJoinError", () => {
-  it("recognises a full or locked hall", () => {
+  it("recognises a full or locked world", () => {
     expect(classifyJoinError(new Error('room "abc" is locked'))).toBe("full");
     expect(classifyJoinError(new Error("room is already full"))).toBe("full");
   });
 
-  it("recognises a hall that no longer exists", () => {
+  it("recognises a world that no longer exists", () => {
     expect(classifyJoinError(new Error('room "abc" not found'))).toBe("gone");
     expect(classifyJoinError(new Error("seat reservation expired"))).toBe("gone");
   });

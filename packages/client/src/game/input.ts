@@ -64,6 +64,19 @@ export function directionToward(
   return length <= reach ? null : { x: dx / length, z: dz / length };
 }
 
+// Heading toward the first corner of a walk that is not yet reached, and the corners still ahead (the reached ones dropped).
+export function headingAlong(
+  path: readonly { x: number; z: number }[],
+  from: { x: number; z: number },
+  reach: number,
+): { dir: { x: number; z: number } | null; rest: { x: number; z: number }[] } {
+  for (let index = 0; index < path.length; index += 1) {
+    const dir = directionToward(from, path[index] as { x: number; z: number }, reach);
+    if (dir) return { dir, rest: path.slice(index) };
+  }
+  return { dir: null, rest: [] };
+}
+
 export const TAP_SLOP_PX = 10;
 export const TAP_MAX_MS = 400;
 

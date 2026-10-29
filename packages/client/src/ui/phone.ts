@@ -1,6 +1,7 @@
 import { homeTitleName } from "../collection/titles.ts";
 import { CollectionApp } from "./collection.ts";
-import { type IconName, button, h, icon, swapIcon } from "./dom.ts";
+import { button, h, swapIcon } from "./dom.ts";
+import { type IconName, icon } from "./icons.ts";
 import type { ClockView } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 

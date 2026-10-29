@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { NPC_PER_HALL } from "../src/constants.ts";
+import { NPC_PER_ZONE } from "../src/constants.ts";
+import { ZONES } from "../src/layout.ts";
 import { type Persona, generatePersona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
 
@@ -62,16 +63,18 @@ describe("generatePersona", () => {
   });
 });
 
+const NPC_COUNT = NPC_PER_ZONE * ZONES.length;
+
 describe("npc personas in the sim", () => {
-  it("gives each of a hall's npcs its own persona, repeatably", () => {
+  it("gives each of the world's npcs its own persona, repeatably", () => {
     const personasFor = (seed: number) => {
-      const sim = new TempleSim({ clock: () => 0, random: seededRandom(seed), npcCount: NPC_PER_HALL });
-      return Array.from({ length: NPC_PER_HALL }, (_, n) => sim.personaOf(`npc-${n + 1}`));
+      const sim = new TempleSim({ clock: () => 0, random: seededRandom(seed), npcCount: NPC_PER_ZONE });
+      return Array.from({ length: NPC_COUNT }, (_, n) => sim.personaOf(`npc-${n + 1}`));
     };
 
     const personas = personasFor(3);
     expect(personas.every((persona) => persona !== undefined)).toBe(true);
-    expect(new Set(personas.map((persona) => JSON.stringify(persona))).size).toBe(NPC_PER_HALL);
+    expect(new Set(personas.map((persona) => JSON.stringify(persona))).size).toBe(NPC_COUNT);
     expect(personasFor(3)).toEqual(personas);
     expect(personasFor(4)).not.toEqual(personas);
   });

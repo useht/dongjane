@@ -1,4 +1,4 @@
-import { type Quest, chantPhase, dailyQuests, questDay, questMatches } from "@dongjane/shared";
+import { type Quest, type Zone, chantPhase, dailyQuests, questDay, questMatches } from "@dongjane/shared";
 import { type QuestProgress, loadQuestProgress, saveQuestProgress } from "../storage.ts";
 
 export interface QuestView {
@@ -30,19 +30,19 @@ export class QuestTracker {
   private quests: Quest[] = [];
   private counts: Record<string, number> = {};
   private baseline: { sessionId: string; bowCount: number } | null = null;
-  private seatedAt: number | null = null;
+  private seatedAt: { zone: Zone; seatId: number } | null = null;
 
-  observe(sessionId: string, monk: { bowCount: number; cushionId: number }, state: QuestClock): Quest[] {
+  observe(sessionId: string, monk: { bowCount: number; zone: Zone; seatId: number }, state: QuestClock): Quest[] {
     this.sync(state.serverTime);
     const baseline = this.baseline;
     this.baseline = { sessionId, bowCount: monk.bowCount };
     if (baseline?.sessionId !== sessionId) this.seatedAt = null;
-    if (monk.cushionId >= 0) this.seatedAt = monk.cushionId;
+    if (monk.seatId >= 0) this.seatedAt = { zone: monk.zone, seatId: monk.seatId };
     if (!baseline || baseline.sessionId !== sessionId || monk.bowCount <= baseline.bowCount) return [];
 
     const bows = monk.bowCount - baseline.bowCount;
-    const cushionId = monk.cushionId >= 0 ? monk.cushionId : (this.seatedAt ?? -1);
-    const bow = { cushionId, duringChant: chantPhase(state.chant, state.serverTime) === "active" };
+    const seat = monk.seatId >= 0 ? { zone: monk.zone, seatId: monk.seatId } : (this.seatedAt ?? { zone: monk.zone, seatId: -1 });
+    const bow = { ...seat, duringChant: chantPhase(state.chant, state.serverTime) === "active" };
     const completed: Quest[] = [];
     let changed = false;
     for (const quest of this.quests) {

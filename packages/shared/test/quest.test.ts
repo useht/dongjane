@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CUSHION_COUNT, KST_OFFSET_MS, cushionLabel, dailyQuests, questDay, questMatches, type Quest } from "../src/index.ts";
+import { DHARMA_SEATS, GATBAWI_SEATS, KST_OFFSET_MS, ZONES, dailyQuests, placeLabel, questDay, questMatches, type Quest, type QuestPlace } from "../src/index.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const kstMidnight = (year: number, month: number, day: number): number => Date.UTC(year, month - 1, day) - KST_OFFSET_MS;
@@ -20,16 +20,11 @@ describe("questDay", () => {
   });
 });
 
-describe("cushionLabel", () => {
-  it("names every cushion by row and column", () => {
-    const labels = Array.from({ length: CUSHION_COUNT }, (_, id) => cushionLabel(id));
-    expect(new Set(labels).size).toBe(CUSHION_COUNT);
-    expect(CUSHION_COUNT).toBe(8);
-    expect(labels[0]).toBe("부처님 쪽 줄 1번째 방석");
-    expect(labels[1]).toBe("부처님 쪽 줄 2번째 방석");
-    expect(labels[3]).toBe("부처님 쪽 줄 4번째 방석");
-    expect(labels[4]).toBe("입구 쪽 줄 1번째 방석");
-    expect(labels[7]).toBe("입구 쪽 줄 4번째 방석");
+describe("placeLabel", () => {
+  it("names a row of seats by zone, and the seat kind the zone uses", () => {
+    expect(placeLabel({ zone: "gatbawi", row: 0 })).toBe("갓바위 부처님 쪽 1번째 줄 돗자리");
+    expect(placeLabel({ zone: "gatbawi", row: 9 })).toBe("갓바위 부처님 쪽 10번째 줄 돗자리");
+    expect(placeLabel({ zone: "dharma", row: 2 })).toBe("법당 부처님 쪽 3번째 줄 방석");
   });
 });
 
@@ -41,19 +36,19 @@ describe("dailyQuests", () => {
     expect(dailyQuests(day)).toHaveLength(3);
 
     expect(place.id).toBe(`${day}-0`);
-    expect(place.cushionId).not.toBeNull();
+    expect(place.place).not.toBeNull();
     expect(place.duringChant).toBe(false);
     expect([3, 5]).toContain(place.target);
-    expect(place.text).toBe(`${cushionLabel(place.cushionId as number)}에서 절 ${place.target}번 하기`);
+    expect(place.text).toBe(`${placeLabel(place.place as QuestPlace)}에서 절 ${place.target}번 하기`);
 
     expect(anywhere.id).toBe(`${day}-1`);
-    expect(anywhere.cushionId).toBeNull();
+    expect(anywhere.place).toBeNull();
     expect(anywhere.duringChant).toBe(false);
     expect([5, 8, 10]).toContain(anywhere.target);
-    expect(anywhere.text).toBe(`방석 어디에서든 절 ${anywhere.target}번 하기`);
+    expect(anywhere.text).toBe(`방석이나 돗자리 어디에서든 절 ${anywhere.target}번 하기`);
 
     expect(chant.id).toBe(`${day}-2`);
-    expect(chant.cushionId).toBeNull();
+    expect(chant.place).toBeNull();
     expect(chant.duringChant).toBe(true);
     expect([2, 3]).toContain(chant.target);
     expect(chant.text).toBe(`예불 시간에 절 ${chant.target}번 하기`);
@@ -65,43 +60,50 @@ describe("dailyQuests", () => {
 
   it("changes from day to day", () => {
     const sets = new Set<string>();
-    const cushions = new Set<number | null>();
+    const places = new Set<string>();
     for (let offset = 0; offset < 30; offset += 1) {
       const quests = dailyQuests(day + offset);
       sets.add(JSON.stringify(quests.map(({ text }) => text)));
-      cushions.add(quests[0]!.cushionId);
+      places.add(JSON.stringify(quests[0]!.place));
     }
     expect(sets.size).toBeGreaterThan(1);
-    expect(cushions.size).toBeGreaterThan(2);
+    expect(places.size).toBeGreaterThan(2);
   });
 
-  it("only points at cushions that exist", () => {
+  it("only points at rows that exist, and visits both zones", () => {
+    const seen = new Set<string>();
     for (let offset = 0; offset < 200; offset += 1) {
-      const cushionId = dailyQuests(day + offset)[0]!.cushionId;
-      expect(Number.isInteger(cushionId)).toBe(true);
-      expect(cushionId).toBeGreaterThanOrEqual(0);
-      expect(cushionId).toBeLessThan(CUSHION_COUNT);
+      const place = dailyQuests(day + offset)[0]!.place as QuestPlace;
+      seen.add(place.zone);
+      const rows = (place.zone === "gatbawi" ? GATBAWI_SEATS : DHARMA_SEATS).map((spot) => spot.row);
+      expect(rows).toContain(place.row);
     }
+    expect([...seen].sort()).toEqual([...ZONES].sort());
   });
 });
 
 describe("questMatches", () => {
   const [place, anywhere, chant] = dailyQuests(questDay(kstMidnight(2026, 10, 30))) as [Quest, Quest, Quest];
-  const elsewhere = ((place.cushionId as number) + 1) % CUSHION_COUNT;
+  const target = place.place as QuestPlace;
+  const seats = target.zone === "gatbawi" ? GATBAWI_SEATS : DHARMA_SEATS;
+  const inRow = seats.find((spot) => spot.row === target.row)!.id;
+  const elsewhere = seats.find((spot) => spot.row !== target.row)!.id;
+  const otherZone = target.zone === "gatbawi" ? "dharma" : "gatbawi";
 
-  it("needs the named cushion for a location quest", () => {
-    expect(questMatches(place, { cushionId: place.cushionId as number, duringChant: false })).toBe(true);
-    expect(questMatches(place, { cushionId: place.cushionId as number, duringChant: true })).toBe(true);
-    expect(questMatches(place, { cushionId: elsewhere, duringChant: false })).toBe(false);
+  it("needs a seat in the named row of the named zone for a location quest", () => {
+    expect(questMatches(place, { zone: target.zone, seatId: inRow, duringChant: false })).toBe(true);
+    expect(questMatches(place, { zone: target.zone, seatId: inRow, duringChant: true })).toBe(true);
+    expect(questMatches(place, { zone: target.zone, seatId: elsewhere, duringChant: false })).toBe(false);
+    expect(questMatches(place, { zone: otherZone, seatId: inRow, duringChant: false })).toBe(false);
   });
 
-  it("accepts any cushion for an anywhere quest", () => {
-    expect(questMatches(anywhere, { cushionId: 0, duringChant: false })).toBe(true);
-    expect(questMatches(anywhere, { cushionId: elsewhere, duringChant: true })).toBe(true);
+  it("accepts any seat in either zone for an anywhere quest", () => {
+    expect(questMatches(anywhere, { zone: "gatbawi", seatId: 0, duringChant: false })).toBe(true);
+    expect(questMatches(anywhere, { zone: "dharma", seatId: elsewhere, duringChant: true })).toBe(true);
   });
 
   it("needs the chant to be active for a chant quest", () => {
-    expect(questMatches(chant, { cushionId: 2, duringChant: true })).toBe(true);
-    expect(questMatches(chant, { cushionId: 2, duringChant: false })).toBe(false);
+    expect(questMatches(chant, { zone: "gatbawi", seatId: 2, duringChant: true })).toBe(true);
+    expect(questMatches(chant, { zone: "dharma", seatId: 2, duringChant: false })).toBe(false);
   });
 });

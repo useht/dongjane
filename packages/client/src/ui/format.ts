@@ -1,10 +1,33 @@
-import { type MonkMode, type SkyPeriod, type SkyState, type Weather, chantEndsAt, chantPhase } from "@dongjane/shared";
-import type { IconName } from "./dom.ts";
+import {
+  type MonkMode,
+  type SkyPeriod,
+  type SkyState,
+  type Weather,
+  SEAT_NAMES,
+  ZONE_NAMES,
+  chantEndsAt,
+  chantPhase,
+  isZone,
+} from "@dongjane/shared";
+import type { IconName } from "./icons.ts";
 
-export function modeLabel(mode: string, cushionId: number): string {
+// 갓바위 has 돗자리 and the 법당 has 방석; the particle follows the last sound of the word.
+export function seatName(zone: string): string {
+  return SEAT_NAMES[isZone(zone) ? zone : "gatbawi"];
+}
+
+export function seatDirection(zone: string): string {
+  return isZone(zone) && zone === "dharma" ? `${SEAT_NAMES.dharma}으로` : `${SEAT_NAMES.gatbawi}로`;
+}
+
+export function zoneName(zone: string): string {
+  return ZONE_NAMES[isZone(zone) ? zone : "gatbawi"];
+}
+
+export function modeLabel(mode: string, seatId: number, zone: string): string {
   switch (mode as MonkMode) {
     case "walk":
-      return cushionId >= 0 ? "방석으로 가는 중" : "걷는 중";
+      return seatId >= 0 ? `${seatDirection(zone)} 가는 중` : "걷는 중";
     case "kneel":
       return "앉아 있어요";
     case "bow":

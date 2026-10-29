@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVE_DISTANCE, WALK_SPEED, resolveWalkable, yawFromDirection } from "@dongjane/shared";
+import { ARRIVE_DISTANCE, DHARMA_BOUNDS, DHARMA_ORIGIN, WALK_SPEED, WORLD_BOUNDS, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
 import {
   KEY_MOVE_INTERVAL_MS,
   KEY_MOVE_REACH,
@@ -74,16 +74,17 @@ describe("SelfPrediction movement", () => {
 
   it("clamps to the walkable area exactly like resolveWalkable and stops reporting walking at the wall", () => {
     const prediction = new SelfPrediction();
-    const first = prediction.frame(FRAME, 0, { x: 1, z: 0 }, { x: 4.99, z: 0 });
-    expect(must(first).x).toBe(resolveWalkable(4.99 + WALK_SPEED * FRAME + KEY_MOVE_REACH, 0).x);
-    hold(prediction, 30, { x: 1, z: 0 }, { x: 4.99, z: 0 }, FRAME_MS);
+    const nearWall = WORLD_BOUNDS.maxX - 0.01;
+    const first = prediction.frame(FRAME, 0, { x: 1, z: 0 }, { x: nearWall, z: 0 });
+    expect(must(first).x).toBe(resolveWalkable(nearWall + WALK_SPEED * FRAME + KEY_MOVE_REACH, 0).x);
+    hold(prediction, 30, { x: 1, z: 0 }, { x: nearWall, z: 0 }, FRAME_MS);
     const shown = must(prediction.display());
     expect(shown.x).toBe(resolveWalkable(99, 0).x);
     expect(shown.walking).toBe(false);
 
     const back = new SelfPrediction();
     hold(back, 600, { x: 0, z: -1 }, { x: 0, z: 0 });
-    expect(must(back.display()).z).toBe(resolveWalkable(0, -99).z);
+    expect(must(back.display()).z).toBe(resolveWalkable(0, -5).z);
   });
 
   it("never advances more than MAX_FRAME_DT_S of walking in one frame, however long the frame took", () => {
@@ -98,11 +99,31 @@ describe("SelfPrediction movement", () => {
 
   it("slides along a wall while the other axis is free", () => {
     const prediction = new SelfPrediction();
-    hold(prediction, 30, { x: Math.SQRT1_2, z: Math.SQRT1_2 }, { x: 4.9, z: 2 });
+    hold(prediction, 30, { x: Math.SQRT1_2, z: Math.SQRT1_2 }, { x: WORLD_BOUNDS.maxX - 0.1, z: 2 });
     const shown = must(prediction.display());
-    expect(shown.x).toBe(5);
+    expect(shown.x).toBe(WORLD_BOUNDS.maxX);
     expect(shown.z).toBeGreaterThan(2.5);
     expect(shown.walking).toBe(true);
+  });
+
+  it("walks from the court through the doorway into the 법당 on foot", () => {
+    const prediction = new SelfPrediction();
+    const door = DHARMA_ORIGIN.x;
+    hold(prediction, 120, { x: 0, z: -1 }, { x: door, z: 12 });
+    const shown = must(prediction.display());
+    expect(shown.x).toBeCloseTo(door, 6);
+    expect(shown.z).toBeLessThan(DHARMA_BOUNDS.maxZ - 1);
+    expect(zoneAt(shown.x, shown.z)).toBe("dharma");
+  });
+
+  it("stops at the front wall beside the doorway, and does not let a sidestep through it", () => {
+    const prediction = new SelfPrediction();
+    const beside = DHARMA_ORIGIN.x + 4;
+    hold(prediction, 120, { x: 0, z: -1 }, { x: beside, z: 12 });
+    const shown = must(prediction.display());
+    expect(shown.x).toBeCloseTo(beside, 6);
+    expect(shown.z).toBeGreaterThanOrEqual(DHARMA_BOUNDS.maxZ);
+    expect(zoneAt(shown.x, shown.z)).toBe("gatbawi");
   });
 });
 
@@ -575,11 +596,11 @@ describe("SelfPrediction taps", () => {
     const { frames, moves } = runLink(
       { oneWayMs: rtt / 2, jitterMs: 0, seed: 1 },
       1550 + rtt + 3000,
-      { x: 3, z: 3 },
+      { x: WORLD_BOUNDS.maxX - 3, z: 3 },
       (t) => (t < 1500 ? { x: 1, z: 0 } : t < 1550 ? { x: 0, z: -1 } : null),
     );
     const release = moves[moves.length - 1] as MoveTarget;
-    expect(release.x).toBe(5);
+    expect(release.x).toBe(WORLD_BOUNDS.maxX);
     expect(release.z).toBeLessThan(3);
     expect(release.z).toBeGreaterThan(3 - 0.15);
 

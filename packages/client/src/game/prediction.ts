@@ -1,4 +1,4 @@
-import { WALK_SPEED, resolveWalkable, yawFromDirection } from "@dongjane/shared";
+import { WALK_SPEED, slideWalkable, yawFromDirection } from "@dongjane/shared";
 
 export const KEY_MOVE_INTERVAL_MS = 100;
 export const KEY_MOVE_REACH = 1.6;
@@ -65,7 +65,7 @@ export class SelfPrediction {
     this.phase = "held";
 
     const step = WALK_SPEED * Math.min(MAX_FRAME_DT_S, Math.max(0, dtSeconds));
-    const next = resolveWalkable(this.x + ux * step, this.z + uz * step);
+    const next = slideWalkable({ x: this.x, z: this.z }, ux * step, uz * step);
     this.walking = Math.hypot(next.x - this.x, next.z - this.z) > MOVED_EPSILON;
     this.x = next.x;
     this.z = next.z;
@@ -76,7 +76,7 @@ export class SelfPrediction {
     if (!turned && nowMs - this.lastSentAt < KEY_MOVE_INTERVAL_MS) return null;
     this.sentDir = { x: ux, z: uz };
     this.lastSentAt = nowMs;
-    const point = resolveWalkable(this.x + ux * KEY_MOVE_REACH, this.z + uz * KEY_MOVE_REACH);
+    const point = slideWalkable({ x: this.x, z: this.z }, ux * KEY_MOVE_REACH, uz * KEY_MOVE_REACH);
     this.seq += 1;
     return { x: point.x, z: point.z, seq: this.seq };
   }

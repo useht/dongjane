@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WALK_SPEED, yawFromDirection } from "@dongjane/shared";
+import { WALK_SPEED, WORLD_BOUNDS, yawFromDirection } from "@dongjane/shared";
 import {
   DELAY_MAX_MS,
   DELAY_MIN_MS,
@@ -70,11 +70,11 @@ describe("SnapshotBuffer", () => {
     expect(a.z).toBeCloseTo(-(WALK_SPEED * EXTRAPOLATION_MAX_MS) / 1000, 6);
 
     const wall = new SnapshotBuffer();
-    wall.push(0, 0, -3, 0, true);
-    wall.push(50, 0, -3, 0, true);
+    wall.push(0, 0, WORLD_BOUNDS.minZ, 0, true);
+    wall.push(50, 0, WORLD_BOUNDS.minZ, 0, true);
     const against = out();
     wall.sample(200, against);
-    expect(against.z).toBe(-3);
+    expect(against.z).toBe(WORLD_BOUNDS.minZ);
   });
 
   it("does not extrapolate once the newest snapshot says the monk stopped", () => {

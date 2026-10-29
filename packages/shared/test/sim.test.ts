@@ -6,12 +6,26 @@ import {
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
+  KNOCK_COOLDOWN_MS,
   TICK_MS,
   WALK_SPEED,
+  WORLD_CAPACITY,
+  ZONE_CAPACITY,
 } from "../src/constants.ts";
 import { EMOTE_COUNT } from "../src/emote.ts";
-import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS } from "../src/layout.ts";
+import { ITEM_CHANT, ITEM_MOKT, ITEM_NONE } from "../src/item.ts";
+import {
+  ARRIVAL,
+  DHARMA_BOUNDS,
+  DHARMA_ORIGIN,
+  DHARMA_SEATS,
+  GATBAWI_SEATS,
+  SEAT_COUNT,
+  WORLD_BOUNDS,
+  type Zone,
+} from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
+import { COURT_AREA, DOORWAY_AREA, resolveWalkable, zoneAt } from "../src/walk.ts";
 
 const T0 = 1_800_000_000_000;
 
@@ -29,9 +43,9 @@ class Harness {
     }
   }
 
-  seat(id: string, cushionId: number): void {
+  seat(id: string, seatId: number): void {
     this.sim.join(id, 10);
-    expect(this.sim.sit(id, cushionId)).toBe(true);
+    expect(this.sim.sit(id, "gatbawi", seatId)).toBe(true);
     this.advance(8000);
     expect(this.sim.state.monks.get(id)?.mode).toBe("kneel");
   }
@@ -42,10 +56,10 @@ class Harness {
     return monk;
   }
 
-  cushion(id: number) {
-    const cushion = this.sim.state.cushions.get(String(id));
-    if (!cushion) throw new Error(`no cushion ${id}`);
-    return cushion;
+  mat(id: number, zone: Zone = "gatbawi") {
+    const seat = this.sim.state.seats.get(`${zone}:${id}`);
+    if (!seat) throw new Error(`no seat ${zone}:${id}`);
+    return seat;
   }
 }
 
@@ -55,13 +69,18 @@ beforeEach(() => {
 });
 
 describe("join and movement", () => {
-  it("creates eight free cushions and spawns monks standing at the entrance", () => {
-    expect(h.sim.state.cushions.size).toBe(8);
+  it("creates a hundred free seats and spawns monks standing at the entrance of Gatbawi", () => {
+    expect(h.sim.state.seats.size).toBe(2 * SEAT_COUNT);
+    expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId === "")).toBe(true);
+    expect(h.sim.state.seats.get("gatbawi:49")?.zone).toBe("gatbawi");
+    expect(h.sim.state.seats.get("dharma:0")?.zone).toBe("dharma");
     h.sim.join("a", 120);
     const a = h.monk("a");
     expect(a.mode).toBe("stand");
-    expect(a.z).toBe(SPAWN_POINT.z);
-    expect(a.cushionId).toBe(-1);
+    expect(zoneAt(a.x, a.z)).toBe("gatbawi");
+    expect(a.x).toBe(ARRIVAL.x);
+    expect(a.z).toBe(ARRIVAL.z);
+    expect(a.seatId).toBe(-1);
     expect(a.bowCount).toBe(0);
     expect(a.hue).toBe(120);
   });
@@ -82,9 +101,9 @@ describe("join and movement", () => {
   it("clamps targets to the walkable rect", () => {
     h.sim.join("a", 0);
     h.sim.move("a", 500, -500);
-    h.advance(20_000);
-    expect(h.monk("a").x).toBeCloseTo(WALK_BOUNDS.maxX, 4);
-    expect(h.monk("a").z).toBeCloseTo(WALK_BOUNDS.minZ, 4);
+    h.advance(30_000);
+    expect(h.monk("a").x).toBeCloseTo(WORLD_BOUNDS.maxX, 4);
+    expect(h.monk("a").z).toBeCloseTo(WORLD_BOUNDS.minZ, 4);
   });
 
   it("ignores non-finite targets and unknown ids", () => {
@@ -160,92 +179,150 @@ describe("server clock", () => {
   });
 });
 
-describe("cushions", () => {
-  it("claims a cushion, walks over, and kneels facing the Buddha", () => {
+describe("seats", () => {
+  it("claims a mat, walks over, and kneels facing Gatbawi", () => {
     h.sim.join("a", 0);
-    expect(h.sim.sit("a", 5)).toBe(true);
-    expect(h.cushion(5).occupantId).toBe("a");
+    expect(h.sim.sit("a", "gatbawi", 5)).toBe(true);
+    expect(h.mat(5).occupantId).toBe("a");
     expect(h.monk("a").mode).toBe("walk");
     h.advance(8000);
-    const spot = CUSHION_SPOTS[5]!;
+    const spot = GATBAWI_SEATS[5]!;
     expect(h.monk("a").mode).toBe("kneel");
     expect(h.monk("a").x).toBeCloseTo(spot.x, 4);
     expect(h.monk("a").z).toBeCloseTo(spot.z, 4);
     expect(h.monk("a").yaw).toBe(0);
-    expect(h.monk("a").cushionId).toBe(5);
+    expect(h.monk("a").seatId).toBe(5);
   });
 
-  it("gives a contested cushion to exactly one monk", () => {
+  it("seats fifty visitors in each zone, each kneeling on a seat of their own", () => {
+    for (const zone of ["gatbawi", "dharma"] as const) {
+      const seats = zone === "gatbawi" ? GATBAWI_SEATS : DHARMA_SEATS;
+      for (let i = 0; i < ZONE_CAPACITY; i += 1) {
+        const monk = h.sim.join(`${zone}${i}`, i * 7);
+        expect(h.sim.sit(monk.id, zone, i)).toBe(true);
+      }
+      h.advance(40_000);
+      for (let i = 0; i < ZONE_CAPACITY; i += 1) {
+        const monk = h.monk(`${zone}${i}`);
+        const spot = seats[i]!;
+        expect(monk.mode).toBe("kneel");
+        expect(monk.yaw).toBe(0);
+        expect(monk.x).toBeCloseTo(spot.x, 4);
+        expect(monk.z).toBeCloseTo(spot.z, 4);
+        expect(zoneAt(monk.x, monk.z)).toBe(zone);
+        expect(h.mat(monk.seatId, zone).occupantId).toBe(monk.id);
+      }
+    }
+    expect(h.sim.state.monks.size).toBe(WORLD_CAPACITY);
+    expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId !== "")).toBe(true);
+    expect(new Set(Array.from(h.sim.state.monks.values(), (monk) => monk.slot)).size).toBe(WORLD_CAPACITY);
+  });
+
+  it("gives a contested seat to exactly one monk", () => {
     h.sim.join("a", 0);
     h.sim.join("b", 0);
-    const results = [h.sim.sit("a", 2), h.sim.sit("b", 2)];
+    const results = [h.sim.sit("a", "gatbawi", 2), h.sim.sit("b", "gatbawi", 2)];
     expect(results).toEqual([true, false]);
-    expect(h.cushion(2).occupantId).toBe("a");
-    expect(h.monk("b").cushionId).toBe(-1);
+    expect(h.mat(2).occupantId).toBe("a");
+    expect(h.monk("b").seatId).toBe(-1);
   });
 
-  it("keeps a seated monk where they are when the cushion they ask for is taken", () => {
+  it("keeps the same seat number in the two zones apart", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    expect(h.sim.sit("a", "gatbawi", 7)).toBe(true);
+    expect(h.sim.sit("b", "dharma", 7)).toBe(true);
+    expect(h.mat(7, "gatbawi").occupantId).toBe("a");
+    expect(h.mat(7, "dharma").occupantId).toBe("b");
+  });
+
+  it("lets a monk ask for a seat in the other zone from wherever they stand", () => {
+    h.sim.join("a", 0);
+    expect(zoneAt(h.monk("a").x, h.monk("a").z)).toBe("gatbawi");
+    expect(h.sim.sit("a", "dharma", 3)).toBe(true);
+    expect(h.mat(3, "dharma").occupantId).toBe("a");
+    expect(h.monk("a").seatId).toBe(3);
+    expect(h.monk("a").mode).toBe("walk");
+    h.advance(40_000);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(zoneAt(h.monk("a").x, h.monk("a").z)).toBe("dharma");
+    expect(h.monk("a").x).toBeCloseTo(DHARMA_SEATS[3]!.x, 4);
+    expect(h.monk("a").z).toBeCloseTo(DHARMA_SEATS[3]!.z, 4);
+  });
+
+  it("frees the seat of the right zone when the monk takes another seat of the same number", () => {
+    h.sim.join("a", 0);
+    h.sim.sit("a", "gatbawi", 7);
+    expect(h.sim.sit("a", "dharma", 7)).toBe(true);
+    expect(h.mat(7, "gatbawi").occupantId).toBe("");
+    expect(h.mat(7, "dharma").occupantId).toBe("a");
+    expect(h.sim.stand("a")).toBe(true);
+    expect(h.mat(7, "dharma").occupantId).toBe("");
+  });
+
+  it("keeps a seated monk where they are when the seat they ask for is taken", () => {
     h.seat("a", 0);
     h.seat("b", 1);
-    expect(h.sim.sit("a", 1)).toBe(false);
-    expect(h.cushion(0).occupantId).toBe("a");
-    expect(h.cushion(1).occupantId).toBe("b");
-    expect(h.monk("a").cushionId).toBe(0);
+    expect(h.sim.sit("a", "gatbawi", 1)).toBe(false);
+    expect(h.mat(0).occupantId).toBe("a");
+    expect(h.mat(1).occupantId).toBe("b");
+    expect(h.monk("a").seatId).toBe(0);
     expect(h.monk("a").mode).toBe("kneel");
-    expect(h.monk("b").cushionId).toBe(1);
+    expect(h.monk("b").seatId).toBe(1);
   });
 
-  it("rejects invalid cushion ids", () => {
+  it("rejects invalid seat ids", () => {
     h.sim.join("a", 0);
-    expect(h.sim.sit("a", 8)).toBe(false);
-    expect(h.sim.sit("a", -1)).toBe(false);
-    expect(h.sim.sit("a", 1.5)).toBe(false);
+    expect(h.sim.sit("a", "gatbawi", SEAT_COUNT)).toBe(false);
+    expect(h.sim.sit("a", "gatbawi", -1)).toBe(false);
+    expect(h.sim.sit("a", "gatbawi", 1.5)).toBe(false);
+    expect(h.sim.sit("ghost", "gatbawi", 1)).toBe(false);
   });
 
-  it("frees the old cushion when moving to another", () => {
+  it("frees the old seat when moving to another", () => {
     h.seat("a", 0);
-    expect(h.sim.sit("a", 1)).toBe(true);
-    expect(h.cushion(0).occupantId).toBe("");
-    expect(h.cushion(1).occupantId).toBe("a");
+    expect(h.sim.sit("a", "gatbawi", 1)).toBe(true);
+    expect(h.mat(0).occupantId).toBe("");
+    expect(h.mat(1).occupantId).toBe("a");
   });
 
-  it("frees the cushion on stand", () => {
+  it("frees the seat on stand", () => {
     h.seat("a", 3);
     expect(h.sim.stand("a")).toBe(true);
-    expect(h.cushion(3).occupantId).toBe("");
+    expect(h.mat(3).occupantId).toBe("");
     expect(h.monk("a").mode).toBe("stand");
-    expect(h.monk("a").cushionId).toBe(-1);
+    expect(h.monk("a").seatId).toBe(-1);
     h.sim.join("b", 0);
-    expect(h.sim.sit("b", 3)).toBe(true);
+    expect(h.sim.sit("b", "gatbawi", 3)).toBe(true);
   });
 
-  it("frees the cushion when the monk walks away", () => {
+  it("frees the seat when the monk walks away", () => {
     h.seat("a", 4);
     h.sim.move("a", 0, 4);
-    expect(h.cushion(4).occupantId).toBe("");
-    expect(h.monk("a").cushionId).toBe(-1);
+    expect(h.mat(4).occupantId).toBe("");
+    expect(h.monk("a").seatId).toBe(-1);
     expect(h.monk("a").mode).toBe("walk");
   });
 
-  it("frees the cushion when the monk leaves, even mid-walk", () => {
+  it("frees the seat when the monk leaves, even mid-walk", () => {
     h.sim.join("a", 0);
-    h.sim.sit("a", 6);
+    h.sim.sit("a", "gatbawi", 6);
     h.advance(300);
     h.sim.leave("a");
-    expect(h.cushion(6).occupantId).toBe("");
+    expect(h.mat(6).occupantId).toBe("");
     expect(h.sim.state.monks.size).toBe(0);
   });
 
-  it("never leaves two cushions owned by one monk or two monks on one cushion", () => {
-    for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
+  it("never leaves two seats owned by one monk or two monks on one seat", () => {
+    for (let i = 0; i < 40; i += 1) h.sim.join(`m${i}`, i);
     for (let round = 0; round < 6; round += 1) {
-      for (let i = 0; i < 12; i += 1) h.sim.sit(`m${i}`, (i + round * 3) % 8);
+      for (let i = 0; i < 40; i += 1) h.sim.sit(`m${i}`, "gatbawi", (i + round * 3) % 30);
       h.advance(500);
       const owners = new Map<string, number>();
-      for (const [, cushion] of h.sim.state.cushions) {
-        if (cushion.occupantId === "") continue;
-        owners.set(cushion.occupantId, (owners.get(cushion.occupantId) ?? 0) + 1);
-        expect(h.monk(cushion.occupantId).cushionId).toBe(cushion.id);
+      for (const [, seat] of h.sim.state.seats) {
+        if (seat.occupantId === "") continue;
+        owners.set(seat.occupantId, (owners.get(seat.occupantId) ?? 0) + 1);
+        expect(h.monk(seat.occupantId).seatId).toBe(seat.id);
       }
       for (const count of owners.values()) expect(count).toBe(1);
     }
@@ -268,7 +345,7 @@ describe("emoticons", () => {
 
   it.each(Object.keys(setups))("records the emoticon while %s without touching mode, seat or target", (mode) => {
     setups[mode]?.();
-    const before = { mode: h.monk("a").mode, cushionId: h.monk("a").cushionId, x: h.monk("a").x, z: h.monk("a").z };
+    const before = { mode: h.monk("a").mode, seatId: h.monk("a").seatId, x: h.monk("a").x, z: h.monk("a").z };
     expect(before.mode).toBe(mode);
     expect(h.monk("a").emoteSeq).toBe(0);
 
@@ -276,21 +353,21 @@ describe("emoticons", () => {
     expect(h.monk("a").emote).toBe(5);
     expect(h.monk("a").emoteSeq).toBe(1);
     expect(h.monk("a").mode).toBe(before.mode);
-    expect(h.monk("a").cushionId).toBe(before.cushionId);
+    expect(h.monk("a").seatId).toBe(before.seatId);
     expect([h.monk("a").x, h.monk("a").z]).toEqual([before.x, before.z]);
-    if (before.cushionId >= 0) expect(h.cushion(before.cushionId).occupantId).toBe("a");
+    if (before.seatId >= 0) expect(h.mat(before.seatId).occupantId).toBe("a");
   });
 
-  it("lets a monk keep walking to its cushion after an emoticon and then kneel there", () => {
+  it("lets a monk keep walking to its seat after an emoticon and then kneel there", () => {
     h.sim.join("a", 0);
-    expect(h.sim.sit("a", 5)).toBe(true);
+    expect(h.sim.sit("a", "gatbawi", 5)).toBe(true);
     h.advance(300);
     expect(h.sim.emote("a", 1)).toBe(true);
     expect(h.monk("a").mode).toBe("walk");
     h.advance(8000);
     expect(h.monk("a").mode).toBe("kneel");
-    expect(h.monk("a").cushionId).toBe(5);
-    expect(h.cushion(5).occupantId).toBe("a");
+    expect(h.monk("a").seatId).toBe(5);
+    expect(h.mat(5).occupantId).toBe("a");
   });
 
   it("counts every accepted emoticon and keeps the latest index", () => {
@@ -346,7 +423,7 @@ describe("emoticons", () => {
   });
 
   it("never makes npc monks emote", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
@@ -354,6 +431,246 @@ describe("emoticons", () => {
     const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(6);
     for (const npc of npcs) expect(npc.emoteSeq).toBe(0);
+  });
+});
+
+describe("held items", () => {
+  it("starts every monk empty-handed and silent", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").item).toBe(ITEM_NONE);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("equips only valid items", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.equip("a", ITEM_MOKT)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_MOKT);
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+    expect(h.sim.equip("a", ITEM_NONE)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_NONE);
+    h.sim.equip("a", ITEM_MOKT);
+    for (const bad of [3, -1, 1.5, Number.NaN, 255]) {
+      expect(h.sim.equip("a", bad)).toBe(false);
+      expect(h.monk("a").item).toBe(ITEM_MOKT);
+    }
+    expect(h.sim.equip("ghost", ITEM_MOKT)).toBe(false);
+  });
+
+  it("lets a monk equip anywhere, seated or not", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    h.seat("b", 1);
+    expect(h.sim.equip("b", ITEM_MOKT)).toBe(true);
+    expect(h.monk("b").item).toBe(ITEM_MOKT);
+  });
+
+  it("keeps the item per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.monk("b").item).toBe(ITEM_NONE);
+  });
+
+  it("rejects a knock without the wooden fish", () => {
+    h.seat("a", 0);
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.equip("a", ITEM_CHANT);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+  });
+
+  it("rejects a knock unless the monk is kneeling on a seat", () => {
+    h.sim.join("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.sit("a", "gatbawi", 0);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.sim.knock("ghost")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+  });
+
+  it("counts a knock from a seated monk holding the wooden fish without touching mode or seat", () => {
+    h.seat("a", 2);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.monk("a").knockSeq).toBe(1);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("a").seatId).toBe(2);
+  });
+
+  it("rejects a second knock inside the cooldown and accepts one once it has passed", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.sim.knock("a")).toBe(true);
+    h.advance(KNOCK_COOLDOWN_MS - TICK_MS);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(1);
+    h.advance(TICK_MS);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.monk("a").knockSeq).toBe(2);
+  });
+
+  it("keeps the knock cooldown per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    h.sim.equip("a", ITEM_MOKT);
+    h.sim.equip("b", ITEM_MOKT);
+    expect(h.sim.knock("a")).toBe(true);
+    expect(h.sim.knock("b")).toBe(true);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("b").knockSeq).toBe(1);
+  });
+
+  it("rejects a knock mid-bow", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+    h.advance(BOW_MS + TICK_MS);
+    expect(h.sim.knock("a")).toBe(true);
+  });
+
+  it("starts chanting only for a seated monk holding the prayer beads", () => {
+    h.sim.join("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    expect(h.sim.chant("a", true)).toBe(false);
+    h.sim.sit("a", "gatbawi", 0);
+    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").chanting).toBe(false);
+    h.advance(8000);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+    expect(h.sim.chant("ghost", true)).toBe(false);
+  });
+
+  it("refuses to chant without the prayer beads", () => {
+    h.seat("a", 0);
+    expect(h.sim.chant("a", true)).toBe(false);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("always lets a monk stop chanting", () => {
+    h.seat("a", 0);
+    expect(h.sim.chant("a", false)).toBe(true);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("lets the chant be switched on and off mid-bow", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe("bow");
+    expect(h.monk("a").chanting).toBe(true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("stops chanting when the monk puts the beads down or swaps them for another item", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_NONE)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_MOKT)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("keeps chanting when the monk re-equips the beads already in hand", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("keeps the item but stops chanting when the monk stands up", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.stand("a")).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+  });
+
+  it("keeps the item but stops chanting when the monk walks away", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.move("a", 0, 4)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+    h.advance(8000);
+    expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+  });
+
+  it("keeps the item but stops chanting when the monk moves to another seat", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.sit("a", "gatbawi", 1)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+    h.advance(8000);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("keeps chanting when the monk asks for the seat it already holds", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.sit("a", "gatbawi", 0)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("lets a monk who kept the wooden fish knock again after sitting back down", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
+    h.sim.stand("a");
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.sit("a", "gatbawi", 0);
+    h.advance(8000);
+    expect(h.sim.knock("a")).toBe(true);
+  });
+
+  it("keeps chanting per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.equip("b", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.monk("b").chanting).toBe(false);
+    h.sim.stand("b");
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("never makes npc monks hold items, knock or chant", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    for (const npc of [...sim.state.monks.values()].filter((monk) => monk.npc)) {
+      expect(npc.item).toBe(ITEM_NONE);
+      expect(npc.knockSeq).toBe(0);
+      expect(npc.chanting).toBe(false);
+    }
   });
 });
 
@@ -366,7 +683,7 @@ describe("jumping", () => {
     expect(h.sim.jump("a")).toBe(true);
     expect(h.monk("a").jumpSeq).toBe(1);
     expect(h.monk("a").mode).toBe("stand");
-    expect(h.monk("a").cushionId).toBe(-1);
+    expect(h.monk("a").seatId).toBe(-1);
     expect([h.monk("a").x, h.monk("a").z]).toEqual([before.x, before.z]);
   });
 
@@ -383,7 +700,7 @@ describe("jumping", () => {
     expect(h.monk("a").mode).toBe("stand");
   });
 
-  it.each(["kneel", "bow"])("rejects a jump while %s on a cushion", (mode) => {
+  it.each(["kneel", "bow"])("rejects a jump while %s on a seat", (mode) => {
     h.seat("a", 2);
     if (mode === "bow") expect(h.sim.bow("a", 1)).toBe(true);
     expect(h.monk("a").mode).toBe(mode);
@@ -393,16 +710,16 @@ describe("jumping", () => {
     expect(h.monk("a").mode).toBe(mode);
   });
 
-  it("rejects a jump as soon as a cushion is claimed, even before arriving", () => {
+  it("rejects a jump as soon as a seat is claimed, even before arriving", () => {
     h.sim.join("a", 0);
-    expect(h.sim.sit("a", 5)).toBe(true);
+    expect(h.sim.sit("a", "gatbawi", 5)).toBe(true);
     h.advance(300);
     expect(h.monk("a").mode).toBe("walk");
     expect(h.sim.jump("a")).toBe(false);
     expect(h.monk("a").jumpSeq).toBe(0);
   });
 
-  it("jumps again after standing up from a cushion", () => {
+  it("jumps again after standing up from a seat", () => {
     h.seat("a", 2);
     expect(h.sim.stand("a")).toBe(true);
     expect(h.sim.jump("a")).toBe(true);
@@ -438,7 +755,7 @@ describe("jumping", () => {
   });
 
   it("never makes npc monks jump", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
@@ -450,10 +767,10 @@ describe("jumping", () => {
 });
 
 describe("bowing", () => {
-  it("rejects bows unless kneeling on a cushion", () => {
+  it("rejects bows unless kneeling on a mat", () => {
     h.sim.join("a", 0);
     expect(h.sim.bow("a", 1)).toBe(false);
-    h.sim.sit("a", 0);
+    h.sim.sit("a", "gatbawi", 0);
     expect(h.sim.bow("a", 1)).toBe(false);
     expect(h.monk("a").mode).toBe("walk");
   });
@@ -551,10 +868,91 @@ describe("seat numbers", () => {
     expect(h.monk("d").slot).toBe(2);
   });
 
-  it("numbers a full hall 1 through its capacity", () => {
-    for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
+  it("numbers a full world 1 through its capacity", () => {
+    for (let i = 0; i < WORLD_CAPACITY; i += 1) h.sim.join(`m${i}`, i);
     const slots = Array.from(h.sim.state.monks.values(), (monk) => monk.slot).sort((x, y) => x - y);
-    expect(slots).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(slots).toEqual(Array.from({ length: WORLD_CAPACITY }, (_, i) => i + 1));
+  });
+});
+
+describe("one world", () => {
+  const where = (id: string): Zone => zoneAt(h.monk(id).x, h.monk(id).z);
+
+  it("brings every visitor in at the plaza", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    expect(where("a")).toBe("gatbawi");
+    expect(where("b")).toBe("gatbawi");
+    expect(h.sim.zoneCount("gatbawi")).toBe(2);
+    expect(h.sim.zoneCount("dharma")).toBe(0);
+  });
+
+  it("keeps a walking visitor inside the world", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", 500, -500);
+    h.advance(30_000);
+    expect(h.monk("a").x).toBeCloseTo(WORLD_BOUNDS.maxX, 4);
+    expect(h.monk("a").z).toBeCloseTo(WORLD_BOUNDS.minZ, 4);
+  });
+
+  it("walks a visitor through the doorway into the 법당 and counts them there", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", DHARMA_ORIGIN.x, DHARMA_ORIGIN.z);
+    let through = false;
+    for (let t = 0; t < 40_000 && h.monk("a").mode === "walk"; t += TICK_MS) {
+      h.advance(TICK_MS);
+      const { x, z } = h.monk("a");
+      const solid = resolveWalkable(x, z);
+      expect(Math.hypot(solid.x - x, solid.z - z)).toBeLessThan(1e-3);
+      if (z > DHARMA_BOUNDS.maxZ && z < DOORWAY_AREA.maxZ) through = true;
+    }
+    expect(through).toBe(true);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").x).toBeCloseTo(DHARMA_ORIGIN.x, 3);
+    expect(h.monk("a").z).toBeCloseTo(DHARMA_ORIGIN.z, 3);
+    expect(where("a")).toBe("dharma");
+    expect(h.sim.zoneCount("dharma")).toBe(1);
+    expect(h.sim.zoneCount("gatbawi")).toBe(0);
+  });
+
+  it("stops a visitor at the edge of the court when sent past it", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", COURT_AREA.minX - 3, 12);
+    h.advance(30_000);
+    expect(h.monk("a").x).toBeCloseTo(COURT_AREA.minX, 3);
+    expect(h.monk("a").z).toBeCloseTo(12, 3);
+    expect(where("a")).toBe("gatbawi");
+  });
+
+  it("walks a visitor out of the 법당 and back to the plaza", () => {
+    h.sim.join("a", 0);
+    h.sim.sit("a", "dharma", 24);
+    h.advance(40_000);
+    expect(where("a")).toBe("dharma");
+    h.sim.move("a", ARRIVAL.x, ARRIVAL.z);
+    h.advance(40_000);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(where("a")).toBe("gatbawi");
+    expect(h.mat(24, "dharma").occupantId).toBe("");
+  });
+
+  it("frees a dharma seat when its monk leaves", () => {
+    h.sim.join("a", 0);
+    h.sim.sit("a", "dharma", 9);
+    h.sim.leave("a");
+    expect(h.mat(9, "dharma").occupantId).toBe("");
+  });
+
+  it("keeps the computer-driven monks in the zone they live in", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.37, npcCount: 3 });
+    for (let t = 0; t < 5 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
+    const dharma = npcs.filter((monk) => zoneAt(monk.x, monk.z) === "dharma");
+    expect(npcs).toHaveLength(6);
+    expect(dharma).toHaveLength(3);
   });
 });
 

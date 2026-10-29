@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CHANT_MS, CUSHION_COUNT, KST_OFFSET_MS, type Quest, dailyQuests, questDay } from "@dongjane/shared";
+import { CHANT_MS, KST_OFFSET_MS, type Quest, type QuestPlace, ZONE_SEATS, dailyQuests, questDay } from "@dongjane/shared";
 import { QuestTracker, type QuestView, questSummary } from "../src/game/quest-tracker.ts";
 import { loadQuestProgress } from "../src/storage.ts";
 
@@ -7,8 +7,9 @@ const DAY = 24 * 60 * 60 * 1000;
 const NOON = Date.UTC(2026, 9, 30, 3, 0);
 const DAY_NUMBER = questDay(NOON);
 const [PLACE, ANYWHERE, CHANT] = dailyQuests(DAY_NUMBER) as [Quest, Quest, Quest];
-const SEAT = PLACE.cushionId as number;
-const OTHER_SEAT = (SEAT + 1) % CUSHION_COUNT;
+const TARGET = PLACE.place as QuestPlace;
+const SEAT = ZONE_SEATS[TARGET.zone].find((spot) => spot.row === TARGET.row)!.id;
+const OTHER_SEAT = ZONE_SEATS[TARGET.zone].find((spot) => spot.row !== TARGET.row)!.id;
 const CHANT_START = NOON - 60_000;
 const NO_CHANT = { startsAt: NOON + 10 * 60_000, durationMs: CHANT_MS };
 const ACTIVE_CHANT = { startsAt: CHANT_START, durationMs: CHANT_MS };
@@ -29,7 +30,7 @@ afterEach(() => {
 });
 
 const at = (serverTime: number, chant = NO_CHANT) => ({ serverTime, chant });
-const bows = (bowCount: number, cushionId = SEAT) => ({ bowCount, cushionId });
+const bows = (bowCount: number, seatId = SEAT) => ({ bowCount, zone: TARGET.zone, seatId });
 
 function counts(tracker: QuestTracker, serverTime = NOON): number[] {
   return tracker.view(serverTime).map((view) => view.count);
@@ -49,7 +50,7 @@ describe("QuestTracker", () => {
     expect(counts(tracker)).toEqual([0, 0, 0]);
   });
 
-  it("counts each new bow at the named cushion toward the location and anywhere quests", () => {
+  it("counts each new bow at the named row toward the location and anywhere quests", () => {
     const tracker = new QuestTracker();
     tracker.observe("me", bows(4), at(NOON));
     tracker.observe("me", bows(5), at(NOON + 50));
@@ -57,14 +58,14 @@ describe("QuestTracker", () => {
     expect(counts(tracker)).toEqual([3, 3, 0]);
   });
 
-  it("does not count a bow at another cushion for the location quest", () => {
+  it("does not count a bow in another row for the location quest", () => {
     const tracker = new QuestTracker();
     tracker.observe("me", bows(0, OTHER_SEAT), at(NOON));
     tracker.observe("me", bows(1, OTHER_SEAT), at(NOON + 50));
     expect(counts(tracker)).toEqual([0, 1, 0]);
   });
 
-  it("credits a bow to the cushion it was made on when the snapshot already shows the monk standing", () => {
+  it("credits a bow to the seat it was made on when the snapshot already shows the monk standing", () => {
     const tracker = new QuestTracker();
     tracker.observe("me", bows(4, SEAT), at(NOON));
     tracker.observe("me", bows(5, -1), at(NOON + 50));
@@ -179,7 +180,9 @@ describe("QuestTracker", () => {
     expect(tracker.view(midnight).map((view) => view.text)).toEqual(next.map((quest) => quest.text));
     expect(counts(tracker, midnight)).toEqual([0, 0, 0]);
 
-    tracker.observe("me", bows(2, next[0]!.cushionId as number), at(midnight + 50));
+    const nextPlace = next[0]!.place as QuestPlace;
+    const nextSeat = ZONE_SEATS[nextPlace.zone].find((spot) => spot.row === nextPlace.row)!.id;
+    tracker.observe("me", { bowCount: 2, zone: nextPlace.zone, seatId: nextSeat }, at(midnight + 50));
     expect(counts(tracker, midnight + 50)).toEqual([1, 1, 0]);
   });
 
@@ -200,9 +203,9 @@ describe("questSummary", () => {
   });
 
   it("formats the line as text · count/target", () => {
-    expect(questSummary([view("방석 어디에서든 절 8번 하기", 0, 8)])).toEqual({
+    expect(questSummary([view("방석이나 돗자리 어디에서든 절 8번 하기", 0, 8)])).toEqual({
       title: "오늘의 퀘스트 0/1",
-      line: "방석 어디에서든 절 8번 하기 · 0/8",
+      line: "방석이나 돗자리 어디에서든 절 8번 하기 · 0/8",
     });
   });
 

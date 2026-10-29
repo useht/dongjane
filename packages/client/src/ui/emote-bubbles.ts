@@ -30,7 +30,7 @@ export class EmoteBubbles {
     private readonly project: EmoteProjector,
   ) {
     this.root.setAttribute("aria-hidden", "true");
-    this.root.style.setProperty("--emote-show", `${EMOTE_SHOW_MS}ms`);
+    this.root.style.setProperty("--hud-emote-show", `${EMOTE_SHOW_MS}ms`);
     host.append(this.root);
   }
 

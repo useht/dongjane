@@ -9,6 +9,7 @@ import {
   combineAxes,
   directionToward,
   floorDirection,
+  headingAlong,
   isEditable,
   isTap,
 } from "../src/game/input.ts";
@@ -133,6 +134,33 @@ describe("directionToward", () => {
     expect(directionToward({ x: 0, z: 0 }, { x: 0, z: 0 }, 0.1)).toBeNull();
     expect(directionToward({ x: 0, z: 0 }, { x: 3, z: 4 }, 5)).toBeNull();
     expect(directionToward({ x: 0, z: 0 }, { x: 3, z: 4 }, 4.9)).not.toBeNull();
+  });
+});
+
+describe("headingAlong", () => {
+  const path = [
+    { x: 0, z: 5 },
+    { x: 4, z: 5 },
+  ];
+
+  it("heads for the first corner while it is still ahead", () => {
+    const { dir, rest } = headingAlong(path, { x: 0, z: 0 }, 0.1);
+    expect(dir?.x).toBeCloseTo(0, 6);
+    expect(dir?.z).toBeCloseTo(1, 6);
+    expect(rest).toEqual(path);
+  });
+
+  it("drops the corners already reached and turns for the next", () => {
+    const { dir, rest } = headingAlong(path, { x: 0, z: 4.95 }, 0.1);
+    expect(dir?.x).toBeCloseTo(1, 3);
+    expect(dir?.z).toBeCloseTo(0, 1);
+    expect(rest).toEqual([{ x: 4, z: 5 }]);
+  });
+
+  it("finishes once the last corner is within reach, and for an empty path", () => {
+    expect(headingAlong(path.slice(1), { x: 3.95, z: 5 }, 0.1)).toEqual({ dir: null, rest: [] });
+    expect(headingAlong(path, { x: 3.95, z: 5 }, 5)).toEqual({ dir: null, rest: [] });
+    expect(headingAlong([], { x: 0, z: 0 }, 0.1)).toEqual({ dir: null, rest: [] });
   });
 });
 

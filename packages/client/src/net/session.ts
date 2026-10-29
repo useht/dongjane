@@ -1,5 +1,13 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { type BowMessage, type JoinOptions, MSG, TempleState, isHallFullError, parseRelocate } from "@dongjane/shared";
+import {
+  type BowMessage,
+  type JoinOptions,
+  MSG,
+  TempleState,
+  type Zone,
+  isWorldFullError,
+  parseRelocate,
+} from "@dongjane/shared";
 import { toWebSocketBase } from "../config.ts";
 
 export type JoinFailure = "full" | "gone" | "offline";
@@ -16,7 +24,7 @@ export class JoinError extends Error {
 }
 
 export function classifyJoinError(error: unknown): JoinFailure {
-  if (isHallFullError(error)) return "full";
+  if (isWorldFullError(error)) return "full";
   const message = error instanceof Error ? error.message : String(error);
   if (/not found|no room|expired|invalid (room|seat)/i.test(message)) return "gone";
   return "offline";
@@ -25,16 +33,16 @@ export function classifyJoinError(error: unknown): JoinFailure {
 export interface SessionHandlers {
   onState(state: TempleState): void;
   onLink(link: LinkState): void;
-  onRelocate(hall: number): void;
+  onRelocate(world: number): void;
 }
 
 const MIN_UPTIME_MS = 1000;
 
-export class HallSession {
+export class WorldSession {
   private closed = false;
 
   private constructor(
-    readonly hall: number,
+    readonly world: number,
     private readonly room: Room<any, TempleState>,
     private readonly handlers: SessionHandlers,
   ) {
@@ -50,7 +58,7 @@ export class HallSession {
     });
     room.onMessage(MSG.relocate, (payload: unknown) => {
       const move = parseRelocate(payload);
-      if (move && !this.closed) handlers.onRelocate(move.hall);
+      if (move && !this.closed) handlers.onRelocate(move.world);
     });
     room.onLeave(() => {
       if (this.closed) return;
@@ -62,14 +70,14 @@ export class HallSession {
   static async join(
     httpBase: string,
     roomId: string,
-    hall: number,
+    world: number,
     options: JoinOptions,
     handlers: SessionHandlers,
-  ): Promise<HallSession> {
+  ): Promise<WorldSession> {
     try {
       const client = new Client(toWebSocketBase(httpBase));
       const room = await client.joinById<TempleState>(roomId, options, TempleState);
-      return new HallSession(hall, room, handlers);
+      return new WorldSession(world, room, handlers);
     } catch (error) {
       throw new JoinError(classifyJoinError(error), { cause: error });
     }
@@ -91,8 +99,8 @@ export class HallSession {
     this.send(MSG.move, seq === undefined ? { x, z } : { x, z, seq });
   }
 
-  sit(cushionId: number): void {
-    this.send(MSG.sit, { cushionId });
+  sit(zone: Zone, seatId: number): void {
+    this.send(MSG.sit, { zone, seatId });
   }
 
   stand(): void {
@@ -109,6 +117,18 @@ export class HallSession {
 
   emote(id: number): void {
     this.send(MSG.emote, { id });
+  }
+
+  knock(): void {
+    this.send(MSG.knock, {});
+  }
+
+  chant(on: boolean): void {
+    this.send(MSG.chant, { on });
+  }
+
+  equip(item: number): void {
+    this.send(MSG.equip, { item });
   }
 
   async leave(): Promise<void> {

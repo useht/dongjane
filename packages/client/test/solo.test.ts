@@ -1,19 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ARRIVAL,
   BOW_MS,
-  CUSHION_SPOTS,
+  DHARMA_SEATS,
   EMOTE_COOLDOWN_MS,
+  GATBAWI_SEATS,
   JUMP_COOLDOWN_MS,
-  NPC_PER_HALL,
-  SPAWN_POINT,
+  NPC_PER_ZONE,
   TICK_MS,
   type TempleState,
-  WALK_BOUNDS,
+  WORLD_BOUNDS,
+  ZONES,
+  zoneAt,
 } from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
 const T0 = 1_800_000_000_000;
-const SEAT = CUSHION_SPOTS[5]!;
+const SEAT = GATBAWI_SEATS[47]!;
+const SPAWN = ARRIVAL;
 
 function open(hue: unknown = 120): { session: SoloSession; onState: ReturnType<typeof vi.fn<(state: TempleState) => void>> } {
   const onState = vi.fn<(state: TempleState) => void>();
@@ -36,7 +40,7 @@ describe("SoloSession", () => {
     vi.useRealTimers();
   });
 
-  it("seats the player alone in the hall with a stable id and their hue", () => {
+  it("seats the player alone in the world with a stable id and their hue", () => {
     const { session } = open(400);
     expect(session.sessionId).toBe("solo");
     expect(session.isOpen).toBe(true);
@@ -45,16 +49,18 @@ describe("SoloSession", () => {
     expect(monk.id).toBe("solo");
     expect(monk.hue).toBe(40);
     expect(monk.mode).toBe("stand");
-    expect(Math.abs(monk.x - SPAWN_POINT.x)).toBeLessThanOrEqual(2);
-    expect(monk.z).toBe(SPAWN_POINT.z);
+    expect(Math.abs(monk.x - SPAWN.x)).toBeLessThanOrEqual(SPAWN.spread);
+    expect(monk.z).toBe(SPAWN.z);
+    expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
     expect(session.sessionId).toBe("solo");
     void session.leave();
   });
 
-  it("fills the hall with npc monks that the player does not count as visitors", () => {
+  it("keeps every zone company with npc monks that the player does not count as visitors", () => {
     const { session } = open();
     const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
-    expect(npcs).toHaveLength(NPC_PER_HALL);
+    expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
+    for (const zone of ZONES) expect(npcs.filter((npc) => zoneAt(npc.x, npc.z) === zone)).toHaveLength(NPC_PER_ZONE);
     for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });
@@ -78,22 +84,22 @@ describe("SoloSession", () => {
   it("walks to a move target and acknowledges the sequence number", () => {
     const { session } = open();
     const startZ = self(session).z;
-    session.move(1, WALK_BOUNDS.maxZ, 7);
+    session.move(1, WORLD_BOUNDS.maxZ, 7);
     expect(self(session).mode).toBe("walk");
     expect(self(session).ackSeq).toBe(7);
     vi.advanceTimersByTime(10_000);
     expect(self(session).mode).toBe("stand");
     expect(self(session).x).toBeCloseTo(1, 5);
-    expect(self(session).z).toBeCloseTo(WALK_BOUNDS.maxZ, 5);
+    expect(self(session).z).toBeCloseTo(WORLD_BOUNDS.maxZ, 5);
     expect(self(session).z).not.toBe(startZ);
     void session.leave();
   });
 
-  it("sits on a cushion, bows, and stands again", () => {
+  it("sits on a mat, bows, and stands again", () => {
     const { session } = open();
-    session.sit(SEAT.id);
-    expect(session.state.cushions.get(String(SEAT.id))?.occupantId).toBe("solo");
-    expect(self(session).cushionId).toBe(SEAT.id);
+    session.sit("gatbawi", SEAT.id);
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("solo");
+    expect(self(session).seatId).toBe(SEAT.id);
 
     vi.advanceTimersByTime(10_000);
     expect(self(session).mode).toBe("kneel");
@@ -106,8 +112,22 @@ describe("SoloSession", () => {
 
     session.stand();
     expect(self(session).mode).toBe("stand");
-    expect(self(session).cushionId).toBe(-1);
-    expect(session.state.cushions.get(String(SEAT.id))?.occupantId).toBe("");
+    expect(self(session).seatId).toBe(-1);
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("");
+    void session.leave();
+  });
+
+  it("walks on foot through the 법당's doorway to a 방석 and kneels there", () => {
+    const { session } = open();
+    const seat = DHARMA_SEATS[4]!;
+    session.sit("dharma", seat.id);
+    expect(session.state.seats.get(`dharma:${seat.id}`)?.occupantId).toBe("solo");
+    expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");
+    vi.advanceTimersByTime(30_000);
+    expect(self(session).mode).toBe("kneel");
+    expect(self(session).x).toBeCloseTo(seat.x, 1);
+    expect(self(session).z).toBeCloseTo(seat.z, 1);
+    expect(zoneAt(self(session).x, self(session).z)).toBe("dharma");
     void session.leave();
   });
 
@@ -140,7 +160,7 @@ describe("SoloSession", () => {
     session.jump();
     expect(self(session).jumpSeq).toBe(2);
 
-    session.sit(SEAT.id);
+    session.sit("gatbawi", SEAT.id);
     vi.advanceTimersByTime(JUMP_COOLDOWN_MS);
     session.jump();
     expect(self(session).jumpSeq).toBe(2);
@@ -169,7 +189,7 @@ describe("SoloSession", () => {
 
     const before = { x: self(session).x, z: self(session).z };
     session.move(0, 0, 1);
-    session.sit(SEAT.id);
+    session.sit("gatbawi", SEAT.id);
     session.bow(3);
     session.emote(2);
     session.jump();
@@ -177,10 +197,10 @@ describe("SoloSession", () => {
     expect(self(session).emoteSeq).toBe(0);
     expect(self(session).jumpSeq).toBe(0);
     expect(self(session).mode).toBe("stand");
-    expect(self(session).cushionId).toBe(-1);
+    expect(self(session).seatId).toBe(-1);
     expect(self(session).ackSeq).toBe(0);
     expect({ x: self(session).x, z: self(session).z }).toEqual(before);
-    expect(session.state.cushions.get(String(SEAT.id))?.occupantId).toBe("");
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("");
     await expect(session.leave()).resolves.toBeUndefined();
   });
 });
