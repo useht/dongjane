@@ -1,4 +1,4 @@
-export const EMOTE_SHOW_MS = 2500;
+export const EMOTE_SHOW_MS = 4000;
 
 export interface ActiveEmote {
   monkId: string;
