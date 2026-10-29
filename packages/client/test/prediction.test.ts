@@ -74,16 +74,17 @@ describe("SelfPrediction movement", () => {
 
   it("clamps to the walkable area exactly like resolveWalkable and stops reporting walking at the wall", () => {
     const prediction = new SelfPrediction();
-    const first = prediction.frame(FRAME, 0, { x: 1, z: 0 }, { x: 4.99, z: 0 });
-    expect(must(first).x).toBe(resolveWalkable(4.99 + WALK_SPEED * FRAME + KEY_MOVE_REACH, 0).x);
-    hold(prediction, 30, { x: 1, z: 0 }, { x: 4.99, z: 0 }, FRAME_MS);
+    const nearWall = WORLD_BOUNDS.maxX - 0.01;
+    const first = prediction.frame(FRAME, 0, { x: 1, z: 0 }, { x: nearWall, z: 0 });
+    expect(must(first).x).toBe(resolveWalkable("gatbawi", nearWall + WALK_SPEED * FRAME + KEY_MOVE_REACH, 0).x);
+    hold(prediction, 30, { x: 1, z: 0 }, { x: nearWall, z: 0 }, FRAME_MS);
     const shown = must(prediction.display());
-    expect(shown.x).toBe(resolveWalkable(99, 0).x);
+    expect(shown.x).toBe(resolveWalkable("gatbawi", 99, 0).x);
     expect(shown.walking).toBe(false);
 
     const back = new SelfPrediction();
     hold(back, 600, { x: 0, z: -1 }, { x: 0, z: 0 });
-    expect(must(back.display()).z).toBe(resolveWalkable(0, -99).z);
+    expect(must(back.display()).z).toBe(resolveWalkable("gatbawi", 0, -99).z);
   });
 
   it("never advances more than MAX_FRAME_DT_S of walking in one frame, however long the frame took", () => {
@@ -575,7 +576,7 @@ describe("SelfPrediction taps", () => {
     const { frames, moves } = runLink(
       { oneWayMs: rtt / 2, jitterMs: 0, seed: 1 },
       1550 + rtt + 3000,
-      { x: 3, z: 3 },
+      { x: WORLD_BOUNDS.maxX - 3, z: 3 },
       (t) => (t < 1500 ? { x: 1, z: 0 } : t < 1550 ? { x: 0, z: -1 } : null),
     );
     const release = moves[moves.length - 1] as MoveTarget;

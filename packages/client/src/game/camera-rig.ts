@@ -1,4 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
+import type { Zone } from "@dongjane/shared";
+import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
 export interface Box {
   minX: number;
@@ -36,10 +38,34 @@ export interface RigLimits {
   maxPitch: number;
 }
 
-const LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 13, minPitch: 0.16, maxPitch: 1.3 };
+const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 18, minPitch: 0.16, maxPitch: 1.3 };
+const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 9.5, minPitch: 0.16, maxPitch: 1.3 };
 
-// A low view from the back of the plaza: Gatbawi's hat stone, all twelve mats and the monk fit between the HUD bands.
-export const DEFAULT_VIEW = { yaw: 0, pitch: 0.38, distance: 8.5 } as const;
+export const DHARMA_CAMERA_BOUNDS: Box = { minX: -9.6, maxX: 9.6, minY: 0.5, maxY: 7, minZ: -5, maxZ: 8.8 };
+
+export interface View {
+  yaw: number;
+  pitch: number;
+  distance: number;
+}
+
+// Seen from the back of the plaza, high enough that Gatbawi's hat stone, all fifty mats and the monk fit between the HUD bands.
+export const DEFAULT_VIEW: View = { yaw: -0.085, pitch: 0.62, distance: 16 };
+
+const LANDSCAPE_VIEW_WIDE_DISTANCE = 12;
+const DHARMA_VIEW: View = { yaw: 0, pitch: 0.75, distance: 8.5 };
+
+// A wide window frames the plaza from nearer than a tall one, which needs the distance to fit the plaza's depth.
+export function viewFor(zone: Zone, aspect: number): View {
+  if (zone === "dharma") return { ...DHARMA_VIEW };
+  return { ...DEFAULT_VIEW, distance: aspect < 1 ? DEFAULT_VIEW.distance : LANDSCAPE_VIEW_WIDE_DISTANCE };
+}
+
+export function regionFor(zone: Zone): { bounds: Box; limits: RigLimits } {
+  return zone === "dharma"
+    ? { bounds: DHARMA_CAMERA_BOUNDS, limits: DHARMA_LIMITS }
+    : { bounds: LANDSCAPE_BOUNDS, limits: GATBAWI_LIMITS };
+}
 
 export interface Lens {
   fov: number;
@@ -95,9 +121,15 @@ export class CameraRig {
 
   constructor(
     readonly camera: PerspectiveCamera,
-    private readonly bounds: Box,
-    private readonly limits: RigLimits = LIMITS,
+    private bounds: Box,
+    private limits: RigLimits = GATBAWI_LIMITS,
   ) {}
+
+  setRegion(bounds: Box, limits: RigLimits): void {
+    this.bounds = bounds;
+    this.limits = limits;
+    this.distance = Math.min(limits.maxDistance, Math.max(limits.minDistance, this.distance));
+  }
 
   orbit(dxRadians: number, dyRadians: number): void {
     this.yaw -= dxRadians;

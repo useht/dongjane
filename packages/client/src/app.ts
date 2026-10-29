@@ -1,8 +1,12 @@
 import {
-  MAT_SPOTS,
   type SeatResponse,
   type TempleState,
   type WorldInfo,
+  ZONES,
+  ZONE_SEATS,
+  type Zone,
+  isZone,
+  otherZone,
   parseWorldParam,
   seatLabel,
   skyAt,
@@ -23,7 +27,7 @@ import { SoloSession } from "./net/solo.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
-import { describeChant } from "./ui/format.ts";
+import { describeChant, seatName, zoneFullNote } from "./ui/format.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
@@ -41,7 +45,7 @@ interface SelfSnapshot {
   x: number;
   z: number;
   mode: string;
-  matId: number;
+  seatId: number;
 }
 
 export class App {
@@ -69,7 +73,8 @@ export class App {
   private currentWorld = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
-  private matOwners = new Map<number, string>();
+  private zone: Zone = "gatbawi";
+  private seatOwners = new Map<number, string>();
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
   private nextChantTick = 0;
@@ -110,7 +115,7 @@ export class App {
     });
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
-      this.session?.sit(id);
+      this.session?.sit(this.zone, id);
     });
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
@@ -152,7 +157,7 @@ export class App {
     this.bowWatch.reset();
     this.self = null;
     this.prediction.cancel();
-    this.matOwners.clear();
+    this.seatOwners.clear();
     this.hud.setLink("online");
     this.overlay.loading("월드로 들어가는 중이에요", "잠시만 기다려 주세요");
 
@@ -179,7 +184,7 @@ export class App {
           this.base,
           seat.roomId,
           seat.world,
-          { hue: profile.hue },
+          { hue: profile.hue, zone: this.zone },
           {
             onState: (state) => {
               if (token === this.joinToken) this.handleState(state);
@@ -191,6 +196,9 @@ export class App {
               if (token !== this.joinToken) return;
               this.hud.toast(`월드가 합쳐져서 ${worldName(world)}로 옮겨 드려요`);
               void this.enter(world);
+            },
+            onZoneFull: (zone) => {
+              if (token === this.joinToken) this.hud.toast(zoneFullNote(zone, otherZone(zone)));
             },
           },
         );
@@ -247,7 +255,8 @@ export class App {
     this.bowWatch.reset();
     this.self = null;
     this.prediction.cancel();
-    this.matOwners.clear();
+    this.seatOwners.clear();
+    this.applyZone("gatbawi");
 
     const session = new SoloSession(profile.hue, {
       onState: (state) => {
@@ -295,45 +304,52 @@ export class App {
     const now = performance.now();
     const selfId = session.sessionId;
 
+    const mine = state.monks.get(selfId);
+    if (mine && isZone(mine.zone) && mine.zone !== this.zone) this.applyZone(mine.zone);
+    const zone = this.zone;
+
     const views: MonkView[] = [];
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
+    const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
     state.monks.forEach((monk) => {
-      views.push({
-        id: monk.id,
-        hue: monk.hue,
-        x: monk.x,
-        z: monk.z,
-        yaw: monk.yaw,
-        mode: monk.mode,
-        matId: monk.matId,
-      });
-      watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
+      if (isZone(monk.zone)) counts[monk.zone] += 1;
+      if (monk.zone === zone) {
+        views.push({
+          id: monk.id,
+          hue: monk.hue,
+          x: monk.x,
+          z: monk.z,
+          yaw: monk.yaw,
+          mode: monk.mode,
+          zone,
+          seatId: monk.seatId,
+        });
+        watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
+      }
       rows.push({
         id: monk.id,
         slot: monk.slot,
         mode: monk.mode,
-        matId: monk.matId,
+        zone: monk.zone,
+        seatId: monk.seatId,
         bowCount: monk.bowCount,
         isSelf: monk.id === selfId,
       });
       if (monk.id === selfId) {
-        this.self = { x: monk.x, z: monk.z, mode: monk.mode, matId: monk.matId };
+        this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, matId: monk.matId, bowCount: monk.bowCount });
+        this.hud.setSelf({ mode: monk.mode, zone: monk.zone, seatId: monk.seatId, bowCount: monk.bowCount });
       }
     });
     this.lastViews = views;
 
     const owners = new Map<number, string>();
-    const occupied = new Set<number>();
-    state.mats.forEach((mat) => {
-      if (mat.occupantId !== "") {
-        owners.set(mat.id, mat.occupantId);
-        occupied.add(mat.id);
-      }
+    state.seats.forEach((seat) => {
+      if (seat.zone === zone && seat.occupantId !== "") owners.set(seat.id, seat.occupantId);
     });
-    this.matOwners = owners;
+    this.seatOwners = owners;
+    const occupied = new Set(owners.keys());
 
     this.world.setSelfPrediction(this.prediction.display());
     this.world.applyMonks(views, now, state.serverTime);
@@ -341,19 +357,31 @@ export class App {
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
-    this.syncWorldCount(rows.length);
+    this.syncWorldCount(rows.length, counts);
 
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 
-  private syncWorldCount(count: number): void {
+  private syncWorldCount(count: number, zones: Record<Zone, number>): void {
     const info = this.worlds.find((entry) => entry.world === this.currentWorld);
-    if (!info || info.clients === count) return;
+    if (!info) return;
+    const same = info.clients === count && ZONES.every((zone) => info.zones[zone] === zones[zone]);
+    if (same) return;
     info.clients = count;
+    info.zones = { ...zones };
     info.full = count >= info.capacity;
     this.hud.setWorlds(this.worlds, this.currentWorld);
+  }
+
+  // Which zone the visitor is in follows the server's state. Everything that was drawn or predicted for the old zone is dropped.
+  private applyZone(zone: Zone): void {
+    this.zone = zone;
+    this.prediction.cancel();
+    this.prediction.zone = zone;
+    this.seatHints.hideAll();
+    this.world.setZone(zone);
   }
 
   private handleLink(link: LinkState): void {
@@ -381,9 +409,9 @@ export class App {
     const session = this.session;
     if (!session) return;
     this.audio.unlock();
-    const seated = this.self && this.self.matId >= 0 && this.self.mode === "kneel";
+    const seated = this.self && this.self.seatId >= 0 && this.self.mode === "kneel";
     if (!seated) {
-      if (this.self?.mode !== "bow") this.hud.toast("돗자리에 앉아야 절할 수 있어요");
+      if (this.self?.mode !== "bow") this.hud.toast(`${seatName(this.zone)}에 앉아야 절할 수 있어요`);
       return;
     }
     session.bow(1);
@@ -545,12 +573,12 @@ export class App {
 
   private updateSeatHints(): void {
     const self = this.self;
-    if (!this.session || !self || self.matId >= 0) {
+    if (!this.session || !self || self.seatId >= 0) {
       this.seatHints.hideAll();
       return;
     }
-    for (const spot of MAT_SPOTS) {
-      const reachable = !this.matOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+    for (const spot of ZONE_SEATS[this.zone]) {
+      const reachable = !this.seatOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
       if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
         this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
       } else {

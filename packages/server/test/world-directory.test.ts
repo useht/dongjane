@@ -156,6 +156,7 @@ describe("planWorlds", () => {
 
 class FakeRoom implements DirectoryRoom {
   population = 0;
+  zones = { gatbawi: 0, dharma: 0 };
   draining = false;
   closed = false;
   drainedTo: number | null = null;
@@ -171,11 +172,13 @@ class FakeRoom implements DirectoryRoom {
 
   join(): void {
     this.population += 1;
+    this.zones.gatbawi += 1;
     this.directory.joined(this);
   }
 
   leave(): void {
     this.population -= 1;
+    this.zones.gatbawi -= 1;
     this.directory.changed();
   }
 
@@ -242,7 +245,9 @@ describe("WorldDirectory", () => {
     await directory.seat(null);
     rooms.get(1)!.join();
     await settle();
-    expect(directory.list()).toEqual([{ world: 1, roomId: "room1", clients: 1, capacity: WORLD_CAPACITY, full: false }]);
+    expect(directory.list()).toEqual([
+      { world: 1, roomId: "room1", clients: 1, capacity: WORLD_CAPACITY, full: false, zones: { gatbawi: 1, dharma: 0 } },
+    ]);
   });
 
   it("closes a world when its last visitor leaves", async () => {

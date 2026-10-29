@@ -1,4 +1,4 @@
-import { WORLD_CAPACITY, WORLD_SPARE_AT, type WorldInfo, type SeatResponse } from "@dongjane/shared";
+import { WORLD_CAPACITY, WORLD_SPARE_AT, type WorldInfo, type SeatResponse, type Zone } from "@dongjane/shared";
 
 export const SEAT_RESERVATION_MS = 5000;
 export const RELOCATION_GRACE_MS = 5000;
@@ -57,6 +57,7 @@ export interface DirectoryRoom {
   readonly roomId: string;
   readonly world: number;
   readonly population: number;
+  readonly zones: Readonly<Record<Zone, number>>;
   readonly draining: boolean;
   /** Starts the hand-over; must have cleared `draining` again if it rejects. */
   drain(target: number): Promise<void>;
@@ -129,6 +130,7 @@ export class WorldDirectory {
         clients: room.population,
         capacity: WORLD_CAPACITY,
         full: room.population + this.pending(room.world) >= WORLD_CAPACITY,
+        zones: { ...room.zones },
       }));
   }
 

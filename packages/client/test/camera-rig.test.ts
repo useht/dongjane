@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
-import { GATBAWI_Z, MAT_SIZE, MAT_SPOTS, PLATFORM, SPAWN_POINT } from "@dongjane/shared";
-import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas } from "../src/game/camera-rig.ts";
+import { DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, ZONE_SPAWN } from "@dongjane/shared";
+import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas, regionFor, viewFor } from "../src/game/camera-rig.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
@@ -49,11 +49,27 @@ describe("CameraRig", () => {
     for (let i = 0; i < 50; i += 1) rig.zoom(0.5);
     expect(rig.distance).toBeGreaterThanOrEqual(2.6);
     for (let i = 0; i < 50; i += 1) rig.zoom(2);
-    expect(rig.distance).toBeLessThanOrEqual(13);
+    expect(rig.distance).toBeLessThanOrEqual(18);
+  });
+
+  it("takes another zone's bounds and zoom range, pulling the distance into them", () => {
+    const rig = make();
+    rig.distance = 16;
+    const dharma = regionFor("dharma");
+    rig.setRegion(dharma.bounds, dharma.limits);
+    expect(rig.distance).toBe(dharma.limits.maxDistance);
+    for (let i = 0; i < 50; i += 1) rig.zoom(0.5);
+    expect(rig.distance).toBeGreaterThanOrEqual(dharma.limits.minDistance);
+    const outdoors = regionFor("gatbawi");
+    rig.setRegion(outdoors.bounds, outdoors.limits);
+    for (let i = 0; i < 50; i += 1) rig.zoom(2);
+    expect(rig.distance).toBeLessThanOrEqual(outdoors.limits.maxDistance);
+    expect(outdoors.limits.maxDistance).toBeGreaterThan(dharma.limits.maxDistance);
   });
 
   it("points forward toward Gatbawi at yaw 0 and rotates with orbit", () => {
     const rig = make();
+    rig.yaw = 0;
     expect(rig.forward.z).toBeCloseTo(-1, 6);
     rig.yaw = Math.PI / 2;
     expect(rig.forward.x).toBeCloseTo(-1, 6);
@@ -72,7 +88,11 @@ describe("CameraRig", () => {
 });
 
 describe("lift", () => {
-  const make = (): CameraRig => new CameraRig(new PerspectiveCamera(), box);
+  const make = (): CameraRig => {
+    const rig = new CameraRig(new PerspectiveCamera(), box);
+    rig.yaw = 0;
+    return rig;
+  };
 
   it("raises the optical axis above the followed point without moving the camera", () => {
     const flat = make();
@@ -144,15 +164,30 @@ const SCREENS: ReadonlyArray<readonly [string, number, number, number, number]> 
 ];
 
 describe("default framing", () => {
-  const halfMat = { x: MAT_SIZE.x / 2, z: MAT_SIZE.z / 2 };
+  const halfMat = { x: GATBAWI_SEAT_SIZE.x / 2, z: GATBAWI_SEAT_SIZE.z / 2 };
+  const spawn = ZONE_SPAWN.gatbawi;
 
-  it.each(SCREENS)("keeps Gatbawi, all twelve mats and the monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
-    const camera = new PerspectiveCamera();
-    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
+  const frame = (width: number, height: number): CameraRig => {
+    const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS);
+    const view = viewFor("gatbawi", width / height);
+    rig.yaw = view.yaw;
+    rig.pitch = view.pitch;
+    rig.distance = view.distance;
+    return rig;
+  };
+
+  it("pulls the view back on tall screens and in on wide ones", () => {
+    expect(viewFor("gatbawi", 390 / 844).distance).toBeGreaterThan(viewFor("gatbawi", 1280 / 800).distance);
+    expect(viewFor("gatbawi", 390 / 844).pitch).toBe(DEFAULT_VIEW.pitch);
+    expect(viewFor("dharma", 1).distance).toBeLessThan(viewFor("gatbawi", 390 / 844).distance);
+  });
+
+  it.each(SCREENS)("keeps Gatbawi, all fifty mats and the monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
+    const rig = frame(width, height);
+    const camera = rig.camera;
     rig.reduceMotion = true;
     configureCamera(camera, rig, width, height, top, bottom);
-    expect(rig.pitch).toBe(DEFAULT_VIEW.pitch);
-    rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
+    rig.follow(spawn.x, spawn.z, 0, true);
     rig.update(0.016);
     camera.updateMatrixWorld();
     const screen = (x: number, y: number, z: number) => {
@@ -163,7 +198,7 @@ describe("default framing", () => {
     const hatTop = screen(0, PLATFORM.topY + 4.1, GATBAWI_Z);
     expect(hatTop.y).toBeGreaterThan(top);
     expect(hatTop.depth).toBeLessThan(1);
-    for (const spot of MAT_SPOTS) {
+    for (const spot of GATBAWI_SEATS) {
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
           const corner = screen(spot.x + sx * halfMat.x, 0.03, spot.z + sz * halfMat.z);
@@ -174,17 +209,17 @@ describe("default framing", () => {
         }
       }
     }
-    const feet = screen(SPAWN_POINT.x, 0, SPAWN_POINT.z);
-    const head = screen(SPAWN_POINT.x, 1.5, SPAWN_POINT.z);
+    const feet = screen(spawn.x, 0, spawn.z);
+    const head = screen(spawn.x, 1.5, spawn.z);
     expect(head.y).toBeGreaterThan(top);
     expect(feet.y).toBeLessThan(height - bottom);
   });
 
   it("keeps the camera inside the bounds and in front of the trees", () => {
-    const camera = new PerspectiveCamera();
-    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
+    const rig = frame(390, 844);
+    const camera = rig.camera;
     rig.reduceMotion = true;
-    rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
+    rig.follow(spawn.x, spawn.z, 0, true);
     rig.update(0.016);
     const { x, y, z } = camera.position;
     expect(x).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minX);
@@ -192,7 +227,7 @@ describe("default framing", () => {
     expect(y).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minY);
     expect(y).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxY);
     expect(z).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxZ);
-    expect(z).toBeCloseTo(SPAWN_POINT.z + DEFAULT_VIEW.distance * Math.cos(DEFAULT_VIEW.pitch), 6);
+    expect(z).toBeCloseTo(spawn.z + DEFAULT_VIEW.distance * Math.cos(DEFAULT_VIEW.pitch) * Math.cos(DEFAULT_VIEW.yaw), 2);
   });
 
   it("uses a wider lens on portrait screens", () => {

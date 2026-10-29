@@ -1,12 +1,13 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-// The service says 월드 and 돗자리. The retired words are spelled in pieces so this file does not trip over itself.
+// The service says 월드, with 갓바위 (돗자리) outdoors and 법당 (방석) indoors; the code says zone and seat for both.
+// The retired English words are spelled in pieces so this file does not trip over itself.
 const piece = (...parts: string[]): string => parts.join("");
-const RETIRED_KOREAN = [piece("법", "당"), piece("방", "석")];
 const RETIRED_ENGLISH = [
   new RegExp(`(?<!s)${piece("ha", "ll")}|${piece("Ha", "ll")}|${piece("HA", "LL")}`),
   new RegExp(`${piece("cus", "hion")}|${piece("Cus", "hion")}|${piece("CUS", "HION")}`),
+  new RegExp(`${piece("mat", "Id")}|${piece("MAT", "_SPOTS")}|${piece("MAT", "_SIZE")}|${piece("MAT", "_COUNT")}|${piece("SPAWN", "_POINT")}`),
 ];
 
 const TEXT = /\.(ts|css|html|py|json|md)$/;
@@ -42,11 +43,9 @@ describe("terms", () => {
     expect(files.length).toBeGreaterThan(60);
   });
 
-  it("says 월드 and 돗자리, never the retired Korean words", () => {
-    for (const file of files) {
-      const text = readFileSync(new URL(file, ROOT), "utf8");
-      for (const word of RETIRED_KOREAN) expect(text.includes(word), `${file} says ${word}`).toBe(false);
-    }
+  it("names both zones and both kinds of seat in the shared layout", () => {
+    const layout = readFileSync(new URL("shared/src/layout.ts", ROOT), "utf8");
+    for (const word of ["갓바위", "법당", "돗자리", "방석"]) expect(layout.includes(word), `layout says ${word}`).toBe(true);
   });
 
   it("uses the new identifiers and file names, never the retired English ones", () => {

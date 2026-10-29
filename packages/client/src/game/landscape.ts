@@ -29,7 +29,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { GATBAWI_Z, MAT_COUNT, MAT_SPOTS, MAT_YAW, PLATFORM } from "@dongjane/shared";
+import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAW } from "@dongjane/shared";
 import { type ModelMeshes, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
@@ -61,7 +61,7 @@ const SUN_DISTANCE = 58;
 // The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted.
 const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35 } as const;
 
-const LEAF_AREA = { minX: -10, spanX: 20, minZ: -2, spanZ: 11, top: 8, floor: 0.05 } as const;
+const LEAF_AREA = { minX: -10, spanX: 26, minZ: -2, spanZ: 17, top: 8, floor: 0.05 } as const;
 const LEAF_FALL_PER_SECOND = 0.05;
 const LEAF_WIND = 3;
 const LEAF_SIZE = 0.2;
@@ -292,15 +292,15 @@ export class Landscape {
   private buildMats(source: Mesh, anisotropy: number): InstancedMesh {
     const material = this.surface(source, anisotropy, LIFT.mat);
     this.materials.push(material);
-    const mats = new InstancedMesh(source.geometry, material, MAT_COUNT);
-    mats.instanceColor = new InstancedBufferAttribute(new Float32Array(MAT_COUNT * 3).fill(1), 3);
+    const mats = new InstancedMesh(source.geometry, material, SEAT_COUNT);
+    mats.instanceColor = new InstancedBufferAttribute(new Float32Array(SEAT_COUNT * 3).fill(1), 3);
     mats.instanceColor.setUsage(DynamicDrawUsage);
     mats.receiveShadow = true;
     mats.frustumCulled = false;
     mats.name = "mats";
     const m = new Matrix4();
-    for (const spot of MAT_SPOTS) {
-      m.makeRotationY(MAT_YAW).setPosition(spot.x, 0, spot.z);
+    for (const spot of GATBAWI_SEATS) {
+      m.makeRotationY(SEAT_YAW).setPosition(spot.x, 0, spot.z);
       mats.setMatrixAt(spot.id, m);
     }
     return mats;
@@ -363,13 +363,13 @@ export class Landscape {
     return leaves;
   }
 
-  setOccupied(matId: number, occupied: boolean): void {
-    if (matId < 0 || matId >= MAT_COUNT) return;
-    if (occupied === this.occupied.has(matId)) return;
-    if (occupied) this.occupied.add(matId);
-    else this.occupied.delete(matId);
+  setOccupied(seatId: number, occupied: boolean): void {
+    if (seatId < 0 || seatId >= SEAT_COUNT) return;
+    if (occupied === this.occupied.has(seatId)) return;
+    if (occupied) this.occupied.add(seatId);
+    else this.occupied.delete(seatId);
     this.tint.setScalar(occupied ? 0.55 : 1);
-    this.mats.setColorAt(matId, this.tint);
+    this.mats.setColorAt(seatId, this.tint);
     if (this.mats.instanceColor) this.mats.instanceColor.needsUpdate = true;
   }
 

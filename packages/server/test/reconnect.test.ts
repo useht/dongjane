@@ -65,7 +65,7 @@ describe("reconnection window", () => {
   it("keeps the seat and identity when the socket drops and comes back in time", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { matId: 7 });
+    a.send("sit", { zone: "gatbawi", seatId: 47 });
     await waitFor(() => b.state.monks.get(a.sessionId)?.mode === "kneel", "A kneels", 6000);
 
     const sessionId = a.sessionId;
@@ -78,17 +78,17 @@ describe("reconnection window", () => {
     await waitFor(() => reconnected, "client reconnects", 5000);
     expect(a.sessionId).toBe(sessionId);
     expect(b.state.monks.has(sessionId)).toBe(true);
-    expect(b.state.mats.get("7")?.occupantId).toBe(sessionId);
+    expect(b.state.seats.get("gatbawi:47")?.occupantId).toBe(sessionId);
 
     a.send("bow", { times: 1 });
     await waitFor(() => b.state.monks.get(sessionId)?.mode === "bow", "bow works after reconnect", 1500);
   }, 20_000);
 
-  it("keeps the monk visible to others during the window, then removes it and frees the mat", async () => {
+  it("keeps the monk visible to others during the window, then removes it and frees the seat", async () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
-    a.send("sit", { matId: 1 });
-    await waitFor(() => b.state.mats.get("1")?.occupantId === a.sessionId, "A claims");
+    a.send("sit", { zone: "gatbawi", seatId: 1 });
+    await waitFor(() => b.state.seats.get("gatbawi:1")?.occupantId === a.sessionId, "A claims");
     const sessionId = a.sessionId;
 
     a.reconnection.enabled = false;
@@ -98,7 +98,7 @@ describe("reconnection window", () => {
     expect(b.state.monks.has(sessionId)).toBe(true);
 
     await waitFor(() => !b.state.monks.has(sessionId), "dropped monk removed", RECONNECT_SECONDS * 1000 + 2500, 50);
-    expect(b.state.mats.get("1")?.occupantId).toBe("");
+    expect(b.state.seats.get("gatbawi:1")?.occupantId).toBe("");
     const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "client count back to 1");
     expect(world.full).toBe(false);
   }, 20_000);

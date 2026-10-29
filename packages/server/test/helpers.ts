@@ -1,6 +1,10 @@
 import { Client, type Room } from "@colyseus/sdk";
 import {
+  type JoinOptions,
   type WorldInfo,
+  type Zone,
+  type ZoneFullMessage,
+  MSG,
   type WorldListResponse,
   type SeatResponse,
   WORLDS_PATH,
@@ -35,9 +39,12 @@ export async function eventually<T>(read: () => Promise<T>, ok: (value: T) => bo
 
 export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const FILL_BATCH = 25;
+
 export class TestRig {
   readonly client: Client;
   readonly rooms: WorldClientRoom[] = [];
+  readonly refusals = new WeakMap<WorldClientRoom, Zone[]>();
 
   constructor(readonly port: number) {
     this.client = new Client(`ws://127.0.0.1:${port}`);
@@ -64,31 +71,37 @@ export class TestRig {
     return (await response.json()) as SeatResponse;
   }
 
-  async join(seat: SeatResponse, options: { hue?: number } = {}): Promise<WorldClientRoom> {
+  async join(seat: SeatResponse, options: JoinOptions = {}): Promise<WorldClientRoom> {
     const room = await this.client.joinById<TempleState>(seat.roomId, options, TempleState);
     room.reconnection.minUptime = 0;
+    const refused: Zone[] = [];
+    room.onMessage(MSG.zoneFull, (message: ZoneFullMessage) => refused.push(message.zone));
+    this.refusals.set(room, refused);
     this.rooms.push(room);
     await waitFor(() => room.state.monks.has(room.sessionId), "own monk in state");
     return room;
   }
 
   // Asks for a seat the way the page does and reports where the server actually put the visitor.
-  async arrive(requested: number | null, options: { hue?: number } = {}) {
+  async arrive(requested: number | null, options: JoinOptions = {}) {
     const seat = await this.seat(requested);
     return { seat, room: await this.join(seat, options) };
   }
 
   // Enters a world that must already be open (or be the next one to open).
-  async enter(world: number, options: { hue?: number } = {}): Promise<WorldClientRoom> {
+  async enter(world: number, options: JoinOptions = {}): Promise<WorldClientRoom> {
     const { seat, room } = await this.arrive(world, options);
     if (seat.world !== world) throw new Error(`asked for world ${world} but was seated in world ${seat.world}`);
     return room;
   }
 
-  // Brings a world to `count` visitors, opening it if it is the next world.
-  async fill(world: number, count: number): Promise<WorldClientRoom[]> {
+  // Brings a world to `count` visitors, opening it if it is the next world. They arrive in batches so a hundred do not wait in single file.
+  async fill(world: number, count: number, options: JoinOptions = {}): Promise<WorldClientRoom[]> {
     const rooms: WorldClientRoom[] = [];
-    for (let i = 0; i < count; i += 1) rooms.push(await this.enter(world));
+    for (let done = 0; done < count; done += FILL_BATCH) {
+      const batch = Math.min(FILL_BATCH, count - done);
+      rooms.push(...(await Promise.all(Array.from({ length: batch }, () => this.enter(world, options)))));
+    }
     return rooms;
   }
 

@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { GATBAWI_Z, MAT_COUNT, MAT_SIZE, MAT_SPOTS, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import { BUDGET, GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { THEME } from "../src/theme.ts";
@@ -252,7 +252,7 @@ describe("world.glb", () => {
 
   it("stays inside its size budget, counting every mat the game draws", () => {
     const prototypes: readonly string[] = WORLD_PROTOTYPES;
-    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? MAT_COUNT : 1), 0);
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? GATBAWI_SEATS.length : 1), 0);
     expect(triangles).toBeLessThanOrEqual(BUDGET.world.tris);
     expect(glb.bytes).toBeLessThanOrEqual(BUDGET.world.bytes);
   });
@@ -295,20 +295,22 @@ describe("world.glb", () => {
       const { min, max } = mesh(name).positions;
       near((min[0] + max[0]) / 2, 0);
       near((min[2] + max[2]) / 2, 0);
-      near(max[0] - min[0], MAT_SIZE.x);
-      near(max[2] - min[2], MAT_SIZE.z);
+      near(max[0] - min[0], GATBAWI_SEAT_SIZE.x);
+      near(max[2] - min[2], GATBAWI_SEAT_SIZE.z);
       expect(min[1], name).toBeGreaterThanOrEqual(-0.01);
       expect(max[1], name).toBeLessThanOrEqual(0.05);
     }
   });
 
   it("leaves every mat on the plaza paving, clear of the steps and of each other", () => {
-    for (const a of MAT_SPOTS) {
-      expect(a.z - MAT_SIZE.z / 2, `mat ${a.id} front`).toBeGreaterThanOrEqual(PLAZA.minZ);
-      expect(a.z + MAT_SIZE.z / 2, `mat ${a.id} back`).toBeLessThanOrEqual(PLAZA.maxZ);
-      expect(Math.abs(a.x) + MAT_SIZE.x / 2, `mat ${a.id} side`).toBeLessThanOrEqual(WORLD_BOUNDS.maxX);
-      for (const b of MAT_SPOTS.filter((other) => other.id > a.id)) {
-        const apart = Math.abs(a.x - b.x) >= MAT_SIZE.x || Math.abs(a.z - b.z) >= MAT_SIZE.z;
+    expect(GATBAWI_SEATS).toHaveLength(50);
+    for (const a of GATBAWI_SEATS) {
+      expect(a.z - GATBAWI_SEAT_SIZE.z / 2, `mat ${a.id} front`).toBeGreaterThanOrEqual(PLAZA.minZ);
+      expect(a.z + GATBAWI_SEAT_SIZE.z / 2, `mat ${a.id} back`).toBeLessThanOrEqual(PLAZA.maxZ);
+      expect(a.x - GATBAWI_SEAT_SIZE.x / 2, `mat ${a.id} left`).toBeGreaterThanOrEqual(WORLD_BOUNDS.minX);
+      expect(a.x + GATBAWI_SEAT_SIZE.x / 2, `mat ${a.id} right`).toBeLessThanOrEqual(WORLD_BOUNDS.maxX);
+      for (const b of GATBAWI_SEATS.filter((other) => other.id > a.id)) {
+        const apart = Math.abs(a.x - b.x) >= GATBAWI_SEAT_SIZE.x || Math.abs(a.z - b.z) >= GATBAWI_SEAT_SIZE.z;
         expect(apart, `mats ${a.id} and ${b.id} do not overlap`).toBe(true);
       }
     }

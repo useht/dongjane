@@ -8,14 +8,28 @@ import {
   CHANT_MS,
   WORLD_CAPACITY,
   WALK_SPEED,
+  ZONE_CAPACITY,
+  ZONE_COOLDOWN_MS,
 } from "./constants.ts";
-import { MAT_SPOTS, SPAWN_POINT, matSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
-import { Mat, Monk, TempleState } from "./schema.ts";
+import {
+  SEAT_YAW,
+  ZONES,
+  ZONE_SEATS,
+  ZONE_SPAWN,
+  type Zone,
+  otherZone,
+  pickSeat,
+  resolveWalkable,
+  seatKey,
+  seatSpot,
+  yawFromDirection,
+} from "./layout.ts";
+import { Monk, Seat, TempleState } from "./schema.ts";
 
 interface Target {
   x: number;
   z: number;
-  matId: number;
+  seatId: number;
 }
 
 interface Runtime {
@@ -24,7 +38,16 @@ interface Runtime {
   bowsLeft: number;
   nextBowAt: number;
   lastBowEndedAt: number;
+  lastZoneChangeAt: number;
 }
+
+export interface ZoneChoice {
+  zone: Zone;
+  // true when the requested zone was full and the visitor was sent to the other one
+  redirected: boolean;
+}
+
+export type ZoneChangeResult = "moved" | "same" | "full" | "cooldown" | "unknown";
 
 export interface SimOptions {
   clock?: () => number;
@@ -49,13 +72,27 @@ export class TempleSim {
     this.chantMs = options.chantMs ?? CHANT_MS;
     this.state.serverTime = this.clock();
 
-    for (const spot of MAT_SPOTS) {
-      this.state.mats.set(String(spot.id), new Mat({ id: spot.id, occupantId: "" }));
+    for (const zone of ZONES) {
+      for (const spot of ZONE_SEATS[zone]) {
+        this.state.seats.set(seatKey(zone, spot.id), new Seat({ zone, id: spot.id, occupantId: "" }));
+      }
     }
     this.updateChant();
   }
 
-  join(id: string, hue: number): Monk {
+  zoneCount(zone: Zone): number {
+    let count = 0;
+    for (const monk of this.state.monks.values()) if (monk.zone === zone) count += 1;
+    return count;
+  }
+
+  chooseZone(requested: Zone | null | undefined): ZoneChoice {
+    const wanted = requested ?? "gatbawi";
+    if (this.zoneCount(wanted) < ZONE_CAPACITY) return { zone: wanted, redirected: false };
+    return { zone: otherZone(wanted), redirected: true };
+  }
+
+  join(id: string, hue: number, zone: Zone = "gatbawi"): Monk {
     const taken = new Set<number>();
     for (const other of this.state.monks.values()) taken.add(other.slot);
     let slot = 1;
@@ -64,15 +101,24 @@ export class TempleSim {
       id,
       slot,
       hue,
-      x: SPAWN_POINT.x + (this.random() - 0.5) * 4,
-      z: SPAWN_POINT.z,
+      zone,
+      x: 0,
+      z: 0,
       yaw: 0,
       mode: "stand",
-      matId: -1,
+      seatId: -1,
       bowCount: 0,
     });
+    this.placeAtSpawn(monk);
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, { target: null, bowEndsAt: 0, bowsLeft: 0, nextBowAt: 0, lastBowEndedAt: 0 });
+    this.runtimes.set(id, {
+      target: null,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      lastZoneChangeAt: Number.NEGATIVE_INFINITY,
+    });
     return monk;
   }
 
@@ -90,25 +136,47 @@ export class TempleSim {
     if (!monk || !runtime || !Number.isFinite(x) || !Number.isFinite(z)) return false;
 
     this.releaseSeat(monk);
-    const point = resolveWalkable(x, z);
-    this.startWalk(monk, runtime, { x: point.x, z: point.z, matId: -1 });
+    const point = resolveWalkable(monk.zone as Zone, x, z);
+    this.startWalk(monk, runtime, { x: point.x, z: point.z, seatId: -1 });
     return true;
   }
 
-  sit(id: string, matId: number): boolean {
+  // A seat is only ever taken from inside its own zone, so a request naming another zone is ignored.
+  sit(id: string, zone: Zone, seatId: number): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    const spot = matSpot(matId);
-    const mat = this.state.mats.get(String(matId));
-    if (!monk || !runtime || !spot || !mat) return false;
-    if (monk.matId === matId) return true;
-    if (mat.occupantId !== "") return false;
+    if (!monk || !runtime || monk.zone !== zone) return false;
+    const spot = seatSpot(zone, seatId);
+    const seat = this.state.seats.get(seatKey(zone, seatId));
+    if (!spot || !seat) return false;
+    if (monk.seatId === seatId) return true;
+    if (seat.occupantId !== "") return false;
 
     this.releaseSeat(monk);
-    mat.occupantId = id;
-    monk.matId = matId;
-    this.startWalk(monk, runtime, { x: spot.x, z: spot.z, matId });
+    seat.occupantId = id;
+    monk.seatId = seatId;
+    this.startWalk(monk, runtime, { x: spot.x, z: spot.z, seatId });
     return true;
+  }
+
+  // Moves a visitor to the spawn of another zone and sends them to the best free seat there.
+  changeZone(id: string, zone: Zone): ZoneChangeResult {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime) return "unknown";
+    if (monk.zone === zone) return "same";
+    const now = this.clock();
+    if (now < runtime.lastZoneChangeAt + ZONE_COOLDOWN_MS) return "cooldown";
+    if (this.zoneCount(zone) >= ZONE_CAPACITY) return "full";
+
+    this.releaseSeat(monk);
+    runtime.lastZoneChangeAt = now;
+    monk.zone = zone;
+    monk.mode = "stand";
+    this.placeAtSpawn(monk);
+    const spot = pickSeat(zone, (seatId) => this.state.seats.get(seatKey(zone, seatId))?.occupantId !== "");
+    if (spot) this.sit(id, zone, spot.id);
+    return "moved";
   }
 
   stand(id: string): boolean {
@@ -126,7 +194,7 @@ export class TempleSim {
     const runtime = this.runtimes.get(id);
     if (!monk || !runtime) return false;
     if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return false;
-    if (monk.mode !== "kneel" || monk.matId < 0 || runtime.bowsLeft > 0) return false;
+    if (monk.mode !== "kneel" || monk.seatId < 0 || runtime.bowsLeft > 0) return false;
 
     const now = this.clock();
     if (now < runtime.lastBowEndedAt + BOW_COOLDOWN_MS) return false;
@@ -217,8 +285,8 @@ export class TempleSim {
     }
     monk.x = target.x;
     monk.z = target.z;
-    if (target.matId >= 0 && monk.matId === target.matId) {
-      monk.yaw = 0;
+    if (target.seatId >= 0 && monk.seatId === target.seatId) {
+      monk.yaw = SEAT_YAW;
       monk.mode = "kneel";
     } else {
       monk.mode = "stand";
@@ -231,10 +299,18 @@ export class TempleSim {
       runtime.bowsLeft = 0;
       runtime.target = null;
     }
-    if (monk.matId >= 0) {
-      const mat = this.state.mats.get(String(monk.matId));
-      if (mat && mat.occupantId === monk.id) mat.occupantId = "";
-      monk.matId = -1;
+    if (monk.seatId >= 0) {
+      const seat = this.state.seats.get(seatKey(monk.zone as Zone, monk.seatId));
+      if (seat && seat.occupantId === monk.id) seat.occupantId = "";
+      monk.seatId = -1;
     }
+  }
+
+  private placeAtSpawn(monk: Monk): void {
+    const spawn = ZONE_SPAWN[monk.zone as Zone];
+    const point = resolveWalkable(monk.zone as Zone, spawn.x + (this.random() - 0.5) * spawn.spread, spawn.z);
+    monk.x = point.x;
+    monk.z = point.z;
+    monk.yaw = 0;
   }
 }

@@ -4,7 +4,8 @@ Everything is drawn in the game's own coordinates (Y up, +Z toward the viewer) t
 frame is GAME. The plaza (flat paving the monks kneel on), the granite steps and platform, the
 rocks, the pines and the maples are placed from the layout in the inputs; only the dressing of the
 hillside (where the far trees and boulders go) is chosen here. The mat is built last, at the origin,
-so the baked occlusion never sees it.
+so the baked occlusion never sees it. The hillside keeps clear of the plaza, of the camera's box
+(x -8.2..14, z -2.6..30), of the stage on the north-east side and of the temple on the west side.
 """
 
 import math
@@ -19,35 +20,35 @@ SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
 GROUND_TILE = 1.6  # metres of ground per repeat of the paving picture
 STONE_TILE = 2.4  # metres of rock per repeat of the rock picture
 
-PLAZA_HALF = 6.5  # the paving runs this far to each side
-PLAZA_MARGIN = 1.2  # and this much past the last mat row
+PLAZA_MARGIN = 0.6  # the paving runs this far past the walkable edge at the front
 PLATFORM_HALF = 3.8
 PLATFORM_BACK = 0.7  # the platform reaches this far behind the statue's pedestal into the hill
 STEP_HALF = 2.6
 STEP_RISE = 0.3
 GROUND_LIMIT = 64.0
 
-# (x, z, height above ground, radii, seed, segments); the outcrop stands behind Gatbawi
+# (x, z, height above ground, radii, seed, segments); the outcrop stands behind Gatbawi and leaves
+# the north-east corner (x 4..16, z -13..-5) free for the stage
 OUTCROP = (
-    (0.0, -11.0, 2.4, (7.2, 4.6, 3.6), 1.0, 18),
-    (-5.2, -9.6, 1.2, (3.4, 3.0, 2.8), 2.0, 16),
-    (5.4, -9.8, 1.4, (3.6, 3.4, 3.0), 3.0, 16),
-    (1.2, -12.8, 4.6, (4.6, 3.6, 2.8), 4.0, 18),
-    (-3.0, -13.0, 3.4, (4.0, 3.4, 2.6), 5.0, 16),
-    (-9.5, -8.0, 0.5, (3.0, 2.2, 2.4), 6.0, 22),
-    (9.8, -7.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
+    (-0.8, -11.0, 2.4, (4.8, 4.6, 3.6), 1.0, 18),
+    (-5.6, -9.6, 1.2, (3.4, 3.0, 2.8), 2.0, 16),
+    (-9.6, -11.4, 1.4, (3.6, 3.4, 3.0), 3.0, 16),
+    (-0.8, -12.8, 4.6, (4.0, 3.6, 2.8), 4.0, 18),
+    (-4.6, -13.0, 3.4, (4.0, 3.4, 2.6), 5.0, 16),
+    (-11.5, -7.5, 0.5, (3.0, 2.2, 2.4), 6.0, 22),
+    (17.8, -8.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
 )
 BOULDERS = (
-    (-7.4, -0.8, 0.2, (1.3, 0.9, 1.1), 8.0, 18),
-    (7.7, 1.2, 0.2, (1.5, 1.1, 1.2), 9.0, 18),
-    (-8.0, 5.4, 0.15, (1.1, 0.8, 1.0), 10.0, 16),
-    (7.5, 6.2, 0.15, (1.0, 0.7, 0.9), 11.0, 16),
-    (-7.0, -3.8, 0.2, (1.2, 1.0, 1.3), 12.0, 16),
+    (-10.2, -1.6, 0.2, (1.3, 0.9, 1.1), 8.0, 18),
+    (15.8, 1.2, 0.2, (1.5, 1.1, 1.2), 9.0, 18),
+    (-10.0, 15.4, 0.15, (1.1, 0.8, 1.0), 10.0, 16),
+    (15.6, 11.8, 0.15, (1.0, 0.7, 0.9), 11.0, 16),
+    (-9.6, -4.4, 0.2, (1.2, 1.0, 1.3), 12.0, 16),
 )
-# (x, z, height); every tree stands outside the plaza and outside the camera's reach
-NEAR_PINES = ((-11.2, -2.8, 8.2), (11.6, -4.6, 9.0), (-9.8, 4.2, 7.0), (10.6, 7.4, 7.6), (-10.4, -8.8, 8.8))
+# (x, z, height); every tree stands outside the plaza, the camera's box, the stage and the temple
+NEAR_PINES = ((-12.4, -4.2, 8.2), (18.0, -3.4, 9.0), (-20.0, 4.0, 7.0), (18.4, 9.0, 7.6), (-13.0, -9.4, 8.8), (-19.6, 14.6, 7.8))
 # (x, z, size, colour index into the maple palette)
-NEAR_MAPLES = ((-9.8, 1.2, 1.15, 0), (10.0, -0.8, 1.2, 1), (-9.6, -5.6, 1.0, 2), (9.8, 4.6, 1.1, 0), (-10.8, 7.2, 1.0, 1))
+NEAR_MAPLES = ((-13.4, -1.0, 1.15, 0), (19.4, 3.0, 1.2, 1), (-12.6, 16.8, 1.0, 2), (19.6, 14.4, 1.1, 0), (-22.0, 9.0, 1.0, 1))
 FAR_PINES = 11
 FAR_MAPLES = 9
 
@@ -61,15 +62,16 @@ class Plan:
         self.steps = layout["STEPS"]
         self.plaza = layout["PLAZA"]
         self.statue_z = layout["GATBAWI_Z"]
-        self.mat = layout["MAT_SIZE"]
+        self.mat = layout["GATBAWI_SEAT_SIZE"]
         self.mat_top = inputs["monk"]["MAT_TOP"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
+        self.left, self.right = self.plaza["minX"], self.plaza["maxX"]
         self.front = self.plaza["maxZ"] + PLAZA_MARGIN
         self.back = self.platform["minZ"] - PLATFORM_BACK
 
     def outside(self, x, z):
         """How far (x, z) is from the paved plaza, negative inside it."""
-        dx = abs(x) - PLAZA_HALF
+        dx = max(self.left - x, x - self.right)
         dz = max(self.plaza["minZ"] - z, z - self.front)
         inside = max(dx, dz)
         if inside < 0.0:
@@ -90,7 +92,7 @@ def axis_lines(low, high, step, limit):
     count = round((high - low) / step)
     lines = [low + (high - low) * i / count for i in range(count + 1)]
     below, above, gap, lo, hi = [], [], step, low, high
-    while hi < limit:
+    while hi < limit or lo > -limit:
         gap *= 1.3
         lo, hi = lo - gap, hi + gap
         below.append(lo)
@@ -113,7 +115,7 @@ def ground(plan):
         edge = plan.outside(p.x, p.z) + 0.7 * fbm(p.x * 0.7, 0.0, p.z * 0.7, 5.0)
         return mix(paving, earth, smoothstep(-0.15, 0.45, edge))
 
-    columns = axis_lines(-PLAZA_HALF, PLAZA_HALF, 0.65, GROUND_LIMIT)
+    columns = axis_lines(plan.left, plan.right, 0.65, GROUND_LIMIT)
     rows = axis_lines(plan.plaza["minZ"], plan.front, 0.65, GROUND_LIMIT)
     part.heightfield(columns, rows, plan.terrain, tone)
     part.project_uv(GROUND_TILE)
@@ -161,14 +163,15 @@ def steps(plan):
             faces = part.box((x, height / 2, near - depth / 2), (width, height, depth - 0.03), tone(2.0 + 3 * k + b), skip=("-y", "-z"), cuts=(3, 1, 1))
             rough(faces, 2.0 + 3 * k + b)
     kerb = (0.3, 0.14)
-    length = (plan.front - plan.plaza["minZ"]) / 6
-    for side in (-1.0, 1.0):
-        for i in range(6):
+    length = (plan.front - plan.plaza["minZ"]) / 8
+    for edge, inward in ((plan.left, 1.0), (plan.right, -1.0)):
+        for i in range(8):
             z = plan.plaza["minZ"] + length * (i + 0.5)
-            rough(part.box((side * (PLAZA_HALF - 0.05), kerb[1] / 2 - 0.01, z), (kerb[0], kerb[1], length - 0.04), tone(20.0 + i), skip=("-y",)), 20.0 + i)
-    run = 2 * PLAZA_HALF / 8
-    for i in range(8):
-        x = -PLAZA_HALF + run * (i + 0.5)
+            rough(part.box((edge + inward * 0.05, kerb[1] / 2 - 0.01, z), (kerb[0], kerb[1], length - 0.04), tone(20.0 + i), skip=("-y",)), 20.0 + i)
+    count = 16
+    run = (plan.right - plan.left) / count
+    for i in range(count):
+        x = plan.left + run * (i + 0.5)
         rough(part.box((x, kerb[1] / 2 - 0.01, plan.front - 0.05), (run - 0.04, kerb[1], kerb[0]), tone(30.0 + i), skip=("-y",)), 30.0 + i)
     part.project_uv(STONE_TILE)
     return part
@@ -246,15 +249,18 @@ def maple(part, plan, x, z, size, palette, seed, crowns=4):
 
 
 def scatter(count, seed, plan):
-    """Spots on the hillside for the far trees: out of the plaza's way and clear of the outcrop."""
+    """Spots on the hillside for the far trees: swung from the west over the north to the east, and pushed
+    outward until they clear the box the plaza, the stage, the temple and the camera occupy."""
     spots = []
     for i in range(count):
-        angle = math.tau * (i + 0.7 * hash01(i, 0.0, 0.0, seed)) / count
-        radius = 18.0 + 26.0 * hash01(i, 1.0, 0.0, seed)
-        x, z = radius * math.sin(angle) * 1.2, radius * math.cos(angle)
-        near = abs(x) < 12.5 and -18.0 < z < 14.0
-        if not near:
-            spots.append((x, z, hash01(i, 2.0, 0.0, seed)))
+        angle = -2.4 + 4.8 * (i + 0.7 * hash01(i, 0.0, 0.0, seed)) / count
+        radius = 26.0 + 22.0 * hash01(i, 1.0, 0.0, seed)
+        for _ in range(8):
+            x, z = radius * math.sin(angle) * 1.15, 4.0 - radius * math.cos(angle)
+            if not (-30.0 < x < 30.0 and -22.0 < z < 38.0):
+                break
+            radius += 6.0
+        spots.append((x, z, hash01(i, 2.0, 0.0, seed)))
     return spots
 
 
@@ -277,7 +283,7 @@ def maples(plan):
 
 
 def mat(plan):
-    """One woven mat, centred at the origin with its top at MAT_TOP; the game places twelve of them."""
+    """One woven mat, centred at the origin with its top at MAT_TOP; the game places fifty of them."""
     part = Part("mat", frame=GAME)
     c = plan.c
     width, depth, top = plan.mat["x"], plan.mat["z"], plan.mat_top

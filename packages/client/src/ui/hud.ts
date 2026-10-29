@@ -4,21 +4,23 @@ import type { LinkState } from "../net/session.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, iconButton } from "./dom.ts";
 import { icon } from "./icons.ts";
-import { type ChantStatus, modeLabel } from "./format.ts";
+import { type ChantStatus, modeLabel, seatDirection, seatName, zoneName } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
   id: string;
   slot: number;
   mode: string;
-  matId: number;
+  zone: string;
+  seatId: number;
   bowCount: number;
   isSelf: boolean;
 }
 
 export interface SelfStatus {
   mode: string;
-  matId: number;
+  zone: string;
+  seatId: number;
   bowCount: number;
 }
 
@@ -123,7 +125,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderWorlds();
-    this.setSelf({ mode: "stand", matId: -1, bowCount: 0 });
+    this.setSelf({ mode: "stand", zone: "gatbawi", seatId: -1, bowCount: 0 });
   }
 
   closeSheets(): boolean {
@@ -141,7 +143,7 @@ export class Hud {
 
   setVisitors(rows: readonly VisitorRow[]): void {
     this.clock.setVisitorCount(rows.length);
-    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.matId}|${row.bowCount}|${row.isSelf}`).join(";");
+    const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.zone}|${row.seatId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
     this.visitorList.replaceChildren(
@@ -150,17 +152,17 @@ export class Hud {
           "li",
           row.isSelf ? "item self" : "item",
           h("span", "item-main", h("strong", "", seatLabel(row.slot)), row.isSelf && h("em", "", "나")),
-          h("span", "item-sub", `${modeLabel(row.mode, row.matId)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
+          h("span", "item-sub", `${zoneName(row.zone)} · ${modeLabel(row.mode, row.seatId, row.zone)}${row.bowCount > 0 ? ` · 절 ${row.bowCount}번` : ""}`),
         ),
       ),
     );
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.matId}|${self.bowCount}`;
+    const key = `${self.mode}|${self.zone}|${self.seatId}|${self.bowCount}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.matId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const seated = self.seatId >= 0 && (self.mode === "kneel" || self.mode === "bow");
     const bowing = self.mode === "bow";
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
@@ -169,10 +171,10 @@ export class Hud {
     this.statusLine.textContent = seated
       ? bowing
         ? "절하는 중이에요"
-        : "돗자리에 앉았어요. 절을 해 보세요"
-      : self.matId >= 0
-        ? "돗자리로 가는 중이에요"
-        : "돗자리 가까이 가서 앉기 버튼을 눌러 보세요";
+        : `${seatName(self.zone)}에 앉았어요. 절을 해 보세요`
+      : self.seatId >= 0
+        ? `${seatDirection(self.zone)} 가는 중이에요`
+        : `${seatName(self.zone)} 가까이 가서 앉기 버튼을 눌러 보세요`;
   }
 
   setChant(status: ChantStatus | null): void {

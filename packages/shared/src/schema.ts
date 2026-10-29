@@ -8,8 +8,9 @@ export const Monk = schema(
     x: t.float32().default(0),
     z: t.float32().default(0),
     yaw: t.float32().default(0),
+    zone: t.string().default("gatbawi"),
     mode: t.string().default("stand"),
-    matId: t.int8().default(-1),
+    seatId: t.int8().default(-1),
     bowCount: t.uint32().default(0),
     ackSeq: t.uint32().default(0),
   },
@@ -17,14 +18,16 @@ export const Monk = schema(
 );
 export type Monk = SchemaType<typeof Monk>;
 
-export const Mat = schema(
+// One seat of one zone; the state keeps one entry per seat, keyed "gatbawi:12".
+export const Seat = schema(
   {
+    zone: t.string().default("gatbawi"),
     id: t.uint8().default(0),
     occupantId: t.string().default(""),
   },
-  "Mat",
+  "Seat",
 );
-export type Mat = SchemaType<typeof Mat>;
+export type Seat = SchemaType<typeof Seat>;
 
 export const Chant = schema(
   {
@@ -39,7 +42,7 @@ export type Chant = SchemaType<typeof Chant>;
 export const TempleState = schema(
   {
     monks: t.map(Monk),
-    mats: t.map(Mat),
+    seats: t.map(Seat),
     chant: t.ref(Chant).default(() => new Chant()),
     serverTime: t.float64().default(0),
   },

@@ -1,5 +1,14 @@
 import { Client, type Room } from "@colyseus/sdk";
-import { type BowMessage, type JoinOptions, MSG, TempleState, isWorldFullError, parseRelocate } from "@dongjane/shared";
+import {
+  type BowMessage,
+  type JoinOptions,
+  MSG,
+  TempleState,
+  type Zone,
+  isWorldFullError,
+  parseRelocate,
+  parseZoneFull,
+} from "@dongjane/shared";
 import { toWebSocketBase } from "../config.ts";
 
 export type JoinFailure = "full" | "gone" | "offline";
@@ -26,6 +35,7 @@ export interface SessionHandlers {
   onState(state: TempleState): void;
   onLink(link: LinkState): void;
   onRelocate(world: number): void;
+  onZoneFull(zone: Zone): void;
 }
 
 const MIN_UPTIME_MS = 1000;
@@ -51,6 +61,10 @@ export class WorldSession {
     room.onMessage(MSG.relocate, (payload: unknown) => {
       const move = parseRelocate(payload);
       if (move && !this.closed) handlers.onRelocate(move.world);
+    });
+    room.onMessage(MSG.zoneFull, (payload: unknown) => {
+      const full = parseZoneFull(payload);
+      if (full && !this.closed) handlers.onZoneFull(full.zone);
     });
     room.onLeave(() => {
       if (this.closed) return;
@@ -91,8 +105,12 @@ export class WorldSession {
     this.send(MSG.move, seq === undefined ? { x, z } : { x, z, seq });
   }
 
-  sit(matId: number): void {
-    this.send(MSG.sit, { matId });
+  sit(zone: Zone, seatId: number): void {
+    this.send(MSG.sit, { zone, seatId });
+  }
+
+  changeZone(zone: Zone): void {
+    this.send(MSG.zone, { zone });
   }
 
   stand(): void {

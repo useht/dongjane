@@ -4,6 +4,7 @@ import {
   CHANT_MS,
   WORLD_CAPACITY,
   WORLD_SPARE_AT,
+  ZONE_CAPACITY,
   chantAt,
   chantEndsAt,
   chantLabel,
@@ -15,9 +16,10 @@ import {
 } from "../src/index.ts";
 
 describe("world numbers", () => {
-  it("keeps a world at most a dozen visitors and opens the next at ten", () => {
-    expect(WORLD_CAPACITY).toBe(12);
-    expect(WORLD_SPARE_AT).toBe(10);
+  it("keeps a world at most a hundred visitors, fifty to a zone, and opens the next at ninety", () => {
+    expect(WORLD_CAPACITY).toBe(100);
+    expect(ZONE_CAPACITY * 2).toBe(WORLD_CAPACITY);
+    expect(WORLD_SPARE_AT).toBe(90);
   });
 
   it("parses the ?world= parameter strictly", () => {

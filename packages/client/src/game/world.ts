@@ -10,12 +10,11 @@ import {
   Scene,
   WebGLRenderer,
 } from "three";
-import { type SkyState, lerpAngle, MAT_COUNT, SPAWN_POINT } from "@dongjane/shared";
+import { SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
+import { CameraRig, configureCamera, projectToCanvas, regionFor, viewFor } from "./camera-rig.ts";
 import { Landscape } from "./landscape.ts";
-import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
@@ -30,7 +29,8 @@ export interface MonkView {
   z: number;
   yaw: number;
   mode: string;
-  matId: number;
+  zone: Zone;
+  seatId: number;
 }
 
 export interface WorldCallbacks {
@@ -58,7 +58,8 @@ interface Entry {
   targetYaw: number;
 }
 
-const MAX_MONKS = 40;
+// One zone is drawn at a time, so the pool only has to hold a zone's worth of monks.
+const MAX_MONKS = ZONE_CAPACITY;
 
 export class World {
   readonly scene = new Scene();
@@ -67,6 +68,7 @@ export class World {
   readonly quality: QualityProfile;
   selfId: string | null = null;
 
+  private zone: Zone = "gatbawi";
   private readonly renderer: WebGLRenderer;
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
@@ -118,8 +120,9 @@ export class World {
     this.scene.add(this.landscape.group);
     this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
 
-    this.rig = new CameraRig(this.camera, LANDSCAPE_BOUNDS);
-    this.rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
+    const region = regionFor(this.zone);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits);
+    this.rig.follow(ZONE_SPAWN.gatbawi.x, ZONE_SPAWN.gatbawi.z, 0, true);
 
     this.selfRing = new Mesh(
       new RingGeometry(0.36, 0.42, 32),
@@ -155,6 +158,22 @@ export class World {
 
   get monkCount(): number {
     return this.entries.size;
+  }
+
+  get currentZone(): Zone {
+    return this.zone;
+  }
+
+  // Only the monks of the zone the visitor is in are drawn, so changing zone drops them all and the next state brings the new ones.
+  setZone(zone: Zone): void {
+    if (zone === this.zone) return;
+    this.zone = zone;
+    for (const id of [...this.entries.keys()]) this.dropEntry(id);
+    this.selfPrediction = null;
+    const region = regionFor(zone);
+    this.rig.setRegion(region.bounds, region.limits);
+    this.resetCamera();
+    this.rig.follow(ZONE_SPAWN[zone].x, ZONE_SPAWN[zone].z, 0, true);
   }
 
   setReduceMotion(value: boolean): void {
@@ -200,6 +219,7 @@ export class World {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
     for (const view of views) {
+      if (view.zone !== this.zone) continue;
       seen.add(view.id);
       let entry = this.entries.get(view.id);
       if (!entry) {
@@ -210,7 +230,7 @@ export class World {
         }
         entry = {
           avatar,
-          track: new RemoteTrack(),
+          track: new RemoteTrack(this.zone),
           x: view.x,
           z: view.z,
           yaw: view.yaw,
@@ -241,7 +261,7 @@ export class World {
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < MAT_COUNT; id += 1) this.landscape.setOccupied(id, occupied.has(id));
+    for (let id = 0; id < SEAT_COUNT; id += 1) this.landscape.setOccupied(id, occupied.has(id));
   }
 
   clear(): void {
@@ -253,9 +273,10 @@ export class World {
   }
 
   resetCamera(): void {
-    this.rig.yaw = DEFAULT_VIEW.yaw;
-    this.rig.pitch = DEFAULT_VIEW.pitch;
-    this.rig.distance = DEFAULT_VIEW.distance;
+    const view = viewFor(this.zone, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
+    this.rig.yaw = view.yaw;
+    this.rig.pitch = view.pitch;
+    this.rig.distance = view.distance;
   }
 
   setHudInsets(top: number, bottom: number): void {

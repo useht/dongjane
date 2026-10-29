@@ -1,6 +1,6 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
 import { isValidWorld } from "./world.ts";
-import { MAT_COUNT } from "./layout.ts";
+import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
 
 export const MSG = {
   move: "move",
@@ -8,6 +8,8 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   relocate: "relocate",
+  zone: "zone",
+  zoneFull: "zoneFull",
 } as const;
 
 export interface MoveMessage {
@@ -16,7 +18,11 @@ export interface MoveMessage {
   seq?: number;
 }
 export interface SitMessage {
-  matId: number;
+  zone: Zone;
+  seatId: number;
+}
+export interface ZoneMessage {
+  zone: Zone;
 }
 export type StandMessage = Record<string, never>;
 export interface BowMessage {
@@ -27,6 +33,12 @@ export interface ClientToServerMessages {
   sit: SitMessage;
   stand: StandMessage;
   bow: BowMessage;
+  zone: ZoneMessage;
+}
+
+// Sent to a visitor whose requested zone had no room left.
+export interface ZoneFullMessage {
+  zone: Zone;
 }
 
 export interface RelocateMessage {
@@ -35,6 +47,7 @@ export interface RelocateMessage {
 
 export interface JoinOptions {
   hue?: number;
+  zone?: Zone;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -55,10 +68,19 @@ export function parseMove(payload: unknown): (MoveMessage & { seq: number }) | n
 }
 
 export function parseSit(payload: unknown): SitMessage | null {
-  if (!isRecord(payload) || !finite(payload.matId)) return null;
-  const id = payload.matId;
-  if (!Number.isInteger(id) || id < 0 || id >= MAT_COUNT) return null;
-  return { matId: id };
+  if (!isRecord(payload) || !isZone(payload.zone) || !finite(payload.seatId)) return null;
+  const id = payload.seatId;
+  if (!Number.isInteger(id) || id < 0 || id >= SEAT_COUNT) return null;
+  return { zone: payload.zone, seatId: id };
+}
+
+export function parseZone(payload: unknown): ZoneMessage | null {
+  if (!isRecord(payload) || !isZone(payload.zone)) return null;
+  return { zone: payload.zone };
+}
+
+export function parseZoneFull(payload: unknown): ZoneFullMessage | null {
+  return parseZone(payload);
 }
 
 export function parseBow(payload: unknown): BowMessage | null {

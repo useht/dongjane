@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBow, parseMove, parseRelocate, parseSit } from "../src/index.ts";
+import { parseBow, parseMove, parseRelocate, parseSit, parseZone, parseZoneFull } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -23,15 +23,28 @@ describe("message parsers", () => {
     expect(parseMove({ x: Number.NaN, z: 2, seq: 3 })).toBeNull();
   });
 
-  it("accepts only integer mat ids 0..11", () => {
-    expect(parseSit({ matId: 0 })).toEqual({ matId: 0 });
-    expect(parseSit({ matId: 11 })).toEqual({ matId: 11 });
-    expect(parseSit({ matId: 12 })).toBeNull();
-    expect(parseSit({ matId: -1 })).toBeNull();
-    expect(parseSit({ matId: 2.5 })).toBeNull();
-    expect(parseSit({ matId: Number.NaN })).toBeNull();
-    expect(parseSit({ matId: "3" })).toBeNull();
+  it("accepts only a known zone with an integer seat id 0..49", () => {
+    expect(parseSit({ zone: "gatbawi", seatId: 0 })).toEqual({ zone: "gatbawi", seatId: 0 });
+    expect(parseSit({ zone: "dharma", seatId: 49 })).toEqual({ zone: "dharma", seatId: 49 });
+    expect(parseSit({ zone: "gatbawi", seatId: 50 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: -1 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: 2.5 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: Number.NaN })).toBeNull();
+    expect(parseSit({ zone: "gatbawi", seatId: "3" })).toBeNull();
+    expect(parseSit({ zone: "garden", seatId: 3 })).toBeNull();
+    expect(parseSit({ seatId: 3 })).toBeNull();
+    expect(parseSit({ zone: "gatbawi" })).toBeNull();
     expect(parseSit(undefined)).toBeNull();
+  });
+
+  it("accepts only a known zone for a zone change or a full-zone notice", () => {
+    expect(parseZone({ zone: "dharma" })).toEqual({ zone: "dharma" });
+    expect(parseZone({ zone: "gatbawi", extra: 1 })).toEqual({ zone: "gatbawi" });
+    expect(parseZone({ zone: "" })).toBeNull();
+    expect(parseZone({ zone: 1 })).toBeNull();
+    expect(parseZone(null)).toBeNull();
+    expect(parseZoneFull({ zone: "dharma" })).toEqual({ zone: "dharma" });
+    expect(parseZoneFull({})).toBeNull();
   });
 
   it("accepts only 1, 2 or 3 bows", () => {

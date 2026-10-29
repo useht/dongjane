@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BOW_MS, MAT_SPOTS, SPAWN_POINT, TICK_MS, type TempleState, WORLD_BOUNDS } from "@dongjane/shared";
+import { BOW_MS, GATBAWI_SEATS, TICK_MS, type TempleState, WORLD_BOUNDS, ZONE_SPAWN } from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
 const T0 = 1_800_000_000_000;
-const SEAT = MAT_SPOTS[5]!;
+const SEAT = GATBAWI_SEATS[47]!;
+const SPAWN = ZONE_SPAWN.gatbawi;
 
 function open(hue: unknown = 120): { session: SoloSession; onState: ReturnType<typeof vi.fn<(state: TempleState) => void>> } {
   const onState = vi.fn<(state: TempleState) => void>();
@@ -35,8 +36,9 @@ describe("SoloSession", () => {
     expect(monk.id).toBe("solo");
     expect(monk.hue).toBe(40);
     expect(monk.mode).toBe("stand");
-    expect(Math.abs(monk.x - SPAWN_POINT.x)).toBeLessThanOrEqual(2);
-    expect(monk.z).toBe(SPAWN_POINT.z);
+    expect(Math.abs(monk.x - SPAWN.x)).toBeLessThanOrEqual(SPAWN.spread);
+    expect(monk.z).toBe(SPAWN.z);
+    expect(monk.zone).toBe("gatbawi");
     expect(session.sessionId).toBe("solo");
     void session.leave();
   });
@@ -73,9 +75,9 @@ describe("SoloSession", () => {
 
   it("sits on a mat, bows, and stands again", () => {
     const { session } = open();
-    session.sit(SEAT.id);
-    expect(session.state.mats.get(String(SEAT.id))?.occupantId).toBe("solo");
-    expect(self(session).matId).toBe(SEAT.id);
+    session.sit("gatbawi", SEAT.id);
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("solo");
+    expect(self(session).seatId).toBe(SEAT.id);
 
     vi.advanceTimersByTime(10_000);
     expect(self(session).mode).toBe("kneel");
@@ -88,8 +90,8 @@ describe("SoloSession", () => {
 
     session.stand();
     expect(self(session).mode).toBe("stand");
-    expect(self(session).matId).toBe(-1);
-    expect(session.state.mats.get(String(SEAT.id))?.occupantId).toBe("");
+    expect(self(session).seatId).toBe(-1);
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("");
     void session.leave();
   });
 
@@ -115,14 +117,14 @@ describe("SoloSession", () => {
 
     const before = { x: self(session).x, z: self(session).z };
     session.move(0, 0, 1);
-    session.sit(SEAT.id);
+    session.sit("gatbawi", SEAT.id);
     session.bow(3);
     session.stand();
     expect(self(session).mode).toBe("stand");
-    expect(self(session).matId).toBe(-1);
+    expect(self(session).seatId).toBe(-1);
     expect(self(session).ackSeq).toBe(0);
     expect({ x: self(session).x, z: self(session).z }).toEqual(before);
-    expect(session.state.mats.get(String(SEAT.id))?.occupantId).toBe("");
+    expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("");
     await expect(session.leave()).resolves.toBeUndefined();
   });
 });

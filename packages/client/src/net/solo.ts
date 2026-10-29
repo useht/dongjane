@@ -1,4 +1,13 @@
-import { type BowMessage, TICK_MS, TempleSim, type TempleState, normalizeHue, randomHue } from "@dongjane/shared";
+import {
+  type BowMessage,
+  TICK_MS,
+  TempleSim,
+  type TempleState,
+  type Zone,
+  type ZoneChangeResult,
+  normalizeHue,
+  randomHue,
+} from "@dongjane/shared";
 import type { SessionHandlers } from "./session.ts";
 
 const SOLO_ID = "solo";
@@ -33,8 +42,12 @@ export class SoloSession {
     if (!this.closed) this.sim.move(SOLO_ID, x, z, seq);
   }
 
-  sit(matId: number): void {
-    if (!this.closed) this.sim.sit(SOLO_ID, matId);
+  sit(zone: Zone, seatId: number): void {
+    if (!this.closed) this.sim.sit(SOLO_ID, zone, seatId);
+  }
+
+  changeZone(zone: Zone): ZoneChangeResult {
+    return this.closed ? "unknown" : this.sim.changeZone(SOLO_ID, zone);
   }
 
   stand(): void {

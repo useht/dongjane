@@ -8,6 +8,7 @@ const world = (n: number, clients: number): WorldInfo => ({
   clients,
   capacity: WORLD_CAPACITY,
   full: clients >= WORLD_CAPACITY,
+  zones: { gatbawi: clients, dharma: 0 },
 });
 
 const json = (body: unknown, status = 200) =>

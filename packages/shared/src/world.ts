@@ -1,9 +1,12 @@
+import type { Zone } from "./layout.ts";
+
 export interface WorldInfo {
   world: number;
   roomId: string;
   clients: number;
   capacity: number;
   full: boolean;
+  zones: Record<Zone, number>;
 }
 
 export interface WorldListResponse {
