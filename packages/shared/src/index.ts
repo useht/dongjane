@@ -6,3 +6,4 @@ export * from "./identity.ts";
 export * from "./chant.ts";
 export * from "./hall.ts";
 export * from "./sky.ts";
+export * from "./sim.ts";

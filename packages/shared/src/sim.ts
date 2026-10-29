@@ -1,3 +1,4 @@
+import { chantAt, chantEndsAt } from "./chant.ts";
 import {
   ARRIVE_DISTANCE,
   BOW_COOLDOWN_MS,
@@ -5,19 +6,11 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
-  CUSHION_SPOTS,
-  Cushion,
   HALL_CAPACITY,
-  Monk,
-  SPAWN_POINT,
-  TempleState,
   WALK_SPEED,
-  chantAt,
-  chantEndsAt,
-  cushionSpot,
-  resolveWalkable,
-  yawFromDirection,
-} from "@dongjane/shared";
+} from "./constants.ts";
+import { CUSHION_SPOTS, SPAWN_POINT, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
+import { Cushion, Monk, TempleState } from "./schema.ts";
 
 interface Target {
   x: number;
