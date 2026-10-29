@@ -290,19 +290,27 @@ describe("SyncedLoop", () => {
     expect(t.audio.currentTime).toBeCloseTo(aimAhead(t.place(), SUTRA_SECONDS), 6);
   });
 
-  it("stops while the tab is hidden and comes back at the loop's place", async () => {
+  it("keeps playing for as long as someone is in earshot, held to the server's place in the loop", async () => {
     const t = start();
     t.loop.setActive(true);
     t.loop.setMix(1);
     t.gesture();
     await flush();
-    t.loop.setHidden(true);
-    expect(t.loop.playing).toBe(false);
-    t.advance(30_000);
-    t.loop.setHidden(false);
-    await flush();
+    for (let second = 0; second < 30; second += 2) {
+      t.advance(2000);
+      t.audio.currentTime = t.place();
+      t.loop.tick();
+    }
     expect(t.loop.playing).toBe(true);
+    expect(t.lastTarget()).toBe(1);
+    expect(t.audio.pause).not.toHaveBeenCalled();
+    expect(t.audio.play).toHaveBeenCalledTimes(1);
+    expect(t.audio.currentTime).toBeCloseTo(t.place(), 6);
+    expect(t.audio.playbackRate).toBe(1);
+    t.audio.currentTime = (t.place() + 40) % SUTRA_SECONDS;
+    t.loop.tick();
     expect(t.audio.currentTime).toBeCloseTo(aimAhead(t.place(), SUTRA_SECONDS), 6);
+    expect(t.loop.playing).toBe(true);
   });
 
   it("stops when the visitor leaves the world", async () => {

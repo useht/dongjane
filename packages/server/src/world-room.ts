@@ -66,6 +66,10 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
     return this.sim.humanCount;
   }
 
+  get npcs(): number {
+    return this.sim.npcCount;
+  }
+
   get zones(): Record<Zone, number> {
     return Object.fromEntries(ZONES.map((zone) => [zone, this.sim.zoneCount(zone)])) as Record<Zone, number>;
   }

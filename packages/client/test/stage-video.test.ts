@@ -301,30 +301,28 @@ describe("StageVideoController playback", () => {
     expect(t.funcs()).toEqual(["playVideo"]);
   });
 
-  it("pauses while the tab is hidden and resumes when it is back", () => {
+  it("keeps playing with nothing sent for as long as someone is in earshot", () => {
     const t = rig();
     t.controller.open();
     t.controller.receive({ kind: "ready" });
     t.controller.receive(info({ state: 1, duration: 100, time: 0 }));
     t.clear();
-    t.controller.setHidden(true);
-    expect(t.funcs()).toEqual(["pauseVideo"]);
-    t.controller.receive(info({ state: 2 }));
-    expect(t.funcs()).toEqual(["pauseVideo"]);
     t.advance(60_000);
     t.controller.tick();
-    expect(t.funcs()).toEqual(["pauseVideo"]);
-    t.clear();
-    t.controller.setHidden(false);
-    expect(t.funcs()).toContain("playVideo");
+    expect(t.funcs()).toEqual([]);
   });
 
-  it("sends nothing about the tab before the player is ready", () => {
+  it("starts a player the browser paused in a background tab again, and never pauses it itself", () => {
     const t = rig();
     t.controller.open();
-    t.controller.setHidden(true);
-    t.controller.setHidden(false);
-    expect(t.sent).toEqual([]);
+    t.controller.receive({ kind: "ready" });
+    t.controller.receive(info({ state: 1, duration: 100, time: 0 }));
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    t.advance(60_000);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["playVideo", "playVideo"]);
+    expect(t.funcs()).not.toContain("pauseVideo");
   });
 });
 
@@ -576,32 +574,6 @@ describe("StageVideoController play prompt", () => {
     t.advance(1);
     t.controller.tick();
     expect(t.plays).toEqual([true, false, true]);
-  });
-
-  it("never asks while the tab is hidden, and waits afresh when it is back", () => {
-    const t = rig();
-    playing(t);
-    t.controller.setHidden(true);
-    t.controller.receive(info({ state: 2 }));
-    t.advance(PLAY_NEEDED_MS * 4);
-    t.controller.tick();
-    expect(t.plays).toEqual([]);
-    t.controller.setHidden(false);
-    t.advance(PLAY_NEEDED_MS - 1);
-    t.controller.tick();
-    expect(t.plays).toEqual([]);
-    t.advance(1);
-    t.controller.tick();
-    expect(t.plays).toEqual([true]);
-  });
-
-  it("takes the button back when the tab is hidden", () => {
-    const t = rig();
-    stall(t);
-    t.advance(PLAY_NEEDED_MS);
-    t.controller.tick();
-    t.controller.setHidden(true);
-    expect(t.plays).toEqual([true, false]);
   });
 
   it("never asks while the video is paused for nobody being in earshot", () => {

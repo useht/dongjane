@@ -77,7 +77,6 @@ export class SyncedLoop {
   private audio: HTMLAudioElement | null = null;
   private gain: GainNode | null = null;
   private active = false;
-  private hidden = false;
   private mixNow = 0;
   private quietSince: number | null = null;
   private primed = false;
@@ -124,13 +123,6 @@ export class SyncedLoop {
     this.update();
   }
 
-  setHidden(hidden: boolean): void {
-    if (hidden === this.hidden) return;
-    this.hidden = hidden;
-    this.applyGain();
-    this.update();
-  }
-
   setMix(mix: number): void {
     const next = unit(Number.isFinite(mix) ? mix : 0);
     if (Math.abs(next - this.mixNow) < 0.005 && (next > 0) === (this.mixNow > 0)) return;
@@ -166,9 +158,7 @@ export class SyncedLoop {
       const gain = ctx.createGain();
       gain.gain.value = 0;
       ctx.createMediaElementSource(audio).connect(gain).connect(output);
-      audio.addEventListener("loadedmetadata", () => {
-        if (!this.hidden) this.align(audio);
-      });
+      audio.addEventListener("loadedmetadata", () => this.align(audio));
       this.audio = audio;
       this.gain = gain;
       this.applyGain();
@@ -181,14 +171,14 @@ export class SyncedLoop {
   private applyGain(): void {
     const ctx = this.engine.context;
     if (!this.gain || !ctx) return;
-    const level = this.active && !this.hidden ? this.mixNow : 0;
+    const level = this.active ? this.mixNow : 0;
     const at = ctx.currentTime;
     this.gain.gain.cancelScheduledValues(at);
     this.gain.gain.setTargetAtTime(level, at, GAIN_SMOOTHING_SECONDS);
   }
 
   private wanted(): boolean {
-    if (!this.active || this.hidden || !this.engine.unlocked) return false;
+    if (!this.active || !this.engine.unlocked) return false;
     if (this.mixNow > 0) {
       this.quietSince = null;
       return true;

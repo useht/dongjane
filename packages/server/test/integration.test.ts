@@ -57,6 +57,8 @@ describe("world list", () => {
     await rig.enter(1);
     await rig.enter(1);
     const world = await eventually(() => rig.world(1), (info) => info.clients === 2, "two clients counted");
+    expect(world.clients).toBe(2);
+    expect(world.npcs).toBe(NPC_PER_ZONE * ZONES.length);
     expect(world.capacity).toBe(WORLD_CAPACITY);
     expect(world.full).toBe(false);
     expect(world.zones).toEqual({ gatbawi: 2, dharma: 0 });

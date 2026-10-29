@@ -697,10 +697,7 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener("visibilitychange", () => {
-      const hidden = document.visibilityState !== "visible";
-      this.stage.setHidden(hidden);
-      this.sutra.setHidden(hidden);
-      if (!hidden && this.lost) void this.enter(this.currentWorld || null);
+      if (document.visibilityState === "visible" && this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("online", () => {
       if (this.lost) void this.enter(this.currentWorld || null);
