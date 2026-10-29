@@ -97,6 +97,9 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
     this.onMessage(MSG.stand, (client) => {
       if (this.allow(client)) this.sim.stand(client.sessionId);
     });
+    this.onMessage(MSG.jump, (client) => {
+      if (this.allow(client)) this.sim.jump(client.sessionId);
+    });
     this.onMessage(MSG.bow, (client, payload) => {
       if (!this.allow(client)) return;
       const message = parseBow(payload);

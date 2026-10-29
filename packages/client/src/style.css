@@ -546,23 +546,19 @@ button:disabled {
   stroke-width: 1.6;
 }
 
-/* A fixed square slot so the main button never changes size while the action behind it swaps; the stand button hangs off its left edge. */
 .bow-actions {
-  position: relative;
   flex: none;
-  width: var(--bow-size);
-  height: var(--bow-size);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.bow-actions:not(.seated) {
-  display: none;
-}
-
-.bow-actions .stand-button {
-  position: absolute;
-  top: 50%;
-  right: calc(100% + 10px);
-  transform: translateY(-50%);
+/* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
+.bow-actions.seated {
+  justify-content: flex-start;
+  min-width: var(--bow-size);
+  min-height: calc(var(--bow-size) + 46px);
 }
 
 .bow-button {

@@ -33,6 +33,7 @@ export interface HudHandlers {
   onOpenHalls(): void;
   onBow(): void;
   onStand(): void;
+  onJump(): void;
   onEmote(emote: number): void;
   onKnock(): void;
   onChant(on: boolean): void;
@@ -69,6 +70,7 @@ export class Hud {
   private readonly actionButton: HTMLButtonElement;
   private readonly equipRows = new Map<HeldItem, HTMLButtonElement>();
   private readonly putDownRow: HTMLButtonElement;
+  private readonly jumpButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
   private readonly equipSheet: Sheet;
@@ -117,7 +119,8 @@ export class Hud {
       if (this.selfAction === "knock") handlers.onKnock();
       else if (this.selfAction === "chant") handlers.onChant(!this.selfChanting);
     });
-    this.bowActions.append(this.standButton, this.bowButton, this.actionButton);
+    this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "bow-button jump-button");
+    this.bowActions.append(this.standButton, this.bowButton, this.actionButton, this.jumpButton);
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
@@ -172,7 +175,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1, chanting: false, item: ITEM_NONE });
+    this.setSelf(null);
     this.setSky(null);
   }
 
@@ -206,22 +209,23 @@ export class Hud {
     );
   }
 
-  setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}|${self.chanting}|${self.item}`;
+  setSelf(self: SelfStatus | null): void {
+    const key = self ? `${self.mode}|${self.cushionId}|${self.chanting}|${self.item}` : "none";
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = isSeated(self);
-    const bowing = self.mode === "bow";
+    const seated = !!self && isSeated(self);
+    const bowing = self?.mode === "bow";
     const action = heldAction(self);
     this.selfAction = action;
-    this.selfItem = self.item;
-    this.selfChanting = action === "chant" && self.chanting;
+    this.selfItem = self?.item ?? ITEM_NONE;
+    this.selfChanting = action === "chant" && !!self?.chanting;
     this.bowButton.classList.toggle("hidden", !seated || bowing || action !== null);
     this.standButton.classList.toggle("hidden", !seated);
+    this.jumpButton.classList.toggle("hidden", !self || self.cushionId >= 0);
     this.bowActions.classList.toggle("seated", seated);
-    this.toolButton.classList.toggle("ready", self.item !== ITEM_NONE);
+    this.toolButton.classList.toggle("ready", this.selfItem !== ITEM_NONE);
 
-    const item = self.item === ITEM_MOKT || self.item === ITEM_CHANT ? self.item : null;
+    const item = self && (self.item === ITEM_MOKT || self.item === ITEM_CHANT) ? self.item : null;
     this.actionButton.classList.toggle("hidden", action === null || (action === "knock" && bowing));
     this.actionButton.classList.toggle("active", this.selfChanting);
     if (action && item !== null) {
@@ -234,7 +238,7 @@ export class Hud {
     }
 
     for (const [held, row] of this.equipRows) {
-      const holding = held === self.item;
+      const holding = held === this.selfItem;
       row.classList.toggle("held", holding);
       row.setAttribute("aria-pressed", String(holding));
     }

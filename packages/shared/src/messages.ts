@@ -13,6 +13,7 @@ export const MSG = {
   knock: "knock",
   chant: "chant",
   equip: "equip",
+  jump: "jump",
   relocate: "relocate",
 } as const;
 
@@ -47,6 +48,7 @@ export interface ClientToServerMessages {
   knock: KnockMessage;
   chant: ChantMessage;
   equip: EquipMessage;
+  jump: Record<string, never>;
 }
 
 export interface RelocateMessage {

@@ -6,6 +6,7 @@ import {
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
   KNOCK_COOLDOWN_MS,
+  JUMP_COOLDOWN_MS,
   TICK_MS,
   WALK_SPEED,
 } from "../src/constants.ts";
@@ -595,6 +596,98 @@ describe("held items", () => {
       expect(npc.knockSeq).toBe(0);
       expect(npc.chanting).toBe(false);
     }
+  });
+});
+
+describe("jumping", () => {
+  it("counts a jump while standing without touching mode, seat or position", () => {
+    h.sim.join("a", 0);
+    const before = { x: h.monk("a").x, z: h.monk("a").z };
+    expect(h.monk("a").jumpSeq).toBe(0);
+
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(1);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").cushionId).toBe(-1);
+    expect([h.monk("a").x, h.monk("a").z]).toEqual([before.x, before.z]);
+  });
+
+  it("lets a monk jump while walking and keeps the walk going", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", h.monk("a").x, h.monk("a").z - 4);
+    h.advance(300);
+    expect(h.monk("a").mode).toBe("walk");
+
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.monk("a").jumpSeq).toBe(1);
+    h.advance(8000);
+    expect(h.monk("a").mode).toBe("stand");
+  });
+
+  it.each(["kneel", "bow"])("rejects a jump while %s on a cushion", (mode) => {
+    h.seat("a", 2);
+    if (mode === "bow") expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe(mode);
+
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(0);
+    expect(h.monk("a").mode).toBe(mode);
+  });
+
+  it("rejects a jump as soon as a cushion is claimed, even before arriving", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.sit("a", 5)).toBe(true);
+    h.advance(300);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(0);
+  });
+
+  it("jumps again after standing up from a cushion", () => {
+    h.seat("a", 2);
+    expect(h.sim.stand("a")).toBe(true);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(1);
+  });
+
+  it("rejects a second jump inside the cooldown and accepts one once it has passed", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.jump("a")).toBe(true);
+    h.advance(JUMP_COOLDOWN_MS - TICK_MS);
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(1);
+
+    h.advance(TICK_MS);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(2);
+  });
+
+  it("keeps the cooldown per monk", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.sim.jump("b")).toBe(true);
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("b").jumpSeq).toBe(1);
+  });
+
+  it("rejects unknown and departed monks", () => {
+    expect(h.sim.jump("ghost")).toBe(false);
+    h.sim.join("a", 0);
+    h.sim.leave("a");
+    expect(h.sim.jump("a")).toBe(false);
+  });
+
+  it("never makes npc monks jump", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(6);
+    for (const npc of npcs) expect(npc.jumpSeq).toBe(0);
   });
 });
 

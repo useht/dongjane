@@ -1,4 +1,4 @@
-import { BOW_MS } from "@dongjane/shared";
+import { BOW_MS, JUMP_MS } from "@dongjane/shared";
 
 const DOWN_SHARE = 0.32;
 const HOLD_SHARE = 0.58;
@@ -16,6 +16,12 @@ export function bowDepth(elapsedMs: number, eased: boolean, bowMs: number = BOW_
   else if (u < HOLD_SHARE) depth = 1;
   else depth = 1 - (u - HOLD_SHARE) / (1 - HOLD_SHARE);
   return eased ? smooth(depth) : depth;
+}
+
+// 0 on the ground, 1 at the top of the hop.
+export function hopArc(elapsedMs: number, hopMs: number = JUMP_MS): number {
+  if (!(elapsedMs > 0) || elapsedMs >= hopMs) return 0;
+  return Math.sin((Math.PI * elapsedMs) / hopMs);
 }
 
 export function approach(current: number, target: number, dt: number, rate: number): number {

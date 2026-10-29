@@ -17,6 +17,7 @@ import { EmoteTracker } from "./emote-tracker.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { KnockTracker } from "./knock-tracker.ts";
 import { PointerInput, type StickState } from "./input.ts";
+import { JumpTracker } from "./jump-tracker.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
@@ -38,6 +39,7 @@ export interface MonkView {
   knockSeq: number;
   chanting: boolean;
   item: number;
+  jumpSeq: number;
 }
 
 export interface WorldCallbacks {
@@ -83,6 +85,7 @@ export class World {
   private readonly hall: Hall;
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
+  private readonly jumps = new JumpTracker();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
   private readonly anchor = new Vector3();
   private readonly clock = new ServerClock();
@@ -265,6 +268,7 @@ export class World {
         entry.avatar.knock(nowMs);
         remoteKnockers.push(view);
       }
+      if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
     }
@@ -277,6 +281,12 @@ export class World {
   // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.
   knock(monkId: string, nowMs: number): void {
     this.entries.get(monkId)?.avatar.knock(nowMs);
+  }
+
+  // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
+  hopSelf(nowMs: number): void {
+    const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
+    entry?.avatar.hop(nowMs);
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
@@ -339,6 +349,7 @@ export class World {
     this.entries.delete(id);
     this.emotes.forget(id);
     this.knocks.forget(id);
+    this.jumps.forget(id);
   }
 
   private applyAtmosphere(): void {

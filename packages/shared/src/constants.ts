@@ -10,6 +10,8 @@ export const BOW_COOLDOWN_MS = 600;
 export const BOW_MAX_TIMES = 3;
 export const EMOTE_COOLDOWN_MS = 1500;
 export const KNOCK_COOLDOWN_MS = 300;
+export const JUMP_COOLDOWN_MS = 700;
+export const JUMP_MS = 600;
 
 export const CHANT_EVERY_MS = 30 * 60 * 1000;
 export const CHANT_MS = 3 * 60 * 1000;

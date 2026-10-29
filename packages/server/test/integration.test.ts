@@ -7,6 +7,7 @@ import {
   HALLS_PATH,
   HALL_CAPACITY,
   HALL_SPARE_AT,
+  JUMP_COOLDOWN_MS,
   MSG,
   NPC_PER_HALL,
   SEAT_PATH,
@@ -398,6 +399,32 @@ describe("two clients in one hall", () => {
     await waitFor(() => !seenByB.chanting, "A's chant stops once A stands", 1000);
     expect(seenByB.mode).toBe("stand");
     expect(seenByB.item).toBe(2);
+  }, 20_000);
+
+  it("shows A's jump to B and A while standing, and ignores a repeat inside the cooldown and a jump while seated", async () => {
+    const a = await rig.enter(1);
+    const b = await rig.enter(1);
+    await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
+    const seenByB = b.state.monks.get(a.sessionId)!;
+    const own = a.state.monks.get(a.sessionId)!;
+    expect(seenByB.jumpSeq).toBe(0);
+
+    a.send(MSG.jump, {});
+    await waitFor(() => seenByB.jumpSeq === 1, "B sees A's jump", 1000);
+    expect(seenByB.mode).toBe("stand");
+    await waitFor(() => own.jumpSeq === 1, "A sees its own jump", 1000);
+
+    a.send(MSG.jump, {});
+    await sleep(300);
+    expect(seenByB.jumpSeq).toBe(1);
+
+    await sleep(JUMP_COOLDOWN_MS);
+    a.send(MSG.sit, { cushionId: 6 });
+    await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
+    a.send(MSG.jump, {});
+    await sleep(300);
+    expect(seenByB.jumpSeq).toBe(1);
+    expect(seenByB.mode).toBe("kneel");
   }, 20_000);
 
   it("rejects a bow while standing and keeps bowCount at zero", async () => {

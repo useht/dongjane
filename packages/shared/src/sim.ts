@@ -9,6 +9,7 @@ import {
   EMOTE_COOLDOWN_MS,
   HALL_CAPACITY,
   KNOCK_COOLDOWN_MS,
+  JUMP_COOLDOWN_MS,
   WALK_SPEED,
 } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
@@ -33,6 +34,7 @@ interface Runtime {
   lastBowEndedAt: number;
   nextEmoteAt: number;
   nextKnockAt: number;
+  nextJumpAt: number;
   brain: NpcBrain | null;
 }
 
@@ -110,6 +112,7 @@ export class TempleSim {
       lastBowEndedAt: 0,
       nextEmoteAt: 0,
       nextKnockAt: 0,
+      nextJumpAt: 0,
       brain: null,
     });
     return monk;
@@ -224,6 +227,19 @@ export class TempleSim {
     return true;
   }
 
+  jump(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || monk.cushionId >= 0) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextJumpAt) return false;
+
+    monk.jumpSeq += 1;
+    runtime.nextJumpAt = now + JUMP_COOLDOWN_MS;
+    return true;
+  }
+
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
@@ -298,6 +314,7 @@ export class TempleSim {
       lastBowEndedAt: 0,
       nextEmoteAt: 0,
       nextKnockAt: 0,
+      nextJumpAt: 0,
       brain: createNpcBrain(persona ?? generatePersona(random), random, this.clock()),
     });
   }

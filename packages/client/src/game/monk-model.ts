@@ -15,9 +15,9 @@ import {
   Matrix4,
   Vector3,
 } from "three";
-import { BOW_MS, ITEM_CHANT, ITEM_MOKT } from "@dongjane/shared";
+import { BOW_MS, ITEM_CHANT, ITEM_MOKT, JUMP_MS } from "@dongjane/shared";
 import { GeometryBuilder } from "./geometry.ts";
-import { PoseBlend, approach, bowDepth } from "./pose.ts";
+import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
 export const PART_NAMES = [
   "head",
@@ -80,6 +80,7 @@ const CHANT_NOD_HZ = 0.8;
 const CHANT_NOD = 0.06;
 const CHANT_SWAY_HZ = 0.4;
 const CHANT_SWAY = 0.025;
+const HOP_HEIGHT = 0.35;
 
 function buildPartGeometries(): Record<PartName, BufferGeometry> {
   const head = new GeometryBuilder()
@@ -186,6 +187,7 @@ export class MonkAvatar {
   private liftedBy = 0;
   private chantMix = 0;
   private knockAt = Number.NEGATIVE_INFINITY;
+  private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
@@ -238,6 +240,10 @@ export class MonkAvatar {
     this.knockAt = nowMs;
   }
 
+  hop(nowMs: number): void {
+    this.hopStartedAt = nowMs;
+  }
+
   place(x: number, z: number, yaw: number): void {
     this.root.position.x = x;
     this.root.position.z = z;
@@ -261,7 +267,8 @@ export class MonkAvatar {
     const knockProgress = (nowMs - this.knockAt) / KNOCK_MS;
     const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
-    this.root.position.y = this.liftedBy * kneel;
+    const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
+    this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
