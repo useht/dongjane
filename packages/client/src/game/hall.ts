@@ -22,12 +22,14 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  type Object3D,
   PMREMGenerator,
   PlaneGeometry,
   PointLight,
   Points,
   PointsMaterial,
   Quaternion,
+  type Raycaster,
   Scene,
   SphereGeometry,
   type Texture,
@@ -177,6 +179,8 @@ export class Hall {
   readonly sun: DirectionalLight;
 
   private readonly buddha: BuddhaPieces;
+  private readonly floor: Mesh;
+  private readonly pickTargets: Object3D[];
   private readonly environment: Texture;
   private readonly hemisphere: HemisphereLight;
   private readonly candleLight: PointLight;
@@ -261,6 +265,8 @@ export class Hall {
     floor.receiveShadow = true;
     floor.name = "floor";
     this.group.add(floor);
+    this.floor = floor;
+    this.pickTargets = [floor, structureMesh, paperMesh, this.buddha.group];
 
     const backdropMap = backdropTexture(anisotropy);
     const backdrop = new Mesh(new PlaneGeometry(HALL_HALF_WIDTH * 2, 6), new MeshLambertMaterial({ map: backdropMap, emissive: 0x2a1c0c, emissiveMap: backdropMap, emissiveIntensity: 0.55 }));
@@ -583,6 +589,12 @@ export class Hall {
       mesh.setColorAt(cushionId, this.tint);
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     }
+  }
+
+  // The floor point under the ray, or null when a wall, pillar, altar or the Buddha is in front of it.
+  pickFloor(raycaster: Raycaster): Vector3 | null {
+    const hit = raycaster.intersectObjects(this.pickTargets, true)[0];
+    return hit && hit.object === this.floor ? hit.point : null;
   }
 
   get look(): SkyLook {

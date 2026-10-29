@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   STICK_DEADZONE,
   STICK_RADIUS_PX,
+  TAP_MAX_MS,
+  TAP_SLOP_PX,
   axesFromJoystick,
   axesFromKeys,
   combineAxes,
+  directionToward,
   floorDirection,
   isEditable,
+  isTap,
 } from "../src/game/input.ts";
 
 describe("axesFromKeys", () => {
@@ -89,6 +93,46 @@ describe("floorDirection", () => {
     const turned = floorDirection({ forward: 0, right: 1 }, { x: -1, z: 0 });
     expect(turned.x).toBeCloseTo(0, 6);
     expect(turned.z).toBeCloseTo(-1, 6);
+  });
+});
+
+describe("isTap", () => {
+  const clean = { button: 0, travelPx: 2, heldMs: 120, otherPointer: false };
+
+  it("accepts a short, still, primary press", () => {
+    expect(isTap(clean)).toBe(true);
+    expect(isTap({ ...clean, travelPx: TAP_SLOP_PX, heldMs: TAP_MAX_MS })).toBe(true);
+  });
+
+  it("rejects a press that moved too far", () => {
+    expect(isTap({ ...clean, travelPx: TAP_SLOP_PX + 1 })).toBe(false);
+  });
+
+  it("rejects a press held too long", () => {
+    expect(isTap({ ...clean, heldMs: TAP_MAX_MS + 1 })).toBe(false);
+  });
+
+  it("rejects a press that a second pointer joined", () => {
+    expect(isTap({ ...clean, otherPointer: true })).toBe(false);
+  });
+
+  it("rejects the middle and right buttons", () => {
+    expect(isTap({ ...clean, button: 1 })).toBe(false);
+    expect(isTap({ ...clean, button: 2 })).toBe(false);
+  });
+});
+
+describe("directionToward", () => {
+  it("points at the destination as a unit vector", () => {
+    const dir = directionToward({ x: 1, z: 1 }, { x: 4, z: 5 }, 0.1);
+    expect(dir?.x).toBeCloseTo(0.6, 6);
+    expect(dir?.z).toBeCloseTo(0.8, 6);
+  });
+
+  it("returns null once within reach, including exactly at it", () => {
+    expect(directionToward({ x: 0, z: 0 }, { x: 0, z: 0 }, 0.1)).toBeNull();
+    expect(directionToward({ x: 0, z: 0 }, { x: 3, z: 4 }, 5)).toBeNull();
+    expect(directionToward({ x: 0, z: 0 }, { x: 3, z: 4 }, 4.9)).not.toBeNull();
   });
 });
 

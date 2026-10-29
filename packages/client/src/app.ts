@@ -4,8 +4,10 @@ import {
   JUMP_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
+  WALK_SPEED,
   hallName,
   parseHallParam,
+  resolveWalkable,
   seatLabel,
   skyAt,
   visitorTitle,
@@ -15,8 +17,8 @@ import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
-import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
-import { SelfPrediction } from "./game/prediction.ts";
+import { combineAxes, directionToward, floorDirection, KeyboardInput } from "./game/input.ts";
+import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
@@ -56,6 +58,7 @@ const HALL_POLL_MS = 10_000;
 const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
+const TAP_ARRIVE_DISTANCE = 0.1;
 
 interface SelfSnapshot {
   x: number;
@@ -98,6 +101,7 @@ export class App {
   private self: SelfSnapshot | null = null;
   private occupiedCushions = new Set<number>();
   private readonly prediction = new SelfPrediction();
+  private tapDestination: { x: number; z: number } | null = null;
   private lastFrameMs = 0;
   private nextJumpAt = 0;
   private nextChantTick = 0;
@@ -126,6 +130,9 @@ export class App {
         this.emoteBubbles.update(nowMs);
       },
       onStick: (stick) => this.joystick.set(stick),
+      onFloorTap: (x, z) => {
+        if (this.session && this.self) this.tapDestination = resolveWalkable(x, z);
+      },
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
     this.emoteBubbles = new EmoteBubbles(this.ui, this.world.emotes, (id, out) => this.world.projectEmoteAnchor(id, out));
@@ -150,7 +157,7 @@ export class App {
     );
     this.hud.setCollection(this.bows);
     this.seatHints = new SeatHints(this.ui, (id) => {
-      this.prediction.cancel();
+      this.stopWalking();
       this.session?.sit(id);
     });
     this.visitorTitles = new VisitorTitles(this.ui);
@@ -199,7 +206,7 @@ export class App {
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
-    this.prediction.cancel();
+    this.stopWalking();
     this.occupiedCushions.clear();
     this.hud.setLink("online");
     this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
@@ -298,7 +305,7 @@ export class App {
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
-    this.prediction.cancel();
+    this.stopWalking();
     this.occupiedCushions.clear();
 
     const session = new SoloSession(profile.hue, {
@@ -432,7 +439,7 @@ export class App {
     if (link !== "lost") return;
     this.lost = true;
     this.session = null;
-    this.prediction.cancel();
+    this.stopWalking();
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "법당과의 연결이 끊겼어요. 다시 들어가 볼까요?", [
       { label: "다시 들어가기", run: () => void this.enter(this.currentHall || null) },
@@ -471,8 +478,13 @@ export class App {
   }
 
   private stand(): void {
-    this.prediction.cancel();
+    this.stopWalking();
     if (this.self && this.self.mode !== "stand") this.session?.stand();
+  }
+
+  private stopWalking(): void {
+    this.prediction.cancel();
+    this.tapDestination = null;
   }
 
   private updateSettings(next: Settings): void {
@@ -629,10 +641,20 @@ export class App {
 
     const session = this.session;
     const displayed = this.world.selfPosition;
-    if (!session || !this.self || !displayed) return;
+    if (!session || !this.self || !displayed) {
+      this.tapDestination = null;
+      return;
+    }
     const axes = combineAxes(this.keyboard.axes(), this.joystick.axes());
     const moving = axes.forward !== 0 || axes.right !== 0;
-    const dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
+    let dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
+    if (moving) {
+      this.tapDestination = null;
+    } else if (this.tapDestination) {
+      const step = WALK_SPEED * Math.min(MAX_FRAME_DT_S, realDt);
+      dir = directionToward(this.prediction.display() ?? displayed, this.tapDestination, Math.max(TAP_ARRIVE_DISTANCE, step));
+      if (!dir) this.tapDestination = null;
+    }
     const target = this.prediction.frame(realDt, nowMs, dir, displayed);
     this.world.setSelfPrediction(this.prediction.display());
     if (target) session.move(target.x, target.z, target.seq);

@@ -3,7 +3,9 @@ import {
   Color,
   Fog,
   PerspectiveCamera,
+  Raycaster,
   Scene,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from "three";
@@ -38,6 +40,7 @@ export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
   onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
+  onFloorTap(x: number, z: number): void;
 }
 
 export interface WorldStats {
@@ -78,6 +81,8 @@ export class World {
   private readonly jumps = new JumpTracker();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
   private readonly anchor = new Vector3();
+  private readonly raycaster = new Raycaster();
+  private readonly ndc = new Vector2();
   private readonly clock = new ServerClock();
   private selfPrediction: SelfDisplay | null = null;
   private readonly input: PointerInput;
@@ -130,6 +135,10 @@ export class World {
       },
       onZoom: (factor) => this.rig.zoom(factor),
       onStick: (stick) => this.callbacks.onStick(stick),
+      onTap: (clientX, clientY) => {
+        const point = this.floorPointAt(clientX, clientY);
+        if (point) this.callbacks.onFloorTap(point.x, point.z);
+      },
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -141,6 +150,15 @@ export class World {
   get selfPosition(): { x: number; z: number } | null {
     const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
     return entry ? { x: entry.x, z: entry.z } : null;
+  }
+
+  floorPointAt(clientX: number, clientY: number): { x: number; z: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hit = this.hall.pickFloor(this.raycaster);
+    return hit ? { x: hit.x, z: hit.z } : null;
   }
 
   displayedPosition(id: string, out: { x: number; z: number }): boolean {

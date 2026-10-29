@@ -52,6 +52,33 @@ export function floorDirection(axes: MoveAxes, cameraForward: { x: number; z: nu
   };
 }
 
+// Unit direction from one floor point to another, or null once within `reach` of it.
+export function directionToward(
+  from: { x: number; z: number },
+  to: { x: number; z: number },
+  reach: number,
+): { x: number; z: number } | null {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const length = Math.hypot(dx, dz);
+  return length <= reach ? null : { x: dx / length, z: dz / length };
+}
+
+export const TAP_SLOP_PX = 10;
+export const TAP_MAX_MS = 400;
+
+export interface TapStroke {
+  button: number;
+  travelPx: number;
+  heldMs: number;
+  otherPointer: boolean;
+}
+
+// A tap is a short, still, primary-button press that no second pointer joined.
+export function isTap(stroke: TapStroke): boolean {
+  return stroke.button === 0 && !stroke.otherPointer && stroke.travelPx <= TAP_SLOP_PX && stroke.heldMs <= TAP_MAX_MS;
+}
+
 export function isEditable(target: EventTarget | null): boolean {
   if (!target || !(target as HTMLElement).tagName) return false;
   const element = target as HTMLElement;
@@ -71,6 +98,7 @@ export interface PointerHandlers {
   onOrbit(dxRadians: number, dyRadians: number): void;
   onZoom(factor: number): void;
   onStick(stick: StickState | null): void;
+  onTap(clientX: number, clientY: number): void;
 }
 
 interface Tracked {
@@ -78,12 +106,24 @@ interface Tracked {
   y: number;
 }
 
+interface TapCandidate {
+  id: number;
+  button: number;
+  x: number;
+  y: number;
+  startedAt: number;
+  travel: number;
+  otherPointer: boolean;
+}
+
 export class PointerInput {
   private readonly pointers = new Map<number, Tracked>();
   private pinchDistance = 0;
   private stickId: number | null = null;
+  private stickShown = false;
   private stickX = 0;
   private stickY = 0;
+  private tap: TapCandidate | null = null;
 
   constructor(
     private readonly canvas: HTMLElement,
@@ -108,13 +148,26 @@ export class PointerInput {
   }
 
   // The stick finger stays out of `pointers`, so it never counts toward a pinch.
+  // A stick finger shows the joystick only once it moves past the tap slop, so a tap never flashes it.
   private readonly down = (event: PointerEvent): void => {
     this.capture(event.pointerId);
+    if (this.pointers.size > 0 || this.stickId !== null) {
+      if (this.tap) this.tap.otherPointer = true;
+    } else {
+      this.tap = {
+        id: event.pointerId,
+        button: event.button,
+        x: event.clientX,
+        y: event.clientY,
+        startedAt: event.timeStamp,
+        travel: 0,
+        otherPointer: false,
+      };
+    }
     if (this.stickId === null && event.pointerType === "touch" && this.inStickZone(event.clientX)) {
       this.stickId = event.pointerId;
       this.stickX = event.clientX;
       this.stickY = event.clientY;
-      this.handlers.onStick({ originX: this.stickX, originY: this.stickY, dx: 0, dy: 0 });
       return;
     }
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -122,13 +175,14 @@ export class PointerInput {
   };
 
   private readonly move = (event: PointerEvent): void => {
+    const tap = this.tap;
+    if (tap && tap.id === event.pointerId) tap.travel = Math.max(tap.travel, Math.hypot(event.clientX - tap.x, event.clientY - tap.y));
     if (event.pointerId === this.stickId) {
-      this.handlers.onStick({
-        originX: this.stickX,
-        originY: this.stickY,
-        dx: event.clientX - this.stickX,
-        dy: event.clientY - this.stickY,
-      });
+      const dx = event.clientX - this.stickX;
+      const dy = event.clientY - this.stickY;
+      if (!this.stickShown && Math.hypot(dx, dy) <= TAP_SLOP_PX) return;
+      this.stickShown = true;
+      this.handlers.onStick({ originX: this.stickX, originY: this.stickY, dx, dy });
       return;
     }
     const tracked = this.pointers.get(event.pointerId);
@@ -148,17 +202,24 @@ export class PointerInput {
   };
 
   private readonly up = (event: PointerEvent): void => {
+    const tap = this.tap?.id === event.pointerId ? this.tap : null;
+    if (tap) this.tap = null;
     if (event.pointerId === this.stickId) {
       this.release(event.pointerId);
       this.endStick();
-      return;
+    } else {
+      if (!this.pointers.delete(event.pointerId)) return;
+      this.release(event.pointerId);
+      if (this.pointers.size > 0) this.pinchDistance = 0;
     }
-    if (!this.pointers.delete(event.pointerId)) return;
-    this.release(event.pointerId);
-    if (this.pointers.size > 0) this.pinchDistance = 0;
+    if (!tap) return;
+    const travelPx = Math.max(tap.travel, Math.hypot(event.clientX - tap.x, event.clientY - tap.y));
+    const heldMs = event.timeStamp - tap.startedAt;
+    if (isTap({ button: tap.button, travelPx, heldMs, otherPointer: tap.otherPointer })) this.handlers.onTap(event.clientX, event.clientY);
   };
 
   private readonly cancel = (event: PointerEvent): void => {
+    if (this.tap?.id === event.pointerId) this.tap = null;
     if (event.pointerId === this.stickId) this.endStick();
     else this.pointers.delete(event.pointerId);
   };
@@ -179,6 +240,8 @@ export class PointerInput {
 
   private endStick(): void {
     this.stickId = null;
+    if (!this.stickShown) return;
+    this.stickShown = false;
     this.handlers.onStick(null);
   }
 
