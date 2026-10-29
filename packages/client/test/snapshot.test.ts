@@ -5,7 +5,6 @@ import {
   DELAY_MIN_MS,
   EXTRAPOLATION_MAX_MS,
   RemoteTrack,
-  SNAP_DISTANCE,
   ServerClock,
   type Sample,
   SnapshotBuffer,
@@ -282,7 +281,7 @@ describe("RemoteTrack", () => {
     while (sample.x < 2.19 && frames < 600) {
       track.sample(100, frame, sample);
       expect(sample.x).toBeGreaterThanOrEqual(last);
-      expect(sample.x - last).toBeLessThanOrEqual(WALK_SPEED * frame + 1e-9);
+      expect(sample.x - last).toBeLessThanOrEqual(3 * WALK_SPEED * frame + 1e-9);
       last = sample.x;
       frames += 1;
     }
@@ -305,14 +304,54 @@ describe("RemoteTrack", () => {
     expect(sample.z).toBeCloseTo(-0.14, 2);
   });
 
-  it("snaps when the jump is larger than the snap distance", () => {
+  it("places a monk exactly on its first sample", () => {
     const track = new RemoteTrack();
-    track.push(0, 0, 0, 0, false);
-    track.push(50, SNAP_DISTANCE + 2, 0, 0, false);
+    track.push(0, 3, -2, 0, false);
+    track.push(50, 3, -2, 0, false);
     const sample = out();
     track.sample(0, frame, sample);
+    expect(sample.x).toBe(3);
+    expect(sample.z).toBe(-2);
+  });
+
+  it("glides over a mid-life jump of any size instead of teleporting", () => {
+    for (const jump of [4, 7, 9]) {
+      const track = new RemoteTrack();
+      track.push(0, 0, 0, 0, false);
+      track.push(50, 0, 0, 0, false);
+      const sample = out();
+      track.sample(0, frame, sample);
+      track.sample(50, frame, sample);
+      track.push(100, jump, 0, 0, false);
+      let last = sample.x;
+      let frames = 0;
+      let reached = -1;
+      while (frames < 600 && reached < 0) {
+        track.sample(100, frame, sample);
+        const step = sample.x - last;
+        expect(step, `jump ${jump} frame ${frames}`).toBeGreaterThanOrEqual(0);
+        expect(step, `jump ${jump} frame ${frames}`).toBeLessThanOrEqual(3 * WALK_SPEED * frame + 1e-9);
+        if (jump - sample.x < 0.1) reached = frames;
+        last = sample.x;
+        frames += 1;
+      }
+      expect(reached, `jump ${jump}`).toBeGreaterThan(0);
+      expect(reached / 60, `jump ${jump}`).toBeLessThan(2.5);
+    }
+  });
+
+  it("keeps the offset on one side of zero while it closes", () => {
+    const track = new RemoteTrack();
+    track.push(0, 0, 0, 0, false);
+    track.push(50, 0, 0, 0, false);
+    const sample = out();
     track.sample(50, frame, sample);
-    expect(sample.x).toBe(SNAP_DISTANCE + 2);
+    track.push(100, 6, 0, 0, false);
+    for (let i = 0; i < 400; i += 1) {
+      track.sample(100, frame, sample);
+      expect(sample.x).toBeLessThanOrEqual(6 + 1e-9);
+    }
+    expect(sample.x).toBeCloseTo(6, 3);
   });
 });
 
@@ -331,8 +370,9 @@ interface Run {
   steps: number[];
 }
 
-// Server state every 50 ms, delivered in order through a link with up to 300 ms of jitter and occasional stalls.
-function simulateWalk(seed: number): Run {
+// Server state every 50 ms, delivered in order through a link with up to 300 ms of jitter and occasional stalls;
+// an optional long stall holds back everything sent during it and delivers it as one burst.
+function simulateWalk(seed: number, stall?: { atMs: number; ms: number }): Run {
   const random = seededRandom(seed);
   const S0 = 1_800_000_000_000;
   const L0 = 20_000;
@@ -349,6 +389,7 @@ function simulateWalk(seed: number): Run {
     const walking = ms >= WARM_MS && ms < WARM_MS + WALK_MS;
     let delay = 40 + 300 * random() ** 3;
     if (random() < 1 / 100) delay = 250 + 50 * random();
+    if (stall && ms >= stall.atMs && ms < stall.atMs + stall.ms) delay += stall.atMs + stall.ms - ms;
     lastArrival = Math.max(lastArrival, L0 + ms + delay);
     arrivals.push({ at: lastArrival, t: S0 + ms, x: START_X + (WALK_SPEED * walked) / 1000, walking });
   }
@@ -399,4 +440,26 @@ describe("remote motion under a jittery link", () => {
       expect(xs[xs.length - 1], `seed ${seed} end`).toBeCloseTo(4.7, 1);
     }
   });
+});
+
+describe("remote motion after a long stall", () => {
+  const WARM_MS = 8000;
+  const STEP_BOUND = (3 * WALK_SPEED) / 60 + 1e-9;
+
+  for (const stallMs of [2500, 3500]) {
+    it(`absorbs a ${stallMs} ms freeze without a teleport, a backward step or a lost destination`, () => {
+      for (let seed = 1; seed <= 12; seed += 1) {
+        const { xs, steps } = simulateWalk(seed, { atMs: WARM_MS + 300, ms: stallMs });
+        let largest = 0;
+        steps.forEach((step, index) => {
+          const x = xs[index + 1] as number;
+          largest = Math.max(largest, Math.abs(step));
+          expect(Math.abs(step), `seed ${seed} stall ${stallMs} frame ${index}`).toBeLessThanOrEqual(STEP_BOUND);
+          if (x > -4.85 && x < 4.6) expect(step, `seed ${seed} stall ${stallMs} frame ${index}`).toBeGreaterThanOrEqual(-1e-9);
+        });
+        expect(largest, `seed ${seed}`).toBeGreaterThan((WALK_SPEED * 1.25) / 60);
+        expect(xs[xs.length - 1], `seed ${seed} end`).toBeCloseTo(4.7, 1);
+      }
+    });
+  }
 });

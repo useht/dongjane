@@ -3,8 +3,6 @@ import { WALK_SPEED, resolveWalkable, yawFromDirection } from "@dongjane/shared"
 import {
   KEY_MOVE_INTERVAL_MS,
   KEY_MOVE_REACH,
-  PATH_TOLERANCE,
-  SETTLE_TIMEOUT_MS,
   SelfPrediction,
   type Point,
   type SelfDisplay,
@@ -132,7 +130,7 @@ describe("SelfPrediction sending", () => {
   it("sends the predicted point on release, never the server's position", () => {
     const prediction = new SelfPrediction();
     const { endMs } = hold(prediction, 30, { x: 0, z: -1 }, { x: 0, z: 4.9 });
-    prediction.reconcile({ x: 0, z: 4.9 - 0.4, mode: "walk" }, endMs);
+    prediction.reconcile({ x: 0, z: 4.9 - 0.4, mode: "walk" });
     const before = must(prediction.display());
     const release = must(prediction.frame(FRAME, endMs, null, { x: 0, z: 4.9 - 0.4 }));
     expect(release).toEqual({ x: before.x, z: before.z });
@@ -174,130 +172,69 @@ describe("SelfPrediction reconcile", () => {
     return { prediction, at: endMs };
   }
 
-  it("ignores a server position that is on our recent path, however far behind it is", () => {
-    const { prediction, at } = walking();
+  it("never moves the display while a key is held, wherever the server says it is", () => {
+    const { prediction } = walking();
     const before = must(prediction.display());
-    prediction.reconcile({ x: 0, z: 4.5, mode: "stand" }, at);
-    expect(must(prediction.display())).toEqual(before);
-    prediction.reconcile({ x: 0, z: 4.1, mode: "walk" }, at);
-    expect(must(prediction.display())).toEqual(before);
-  });
-
-  it("tolerates a server that is slightly off the path and snaps once it is further than PATH_TOLERANCE", () => {
-    const { prediction, at } = walking();
-    const before = must(prediction.display());
-    prediction.reconcile({ x: PATH_TOLERANCE - 0.01, z: 4.1, mode: "walk" }, at);
-    expect(must(prediction.display())).toEqual(before);
-    prediction.reconcile({ x: PATH_TOLERANCE + 0.01, z: 4.1, mode: "walk" }, at);
-    const after = must(prediction.display());
-    expect(after.x).toBe(PATH_TOLERANCE + 0.01);
-    expect(after.z).toBe(4.1);
-    expect(prediction.active).toBe(true);
-  });
-
-  it("snaps to a server position that is far from the whole path, such as one ahead of us or sideways", () => {
-    const ahead = walking();
-    const front = must(ahead.prediction.display());
-    ahead.prediction.reconcile({ x: front.x, z: front.z - 2, mode: "walk" }, ahead.at);
-    expect(must(ahead.prediction.display()).z).toBe(front.z - 2);
-
-    const sideways = walking();
-    const where = must(sideways.prediction.display());
-    sideways.prediction.reconcile({ x: where.x + 4, z: where.z, mode: "walk" }, sideways.at);
-    const after = must(sideways.prediction.display());
-    expect(after.x).toBe(where.x + 4);
-    expect(after.z).toBe(where.z);
-  });
-
-  it("measures the path again from the snapped point, so the old path no longer excuses the server", () => {
-    const { prediction, at } = walking();
-    const where = must(prediction.display());
-    prediction.reconcile({ x: where.x + 4, z: where.z, mode: "walk" }, at);
-    prediction.reconcile({ x: where.x, z: where.z, mode: "walk" }, at + 50);
-    expect(must(prediction.display()).x).toBe(where.x);
-  });
-
-  it("forgets the path after four seconds, so only a recent server position is excused", () => {
-    const { prediction, at } = walking();
-    prediction.frame(FRAME, at, null, { x: 0, z: 4.5 });
-    prediction.reconcile({ x: 0, z: 4.5, mode: "walk" }, at + 3500);
-    expect(prediction.active).toBe(true);
-    expect(must(prediction.display()).z).toBeLessThan(4.1);
-    prediction.reconcile({ x: 0, z: 4.5, mode: "walk" }, at + 5000);
-    expect(prediction.active).toBe(false);
+    for (const server of [
+      { x: 0, z: 4.5, mode: "stand" },
+      { x: before.x + 4, z: before.z, mode: "walk" },
+      { x: before.x, z: before.z - 6, mode: "stand" },
+      { x: -5, z: 5, mode: "walk" },
+    ]) {
+      prediction.reconcile(server);
+      expect(must(prediction.display())).toEqual(before);
+      expect(prediction.active).toBe(true);
+    }
   });
 
   it("ignores the server entirely while idle", () => {
     const prediction = new SelfPrediction();
-    prediction.reconcile({ x: 3, z: 3, mode: "walk" }, 0);
+    prediction.reconcile({ x: 3, z: 3, mode: "stand" });
     expect(prediction.active).toBe(false);
     expect(prediction.display()).toBeNull();
   });
 
-  it("stays in control while the server is still catching up after release", () => {
+  it("stays at the released point while the server is still walking, even right next to it", () => {
     const { prediction, at } = walking();
     const target = must(prediction.frame(FRAME, at, null, { x: 0, z: 4.5 }));
-    prediction.reconcile({ x: 0, z: target.z + 0.5, mode: "walk" }, at + 100);
+    prediction.reconcile({ x: 0, z: target.z + 0.5, mode: "walk" });
     expect(prediction.active).toBe(true);
     expect(must(prediction.display()).z).toBe(target.z);
-    prediction.reconcile({ x: 0, z: target.z, mode: "walk" }, at + 200);
+    prediction.reconcile({ x: 0, z: target.z, mode: "walk" });
     expect(prediction.active).toBe(true);
-    prediction.reconcile({ x: 0, z: 4.5, mode: "stand" }, at + 3000);
-    expect(prediction.active).toBe(true);
+    expect(must(prediction.display()).walking).toBe(false);
   });
 
-  it("hands display back to the server once it has stopped at the released point", () => {
+  it("hands display back only once the server has stopped within 0.15 m of the released point", () => {
     const { prediction, at } = walking();
     const target = must(prediction.frame(FRAME, at, null, { x: 0, z: 4.5 }));
-    prediction.reconcile({ x: 0, z: target.z + 0.3, mode: "stand" }, at + 200);
+    prediction.reconcile({ x: 0, z: 4.5, mode: "stand" });
     expect(prediction.active).toBe(true);
-    prediction.reconcile({ x: 0, z: target.z + 0.14, mode: "stand" }, at + 250);
+    prediction.reconcile({ x: 0, z: target.z + 0.16, mode: "stand" });
+    expect(prediction.active).toBe(true);
+    prediction.reconcile({ x: 0, z: target.z + 0.14, mode: "stand" });
     expect(prediction.active).toBe(false);
     expect(prediction.display()).toBeNull();
   });
 
-  it("drops straight to the server after release when it is far from the path", () => {
-    const { prediction, at } = walking();
-    prediction.frame(FRAME, at, null, { x: 0, z: 4.5 });
-    prediction.reconcile({ x: 0, z: -2.9, mode: "stand" }, at + 100);
-    expect(prediction.active).toBe(false);
-  });
-
-  it("falls back after the settle timeout by walking to the server's point instead of teleporting", () => {
+  it("has no time limit: it keeps waiting for the stop however stale the server looks", () => {
     const { prediction, at } = walking();
     const target = must(prediction.frame(FRAME, at, null, { x: 0, z: 4.5 }));
-    const stuck = { x: 0, z: target.z + 0.4, mode: "stand" };
-    prediction.reconcile(stuck, at + SETTLE_TIMEOUT_MS - 1);
-    expect(must(prediction.display()).z).toBe(target.z);
-    prediction.reconcile(stuck, at + SETTLE_TIMEOUT_MS);
-    expect(prediction.active).toBe(true);
-
-    let previous = must(prediction.display());
-    let frames = 0;
-    while (prediction.active && frames < 600) {
-      prediction.frame(FRAME, at + SETTLE_TIMEOUT_MS + frames * FRAME_MS, null, { x: 0, z: 0 });
-      const shown = prediction.display();
-      if (shown) {
-        expect(Math.hypot(shown.x - previous.x, shown.z - previous.z)).toBeLessThanOrEqual(WALK_SPEED * FRAME + 1e-9);
-        expect(shown.walking).toBe(true);
-        previous = shown;
-      }
-      frames += 1;
+    for (let i = 0; i < 400; i += 1) {
+      prediction.frame(FRAME, at + 100 + i * 100, null, { x: 0, z: 4.5 });
+      prediction.reconcile({ x: 0, z: target.z + 1, mode: "stand" });
     }
-    expect(prediction.active).toBe(false);
-    expect(previous.z).toBeCloseTo(stuck.z, 1);
-    expect(frames).toBeGreaterThan(Math.floor(0.4 / (WALK_SPEED * FRAME)) - 2);
+    expect(prediction.active).toBe(true);
+    expect(must(prediction.display()).z).toBe(target.z);
   });
 
-  it("lets a new key press interrupt the fallback walk from the point it has reached", () => {
+  it("lets the next key press resume from the released point and resync whatever was left over", () => {
     const { prediction, at } = walking();
     const target = must(prediction.frame(FRAME, at, null, { x: 0, z: 4.5 }));
-    prediction.reconcile({ x: 0, z: target.z + 0.4, mode: "stand" }, at + SETTLE_TIMEOUT_MS);
-    prediction.frame(FRAME, at + SETTLE_TIMEOUT_MS, null, { x: 0, z: 0 });
-    const gliding = must(prediction.display());
-    const press = must(prediction.frame(FRAME, at + SETTLE_TIMEOUT_MS + FRAME_MS, { x: 1, z: 0 }, { x: 0, z: 0 }));
-    expect(press.x).toBeGreaterThan(gliding.x);
-    expect(press.z).toBeCloseTo(gliding.z, 1);
+    prediction.reconcile({ x: 3, z: 0, mode: "stand" });
+    const press = must(prediction.frame(FRAME, at + 20_000, { x: 0, z: -1 }, { x: 3, z: 0 }));
+    expect(press.z).toBeCloseTo(target.z - WALK_SPEED * FRAME - KEY_MOVE_REACH, 10);
+    expect(must(prediction.display()).x).toBe(0);
   });
 
   it("cancel drops the prediction at any phase", () => {
@@ -333,9 +270,11 @@ interface Link {
   oneWayMs: number;
   jitterMs: number;
   seed: number;
+  stall?: { atMs: number; ms: number };
 }
 
 // A client, a walking server (20 Hz state, snaps onto each target) and an in-order link with a fixed delay plus jitter.
+// The client frame loop runs at 60 fps except for one optional stall; the prediction dt is the real elapsed time capped at 0.25 s, as in the app.
 function runLink(
   link: Link,
   totalMs: number,
@@ -356,7 +295,9 @@ function runLink(
   const moves: Point[] = [];
   const delay = (): number => link.oneWayMs + link.jitterMs * random();
 
-  for (let now = 0; now <= totalMs; now += FRAME_MS) {
+  let stalled = false;
+  let previous = 0;
+  for (let now = 0; now <= totalMs; ) {
     for (let item = upstream[0]; item && item.at <= now; item = upstream[0]) {
       target = upstream.shift()?.target ?? null;
     }
@@ -383,15 +324,23 @@ function runLink(
     for (let item = downstream[0]; item && item.at <= now; item = downstream[0]) {
       downstream.shift();
       latest = { x: item.x, z: item.z, mode: item.mode };
-      prediction.reconcile(latest, now);
+      prediction.reconcile(latest);
     }
-    const sent = prediction.frame(FRAME, now, dirAt(now), latest);
+    const dt = now === 0 ? FRAME : Math.min(0.25, (now - previous) / 1000);
+    const sent = prediction.frame(dt, now, dirAt(now), latest);
     if (sent) {
       lastUp = Math.max(lastUp, now + delay());
       upstream.push({ at: lastUp, target: sent });
       moves.push(sent);
     }
     frames.push({ t: now, display: prediction.display(), server: latest });
+    previous = now;
+    if (link.stall && !stalled && now >= link.stall.atMs) {
+      stalled = true;
+      now += link.stall.ms;
+    } else {
+      now += FRAME_MS;
+    }
   }
   return { frames, moves, server };
 }
@@ -407,10 +356,9 @@ function shownSteps(frames: Frame[]): Array<{ dx: number; dz: number; dist: numb
   return steps;
 }
 
-describe("SelfPrediction on a slow link", () => {
-  const RTT = 1500;
-
+describe("SelfPrediction on a bad link", () => {
   it("keeps walking forward with no snap while the server trails by a whole round trip", () => {
+    const RTT = 1500;
     const { frames } = runLink({ oneWayMs: RTT / 2, jitterMs: 0, seed: 1 }, 4000, { x: -4.9, z: 0 }, () => ({ x: 1, z: 0 }));
     const lagged = frames.filter((frame) => frame.t > RTT && frame.t < 4000);
     expect(lagged.length).toBeGreaterThan(100);
@@ -425,12 +373,13 @@ describe("SelfPrediction on a slow link", () => {
     expect((last.display as SelfDisplay).x).toBeCloseTo(-4.9 + (WALK_SPEED * 4000) / 1000, 1);
   });
 
-  it.each([0, 150, 300])("keeps following a turn with %i ms of jitter without a snap or a backward step", (jitterMs) => {
-    for (let seed = 1; seed <= 20; seed += 1) {
-      const { frames } = runLink({ oneWayMs: RTT / 2, jitterMs, seed }, 4400, { x: -4.9, z: 4.5 }, (t) =>
+  it.each([1000, 2000])("follows a 90 degree turn at RTT %i ms with 600 ms of jitter, never snapping or stepping backward", (rtt) => {
+    for (let seed = 1; seed <= 24; seed += 1) {
+      const { frames } = runLink({ oneWayMs: rtt / 2, jitterMs: 600, seed }, 4400, { x: -4.9, z: 4.5 }, (t) =>
         t < 2000 ? { x: 1, z: 0 } : { x: 0, z: -1 },
       );
       const steps = shownSteps(frames);
+      expect(steps.length, `seed ${seed}`).toBeGreaterThan(200);
       for (const step of steps) {
         expect(step.dx, `seed ${seed}`).toBeGreaterThanOrEqual(-1e-9);
         expect(step.dz, `seed ${seed}`).toBeLessThanOrEqual(1e-9);
@@ -439,13 +388,13 @@ describe("SelfPrediction on a slow link", () => {
     }
   });
 
-  it.each([1500, 3000])("releases cleanly at RTT %i ms: no backward step and a handover within 0.15 m", (rtt) => {
-    const holdMs = 2000;
-    const { frames, moves, server } = runLink({ oneWayMs: rtt / 2, jitterMs: 0, seed: 3 }, holdMs + rtt + 4000, { x: -4.9, z: 0 }, (t) =>
+  it.each([1500, 3000, 4500])("releases cleanly at RTT %i ms: no backward step, handover only after the server confirms the stop", (rtt) => {
+    const holdMs = 3000;
+    const { frames, moves, server } = runLink({ oneWayMs: rtt / 2, jitterMs: 0, seed: 3 }, holdMs + rtt + 3000, { x: -4.9, z: 0 }, (t) =>
       t < holdMs ? { x: 1, z: 0 } : null,
     );
     const steps = shownSteps(frames);
-    expect(steps.length).toBeGreaterThan(100);
+    expect(steps.length).toBeGreaterThan(150);
     for (const step of steps) {
       expect(step.dx).toBeGreaterThanOrEqual(-1e-9);
       expect(step.dist).toBeLessThanOrEqual(WALK_SPEED * FRAME + 1e-6);
@@ -458,9 +407,32 @@ describe("SelfPrediction on a slow link", () => {
     expect(settled.x).toBe(release.x);
     expect(settled.z).toBe(release.z);
     const now = frames[handover] as Frame;
-    expect(Math.hypot(now.server.x - settled.x, now.server.z - settled.z)).toBeLessThanOrEqual(0.15);
     expect(now.server.mode).toBe("stand");
-    expect(now.t).toBeLessThan(holdMs + SETTLE_TIMEOUT_MS);
+    expect(Math.hypot(now.server.x - settled.x, now.server.z - settled.z)).toBeLessThanOrEqual(0.15);
+    expect(now.t).toBeGreaterThan(holdMs + rtt * 0.9);
     expect(Math.hypot(server.x - release.x, server.z - release.z)).toBeLessThanOrEqual(0.15);
+  });
+
+  it.each([600, 800])("rides out a %i ms frame hitch at RTT 200 ms without a forward jump", (stallMs) => {
+    const { frames } = runLink(
+      { oneWayMs: 100, jitterMs: 0, seed: 5, stall: { atMs: 1000, ms: stallMs } },
+      3200,
+      { x: -4.9, z: 0 },
+      () => ({ x: 1, z: 0 }),
+    );
+    let ahead = 0;
+    for (const frame of frames) if (frame.display) ahead = Math.max(ahead, frame.server.x - frame.display.x);
+    expect(ahead).toBeGreaterThan(0.3);
+
+    const steps = shownSteps(frames);
+    let biggest = 0;
+    for (const step of steps) {
+      expect(step.dx).toBeGreaterThanOrEqual(-1e-9);
+      biggest = Math.max(biggest, step.dist);
+    }
+    expect(biggest).toBeLessThanOrEqual(WALK_SPEED * 0.25 + 1e-6);
+    expect(biggest).toBeGreaterThan(WALK_SPEED * 0.2);
+    const last = frames[frames.length - 1] as Frame;
+    expect((last.display as SelfDisplay).x).toBeCloseTo(-4.9 + WALK_SPEED * (3.2 - stallMs / 1000 + 0.25), 0);
   });
 });

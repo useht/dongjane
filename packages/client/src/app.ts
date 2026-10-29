@@ -18,6 +18,7 @@ import { Overlay } from "./ui/overlay.ts";
 import { SettingsSheet } from "./ui/settings.ts";
 
 const CHANT_TICK_MS = 250;
+const PREDICTION_MAX_DT = 0.25;
 const HALL_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
@@ -53,6 +54,7 @@ export class App {
   private self: SelfSnapshot | null = null;
   private cushionOwners = new Map<number, string>();
   private readonly prediction = new SelfPrediction();
+  private lastFrameMs = 0;
   private nextChantTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
@@ -256,7 +258,7 @@ export class App {
       });
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
-        this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode }, now);
+        this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode });
         this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
       }
     });
@@ -466,14 +468,16 @@ export class App {
   }
 
   private frame(dt: number, nowMs: number): void {
-    this.driveKeyboard(dt, nowMs);
+    const elapsed = this.lastFrameMs > 0 ? (nowMs - this.lastFrameMs) / 1000 : dt;
+    this.lastFrameMs = nowMs;
+    this.driveKeyboard(dt, Math.min(PREDICTION_MAX_DT, Math.max(0, elapsed)), nowMs);
     if (nowMs >= this.nextChantTick) {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
     }
   }
 
-  private driveKeyboard(dt: number, nowMs: number): void {
+  private driveKeyboard(dt: number, realDt: number, nowMs: number): void {
     const turn = this.keyboard.rotation();
     if (turn !== 0) this.world.rig.orbit(turn * dt * 1.8, 0);
 
@@ -483,7 +487,7 @@ export class App {
     const axes = this.keyboard.axes();
     const moving = axes.forward !== 0 || axes.right !== 0;
     const dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
-    const target = this.prediction.frame(dt, nowMs, dir, displayed);
+    const target = this.prediction.frame(realDt, nowMs, dir, displayed);
     this.world.setSelfPrediction(this.prediction.display());
     if (target) session.move(target.x, target.z);
   }

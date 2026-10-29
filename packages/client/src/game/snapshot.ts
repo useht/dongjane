@@ -17,7 +17,6 @@ export interface Sample {
 export const EXTRAPOLATION_MAX_MS = 150;
 export const DELAY_MIN_MS = 100;
 export const DELAY_MAX_MS = 400;
-export const SNAP_DISTANCE = 3;
 
 const MAX_SNAPSHOTS = 40;
 const BACKWARD_RESET_MS = 1000;
@@ -25,7 +24,7 @@ const BACKWARD_RESET_MS = 1000;
 const DELAY_BASE_MS = 60;
 const DELAY_JITTER_GAIN = 1.5;
 const OFFSET_WINDOW_MS = 5000;
-const RESYNC_GAP_MS = 3000;
+const RESYNC_GAP_MS = 5000;
 const JITTER_RISE = 0.5;
 const JITTER_FALL = 0.005;
 const SLEW_FASTER = 0.1;
@@ -33,6 +32,7 @@ const SLEW_SLOWER = 0.25;
 const RENDER_RESNAP_MS = 1500;
 
 const OFFSET_TAU_S = 0.25;
+const DISPLAY_STEP_FACTOR = 3;
 const JUMP_SPEED_FACTOR = 1.25;
 const JUMP_SLACK = 0.03;
 
@@ -177,7 +177,7 @@ export class ServerClock {
   }
 }
 
-// One remote monk: snapshots in server time, plus a decaying offset that hides corrections instead of snapping.
+// One remote monk: snapshots in server time, plus a decaying offset that glides over any correction, however large, instead of snapping.
 export class RemoteTrack {
   readonly buffer = new SnapshotBuffer();
   private offsetX = 0;
@@ -192,16 +192,16 @@ export class RemoteTrack {
 
   sample(renderTime: number, dtSeconds: number, out: Sample): boolean {
     if (!this.buffer.sample(renderTime, out)) return false;
+    let moved = 0;
     if (this.primed) {
       const dx = out.x - this.rawX;
       const dz = out.z - this.rawZ;
-      const jump = Math.hypot(dx, dz);
-      if (jump > SNAP_DISTANCE) {
-        this.offsetX = 0;
-        this.offsetZ = 0;
-      } else if (jump > WALK_SPEED * JUMP_SPEED_FACTOR * dtSeconds + JUMP_SLACK) {
+      const step = Math.hypot(dx, dz);
+      if (step > WALK_SPEED * JUMP_SPEED_FACTOR * dtSeconds + JUMP_SLACK) {
         this.offsetX -= dx;
         this.offsetZ -= dz;
+      } else {
+        moved = step;
       }
     }
     this.rawX = out.x;
@@ -210,7 +210,8 @@ export class RemoteTrack {
 
     const size = Math.hypot(this.offsetX, this.offsetZ);
     if (size > 1e-6) {
-      const step = Math.min(size * (1 - Math.exp(-dtSeconds / OFFSET_TAU_S)), WALK_SPEED * dtSeconds);
+      const cap = Math.max(0, DISPLAY_STEP_FACTOR * WALK_SPEED * dtSeconds - moved);
+      const step = Math.min(size * (1 - Math.exp(-dtSeconds / OFFSET_TAU_S)), cap);
       const keep = (size - step) / size;
       this.offsetX *= keep;
       this.offsetZ *= keep;
