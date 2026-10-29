@@ -1,0 +1,70 @@
+import { BOW_MAX_TIMES, NAME_MAX_LENGTH } from "./constants.ts";
+import { CUSHION_COUNT } from "./layout.ts";
+
+export const MSG = {
+  move: "move",
+  sit: "sit",
+  stand: "stand",
+  bow: "bow",
+  setName: "setName",
+} as const;
+
+export interface MoveMessage {
+  x: number;
+  z: number;
+}
+export interface SitMessage {
+  cushionId: number;
+}
+export type StandMessage = Record<string, never>;
+export interface BowMessage {
+  times: 1 | 2 | 3;
+}
+export interface SetNameMessage {
+  name: string;
+}
+
+export interface ClientToServerMessages {
+  move: MoveMessage;
+  sit: SitMessage;
+  stand: StandMessage;
+  bow: BowMessage;
+  setName: SetNameMessage;
+}
+
+export interface JoinOptions {
+  name?: string;
+  hue?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function parseMove(payload: unknown): MoveMessage | null {
+  if (!isRecord(payload) || !finite(payload.x) || !finite(payload.z)) return null;
+  return { x: payload.x, z: payload.z };
+}
+
+export function parseSit(payload: unknown): SitMessage | null {
+  if (!isRecord(payload) || !finite(payload.cushionId)) return null;
+  const id = payload.cushionId;
+  if (!Number.isInteger(id) || id < 0 || id >= CUSHION_COUNT) return null;
+  return { cushionId: id };
+}
+
+export function parseBow(payload: unknown): BowMessage | null {
+  if (!isRecord(payload) || !finite(payload.times)) return null;
+  const times = payload.times;
+  if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return null;
+  return { times: times as 1 | 2 | 3 };
+}
+
+export function parseSetName(payload: unknown): SetNameMessage | null {
+  if (!isRecord(payload) || typeof payload.name !== "string") return null;
+  return { name: payload.name.slice(0, NAME_MAX_LENGTH * 8) };
+}

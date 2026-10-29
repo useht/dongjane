@@ -1,0 +1,57 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import sharp from "sharp";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function monkIcon(scale) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="36%" r="78%">
+      <stop offset="0" stop-color="#ffe2a8"/>
+      <stop offset="0.5" stop-color="#e0974f"/>
+      <stop offset="1" stop-color="#5a2f19"/>
+    </radialGradient>
+    <linearGradient id="robe" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#d9702f"/>
+      <stop offset="1" stop-color="#a64a1d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <g transform="translate(256 272) scale(${scale}) translate(-256 -272)">
+    <ellipse cx="256" cy="452" rx="150" ry="22" fill="#4a2410" opacity="0.28"/>
+    <path d="M104 470 C112 382 184 346 256 346 C328 346 400 382 408 470 Z" fill="url(#robe)"/>
+    <path d="M214 352 L256 410 L298 352" fill="none" stroke="#fff1d6" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="150" cy="244" r="23" fill="#ffd9b3"/>
+    <circle cx="362" cy="244" r="23" fill="#ffd9b3"/>
+    <circle cx="256" cy="232" r="112" fill="#ffe3c2"/>
+    <ellipse cx="214" cy="160" rx="38" ry="22" fill="#fff6e6" opacity="0.55" transform="rotate(-28 214 160)"/>
+    <circle cx="232" cy="148" r="6.5" fill="#b5532e" opacity="0.8"/>
+    <circle cx="256" cy="140" r="6.5" fill="#b5532e" opacity="0.8"/>
+    <circle cx="280" cy="148" r="6.5" fill="#b5532e" opacity="0.8"/>
+    <path d="M200 240 Q218 222 236 240" fill="none" stroke="#4a2a18" stroke-width="9" stroke-linecap="round"/>
+    <path d="M276 240 Q294 222 312 240" fill="none" stroke="#4a2a18" stroke-width="9" stroke-linecap="round"/>
+    <ellipse cx="188" cy="278" rx="22" ry="13" fill="#ff9c82" opacity="0.55"/>
+    <ellipse cx="324" cy="278" rx="22" ry="13" fill="#ff9c82" opacity="0.55"/>
+    <path d="M238 286 Q256 304 274 286" fill="none" stroke="#7a3a22" stroke-width="8" stroke-linecap="round"/>
+  </g>
+</svg>
+`;
+}
+
+async function png(svg, size, file) {
+  const out = resolve(root, "public/icons", file);
+  await sharp(Buffer.from(svg), { density: 384 }).resize(size, size).png({ compressionLevel: 9 }).toFile(out);
+  console.log("wrote", out);
+}
+
+await mkdir(resolve(root, "public/icons"), { recursive: true });
+const plain = monkIcon(1);
+const safe = monkIcon(0.78);
+
+await writeFile(resolve(root, "public/favicon.svg"), plain);
+await png(plain, 192, "icon-192.png");
+await png(plain, 512, "icon-512.png");
+await png(safe, 512, "icon-maskable-512.png");
+await png(plain, 180, "apple-touch-icon.png");
