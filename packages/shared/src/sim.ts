@@ -11,12 +11,15 @@ import {
   ZONE_CAPACITY,
   ZONE_COOLDOWN_MS,
 } from "./constants.ts";
+import { randomHue } from "./identity.ts";
 import {
   SEAT_YAW,
   ZONES,
+  ZONE_BOUNDS,
   ZONE_SEATS,
   ZONE_SPAWN,
   type Zone,
+  isZone,
   otherZone,
   pickSeat,
   resolveWalkable,
@@ -24,6 +27,7 @@ import {
   seatSpot,
   yawFromDirection,
 } from "./layout.ts";
+import { type NpcActions, type NpcBrain, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
 
 interface Target {
@@ -39,6 +43,7 @@ interface Runtime {
   nextBowAt: number;
   lastBowEndedAt: number;
   lastZoneChangeAt: number;
+  brain: NpcBrain | null;
 }
 
 export interface ZoneChoice {
@@ -54,6 +59,7 @@ export interface SimOptions {
   random?: () => number;
   chantEveryMs?: number;
   chantMs?: number;
+  npcCount?: number;
 }
 
 export class TempleSim {
@@ -64,6 +70,15 @@ export class TempleSim {
   private readonly random: () => number;
   private readonly chantEveryMs: number;
   private readonly chantMs: number;
+  private readonly npcActions: NpcActions = {
+    move: (id, x, z) => this.move(id, x, z),
+    sit: (id, seatId) => {
+      const zone = this.state.monks.get(id)?.zone;
+      return isZone(zone) && this.sit(id, zone, seatId);
+    },
+    stand: (id) => this.stand(id),
+    bow: (id, times) => this.bow(id, times),
+  };
 
   constructor(options: SimOptions = {}) {
     this.clock = options.clock ?? Date.now;
@@ -78,11 +93,23 @@ export class TempleSim {
       }
     }
     this.updateChant();
+
+    let n = 0;
+    for (const zone of ZONES) {
+      for (let i = 0; i < (options.npcCount ?? 0); i += 1) this.spawnNpc(`npc-${(n += 1)}`, zone);
+    }
   }
 
+  get humanCount(): number {
+    let count = 0;
+    for (const monk of this.state.monks.values()) if (!monk.npc) count += 1;
+    return count;
+  }
+
+  // Visitors in a zone; the NPCs are not counted, so they never take a visitor's place.
   zoneCount(zone: Zone): number {
     let count = 0;
-    for (const monk of this.state.monks.values()) if (monk.zone === zone) count += 1;
+    for (const monk of this.state.monks.values()) if (monk.zone === zone && !monk.npc) count += 1;
     return count;
   }
 
@@ -111,14 +138,7 @@ export class TempleSim {
     });
     this.placeAtSpawn(monk);
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, {
-      target: null,
-      bowEndsAt: 0,
-      bowsLeft: 0,
-      nextBowAt: 0,
-      lastBowEndedAt: 0,
-      lastZoneChangeAt: Number.NEGATIVE_INFINITY,
-    });
+    this.runtimes.set(id, this.runtime(null));
     return monk;
   }
 
@@ -150,7 +170,11 @@ export class TempleSim {
     const seat = this.state.seats.get(seatKey(zone, seatId));
     if (!spot || !seat) return false;
     if (monk.seatId === seatId) return true;
-    if (seat.occupantId !== "") return false;
+    if (seat.occupantId !== "") {
+      const holder = this.state.monks.get(seat.occupantId);
+      if (monk.npc || !holder?.npc) return false;
+      this.evict(holder);
+    }
 
     this.releaseSeat(monk);
     seat.occupantId = id;
@@ -174,7 +198,7 @@ export class TempleSim {
     monk.zone = zone;
     monk.mode = "stand";
     this.placeAtSpawn(monk);
-    const spot = pickSeat(zone, (seatId) => this.state.seats.get(seatKey(zone, seatId))?.occupantId !== "");
+    const spot = this.bestSeat(zone);
     if (spot) this.sit(id, zone, spot.id);
     return "moved";
   }
@@ -226,6 +250,8 @@ export class TempleSim {
         runtime.bowsLeft -= 1;
         this.beginBow(monk, runtime, now);
       }
+
+      if (runtime.brain && now >= runtime.brain.nextThinkAt) this.think(monk, runtime.brain, now);
     }
   }
 
@@ -239,6 +265,78 @@ export class TempleSim {
       chant.durationMs = next.durationMs;
     }
     return Math.max(50, chantEndsAt(next) - now + 20);
+  }
+
+  private runtime(brain: NpcBrain | null): Runtime {
+    return {
+      target: null,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      lastZoneChangeAt: Number.NEGATIVE_INFINITY,
+      brain,
+    };
+  }
+
+  // The seat a visitor is sent to: a free one if there is any, otherwise one an NPC will give up.
+  private bestSeat(zone: Zone): { id: number } | undefined {
+    const holderOf = (seatId: number): string => this.state.seats.get(seatKey(zone, seatId))?.occupantId ?? "";
+    return (
+      pickSeat(zone, (seatId) => holderOf(seatId) !== "") ??
+      pickSeat(zone, (seatId) => {
+        const holder = holderOf(seatId);
+        return holder !== "" && !this.state.monks.get(holder)?.npc;
+      })
+    );
+  }
+
+  private spawnNpc(id: string, zone: Zone): void {
+    const random = this.random;
+    const bounds = ZONE_BOUNDS[zone];
+    const spot = resolveWalkable(
+      zone,
+      bounds.minX + random() * (bounds.maxX - bounds.minX),
+      bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
+    );
+    const monk = new Monk({
+      id,
+      slot: 0,
+      hue: randomHue(random),
+      zone,
+      x: spot.x,
+      z: spot.z,
+      yaw: (random() * 2 - 1) * Math.PI,
+      mode: "stand",
+      seatId: -1,
+      bowCount: 0,
+      npc: true,
+    });
+    this.state.monks.set(id, monk);
+    this.runtimes.set(id, this.runtime(createNpcBrain(random, this.clock())));
+  }
+
+  private think(monk: Monk, brain: NpcBrain, now: number): void {
+    const chant = this.state.chant;
+    const chanting = now >= chant.startsAt && now < chantEndsAt(chant);
+    thinkNpc(
+      brain,
+      monk,
+      {
+        now,
+        random: this.random,
+        chantEndsAt: chanting ? chantEndsAt(chant) : null,
+        isFree: (seatId) => this.state.seats.get(seatKey(monk.zone as Zone, seatId))?.occupantId === "",
+      },
+      this.npcActions,
+    );
+  }
+
+  private evict(npc: Monk): void {
+    this.releaseSeat(npc);
+    npc.mode = "stand";
+    const brain = this.runtimes.get(npc.id)?.brain;
+    if (brain) disturbNpc(brain, this.clock(), this.random);
   }
 
   private beginBow(monk: Monk, runtime: Runtime, now: number): void {

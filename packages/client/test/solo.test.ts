@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BOW_MS, GATBAWI_SEATS, TICK_MS, type TempleState, WORLD_BOUNDS, ZONE_SPAWN } from "@dongjane/shared";
+import {
+  BOW_MS,
+  GATBAWI_SEATS,
+  NPC_PER_ZONE,
+  TICK_MS,
+  type TempleState,
+  WORLD_BOUNDS,
+  ZONES,
+  ZONE_SPAWN,
+} from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
 const T0 = 1_800_000_000_000;
@@ -31,7 +40,7 @@ describe("SoloSession", () => {
     const { session } = open(400);
     expect(session.sessionId).toBe("solo");
     expect(session.isOpen).toBe(true);
-    expect(session.state.monks.size).toBe(1);
+    expect([...session.state.monks.values()].filter((monk) => !monk.npc)).toHaveLength(1);
     const monk = self(session);
     expect(monk.id).toBe("solo");
     expect(monk.hue).toBe(40);
@@ -40,6 +49,15 @@ describe("SoloSession", () => {
     expect(monk.z).toBe(SPAWN.z);
     expect(monk.zone).toBe("gatbawi");
     expect(session.sessionId).toBe("solo");
+    void session.leave();
+  });
+
+  it("keeps every zone company with npc monks that the player does not count as visitors", () => {
+    const { session } = open();
+    const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
+    for (const zone of ZONES) expect(npcs.filter((npc) => npc.zone === zone)).toHaveLength(NPC_PER_ZONE);
+    for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });
 

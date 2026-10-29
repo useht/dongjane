@@ -234,6 +234,17 @@ describe("seats", () => {
     expect(h.monk("a").mode).toBe("stand");
   });
 
+  it("keeps a seated monk where they are when the seat they ask for is taken", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    expect(h.sim.sit("a", "gatbawi", 1)).toBe(false);
+    expect(h.mat(0).occupantId).toBe("a");
+    expect(h.mat(1).occupantId).toBe("b");
+    expect(h.monk("a").seatId).toBe(0);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("b").seatId).toBe(1);
+  });
+
   it("rejects invalid seat ids", () => {
     h.sim.join("a", 0);
     expect(h.sim.sit("a", "gatbawi", SEAT_COUNT)).toBe(false);

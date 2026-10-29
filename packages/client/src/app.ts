@@ -313,8 +313,8 @@ export class App {
     const watched: WatchedMonk[] = [];
     const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
     state.monks.forEach((monk) => {
-      if (isZone(monk.zone)) counts[monk.zone] += 1;
-      if (monk.zone === zone) {
+      const here = monk.zone === zone;
+      if (here) {
         views.push({
           id: monk.id,
           hue: monk.hue,
@@ -325,8 +325,11 @@ export class App {
           zone,
           seatId: monk.seatId,
         });
-        watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       }
+      // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
+      if (monk.npc) return;
+      if (isZone(monk.zone)) counts[monk.zone] += 1;
+      if (here) watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
         slot: monk.slot,
@@ -345,11 +348,13 @@ export class App {
     this.lastViews = views;
 
     const owners = new Map<number, string>();
+    const occupied = new Set<number>();
     state.seats.forEach((seat) => {
-      if (seat.zone === zone && seat.occupantId !== "") owners.set(seat.id, seat.occupantId);
+      if (seat.zone !== zone || seat.occupantId === "") return;
+      occupied.add(seat.id);
+      if (!state.monks.get(seat.occupantId)?.npc) owners.set(seat.id, seat.occupantId);
     });
     this.seatOwners = owners;
-    const occupied = new Set(owners.keys());
 
     this.world.setSelfPrediction(this.prediction.display());
     this.world.applyMonks(views, now, state.serverTime);

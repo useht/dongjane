@@ -23,6 +23,7 @@ afterAll(async () => {
 
 const zoneOf = (room: WorldClientRoom): Zone => room.state.monks.get(room.sessionId)!.zone as Zone;
 const inZone = (rooms: WorldClientRoom[], zone: Zone) => rooms.filter((room) => zoneOf(room) === zone);
+const humansIn = (room: WorldClientRoom) => [...room.state.monks.values()].filter((monk) => !monk.npc);
 
 describe("a hundred visitors", () => {
   it("seats fifty outdoors and fifty indoors, then sends the 101st to the next world", async () => {
@@ -52,7 +53,7 @@ describe("a hundred visitors", () => {
     expect(second.zones).toEqual({ gatbawi: 1, dharma: 0 });
 
     const watcher = everyone[0]!;
-    await waitFor(() => watcher.state.monks.size === WORLD_CAPACITY, "the watcher sees everyone", 5000);
+    await waitFor(() => humansIn(watcher).length === WORLD_CAPACITY, "the watcher sees everyone", 5000);
   }, 60_000);
 
   it("refuses a move into a full zone and lets it through once someone leaves", async () => {
@@ -81,7 +82,7 @@ describe("a hundred visitors", () => {
     const outdoors = await rig.fill(1, 50, { zone: "gatbawi" });
     const indoors = await rig.fill(1, 50, { zone: "dharma" });
     const watcher = outdoors[0]!;
-    await waitFor(() => watcher.state.monks.size === WORLD_CAPACITY, "everyone is in view", 5000);
+    await waitFor(() => humansIn(watcher).length === WORLD_CAPACITY, "everyone is in view", 5000);
 
     // Everyone goes for one of the first ten seats of their own zone, so most of the requests collide.
     outdoors.forEach((room, index) => room.send("sit", { zone: "gatbawi", seatId: index % 10 }));
@@ -90,7 +91,7 @@ describe("a hundred visitors", () => {
 
     const holders = new Map<string, string>();
     for (const [key, seat] of watcher.state.seats) {
-      if (seat.occupantId === "") continue;
+      if (seat.occupantId === "" || watcher.state.monks.get(seat.occupantId)?.npc) continue;
       expect(holders.has(seat.occupantId), `${seat.occupantId} holds two seats`).toBe(false);
       holders.set(seat.occupantId, key);
       const monk = watcher.state.monks.get(seat.occupantId)!;
@@ -98,7 +99,7 @@ describe("a hundred visitors", () => {
     }
     expect(holders.size).toBe(20);
     const perZone: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
-    for (const monk of watcher.state.monks.values()) perZone[monk.zone as Zone] += 1;
+    for (const monk of humansIn(watcher)) perZone[monk.zone as Zone] += 1;
     expect(perZone).toEqual({ gatbawi: ZONE_CAPACITY, dharma: ZONE_CAPACITY });
   }, 60_000);
 });

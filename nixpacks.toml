@@ -1,0 +1,3 @@
+# Nixpacks' default corepack@0.24.1 cannot launch pnpm 11+ (it looks for bin/pnpm.cjs), so upgrade it before installing.
+[phases.install]
+cmds = ["npm install -g corepack@0.36.0 && corepack enable", "pnpm i --frozen-lockfile"]

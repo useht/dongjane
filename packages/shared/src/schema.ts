@@ -13,6 +13,7 @@ export const Monk = schema(
     seatId: t.int8().default(-1),
     bowCount: t.uint32().default(0),
     ackSeq: t.uint32().default(0),
+    npc: t.boolean().default(false),
   },
   "Monk",
 );

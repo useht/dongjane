@@ -11,6 +11,8 @@ import {
   WORLD_SPARE_AT,
   ZONE_CAPACITY,
   MSG,
+  NPC_PER_ZONE,
+  ZONES,
   SEAT_PATH,
   isWorldFullError,
 } from "@dongjane/shared";
@@ -20,6 +22,8 @@ import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./hel
 
 let game: GameServer;
 let rig: TestRig;
+
+const humansIn = (room: WorldClientRoom) => [...room.state.monks.values()].filter((monk) => !monk.npc);
 
 beforeAll(async () => {
   game = await startGameServer({ port: 0, handleSignals: false, seatReservationMs: 1500, relocationGraceMs: 600 });
@@ -50,6 +54,18 @@ describe("world list", () => {
     expect(world.zones).toEqual({ gatbawi: 2, dharma: 0 });
     expect(world.roomId).toEqual(expect.any(String));
     expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
+  });
+
+  it("keeps every zone company with npc monks that the visitor count and seat numbers ignore", async () => {
+    const room = await rig.enter(1);
+    const npcs = [...room.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
+    for (const zone of ZONES) expect(npcs.filter((monk) => monk.zone === zone)).toHaveLength(NPC_PER_ZONE);
+    expect(npcs.every((monk) => monk.slot === 0)).toBe(true);
+    expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
+    const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "one visitor counted");
+    expect(world.full).toBe(false);
+    expect(world.zones).toEqual({ gatbawi: 1, dharma: 0 });
   });
 
   it("closes a world once its last visitor leaves", async () => {
@@ -178,7 +194,7 @@ describe("merging worlds", () => {
     expect(seat).toMatchObject({ world: 1, fellBack: false });
     await lone.leave(true);
     const moved = await rig.join(seat);
-    expect(moved.state.monks.size).toBe(WORLD_CAPACITY);
+    expect(humansIn(moved)).toHaveLength(WORLD_CAPACITY);
 
     const worlds = await eventually(
       () => rig.worlds(),
@@ -291,21 +307,21 @@ describe("two clients in one world", () => {
   it("seats a full zone of fifty visitors on fifty different mats", async () => {
     const crowd = await rig.fill(1, ZONE_CAPACITY);
     const watcher = crowd[0]!;
-    await waitFor(() => watcher.state.monks.size === ZONE_CAPACITY, "everyone is in view", 3000);
+    await waitFor(() => humansIn(watcher).length === ZONE_CAPACITY, "everyone is in view", 3000);
 
     crowd.forEach((room, index) => room.send("sit", { zone: "gatbawi", seatId: index }));
     await waitFor(
-      () => [...watcher.state.monks.values()].filter((monk) => monk.mode === "kneel").length === ZONE_CAPACITY,
+      () => humansIn(watcher).filter((monk) => monk.mode === "kneel").length === ZONE_CAPACITY,
       "all fifty kneel",
       15_000,
     );
 
-    const mats = new Set([...watcher.state.monks.values()].map((monk) => monk.seatId));
+    const mats = new Set(humansIn(watcher).map((monk) => monk.seatId));
     expect(mats.size).toBe(ZONE_CAPACITY);
     expect([...mats].sort((a, b) => a - b)).toEqual(Array.from({ length: SEAT_COUNT }, (_, id) => id));
     for (const seat of watcher.state.seats.values()) {
       if (seat.zone === "gatbawi") expect(seat.occupantId).not.toBe("");
-      else expect(seat.occupantId).toBe("");
+      else expect(humansIn(watcher).some((monk) => monk.id === seat.occupantId)).toBe(false);
     }
   }, 30_000);
 
@@ -349,13 +365,13 @@ describe("seat exclusivity", () => {
     const rooms = await Promise.all(Array.from({ length: 10 }, () => rig.enter(1)));
     for (const room of rooms) room.send("sit", { zone: "gatbawi", seatId: 2 });
     const observer = rooms[0]!;
-    await waitFor(() => observer.state.seats.get("gatbawi:2")?.occupantId !== "", "mat claimed");
+    await waitFor(() => humansIn(observer).some((monk) => monk.seatId === 2), "mat claimed by a client");
     await sleep(300);
 
-    const owners = [...observer.state.monks.values()].filter((monk) => monk.seatId === 2);
+    const owners = humansIn(observer).filter((monk) => monk.seatId === 2);
     expect(owners).toHaveLength(1);
     expect(observer.state.seats.get("gatbawi:2")?.occupantId).toBe(owners[0]!.id);
-    const others = [...observer.state.monks.values()].filter((monk) => monk.seatId !== 2);
+    const others = humansIn(observer).filter((monk) => monk.seatId !== 2);
     expect(others).toHaveLength(9);
     for (const monk of others) expect(monk.seatId).toBe(-1);
   });

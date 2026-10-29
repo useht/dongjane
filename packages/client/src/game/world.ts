@@ -10,7 +10,7 @@ import {
   Scene,
   WebGLRenderer,
 } from "three";
-import { SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle } from "@dongjane/shared";
+import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { CameraRig, configureCamera, projectToCanvas, regionFor, viewFor } from "./camera-rig.ts";
@@ -58,8 +58,8 @@ interface Entry {
   targetYaw: number;
 }
 
-// One zone is drawn at a time, so the pool only has to hold a zone's worth of monks.
-const MAX_MONKS = ZONE_CAPACITY;
+// One zone is drawn at a time, so the pool holds a zone full of visitors and its computer-driven monks.
+const MAX_MONKS = ZONE_CAPACITY + NPC_PER_ZONE;
 
 export class World {
   readonly scene = new Scene();
