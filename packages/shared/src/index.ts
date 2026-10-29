@@ -6,6 +6,7 @@ export * from "./identity.ts";
 export * from "./chant.ts";
 export * from "./hall.ts";
 export * from "./sky.ts";
+export * from "./persona.ts";
 export * from "./quest.ts";
 export * from "./npc.ts";
 export * from "./sim.ts";
