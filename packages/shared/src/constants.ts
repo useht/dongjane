@@ -1,6 +1,7 @@
 export const ROOM_NAME = "hall";
 export const HALL_CAPACITY = 12;
 export const HALL_SPARE_AT = 10;
+export const NPC_PER_HALL = 6;
 
 export const TICK_MS = 50;
 export const WALK_SPEED = 2.4;

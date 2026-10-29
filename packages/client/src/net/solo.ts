@@ -1,11 +1,19 @@
-import { type BowMessage, TICK_MS, TempleSim, type TempleState, normalizeHue, randomHue } from "@dongjane/shared";
+import {
+  type BowMessage,
+  NPC_PER_HALL,
+  TICK_MS,
+  TempleSim,
+  type TempleState,
+  normalizeHue,
+  randomHue,
+} from "@dongjane/shared";
 import type { SessionHandlers } from "./session.ts";
 
 const SOLO_ID = "solo";
 
 export class SoloSession {
   readonly sessionId = SOLO_ID;
-  private readonly sim = new TempleSim();
+  private readonly sim = new TempleSim({ npcCount: NPC_PER_HALL });
   private readonly timer: ReturnType<typeof setInterval>;
   private closed = false;
 

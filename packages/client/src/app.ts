@@ -303,6 +303,7 @@ export class App {
         mode: monk.mode,
         cushionId: monk.cushionId,
       });
+      if (monk.npc) return;
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
@@ -323,10 +324,9 @@ export class App {
     const owners = new Map<number, string>();
     const occupied = new Set<number>();
     state.cushions.forEach((cushion) => {
-      if (cushion.occupantId !== "") {
-        owners.set(cushion.id, cushion.occupantId);
-        occupied.add(cushion.id);
-      }
+      if (cushion.occupantId === "") return;
+      occupied.add(cushion.id);
+      if (!state.monks.get(cushion.occupantId)?.npc) owners.set(cushion.id, cushion.occupantId);
     });
     this.cushionOwners = owners;
 

@@ -4,6 +4,7 @@ import {
   HALL_CAPACITY,
   MESSAGE_RATE_PER_SECOND,
   MSG,
+  NPC_PER_HALL,
   RECONNECT_SECONDS,
   TICK_MS,
   TempleSim,
@@ -57,7 +58,7 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
   }
 
   get population(): number {
-    return this.sim.state.monks.size;
+    return this.sim.humanCount;
   }
 
   get draining(): boolean {
@@ -73,7 +74,7 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
 
     this.reconnectSeconds = options.reconnectSeconds ?? RECONNECT_SECONDS;
     this.relocationGraceMs = options.relocationGraceMs ?? RELOCATION_GRACE_MS;
-    this.sim = new TempleSim();
+    this.sim = new TempleSim({ npcCount: NPC_PER_HALL });
     this.state = this.sim.state;
     await this.setMetadata({ hall, name: hallName(hall) });
 

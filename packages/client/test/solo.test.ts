@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BOW_MS, CUSHION_SPOTS, SPAWN_POINT, TICK_MS, type TempleState, WALK_BOUNDS } from "@dongjane/shared";
+import {
+  BOW_MS,
+  CUSHION_SPOTS,
+  NPC_PER_HALL,
+  SPAWN_POINT,
+  TICK_MS,
+  type TempleState,
+  WALK_BOUNDS,
+} from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
 const T0 = 1_800_000_000_000;
@@ -30,7 +38,7 @@ describe("SoloSession", () => {
     const { session } = open(400);
     expect(session.sessionId).toBe("solo");
     expect(session.isOpen).toBe(true);
-    expect(session.state.monks.size).toBe(1);
+    expect([...session.state.monks.values()].filter((monk) => !monk.npc)).toHaveLength(1);
     const monk = self(session);
     expect(monk.id).toBe("solo");
     expect(monk.hue).toBe(40);
@@ -38,6 +46,14 @@ describe("SoloSession", () => {
     expect(Math.abs(monk.x - SPAWN_POINT.x)).toBeLessThanOrEqual(2);
     expect(monk.z).toBe(SPAWN_POINT.z);
     expect(session.sessionId).toBe("solo");
+    void session.leave();
+  });
+
+  it("fills the hall with npc monks that the player does not count as visitors", () => {
+    const { session } = open();
+    const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(NPC_PER_HALL);
+    for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });
 

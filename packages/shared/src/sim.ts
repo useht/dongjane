@@ -9,7 +9,9 @@ import {
   HALL_CAPACITY,
   WALK_SPEED,
 } from "./constants.ts";
-import { CUSHION_SPOTS, SPAWN_POINT, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
+import { randomHue } from "./identity.ts";
+import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
+import { type NpcActions, type NpcBrain, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { Cushion, Monk, TempleState } from "./schema.ts";
 
 interface Target {
@@ -24,6 +26,7 @@ interface Runtime {
   bowsLeft: number;
   nextBowAt: number;
   lastBowEndedAt: number;
+  brain: NpcBrain | null;
 }
 
 export interface SimOptions {
@@ -31,6 +34,7 @@ export interface SimOptions {
   random?: () => number;
   chantEveryMs?: number;
   chantMs?: number;
+  npcCount?: number;
 }
 
 export class TempleSim {
@@ -41,6 +45,12 @@ export class TempleSim {
   private readonly random: () => number;
   private readonly chantEveryMs: number;
   private readonly chantMs: number;
+  private readonly npcActions: NpcActions = {
+    move: (id, x, z) => this.move(id, x, z),
+    sit: (id, cushionId) => this.sit(id, cushionId),
+    stand: (id) => this.stand(id),
+    bow: (id, times) => this.bow(id, times),
+  };
 
   constructor(options: SimOptions = {}) {
     this.clock = options.clock ?? Date.now;
@@ -53,6 +63,14 @@ export class TempleSim {
       this.state.cushions.set(String(spot.id), new Cushion({ id: spot.id, occupantId: "" }));
     }
     this.updateChant();
+
+    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`);
+  }
+
+  get humanCount(): number {
+    let count = 0;
+    for (const monk of this.state.monks.values()) if (!monk.npc) count += 1;
+    return count;
   }
 
   join(id: string, hue: number): Monk {
@@ -72,7 +90,7 @@ export class TempleSim {
       bowCount: 0,
     });
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, { target: null, bowEndsAt: 0, bowsLeft: 0, nextBowAt: 0, lastBowEndedAt: 0 });
+    this.runtimes.set(id, { target: null, bowEndsAt: 0, bowsLeft: 0, nextBowAt: 0, lastBowEndedAt: 0, brain: null });
     return monk;
   }
 
@@ -102,7 +120,11 @@ export class TempleSim {
     const cushion = this.state.cushions.get(String(cushionId));
     if (!monk || !runtime || !spot || !cushion) return false;
     if (monk.cushionId === cushionId) return true;
-    if (cushion.occupantId !== "") return false;
+    if (cushion.occupantId !== "") {
+      const holder = this.state.monks.get(cushion.occupantId);
+      if (monk.npc || !holder?.npc) return false;
+      this.evict(holder);
+    }
 
     this.releaseSeat(monk);
     cushion.occupantId = id;
@@ -158,6 +180,8 @@ export class TempleSim {
         runtime.bowsLeft -= 1;
         this.beginBow(monk, runtime, now);
       }
+
+      if (runtime.brain && now >= runtime.brain.nextThinkAt) this.think(monk, runtime.brain, now);
     }
   }
 
@@ -171,6 +195,58 @@ export class TempleSim {
       chant.durationMs = next.durationMs;
     }
     return Math.max(50, chantEndsAt(next) - now + 20);
+  }
+
+  private spawnNpc(id: string): void {
+    const random = this.random;
+    const spot = resolveWalkable(
+      WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
+      WALK_BOUNDS.minZ + random() * (WALK_BOUNDS.maxZ - WALK_BOUNDS.minZ),
+    );
+    const monk = new Monk({
+      id,
+      slot: 0,
+      hue: randomHue(random),
+      x: spot.x,
+      z: spot.z,
+      yaw: (random() * 2 - 1) * Math.PI,
+      mode: "stand",
+      cushionId: -1,
+      bowCount: 0,
+      npc: true,
+    });
+    this.state.monks.set(id, monk);
+    this.runtimes.set(id, {
+      target: null,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      brain: createNpcBrain(random, this.clock()),
+    });
+  }
+
+  private think(monk: Monk, brain: NpcBrain, now: number): void {
+    const chant = this.state.chant;
+    const chanting = now >= chant.startsAt && now < chantEndsAt(chant);
+    thinkNpc(
+      brain,
+      monk,
+      {
+        now,
+        random: this.random,
+        chantEndsAt: chanting ? chantEndsAt(chant) : null,
+        isFree: (cushionId) => this.state.cushions.get(String(cushionId))?.occupantId === "",
+      },
+      this.npcActions,
+    );
+  }
+
+  private evict(npc: Monk): void {
+    this.releaseSeat(npc);
+    npc.mode = "stand";
+    const brain = this.runtimes.get(npc.id)?.brain;
+    if (brain) disturbNpc(brain, this.clock(), this.random);
   }
 
   private beginBow(monk: Monk, runtime: Runtime, now: number): void {

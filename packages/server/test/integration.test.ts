@@ -7,6 +7,7 @@ import {
   HALL_CAPACITY,
   HALL_SPARE_AT,
   MSG,
+  NPC_PER_HALL,
   SEAT_PATH,
   isHallFullError,
 } from "@dongjane/shared";
@@ -16,6 +17,8 @@ import { type HallClientRoom, TestRig, eventually, sleep, waitFor } from "./help
 
 let game: GameServer;
 let rig: TestRig;
+
+const humansIn = (room: HallClientRoom) => [...room.state.monks.values()].filter((monk) => !monk.npc);
 
 beforeAll(async () => {
   game = await startGameServer({ port: 0, handleSignals: false, seatReservationMs: 1500, relocationGraceMs: 600 });
@@ -45,6 +48,16 @@ describe("hall list", () => {
     expect(hall.full).toBe(false);
     expect(hall.roomId).toEqual(expect.any(String));
     expect((await rig.halls()).map((info) => info.hall)).toEqual([1]);
+  });
+
+  it("fills the hall with npc monks that the visitor count and seat numbers ignore", async () => {
+    const room = await rig.enter(1);
+    const monks = [...room.state.monks.values()];
+    expect(monks.filter((monk) => monk.npc)).toHaveLength(NPC_PER_HALL);
+    expect(monks.filter((monk) => monk.npc).every((monk) => monk.slot === 0)).toBe(true);
+    expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
+    const hall = await eventually(() => rig.hall(1), (info) => info.clients === 1, "one visitor counted");
+    expect(hall.full).toBe(false);
   });
 
   it("closes a hall once its last visitor leaves", async () => {
@@ -173,7 +186,7 @@ describe("merging halls", () => {
     expect(seat).toMatchObject({ hall: 1, fellBack: false });
     await lone.leave(true);
     const moved = await rig.join(seat);
-    expect(moved.state.monks.size).toBe(HALL_CAPACITY);
+    expect(humansIn(moved)).toHaveLength(HALL_CAPACITY);
 
     const halls = await eventually(
       () => rig.halls(),
@@ -322,13 +335,13 @@ describe("cushion exclusivity", () => {
     const rooms = await Promise.all(Array.from({ length: 10 }, () => rig.enter(1)));
     for (const room of rooms) room.send("sit", { cushionId: 2 });
     const observer = rooms[0]!;
-    await waitFor(() => observer.state.cushions.get("2")?.occupantId !== "", "cushion claimed");
+    await waitFor(() => humansIn(observer).some((monk) => monk.cushionId === 2), "cushion claimed by a client");
     await sleep(300);
 
-    const owners = [...observer.state.monks.values()].filter((monk) => monk.cushionId === 2);
+    const owners = humansIn(observer).filter((monk) => monk.cushionId === 2);
     expect(owners).toHaveLength(1);
     expect(observer.state.cushions.get("2")?.occupantId).toBe(owners[0]!.id);
-    const others = [...observer.state.monks.values()].filter((monk) => monk.cushionId !== 2);
+    const others = humansIn(observer).filter((monk) => monk.cushionId !== 2);
     expect(others).toHaveLength(9);
     for (const monk of others) expect(monk.cushionId).toBe(-1);
   });
