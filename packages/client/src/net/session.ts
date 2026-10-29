@@ -117,8 +117,16 @@ export class WorldSession {
     this.send(MSG.stand, {});
   }
 
+  jump(): void {
+    this.send(MSG.jump, {});
+  }
+
   bow(times: BowMessage["times"]): void {
     this.send(MSG.bow, { times });
+  }
+
+  emote(id: number): void {
+    this.send(MSG.emote, { id });
   }
 
   async leave(): Promise<void> {

@@ -17,6 +17,7 @@ import {
   isValidWorld,
   normalizeHue,
   parseBow,
+  parseEmote,
   parseMove,
   parseSit,
   parseZone,
@@ -108,10 +109,18 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
     this.onMessage(MSG.stand, (client) => {
       if (this.allow(client)) this.sim.stand(client.sessionId);
     });
+    this.onMessage(MSG.jump, (client) => {
+      if (this.allow(client)) this.sim.jump(client.sessionId);
+    });
     this.onMessage(MSG.bow, (client, payload) => {
       if (!this.allow(client)) return;
       const message = parseBow(payload);
       if (message) this.sim.bow(client.sessionId, message.times);
+    });
+    this.onMessage(MSG.emote, (client, payload) => {
+      if (!this.allow(client)) return;
+      const message = parseEmote(payload);
+      if (message) this.sim.emote(client.sessionId, message.id);
     });
 
     this.worldNumber = world;

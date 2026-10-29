@@ -6,11 +6,14 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
-  WORLD_CAPACITY,
+  EMOTE_COOLDOWN_MS,
+  JUMP_COOLDOWN_MS,
   WALK_SPEED,
+  WORLD_CAPACITY,
   ZONE_CAPACITY,
   ZONE_COOLDOWN_MS,
 } from "./constants.ts";
+import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
 import {
   SEAT_YAW,
@@ -44,6 +47,8 @@ interface Runtime {
   nextBowAt: number;
   lastBowEndedAt: number;
   lastZoneChangeAt: number;
+  nextEmoteAt: number;
+  nextJumpAt: number;
   brain: NpcBrain | null;
 }
 
@@ -237,6 +242,33 @@ export class TempleSim {
     return true;
   }
 
+  emote(id: string, index: number): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || !isValidEmote(index)) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextEmoteAt) return false;
+
+    monk.emote = index;
+    monk.emoteSeq += 1;
+    runtime.nextEmoteAt = now + EMOTE_COOLDOWN_MS;
+    return true;
+  }
+
+  jump(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || monk.seatId >= 0) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextJumpAt) return false;
+
+    monk.jumpSeq += 1;
+    runtime.nextJumpAt = now + JUMP_COOLDOWN_MS;
+    return true;
+  }
+
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
@@ -299,6 +331,8 @@ export class TempleSim {
       nextBowAt: 0,
       lastBowEndedAt: 0,
       lastZoneChangeAt: Number.NEGATIVE_INFINITY,
+      nextEmoteAt: 0,
+      nextJumpAt: 0,
       brain,
     };
   }

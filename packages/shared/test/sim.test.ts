@@ -4,12 +4,15 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
+  EMOTE_COOLDOWN_MS,
+  JUMP_COOLDOWN_MS,
   TICK_MS,
   WALK_SPEED,
   WORLD_CAPACITY,
   ZONE_CAPACITY,
   ZONE_COOLDOWN_MS,
 } from "../src/constants.ts";
+import { EMOTE_COUNT } from "../src/emote.ts";
 import { DHARMA_BOUNDS, DHARMA_SEATS, GATBAWI_SEATS, SEAT_COUNT, WORLD_BOUNDS, ZONE_SPAWN, type Zone } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
 
@@ -300,6 +303,203 @@ describe("seats", () => {
       }
       for (const count of owners.values()) expect(count).toBe(1);
     }
+  });
+});
+
+describe("emoticons", () => {
+  const setups: Record<string, () => void> = {
+    stand: () => h.sim.join("a", 0),
+    walk: () => {
+      h.sim.join("a", 0);
+      h.sim.move("a", h.monk("a").x, h.monk("a").z - 4);
+    },
+    kneel: () => h.seat("a", 2),
+    bow: () => {
+      h.seat("a", 2);
+      expect(h.sim.bow("a", 1)).toBe(true);
+    },
+  };
+
+  it.each(Object.keys(setups))("records the emoticon while %s without touching mode, seat or target", (mode) => {
+    setups[mode]?.();
+    const before = { mode: h.monk("a").mode, seatId: h.monk("a").seatId, x: h.monk("a").x, z: h.monk("a").z };
+    expect(before.mode).toBe(mode);
+    expect(h.monk("a").emoteSeq).toBe(0);
+
+    expect(h.sim.emote("a", 5)).toBe(true);
+    expect(h.monk("a").emote).toBe(5);
+    expect(h.monk("a").emoteSeq).toBe(1);
+    expect(h.monk("a").mode).toBe(before.mode);
+    expect(h.monk("a").seatId).toBe(before.seatId);
+    expect([h.monk("a").x, h.monk("a").z]).toEqual([before.x, before.z]);
+    if (before.seatId >= 0) expect(h.mat(before.seatId).occupantId).toBe("a");
+  });
+
+  it("lets a monk keep walking to its seat after an emoticon and then kneel there", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.sit("a", "gatbawi", 5)).toBe(true);
+    h.advance(300);
+    expect(h.sim.emote("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe("walk");
+    h.advance(8000);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("a").seatId).toBe(5);
+    expect(h.mat(5).occupantId).toBe("a");
+  });
+
+  it("counts every accepted emoticon and keeps the latest index", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.emote("a", 0)).toBe(true);
+    h.advance(EMOTE_COOLDOWN_MS);
+    expect(h.sim.emote("a", 0)).toBe(true);
+    h.advance(EMOTE_COOLDOWN_MS);
+    expect(h.sim.emote("a", EMOTE_COUNT - 1)).toBe(true);
+    expect(h.monk("a").emote).toBe(EMOTE_COUNT - 1);
+    expect(h.monk("a").emoteSeq).toBe(3);
+  });
+
+  it("rejects a second emoticon inside the cooldown and accepts one once it has passed", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.emote("a", 2)).toBe(true);
+    h.advance(EMOTE_COOLDOWN_MS - TICK_MS);
+    expect(h.sim.emote("a", 3)).toBe(false);
+    expect(h.monk("a").emote).toBe(2);
+    expect(h.monk("a").emoteSeq).toBe(1);
+
+    h.advance(TICK_MS);
+    expect(h.sim.emote("a", 3)).toBe(true);
+    expect(h.monk("a").emote).toBe(3);
+    expect(h.monk("a").emoteSeq).toBe(2);
+  });
+
+  it("keeps the cooldown per monk", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    expect(h.sim.emote("a", 1)).toBe(true);
+    expect(h.sim.emote("b", 4)).toBe(true);
+    expect(h.sim.emote("a", 1)).toBe(false);
+    expect(h.monk("b").emoteSeq).toBe(1);
+  });
+
+  it("rejects unknown monks and invalid indexes without starting a cooldown", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.emote("ghost", 0)).toBe(false);
+    for (const index of [-1, EMOTE_COUNT, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(h.sim.emote("a", index)).toBe(false);
+    }
+    expect(h.monk("a").emoteSeq).toBe(0);
+    expect(h.sim.emote("a", 0)).toBe(true);
+  });
+
+  it("starts every monk with no emoticon sent, and a left monk cannot emote", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").emote).toBe(0);
+    expect(h.monk("a").emoteSeq).toBe(0);
+    h.sim.leave("a");
+    expect(h.sim.emote("a", 0)).toBe(false);
+  });
+
+  it("never makes npc monks emote", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
+    for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(6);
+    for (const npc of npcs) expect(npc.emoteSeq).toBe(0);
+  });
+});
+
+describe("jumping", () => {
+  it("counts a jump while standing without touching mode, seat or position", () => {
+    h.sim.join("a", 0);
+    const before = { x: h.monk("a").x, z: h.monk("a").z };
+    expect(h.monk("a").jumpSeq).toBe(0);
+
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(1);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").seatId).toBe(-1);
+    expect([h.monk("a").x, h.monk("a").z]).toEqual([before.x, before.z]);
+  });
+
+  it("lets a monk jump while walking and keeps the walk going", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", h.monk("a").x, h.monk("a").z - 4);
+    h.advance(300);
+    expect(h.monk("a").mode).toBe("walk");
+
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.monk("a").jumpSeq).toBe(1);
+    h.advance(8000);
+    expect(h.monk("a").mode).toBe("stand");
+  });
+
+  it.each(["kneel", "bow"])("rejects a jump while %s on a seat", (mode) => {
+    h.seat("a", 2);
+    if (mode === "bow") expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe(mode);
+
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(0);
+    expect(h.monk("a").mode).toBe(mode);
+  });
+
+  it("rejects a jump as soon as a seat is claimed, even before arriving", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.sit("a", "gatbawi", 5)).toBe(true);
+    h.advance(300);
+    expect(h.monk("a").mode).toBe("walk");
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(0);
+  });
+
+  it("jumps again after standing up from a seat", () => {
+    h.seat("a", 2);
+    expect(h.sim.stand("a")).toBe(true);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(1);
+  });
+
+  it("rejects a second jump inside the cooldown and accepts one once it has passed", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.jump("a")).toBe(true);
+    h.advance(JUMP_COOLDOWN_MS - TICK_MS);
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("a").jumpSeq).toBe(1);
+
+    h.advance(TICK_MS);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.monk("a").jumpSeq).toBe(2);
+  });
+
+  it("keeps the cooldown per monk", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    expect(h.sim.jump("a")).toBe(true);
+    expect(h.sim.jump("b")).toBe(true);
+    expect(h.sim.jump("a")).toBe(false);
+    expect(h.monk("b").jumpSeq).toBe(1);
+  });
+
+  it("rejects unknown and departed monks", () => {
+    expect(h.sim.jump("ghost")).toBe(false);
+    h.sim.join("a", 0);
+    h.sim.leave("a");
+    expect(h.sim.jump("a")).toBe(false);
+  });
+
+  it("never makes npc monks jump", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
+    for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
+      h.now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(6);
+    for (const npc of npcs) expect(npc.jumpSeq).toBe(0);
   });
 });
 

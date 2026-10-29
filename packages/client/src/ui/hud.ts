@@ -1,10 +1,14 @@
 import { type SkyState, type WorldInfo, type Zone, otherZone, seatLabel, worldName } from "@dongjane/shared";
 import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
+import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, iconButton } from "./dom.ts";
+import { EmotePicker } from "./emote-picker.ts";
+import { type ChantStatus, describeSky, modeLabel, zoneDoorLabel, zoneName } from "./format.ts";
 import { icon } from "./icons.ts";
-import { type ChantStatus, modeLabel, zoneDoorLabel, zoneName } from "./format.ts";
+import { Phone } from "./phone.ts";
+import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
@@ -28,9 +32,10 @@ export interface HudHandlers {
   onOpenWorlds(): void;
   onBow(): void;
   onStand(): void;
+  onJump(): void;
+  onEmote(emote: number): void;
   onInvite(): void;
   onToggleSound(): void;
-  onOpenSettings(): void;
   onCancelReturn(): void;
   onReturnNow(): void;
 }
@@ -48,6 +53,8 @@ export class Hud {
   private readonly zoneButton = h("button", "zone-button");
   private readonly zoneLabel = h("span", "zone-label");
   private readonly clock: ClockWidget;
+  private readonly phone: Phone;
+  private readonly quests: QuestPanel;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
   private readonly linkText = h("span", "link-text");
@@ -57,21 +64,24 @@ export class Hud {
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
+  private readonly jumpButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly worldSheet: Sheet;
-  private readonly visitorSheet: Sheet;
+  private readonly emotePicker: EmotePicker;
   private readonly worldList = h("ul", "list");
   private readonly worldInput = h("input", "name-input");
   private readonly visitorList = h("ul", "list");
   private worlds: WorldInfo[] = [];
   private currentWorld = 0;
   private visitorKey = "";
+  private lastSky = "";
   private lastSelf = "";
   private lastChant = "";
 
   constructor(
     host: HTMLElement,
     private readonly handlers: HudHandlers,
+    settings: HTMLElement,
   ) {
     this.worldButton.type = "button";
     this.worldButton.append(icon("world"), this.worldLabel, this.worldCount);
@@ -81,22 +91,28 @@ export class Hud {
       if (this.worldSheet.isOpen) handlers.onOpenWorlds();
     });
 
-    this.clock = new ClockWidget(host, {
-      onOpenVisitors: () => this.visitorSheet.open(),
-      onInvite: () => handlers.onInvite(),
-      onToggleSound: () => handlers.onToggleSound(),
-      onOpenSettings: () => handlers.onOpenSettings(),
-    });
     this.zoneButton.type = "button";
     this.zoneButton.append(icon("door"), this.zoneLabel);
     this.zoneButton.addEventListener("click", () => handlers.onSwitchZone());
     this.setZone("gatbawi");
-    const top = h("div", "topbar", this.worldButton, this.zoneButton, this.clock.button);
+    this.phone = new Phone(
+      host,
+      { onInvite: () => handlers.onInvite(), onToggleSound: () => handlers.onToggleSound() },
+      { visitors: this.visitorList, settings },
+    );
+    this.clock = new ClockWidget(() => this.phone.toggle());
+    this.quests = new QuestPanel(host);
+    const places = h("div", "world-pair", this.worldButton, this.zoneButton);
+    const top = h("div", "topbar", h("div", "topbar-start", h("div", "world-stack", places, this.quests.button)), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
-    this.bowActions.append(this.standButton, this.bowButton);
-    const bottom = h("div", "bottombar", this.bowActions);
+    this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "bow-button jump-button");
+    this.bowActions.append(this.standButton, this.bowButton, this.jumpButton);
+    this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
+    const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
+    emoteButton.setAttribute("aria-haspopup", "dialog");
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions));
 
     this.worldInput.type = "text";
     this.worldInput.inputMode = "numeric";
@@ -118,11 +134,6 @@ export class Hud {
       worldForm,
       button("이 월드 초대 링크 복사", "primary wide", () => handlers.onInvite()),
     );
-    this.visitorSheet = new Sheet(host, "함께 있는 동자승");
-    this.visitorSheet.body.append(
-      this.visitorList,
-      button("초대 링크 복사", "primary wide", () => handlers.onInvite()),
-    );
 
     this.linkBanner.setAttribute("role", "status");
     this.linkBanner.append(this.linkText, this.linkAction);
@@ -131,7 +142,8 @@ export class Hud {
     host.append(this.root);
 
     this.renderWorlds();
-    this.setSelf({ mode: "stand", seatId: -1 });
+    this.setSelf(null);
+    this.setSky(null);
   }
 
   closeSheets(): boolean {
@@ -156,7 +168,7 @@ export class Hud {
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
-    this.clock.setVisitorCount(rows.length);
+    this.phone.setVisitorCount(rows.length);
     const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.zone}|${row.seatId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
@@ -172,14 +184,15 @@ export class Hud {
     );
   }
 
-  setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.seatId}`;
+  setSelf(self: SelfStatus | null): void {
+    const key = self ? `${self.mode}|${self.seatId}` : "none";
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.seatId >= 0 && (self.mode === "kneel" || self.mode === "bow");
-    const bowing = self.mode === "bow";
+    const seated = !!self && self.seatId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const bowing = self?.mode === "bow";
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
+    this.jumpButton.classList.toggle("hidden", !self || self.seatId >= 0);
     this.bowActions.classList.toggle("seated", seated);
   }
 
@@ -206,7 +219,20 @@ export class Hud {
   }
 
   setSky(sky: SkyState | null): void {
-    this.clock.setSky(sky);
+    const view = describeSky(sky);
+    const key = `${view.time}|${view.weather}|${view.note}|${view.icon}`;
+    if (key === this.lastSky) return;
+    this.lastSky = key;
+    this.clock.setSky(view);
+    this.phone.setSky(view);
+  }
+
+  setCollection(bows: number): void {
+    this.phone.setBows(bows);
+  }
+
+  setQuests(views: readonly QuestView[]): void {
+    this.quests.setQuests(views);
   }
 
   setSolo(status: SoloStatus): void {
@@ -225,7 +251,7 @@ export class Hud {
   }
 
   setSoundOn(on: boolean): void {
-    this.clock.setSoundOn(on);
+    this.phone.setSoundOn(on);
   }
 
   toast(text: string): void {

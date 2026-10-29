@@ -1,4 +1,5 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
+import { isValidEmote } from "./emote.ts";
 import { isValidWorld } from "./world.ts";
 import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
 
@@ -7,6 +8,8 @@ export const MSG = {
   sit: "sit",
   stand: "stand",
   bow: "bow",
+  emote: "emote",
+  jump: "jump",
   relocate: "relocate",
   zone: "zone",
   zoneFull: "zoneFull",
@@ -28,12 +31,17 @@ export type StandMessage = Record<string, never>;
 export interface BowMessage {
   times: 1 | 2 | 3;
 }
+export interface EmoteMessage {
+  id: number;
+}
 export interface ClientToServerMessages {
   move: MoveMessage;
   sit: SitMessage;
   stand: StandMessage;
   bow: BowMessage;
   zone: ZoneMessage;
+  emote: EmoteMessage;
+  jump: Record<string, never>;
 }
 
 // Sent to a visitor whose requested zone had no room left.
@@ -88,6 +96,11 @@ export function parseBow(payload: unknown): BowMessage | null {
   const times = payload.times;
   if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return null;
   return { times: times as 1 | 2 | 3 };
+}
+
+export function parseEmote(payload: unknown): EmoteMessage | null {
+  if (!isRecord(payload) || !isValidEmote(payload.id)) return null;
+  return { id: payload.id };
 }
 
 export function parseRelocate(payload: unknown): RelocateMessage | null {

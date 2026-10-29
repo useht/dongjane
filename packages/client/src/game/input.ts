@@ -245,7 +245,7 @@ export class PointerInput {
 }
 
 export interface KeyHandlers {
-  onBow(): void;
+  onSpace(): void;
   onStand(): void;
 }
 
@@ -280,7 +280,7 @@ export class KeyboardInput {
     const code = event.code;
     if (code === "Space") {
       event.preventDefault();
-      if (!event.repeat) this.handlers.onBow();
+      if (!event.repeat) this.handlers.onSpace();
       return;
     }
     if (code === "Escape") {

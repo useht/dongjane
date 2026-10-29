@@ -5,14 +5,22 @@ export interface Profile {
 }
 
 export interface Settings {
-  volume: number;
+  ambientVolume: number;
+  effectVolume: number;
   sound: boolean;
   wind: boolean;
   reduceMotion: boolean;
 }
 
+export interface QuestProgress {
+  day: number;
+  counts: Record<string, number>;
+}
+
 const PROFILE_KEY = "dongjane:profile";
 const SETTINGS_KEY = "dongjane:settings";
+const COLLECTION_KEY = "dongjane:collection";
+const QUESTS_KEY = "dongjane:quests";
 
 function readJson(key: string): unknown {
   try {
@@ -50,7 +58,11 @@ export function newHue(): number {
 export function defaultSettings(): Settings {
   const prefersReduced =
     typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return { volume: 0.7, sound: true, wind: true, reduceMotion: prefersReduced };
+  return { ambientVolume: 0.7, effectVolume: 0.7, sound: true, wind: true, reduceMotion: prefersReduced };
+}
+
+function volumeOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : fallback;
 }
 
 export function loadSettings(): Settings {
@@ -58,8 +70,10 @@ export function loadSettings(): Settings {
   const data = readJson(SETTINGS_KEY);
   if (typeof data !== "object" || data === null) return base;
   const raw = data as Record<string, unknown>;
+  const legacyVolume = volumeOr(raw.volume, base.ambientVolume);
   return {
-    volume: typeof raw.volume === "number" && Number.isFinite(raw.volume) ? Math.min(1, Math.max(0, raw.volume)) : base.volume,
+    ambientVolume: volumeOr(raw.ambientVolume, legacyVolume),
+    effectVolume: volumeOr(raw.effectVolume, legacyVolume),
     sound: typeof raw.sound === "boolean" ? raw.sound : base.sound,
     wind: typeof raw.wind === "boolean" ? raw.wind : base.wind,
     reduceMotion: typeof raw.reduceMotion === "boolean" ? raw.reduceMotion : base.reduceMotion,
@@ -68,4 +82,32 @@ export function loadSettings(): Settings {
 
 export function saveSettings(settings: Settings): void {
   writeJson(SETTINGS_KEY, settings);
+}
+
+export function loadBows(): number {
+  const data = readJson(COLLECTION_KEY);
+  if (typeof data !== "object" || data === null) return 0;
+  const { bows } = data as Record<string, unknown>;
+  if (typeof bows !== "number" || !Number.isFinite(bows)) return 0;
+  return Math.max(0, Math.floor(bows));
+}
+
+export function saveBows(bows: number): void {
+  writeJson(COLLECTION_KEY, { bows });
+}
+
+export function loadQuestProgress(): QuestProgress | null {
+  const data = readJson(QUESTS_KEY);
+  if (typeof data !== "object" || data === null) return null;
+  const { day, counts } = data as Record<string, unknown>;
+  if (typeof day !== "number" || !Number.isInteger(day) || typeof counts !== "object" || counts === null) return null;
+  const clean: Record<string, number> = {};
+  for (const [id, value] of Object.entries(counts)) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) clean[id] = Math.floor(value);
+  }
+  return { day, counts: clean };
+}
+
+export function saveQuestProgress(progress: QuestProgress): void {
+  writeJson(QUESTS_KEY, progress);
 }

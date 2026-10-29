@@ -1,4 +1,5 @@
 import {
+  JUMP_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
   type WorldInfo,
@@ -10,6 +11,7 @@ import {
   parseWorldParam,
   seatLabel,
   skyAt,
+  visitorTitle,
   worldName,
 } from "@dongjane/shared";
 import type { GameAssets } from "./assets/registry.ts";
@@ -17,9 +19,11 @@ import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { SutraPlayer } from "./audio/music.ts";
 import { serverHttpBase } from "./config.ts";
+import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
+import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { ZoneTransition, zoneCooldownLeft } from "./game/zone-transition.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
@@ -27,20 +31,35 @@ import { RetryCancelled } from "./net/retry.ts";
 import { ReturnCountdown } from "./net/return-countdown.ts";
 import { WorldSession, JoinError, type LinkState } from "./net/session.ts";
 import { SoloSession } from "./net/solo.ts";
-import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
+import {
+  type Profile,
+  type Settings,
+  loadBows,
+  loadProfile,
+  loadSettings,
+  newHue,
+  saveBows,
+  saveProfile,
+  saveSettings,
+} from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { ZONE_COOLDOWN_NOTE, ZONE_LOADING_NOTE, ZONE_LOAD_FAILED_NOTE, describeChant, seatName, zoneFullNote, zoneName } from "./ui/format.ts";
+import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
+import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
-import { SettingsSheet } from "./ui/settings.ts";
+import { SettingsPanel } from "./ui/settings.ts";
 import { SoundChip } from "./ui/sound-chip.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
+import { VisitorTitles } from "./ui/visitor-titles.ts";
 import { ZoneFade } from "./ui/zone-fade.ts";
 
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
+const TITLE_REACH = SEAT_HINT_REACH;
+const TITLE_GAP = 0.1;
 const CHANT_TICK_MS = 250;
 const SKY_TICK_MS = 1000;
 const WORLD_POLL_MS = 10_000;
@@ -63,13 +82,14 @@ export class App {
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
   private readonly chantBell = new ChantBellScheduler();
+  private readonly quests = new QuestTracker();
   private readonly canvas: HTMLCanvasElement;
   private readonly ui: HTMLElement;
   private readonly world: World;
   private readonly hud: Hud;
   private readonly hudFrame: HudFrame;
   private readonly overlay: Overlay;
-  private readonly settingsSheet: SettingsSheet;
+  private readonly settingsPanel: SettingsPanel;
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
@@ -78,9 +98,15 @@ export class App {
   private readonly sutra: SutraPlayer;
   private readonly zoneFade: ZoneFade;
   private readonly transition: ZoneTransition;
+  private readonly visitorTitles: VisitorTitles;
+  private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
+  private readonly titleSelf = { x: 0, z: 0 };
+  private readonly titleOther = { x: 0, z: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
+  private bows: number = loadBows();
+  private lastSelfBows: number | null = null;
   private session: WorldSession | SoloSession | null = null;
   private worlds: WorldInfo[] = [];
   private currentWorld = 0;
@@ -93,6 +119,7 @@ export class App {
   private seatOwners = new Map<number, string>();
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
+  private nextJumpAt = 0;
   private nextChantTick = 0;
   private nextSkyTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
@@ -117,8 +144,10 @@ export class App {
       this.canvas,
       {
         onFrame: (dt, now) => this.frame(dt, now),
-        onRendered: () => {
+        onRendered: (nowMs) => {
           this.updateSeatHints();
+          this.updateVisitorTitles();
+          this.emoteBubbles.update(nowMs);
           if (this.stage.mounted) this.stage.place(this.world.screenQuad());
         },
         onStick: (stick) => this.joystick.set(stick),
@@ -127,6 +156,7 @@ export class App {
       assets,
     );
     this.world.setReduceMotion(this.settings.reduceMotion);
+    this.emoteBubbles = new EmoteBubbles(this.ui, this.world.emotes, (id, out) => this.world.projectEmoteAnchor(id, out));
 
     this.stage = new StageScreen(
       this.canvas,
@@ -154,27 +184,35 @@ export class App {
       async () => (await import("./assets/audio/sutra.mp3?url")).default,
     );
 
-    this.hud = new Hud(this.ui, {
-      onSwitchWorld: (world) => void this.enter(world),
-      onSwitchZone: () => void this.requestZone(otherZone(this.zone)),
-      onOpenWorlds: () => void this.refreshWorlds(),
-      onBow: () => this.bow(),
-      onStand: () => this.stand(),
-      onInvite: () => void this.copyInvite(),
-      onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
-      onOpenSettings: () => this.settingsSheet.sheet.open(),
-      onCancelReturn: () => this.holdReturn(),
-      onReturnNow: () => void this.enter(this.soloReturnWorld),
-    });
-    this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
+    this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
     });
+    this.hud = new Hud(
+      this.ui,
+      {
+        onSwitchWorld: (world) => void this.enter(world),
+        onSwitchZone: () => void this.requestZone(otherZone(this.zone)),
+        onOpenWorlds: () => void this.refreshWorlds(),
+        onBow: () => this.bow(),
+        onStand: () => this.stand(),
+        onJump: () => this.jump(),
+        onEmote: (emote) => this.session?.emote(emote),
+        onInvite: () => void this.copyInvite(),
+        onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
+        onCancelReturn: () => this.holdReturn(),
+        onReturnNow: () => void this.enter(this.soloReturnWorld),
+      },
+      this.settingsPanel.root,
+    );
+    this.hud.setCollection(this.bows);
     this.soundChip = new SoundChip(this.ui, () => this.stage.openTapWindow());
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
       this.session?.sit(this.zone, id);
     });
+    this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
+    new InstallBanner(this.ui, () => this.fitCameraToHud());
     this.overlay = new Overlay(this.ui);
     this.zoneFade = new ZoneFade(this.canvas.parentElement ?? this.ui, () => this.settings.reduceMotion);
     this.transition = new ZoneTransition({
@@ -189,7 +227,10 @@ export class App {
       fail: (zone) => this.showZoneProblem(zone),
     });
     this.keyboard = new KeyboardInput(window, {
-      onBow: () => this.bow(),
+      onSpace: () => {
+        if (this.self && this.self.seatId >= 0) this.bow();
+        else this.jump();
+      },
       onStand: () => {
         if (!this.hud.closeSheets()) this.stand();
       },
@@ -227,7 +268,9 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.lastSelfBows = null;
     this.self = null;
+    this.hud.setSelf(null);
     this.prediction.cancel();
     this.seatOwners.clear();
     this.hud.setLink("online");
@@ -328,7 +371,9 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.lastSelfBows = null;
     this.self = null;
+    this.hud.setSelf(null);
     this.prediction.cancel();
     this.seatOwners.clear();
     this.applyZone("gatbawi");
@@ -395,6 +440,7 @@ export class App {
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
     const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
+    const visitorIds = new Set<string>();
     state.monks.forEach((monk) => {
       const here = monk.zone === zone;
       if (here) {
@@ -407,12 +453,20 @@ export class App {
           mode: monk.mode,
           zone,
           seatId: monk.seatId,
+          npc: monk.npc,
+          bowCount: monk.bowCount,
+          emote: monk.emote,
+          emoteSeq: monk.emoteSeq,
+          jumpSeq: monk.jumpSeq,
         });
       }
       // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
       if (monk.npc) return;
       if (isZone(monk.zone)) counts[monk.zone] += 1;
-      if (here) watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
+      if (here) {
+        visitorIds.add(monk.id);
+        watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
+      }
       rows.push({
         id: monk.id,
         slot: monk.slot,
@@ -426,9 +480,13 @@ export class App {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
         this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId });
+        this.creditBows(monk.bowCount);
+        for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
     });
+    this.hud.setQuests(this.quests.view(state.serverTime));
     this.lastViews = views;
+    this.visitorTitles.retain(visitorIds);
 
     const owners = new Map<number, string>();
     const occupied = new Set<number>();
@@ -450,6 +508,17 @@ export class App {
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
+  }
+
+  private creditBows(current: number): void {
+    const gained = gainedBows(this.lastSelfBows, current);
+    this.lastSelfBows = current;
+    if (gained <= 0) return;
+    const before = this.bows;
+    this.bows += gained;
+    saveBows(this.bows);
+    this.hud.setCollection(this.bows);
+    for (const title of titlesCrossed(before, this.bows)) this.hud.toast(`‘${title.name}’ 칭호를 얻었어요`);
   }
 
   private syncWorldCount(count: number, zones: Record<Zone, number>): void {
@@ -585,6 +654,16 @@ export class App {
     session.bow(1);
   }
 
+  private jump(): void {
+    const session = this.session;
+    const now = performance.now();
+    if (!session || !this.self || this.self.seatId >= 0 || now < this.nextJumpAt) return;
+    this.audio.unlock();
+    this.nextJumpAt = now + JUMP_COOLDOWN_MS;
+    this.world.hopSelf(now);
+    session.jump();
+  }
+
   private stand(): void {
     this.prediction.cancel();
     if (this.self && this.self.mode !== "stand") this.session?.stand();
@@ -593,7 +672,7 @@ export class App {
   private updateSettings(next: Settings): void {
     this.settings = next;
     saveSettings(next);
-    this.settingsSheet.sync(next);
+    this.settingsPanel.sync(next);
     this.hud.setSoundOn(next.sound);
     this.world.setReduceMotion(next.reduceMotion);
     this.stage.setReduceMotion(next.reduceMotion);
@@ -602,8 +681,8 @@ export class App {
   }
 
   private applyAudio(): void {
-    this.audio.configure(this.settings.volume, this.settings.sound, this.settings.wind);
-    this.stage.setSound(this.settings.sound, this.settings.volume);
+    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume, this.settings.sound, this.settings.wind);
+    this.stage.setSound(this.settings.sound, this.settings.ambientVolume);
   }
 
   private bindAudioUnlock(): void {
@@ -778,6 +857,28 @@ export class App {
       } else {
         this.seatHints.hide(spot.id);
       }
+    }
+  }
+
+  private updateVisitorTitles(): void {
+    const selfId = this.world.selfId;
+    if (!this.session || !selfId || !this.world.displayedPosition(selfId, this.titleSelf)) {
+      this.visitorTitles.hideAll();
+      return;
+    }
+    for (const view of this.lastViews) {
+      if (view.npc || view.id === selfId) continue;
+      const title = visitorTitle(view.bowCount);
+      let shown = false;
+      if (title !== null && this.world.displayedPosition(view.id, this.titleOther)) {
+        const { x, z } = this.titleOther;
+        const headTop = Math.hypot(x - this.titleSelf.x, z - this.titleSelf.z) <= TITLE_REACH ? this.world.headTopOf(view.id) : null;
+        if (headTop !== null && this.world.projectToScreen(x, headTop + TITLE_GAP, z, this.hintPoint)) {
+          this.visitorTitles.place(view.id, title, this.hintPoint.x, this.hintPoint.y);
+          shown = true;
+        }
+      }
+      if (!shown) this.visitorTitles.hide(view.id);
     }
   }
 

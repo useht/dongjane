@@ -11,6 +11,7 @@ import {
   RingGeometry,
   Scene,
   Vector2,
+  Vector3,
   WebGLRenderer,
 } from "three";
 import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle, otherZone } from "@dongjane/shared";
@@ -19,8 +20,10 @@ import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
 import { CameraRig, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
+import { EmoteTracker } from "./emote-tracker.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
+import { JumpTracker } from "./jump-tracker.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
@@ -37,11 +40,16 @@ export interface MonkView {
   mode: string;
   zone: Zone;
   seatId: number;
+  npc: boolean;
+  bowCount: number;
+  emote: number;
+  emoteSeq: number;
+  jumpSeq: number;
 }
 
 export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
-  onRendered(): void;
+  onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
   // The visitor tapped a door; this is the zone it leads to.
   onDoorTap(zone: Zone): void;
@@ -76,6 +84,7 @@ export class World {
   readonly camera = new PerspectiveCamera(50, 1, 0.1, 80);
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
+  readonly emotes = new EmoteTracker();
   selfId: string | null = null;
 
   private zone: Zone = "gatbawi";
@@ -92,7 +101,9 @@ export class World {
   private readonly doorBoxes = new Map<Mesh, Box3>();
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
+  private readonly jumps = new JumpTracker();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
+  private readonly anchor = new Vector3();
   private readonly clock = new ServerClock();
   private selfPrediction: SelfDisplay | null = null;
   private readonly input: PointerInput;
@@ -178,6 +189,18 @@ export class World {
   get selfPosition(): { x: number; z: number } | null {
     const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
     return entry ? { x: entry.x, z: entry.z } : null;
+  }
+
+  displayedPosition(id: string, out: { x: number; z: number }): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    out.x = entry.x;
+    out.z = entry.z;
+    return true;
+  }
+
+  headTopOf(id: string): number | null {
+    return this.entries.get(id)?.avatar.headTopY() ?? null;
   }
 
   get currentStats(): WorldStats {
@@ -311,13 +334,21 @@ export class World {
       entry.targetX = view.x;
       entry.targetZ = view.z;
       entry.targetYaw = view.yaw;
+      this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
     }
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+  }
+
+  // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
+  hopSelf(nowMs: number): void {
+    const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
+    entry?.avatar.hop(nowMs);
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
@@ -391,6 +422,13 @@ export class World {
     return projectToCanvas(this.camera, x, y, z, this.canvas.clientWidth, this.canvas.clientHeight, out);
   }
 
+  projectEmoteAnchor(monkId: string, out: { x: number; y: number }): boolean {
+    const entry = this.entries.get(monkId);
+    if (!entry) return false;
+    entry.avatar.emoteAnchor(this.anchor);
+    return this.projectToScreen(this.anchor.x, this.anchor.y, this.anchor.z, out);
+  }
+
   dispose(): void {
     this.disposed = true;
     this.stop();
@@ -411,6 +449,8 @@ export class World {
     this.pool.remove(entry.avatar);
     entry.avatar.dispose();
     this.entries.delete(id);
+    this.emotes.forget(id);
+    this.jumps.forget(id);
   }
 
   private applyAtmosphere(): void {
@@ -486,7 +526,7 @@ export class World {
     else this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
     this.applyAtmosphere();
     this.renderer.render(this.scene, this.camera);
-    this.callbacks.onRendered();
+    this.callbacks.onRendered(nowMs);
 
     const info = this.renderer.info.render;
     this.fpsAccumulator += dt;

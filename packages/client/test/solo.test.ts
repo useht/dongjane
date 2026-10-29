@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BOW_MS,
+  EMOTE_COOLDOWN_MS,
   GATBAWI_SEATS,
+  JUMP_COOLDOWN_MS,
   NPC_PER_ZONE,
   TICK_MS,
   type TempleState,
@@ -113,6 +115,42 @@ describe("SoloSession", () => {
     void session.leave();
   });
 
+  it("sends an emoticon that shows on the player's own monk, then waits out the cooldown", () => {
+    const { session } = open();
+    expect(self(session).emoteSeq).toBe(0);
+    session.emote(3);
+    expect(self(session).emote).toBe(3);
+    expect(self(session).emoteSeq).toBe(1);
+
+    session.emote(4);
+    expect(self(session).emoteSeq).toBe(1);
+    vi.advanceTimersByTime(EMOTE_COOLDOWN_MS);
+    session.emote(4);
+    expect(self(session).emote).toBe(4);
+    expect(self(session).emoteSeq).toBe(2);
+    void session.leave();
+  });
+
+  it("jumps while standing, not while seated, and waits out the cooldown", () => {
+    const { session } = open();
+    expect(self(session).jumpSeq).toBe(0);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(1);
+    expect(self(session).mode).toBe("stand");
+
+    session.jump();
+    expect(self(session).jumpSeq).toBe(1);
+    vi.advanceTimersByTime(JUMP_COOLDOWN_MS);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(2);
+
+    session.sit("gatbawi", SEAT.id);
+    vi.advanceTimersByTime(JUMP_COOLDOWN_MS);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(2);
+    void session.leave();
+  });
+
   it("keeps the chant schedule current as time passes", () => {
     const { session } = open();
     const before = session.state.chant.startsAt;
@@ -137,7 +175,11 @@ describe("SoloSession", () => {
     session.move(0, 0, 1);
     session.sit("gatbawi", SEAT.id);
     session.bow(3);
+    session.emote(2);
+    session.jump();
     session.stand();
+    expect(self(session).emoteSeq).toBe(0);
+    expect(self(session).jumpSeq).toBe(0);
     expect(self(session).mode).toBe("stand");
     expect(self(session).seatId).toBe(-1);
     expect(self(session).ackSeq).toBe(0);

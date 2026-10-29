@@ -25,12 +25,14 @@ function contextClass(): AudioContextCtor | undefined {
 }
 
 // The bell and the wind are synthesized (sine partials with exponential decay, filtered noise). Recordings, the 법당
-// sutra, are played by other modules into `output`, so the one volume and the one mute switch cover them all.
+// sutra, are played by other modules into `output`, so the ambient volume and the one mute switch cover them.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private effects: GainNode | null = null;
+  private ambience: GainNode | null = null;
   private windGain: GainNode | null = null;
-  private volume = 0.7;
+  private ambientVolume = 0.7;
+  private effectVolume = 0.7;
   private sound = true;
   private wind = true;
   private windAllowed = true;
@@ -45,8 +47,9 @@ export class AudioEngine {
     return this.ctx;
   }
 
+  // Recordings (the sutra) join the ambience bus, so the ambient volume and the one mute switch cover them.
   get output(): AudioNode | null {
-    return this.master;
+    return this.ambience;
   }
 
   // Called each time the context starts running, which is when a browser first lets sound out after a gesture.
@@ -60,8 +63,9 @@ export class AudioEngine {
     this.applyLevels();
   }
 
-  configure(volume: number, sound: boolean, wind: boolean): void {
-    this.volume = Math.min(1, Math.max(0, volume));
+  configure(ambientVolume: number, effectVolume: number, sound: boolean, wind: boolean): void {
+    this.ambientVolume = Math.min(1, Math.max(0, ambientVolume));
+    this.effectVolume = Math.min(1, Math.max(0, effectVolume));
     this.sound = sound;
     this.wind = wind;
     this.applyLevels();
@@ -76,8 +80,10 @@ export class AudioEngine {
       } catch {
         return;
       }
-      this.master = this.ctx.createGain();
-      this.master.connect(this.ctx.destination);
+      this.effects = this.ctx.createGain();
+      this.effects.connect(this.ctx.destination);
+      this.ambience = this.ctx.createGain();
+      this.ambience.connect(this.ctx.destination);
       this.startWind();
       this.applyLevels();
       this.ctx.addEventListener("statechange", () => this.announce());
@@ -88,7 +94,7 @@ export class AudioEngine {
 
   bell(strikes: number = BELL_STRIKES): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.sound) return;
+    if (!ctx || !this.effects || !this.sound) return;
     this.bellCount += 1;
     const start = ctx.currentTime + 0.05;
     for (let i = 0; i < strikes; i += 1) this.strike(start + i * BELL_GAP_SECONDS, 1 - i * 0.12);
@@ -96,7 +102,7 @@ export class AudioEngine {
 
   knock(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master || !this.sound) return;
+    if (!ctx || !this.effects || !this.sound) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -106,7 +112,7 @@ export class AudioEngine {
     gain.gain.setValueAtTime(0.0001, now);
     gain.gain.linearRampToValueAtTime(0.22, now + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(this.effects);
     osc.start(now);
     osc.stop(now + 0.2);
   }
@@ -114,7 +120,8 @@ export class AudioEngine {
   dispose(): void {
     const ctx = this.ctx;
     this.ctx = null;
-    this.master = null;
+    this.effects = null;
+    this.ambience = null;
     this.windGain = null;
     this.unlockListeners.clear();
     if (ctx) void ctx.close().catch(() => undefined);
@@ -127,8 +134,8 @@ export class AudioEngine {
 
   private strike(at: number, strength: number): void {
     const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
+    const effects = this.effects;
+    if (!ctx || !effects) return;
     for (const partial of BELL_PARTIALS) {
       const freq = BELL_FUNDAMENTAL_HZ * partial.ratio;
       if (freq > ctx.sampleRate / 2.2) continue;
@@ -141,7 +148,7 @@ export class AudioEngine {
         gain.gain.setValueAtTime(0.0001, at);
         gain.gain.linearRampToValueAtTime(peak, at + 0.012);
         gain.gain.exponentialRampToValueAtTime(0.0001, at + partial.decay);
-        osc.connect(gain).connect(master);
+        osc.connect(gain).connect(effects);
         osc.start(at);
         osc.stop(at + partial.decay + 0.1);
       }
@@ -155,14 +162,14 @@ export class AudioEngine {
     const burstGain = ctx.createGain();
     burstGain.gain.setValueAtTime(0.18 * strength, at);
     burstGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
-    burst.connect(band).connect(burstGain).connect(master);
+    burst.connect(band).connect(burstGain).connect(effects);
     burst.start(at);
   }
 
   private startWind(): void {
     const ctx = this.ctx;
-    const master = this.master;
-    if (!ctx || !master) return;
+    const ambience = this.ambience;
+    if (!ctx || !ambience) return;
     const source = ctx.createBufferSource();
     source.buffer = this.noise(4);
     source.loop = true;
@@ -189,7 +196,7 @@ export class AudioEngine {
 
     this.windGain = ctx.createGain();
     this.windGain.gain.value = 0;
-    source.connect(low).connect(band).connect(swell).connect(this.windGain).connect(master);
+    source.connect(low).connect(band).connect(swell).connect(this.windGain).connect(ambience);
     source.start();
     lfo.start();
     sweep.start();
@@ -211,10 +218,12 @@ export class AudioEngine {
 
   private applyLevels(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.master) return;
+    if (!ctx || !this.effects || !this.ambience) return;
     const now = ctx.currentTime;
-    this.master.gain.cancelScheduledValues(now);
-    this.master.gain.setTargetAtTime(this.sound ? this.volume : 0, now, 0.05);
+    this.effects.gain.cancelScheduledValues(now);
+    this.effects.gain.setTargetAtTime(this.sound ? this.effectVolume : 0, now, 0.05);
+    this.ambience.gain.cancelScheduledValues(now);
+    this.ambience.gain.setTargetAtTime(this.sound ? this.ambientVolume : 0, now, 0.05);
     if (this.windGain) {
       this.windGain.gain.cancelScheduledValues(now);
       this.windGain.gain.setTargetAtTime(this.wind && this.windAllowed ? 0.55 : 0, now, 0.4);

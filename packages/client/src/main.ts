@@ -1,6 +1,7 @@
 import "./style.css";
 import { App } from "./app.ts";
 import { type GameAssets, loadGameAssets } from "./assets/registry.ts";
+import { captureInstallPrompt } from "./install.ts";
 import { registerServiceWorker } from "./pwa.ts";
 
 function showFatal(message: string): void {
@@ -49,6 +50,7 @@ async function boot(): Promise<void> {
 }
 
 registerServiceWorker();
+captureInstallPrompt(window);
 
 if (!webglAvailable()) {
   showFatal("이 기기에서는 3D 화면을 열 수 없어요. 다른 브라우저로 열어 보세요.");

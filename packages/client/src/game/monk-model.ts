@@ -6,8 +6,9 @@ import {
   InstancedMesh,
   MeshLambertMaterial,
   Object3D,
+  Vector3,
 } from "three";
-import { BOW_MS } from "@dongjane/shared";
+import { BOW_MS, JUMP_MS } from "@dongjane/shared";
 import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
 import type { ModelMeshes } from "../assets/registry.ts";
 import {
@@ -23,9 +24,14 @@ import {
   SHOULDER_Y,
   UPPER_ARM,
 } from "./monk-rig.ts";
-import { PoseBlend, approach, bowDepth } from "./pose.ts";
+import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
 const ROBE_PARTS: ReadonlySet<MonkPart> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
+
+// The crown of the head above the neck pivot, and the point above it where an emoticon floats.
+const HEAD_TOP_OFFSET = 0.44;
+const EMOTE_ANCHOR_Y = 0.52;
+const HOP_HEIGHT = 0.35;
 
 interface Binding {
   part: MonkPart;
@@ -55,6 +61,8 @@ export class MonkAvatar {
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private hopStartedAt = -Infinity;
+  private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
     this.id = id;
@@ -100,6 +108,10 @@ export class MonkAvatar {
     this.modeSince = nowMs;
   }
 
+  hop(nowMs: number): void {
+    this.hopStartedAt = nowMs;
+  }
+
   place(x: number, z: number, yaw: number): void {
     this.root.position.x = x;
     this.root.position.z = z;
@@ -119,7 +131,8 @@ export class MonkAvatar {
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
 
-    this.root.position.y = this.liftedBy * kneel;
+    const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
+    this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
@@ -165,6 +178,15 @@ export class MonkAvatar {
     }
 
     this.root.updateMatrixWorld(true);
+  }
+
+  headTopY(): number {
+    return this.headNode.getWorldPosition(this.headPoint).y + HEAD_TOP_OFFSET;
+  }
+
+  // The world point just above the crown, following the head through kneel and bow.
+  emoteAnchor(out: Vector3): Vector3 {
+    return this.headNode.localToWorld(out.set(0, EMOTE_ANCHOR_Y, 0));
   }
 
   dispose(): void {
