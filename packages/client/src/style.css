@@ -63,7 +63,53 @@ textarea {
 #ui {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
+}
+
+.stage-video {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  transform-origin: 0 0;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--wood);
+}
+
+.stage-video.placed {
+  visibility: visible;
+}
+
+.stage-video.tap {
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.stage-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.sound-chip {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--safe-top) + var(--hud-edge) + 128px);
+  transform: translateX(-50%);
+  min-height: 34px;
+  padding: 0 16px;
+  border-radius: 17px;
+  border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: auto;
 }
 
 .hidden {

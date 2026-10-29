@@ -17,6 +17,7 @@ import {
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshStandardMaterial,
+  NoBlending,
   PMREMGenerator,
   Points,
   PointsMaterial,
@@ -35,8 +36,8 @@ import { THEME } from "../theme.ts";
 import { MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
-import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32 } from "./textures.ts";
-import { lanternSpots } from "./venue-layout.ts";
+import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32, stagePosterTexture } from "./textures.ts";
+import { lanternSpots, screenUv } from "./venue-layout.ts";
 
 export interface LandscapeQuality {
   shadows: boolean;
@@ -122,6 +123,9 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   return target.texture;
 }
 
+// Either the picture of the lanterns, or a hole the renderer leaves empty so the video behind the canvas shows through.
+export type ScreenMode = "poster" | "video";
+
 export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
@@ -139,6 +143,9 @@ export class Landscape {
   private readonly leafSeeds: Float32Array;
   private readonly mats: InstancedMesh;
   private readonly lanternMaterial: MeshLambertMaterial;
+  private readonly screen: Mesh;
+  private readonly screenPoster: MeshBasicMaterial;
+  private readonly screenHole: MeshBasicMaterial;
   private readonly envMaterials: MeshStandardMaterial[] = [];
   private readonly materials: Material[] = [];
   private readonly textures: Texture[] = [];
@@ -238,7 +245,13 @@ export class Landscape {
     this.add(venue.stage, new MeshLambertMaterial({ vertexColors: true }), { cast: true, receive: true }, stage);
     this.add(venue.truss, new MeshLambertMaterial({ vertexColors: true }), { cast: true }, stage);
     this.add(venue.poles, new MeshLambertMaterial({ vertexColors: true }), { cast: true }, stage);
-    this.add(venue.screen, new MeshBasicMaterial({ color: tokens.screenBezel, fog: false }), {}, stage);
+    const poster = this.texture(stagePosterTexture());
+    poster.anisotropy = anisotropy;
+    this.screenPoster = new MeshBasicMaterial({ map: poster, fog: false, toneMapped: false });
+    this.screenHole = new MeshBasicMaterial({ opacity: 0, blending: NoBlending, fog: false, toneMapped: false });
+    this.screenHole.color.setScalar(0);
+    this.materials.push(this.screenHole);
+    this.screen = this.add(this.withPicture(venue.screen), this.screenPoster, {}, stage);
     this.lanternMaterial = this.lanternSurface();
     stage.add(this.buildLanterns(venue.lantern, quality.lanterns, [palette.lanternPink, palette.lanternWhite, palette.lanternYellow, palette.lanternOrange, palette.lanternGreen, palette.lanternViolet]));
     this.group.add(stage);
@@ -255,6 +268,26 @@ export class Landscape {
 
     this.applyLook(this.current);
     this.update(0, 0, null, true);
+  }
+
+  // The glb's screen is a bare quad; this copy also knows which part of the picture each corner shows.
+  private withPicture(source: Mesh): Mesh {
+    const geometry = this.track(source.geometry.clone());
+    const position = geometry.getAttribute("position");
+    const uv = new Float32Array(position.count * 2);
+    for (let i = 0; i < position.count; i += 1) {
+      const { u, v } = screenUv({ x: position.getX(i), y: position.getY(i), z: position.getZ(i) });
+      uv[i * 2] = u;
+      uv[i * 2 + 1] = v;
+    }
+    geometry.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+    const copy = new Mesh(geometry);
+    copy.name = source.name;
+    return copy;
+  }
+
+  setScreenMode(mode: ScreenMode): void {
+    this.screen.material = mode === "video" ? this.screenHole : this.screenPoster;
   }
 
   private track(geometry: BufferGeometry): BufferGeometry {

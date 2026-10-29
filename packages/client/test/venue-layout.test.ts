@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PLAZA, WORLD_BOUNDS } from "@dongjane/shared";
-import { CANOPY, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, stageToWorld, stringPoint } from "../src/game/venue-layout.ts";
+import { CANOPY, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, screenUv, stageToWorld, stringPoint } from "../src/game/venue-layout.ts";
 
 describe("the stage", () => {
   it("turns its front toward the middle of the mats", () => {
@@ -34,6 +34,22 @@ describe("the stage", () => {
     const rightZ = bottomRight.z - bottomLeft.z;
     const facing = -rightZ * (STAGE.aimX - bottomLeft.x) + rightX * (STAGE.aimZ - bottomLeft.z);
     expect(facing).toBeGreaterThan(0);
+  });
+});
+
+describe("the screen's picture", () => {
+  it("maps the four corners to the corners of the picture", () => {
+    const [bottomLeft, bottomRight, topRight, topLeft] = screenCorners();
+    const at = (corner: (typeof bottomLeft)): [number, number] => {
+      const { u, v } = screenUv(corner);
+      return [Math.round(u * 1e6) / 1e6, Math.round(v * 1e6) / 1e6];
+    };
+    expect([at(bottomLeft), at(bottomRight), at(topRight), at(topLeft)]).toEqual([
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ]);
   });
 });
 

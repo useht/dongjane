@@ -24,7 +24,8 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// All sound is synthesized: sine partials with exponential decay for the bell, filtered noise for wind.
+// The bell and the wind are synthesized (sine partials with exponential decay, filtered noise). Recordings, the 법당
+// sutra, are played by other modules into `output`, so the one volume and the one mute switch cover them all.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -32,10 +33,31 @@ export class AudioEngine {
   private volume = 0.7;
   private sound = true;
   private wind = true;
+  private windAllowed = true;
+  private readonly unlockListeners = new Set<() => void>();
   bellCount = 0;
 
   get unlocked(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
+  }
+
+  get context(): AudioContext | null {
+    return this.ctx;
+  }
+
+  get output(): AudioNode | null {
+    return this.master;
+  }
+
+  // Called each time the context starts running, which is when a browser first lets sound out after a gesture.
+  onUnlock(listener: () => void): void {
+    this.unlockListeners.add(listener);
+  }
+
+  // The wind belongs to the open air: it is off indoors and while a recording is playing out there.
+  setWindAllowed(allowed: boolean): void {
+    this.windAllowed = allowed;
+    this.applyLevels();
   }
 
   configure(volume: number, sound: boolean, wind: boolean): void {
@@ -58,8 +80,10 @@ export class AudioEngine {
       this.master.connect(this.ctx.destination);
       this.startWind();
       this.applyLevels();
+      this.ctx.addEventListener("statechange", () => this.announce());
     }
     if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => undefined);
+    this.announce();
   }
 
   bell(strikes: number = BELL_STRIKES): void {
@@ -92,7 +116,13 @@ export class AudioEngine {
     this.ctx = null;
     this.master = null;
     this.windGain = null;
+    this.unlockListeners.clear();
     if (ctx) void ctx.close().catch(() => undefined);
+  }
+
+  private announce(): void {
+    if (!this.unlocked) return;
+    for (const listener of [...this.unlockListeners]) listener();
   }
 
   private strike(at: number, strength: number): void {
@@ -187,7 +217,7 @@ export class AudioEngine {
     this.master.gain.setTargetAtTime(this.sound ? this.volume : 0, now, 0.05);
     if (this.windGain) {
       this.windGain.gain.cancelScheduledValues(now);
-      this.windGain.gain.setTargetAtTime(this.wind ? 0.55 : 0, now, 0.4);
+      this.windGain.gain.setTargetAtTime(this.wind && this.windAllowed ? 0.55 : 0, now, 0.4);
     }
   }
 }

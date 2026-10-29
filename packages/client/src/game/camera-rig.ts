@@ -108,6 +108,25 @@ export function projectToCanvas(
   return true;
 }
 
+// Like projectToCanvas, but a point outside the view still gets its place on the plane of the canvas: only a point
+// behind the camera has none. A video quad needs this, because its corners are often off screen.
+export function projectUnclipped(
+  camera: PerspectiveCamera,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  out: { x: number; y: number },
+): boolean {
+  projected.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+  if (projected.z >= -camera.near) return false;
+  projected.applyMatrix4(camera.projectionMatrix);
+  out.x = (projected.x + 1) * 0.5 * width;
+  out.y = (1 - projected.y) * 0.5 * height;
+  return Number.isFinite(out.x) && Number.isFinite(out.y);
+}
+
 export class CameraRig {
   yaw: number = DEFAULT_VIEW.yaw;
   pitch: number = DEFAULT_VIEW.pitch;

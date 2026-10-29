@@ -1,5 +1,5 @@
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
-import { THEME, withAlpha } from "../theme.ts";
+import { FONT_STACK, THEME, withAlpha } from "../theme.ts";
 
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
@@ -104,5 +104,51 @@ export function leafTexture(): CanvasTexture {
   ctx.moveTo(32, 8);
   ctx.lineTo(32, 60);
   ctx.stroke();
+  return toTexture(canvas);
+}
+
+// What the LED screen shows when the concert video is not playing: a night sky of lotus lanterns and the festival's name.
+export function stagePosterTexture(): CanvasTexture {
+  const width = 1024;
+  const height = 576;
+  const [canvas, ctx] = makeCanvas(width, height);
+  const scene = THEME.scene;
+  const sky = ctx.createLinearGradient(0, 0, 0, height);
+  sky.addColorStop(0, scene.skyTopNight);
+  sky.addColorStop(1, scene.skyHorizonNight);
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  const lanterns = [scene.lanternPink, scene.lanternWhite, scene.lanternYellow, scene.lanternOrange, scene.lanternGreen, scene.lanternViolet];
+  const rand = mulberry32(73);
+  for (let i = 0; i < 46; i += 1) {
+    const x = rand() * width;
+    const y = 30 + rand() * (height - 60);
+    const radius = 10 + rand() * 18;
+    const color = lanterns[i % lanterns.length] as string;
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, radius * 3);
+    glow.addColorStop(0, withAlpha(color, 0.55));
+    glow.addColorStop(1, withAlpha(color, 0));
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - radius * 3, y - radius * 3, radius * 6, radius * 6);
+    ctx.fillStyle = withAlpha(color, 0.92);
+    for (let petal = 0; petal < 5; petal += 1) {
+      const angle = (petal / 5) * Math.PI * 2 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.ellipse(x + Math.cos(angle) * radius * 0.45, y + Math.sin(angle) * radius * 0.45, radius * 0.5, radius * 0.3, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.fillStyle = withAlpha(scene.skyTopNight, 0.55);
+  ctx.fillRect(0, height * 0.36, width, height * 0.28);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = scene.lanternWhite;
+  ctx.font = `700 96px ${FONT_STACK}`;
+  ctx.fillText("연등회", width / 2, height * 0.46);
+  ctx.fillStyle = withAlpha(scene.lanternWhite, 0.75);
+  ctx.font = `500 34px ${FONT_STACK}`;
+  ctx.fillText("동자네 무대", width / 2, height * 0.58);
   return toTexture(canvas);
 }

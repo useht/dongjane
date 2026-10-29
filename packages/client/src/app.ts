@@ -15,6 +15,7 @@ import {
 import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
+import { SutraPlayer } from "./audio/music.ts";
 import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
@@ -33,6 +34,8 @@ import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsSheet } from "./ui/settings.ts";
+import { SoundChip } from "./ui/sound-chip.ts";
+import { StageScreen } from "./ui/stage-screen.ts";
 
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
@@ -67,6 +70,9 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly stage: StageScreen;
+  private readonly soundChip: SoundChip;
+  private readonly sutra: SutraPlayer;
   private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
@@ -84,6 +90,8 @@ export class App {
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
   private lastViews: MonkView[] = [];
   private lost = false;
+  private videoAudible = false;
+  private stageToasted = false;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
   private returnHeld = false;
@@ -101,12 +109,41 @@ export class App {
       this.canvas,
       {
         onFrame: (dt, now) => this.frame(dt, now),
-        onRendered: () => this.updateSeatHints(),
+        onRendered: () => {
+          this.updateSeatHints();
+          if (this.stage.mounted) this.stage.place(this.world.screenQuad());
+        },
         onStick: (stick) => this.joystick.set(stick),
       },
       assets,
     );
     this.world.setReduceMotion(this.settings.reduceMotion);
+
+    this.stage = new StageScreen(
+      this.canvas,
+      { width: this.world.quality.videoWidth, height: this.world.quality.videoHeight },
+      () => this.world.serverNowAt(performance.now()),
+      {
+        onStatus: (status) => {
+          if (status === "blocked" && !this.stageToasted) {
+            this.stageToasted = true;
+            this.hud.toast("무대 영상을 열 수 없어요");
+          }
+          this.syncZoneSound();
+        },
+        onTapNeeded: (needed) => this.soundChip.show(needed),
+        onAudible: (audible) => {
+          this.videoAudible = audible;
+          this.syncZoneSound();
+        },
+      },
+    );
+    this.stage.setReduceMotion(this.settings.reduceMotion);
+    this.sutra = new SutraPlayer(
+      this.audio,
+      () => this.world.serverNowAt(performance.now()),
+      async () => (await import("./assets/audio/sutra.mp3?url")).default,
+    );
 
     this.hud = new Hud(this.ui, {
       onSwitchWorld: (world) => void this.enter(world),
@@ -122,6 +159,7 @@ export class App {
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
     });
+    this.soundChip = new SoundChip(this.ui, () => this.stage.openTapWindow());
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
       this.session?.sit(this.zone, id);
@@ -137,6 +175,7 @@ export class App {
 
     this.applyAudio();
     this.hud.setSoundOn(this.settings.sound);
+    this.syncZoneSound();
     this.bindAudioUnlock();
     this.bindLifecycle();
     this.fitCameraToHud();
@@ -276,6 +315,7 @@ export class App {
       },
     });
     this.session = session;
+    this.syncZoneSound();
     this.currentWorld = 0;
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
@@ -287,6 +327,7 @@ export class App {
 
   private attach(session: WorldSession, world: number, fellBackFrom: number | null): void {
     this.session = session;
+    this.syncZoneSound();
     this.currentWorld = world;
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
@@ -399,6 +440,18 @@ export class App {
     this.prediction.zone = zone;
     this.seatHints.hideAll();
     this.world.setZone(zone);
+    this.syncZoneSound();
+  }
+
+  // What belongs to where the visitor stands: the concert video and the wind outdoors, the sutra in the 법당.
+  private syncZoneSound(): void {
+    const outdoors = this.zone === "gatbawi";
+    const live = outdoors && this.session !== null && !this.inSolo;
+    if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
+    else if (!live && this.stage.mounted) this.stage.unmount();
+    this.world.setScreenMode(this.stage.mounted && !this.settings.reduceMotion ? "video" : "poster");
+    this.sutra.setIndoors(this.zone === "dharma" && this.session !== null);
+    this.audio.setWindAllowed(outdoors && !this.videoAudible);
   }
 
   private handleLink(link: LinkState): void {
@@ -406,6 +459,7 @@ export class App {
     if (link !== "lost") return;
     this.lost = true;
     this.session = null;
+    this.syncZoneSound();
     this.prediction.cancel();
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "월드와의 연결이 끊겼어요. 다시 들어가 볼까요?", [
@@ -415,6 +469,7 @@ export class App {
   }
 
   private showUnreachable(actions: { label: string; run(): void }[]): void {
+    this.syncZoneSound();
     if (!navigator.onLine) {
       this.overlay.problem("인터넷에 연결되어 있지 않아요", "연결을 확인한 뒤 다시 시도해 주세요.", actions);
     } else {
@@ -445,16 +500,20 @@ export class App {
     this.settingsSheet.sync(next);
     this.hud.setSoundOn(next.sound);
     this.world.setReduceMotion(next.reduceMotion);
+    this.stage.setReduceMotion(next.reduceMotion);
     this.applyAudio();
+    this.syncZoneSound();
   }
 
   private applyAudio(): void {
     this.audio.configure(this.settings.volume, this.settings.sound, this.settings.wind);
+    this.stage.setSound(this.settings.sound, this.settings.volume);
   }
 
   private bindAudioUnlock(): void {
     const unlock = (): void => {
       this.audio.unlock();
+      this.stage.userGesture();
       if (this.audio.unlocked) {
         window.removeEventListener("pointerdown", unlock, true);
         window.removeEventListener("keydown", unlock, true);
@@ -473,7 +532,10 @@ export class App {
 
   private bindLifecycle(): void {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && this.lost) void this.enter(this.currentWorld || null);
+      const hidden = document.visibilityState !== "visible";
+      this.stage.setHidden(hidden);
+      this.sutra.setHidden(hidden);
+      if (!hidden && this.lost) void this.enter(this.currentWorld || null);
     });
     window.addEventListener("online", () => {
       if (this.lost) void this.enter(this.currentWorld || null);
@@ -502,6 +564,8 @@ export class App {
       sessionId: () => this.session?.sessionId ?? null,
       worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
+      stage: () => ({ status: this.stage.status, mounted: this.stage.mounted, audible: this.videoAudible }),
+      sutraPlaying: () => this.sutra.playing,
       serverNow: () => this.world.serverNowAt(performance.now()),
     };
   }

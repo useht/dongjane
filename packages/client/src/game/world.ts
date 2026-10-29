@@ -13,14 +13,16 @@ import {
 import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { CameraRig, configureCamera, projectToCanvas, regionFor, viewFor } from "./camera-rig.ts";
-import { Landscape } from "./landscape.ts";
+import type { Quad } from "../ui/stage-quad.ts";
+import { CameraRig, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
+import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
 import type { SelfDisplay } from "./prediction.ts";
 import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
 import { RemoteTrack, ServerClock, type Sample } from "./snapshot.ts";
+import { screenCorners } from "./venue-layout.ts";
 
 export interface MonkView {
   id: string;
@@ -93,13 +95,20 @@ export class World {
   private idleSpin = true;
   private hudTop = 0;
   private hudBottom = 0;
+  private readonly screenCorners = screenCorners();
+  private readonly screenPoints: [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }] = [
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+  ];
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly callbacks: WorldCallbacks,
     private readonly assets: GameAssets,
   ) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
     this.quality = detectQuality({
       devicePixelRatio: window.devicePixelRatio,
       cores: navigator.hardwareConcurrency,
@@ -288,6 +297,23 @@ export class World {
 
   setIdleSpin(value: boolean): void {
     this.idleSpin = value;
+  }
+
+  setScreenMode(mode: ScreenMode): void {
+    this.landscape.setScreenMode(mode);
+  }
+
+  // Where the concert screen's corners are on the canvas (bottom-left, bottom-right, top-right, top-left), or null
+  // when it is not in this zone or any corner is behind the camera. The points are reused between calls.
+  screenQuad(): Quad | null {
+    if (this.zone !== "gatbawi") return null;
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    for (let i = 0; i < this.screenCorners.length; i += 1) {
+      const corner = this.screenCorners[i] as (typeof this.screenCorners)[number];
+      if (!projectUnclipped(this.camera, corner.x, corner.y, corner.z, width, height, this.screenPoints[i] as { x: number; y: number })) return null;
+    }
+    return this.screenPoints;
   }
 
   projectToScreen(x: number, y: number, z: number, out: { x: number; y: number }): boolean {

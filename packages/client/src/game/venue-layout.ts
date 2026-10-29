@@ -46,6 +46,15 @@ export function screenCorners(): readonly [Point3, Point3, Point3, Point3] {
   return [corner(-half, SCREEN.bottom), corner(half, SCREEN.bottom), corner(half, top), corner(-half, top)];
 }
 
+// Where a point of the screen sits on its picture, (0, 0) at the bottom-left corner and (1, 1) at the top-right.
+export function screenUv(point: Point3): { u: number; v: number } {
+  const [bottomLeft, bottomRight] = screenCorners();
+  const rightX = bottomRight.x - bottomLeft.x;
+  const rightZ = bottomRight.z - bottomLeft.z;
+  const along = ((point.x - bottomLeft.x) * rightX + (point.z - bottomLeft.z) * rightZ) / (rightX * rightX + rightZ * rightZ);
+  return { u: along, v: (point.y - SCREEN.bottom) / SCREEN.height };
+}
+
 // The strings of lotus lanterns: poles, pairs of poles joined by a string, and how the strings hang.
 export const CANOPY = {
   height: 5.5,

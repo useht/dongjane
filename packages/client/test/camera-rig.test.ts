@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
 import { DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, ZONE_SPAWN } from "@dongjane/shared";
-import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas, regionFor, viewFor } from "../src/game/camera-rig.ts";
+import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas, projectUnclipped, regionFor, viewFor } from "../src/game/camera-rig.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
@@ -151,6 +151,46 @@ describe("projectToCanvas", () => {
     expect(projectToCanvas(camera, 0, 1, 40, 800, 600, out)).toBe(false);
     expect(projectToCanvas(camera, 30, 1, 3, 800, 600, out)).toBe(false);
     expect(projectToCanvas(camera, 0, 40, 3, 800, 600, out)).toBe(false);
+  });
+});
+
+describe("projectUnclipped", () => {
+  const framed = (): PerspectiveCamera => {
+    const camera = new PerspectiveCamera();
+    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
+    rig.reduceMotion = true;
+    configureCamera(camera, rig, 800, 600, 0, 0);
+    rig.follow(0, 3, 0, true);
+    rig.update(0.016);
+    camera.updateMatrixWorld();
+    return camera;
+  };
+
+  it("agrees with projectToCanvas for a point inside the view", () => {
+    const camera = framed();
+    const clipped = { x: 0, y: 0 };
+    const unclipped = { x: 0, y: 0 };
+    expect(projectToCanvas(camera, 0, 1, 3, 800, 600, clipped)).toBe(true);
+    expect(projectUnclipped(camera, 0, 1, 3, 800, 600, unclipped)).toBe(true);
+    expect(unclipped.x).toBeCloseTo(clipped.x, 3);
+    expect(unclipped.y).toBeCloseTo(clipped.y, 3);
+  });
+
+  it("still places a point that is off screen, which is what a video corner needs", () => {
+    const camera = framed();
+    const out = { x: 0, y: 0 };
+    expect(projectToCanvas(camera, 30, 1, 3, 800, 600, out)).toBe(false);
+    expect(projectUnclipped(camera, 30, 1, 3, 800, 600, out)).toBe(true);
+    expect(out.x).toBeGreaterThan(800);
+    expect(projectUnclipped(camera, 0, 14, 3, 800, 600, out)).toBe(true);
+    expect(out.y).toBeLessThan(0);
+  });
+
+  it("gives up on a point behind the camera", () => {
+    const camera = framed();
+    const out = { x: 0, y: 0 };
+    const behind = camera.position.clone().add(new Vector3(0, 0, 1).applyQuaternion(camera.quaternion));
+    expect(projectUnclipped(camera, behind.x, behind.y, behind.z, 800, 600, out)).toBe(false);
   });
 });
 
