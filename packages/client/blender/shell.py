@@ -27,6 +27,7 @@ JAMB = 0.14
 WINDOW = (1.5, 4.5)  # bottom and top of the lattice windows
 RIB = 0.4  # tile ribs along the roof's length
 SLOPE_STEPS = 12
+PLAQUE_X = 1.35
 PLAQUE_Y = 4.9
 
 
@@ -195,8 +196,8 @@ def walls(parts, s):
             c["woodDark"],
             skip=hidden("+z", "-x" if sign > 0 else "+x"),
         )
-    front.box((0.0, PLAQUE_Y, s.z1 + 0.04), (2.7, 0.95, 0.08), c["gilt"], skip=hidden("+z", "+y", "-y", "+x", "-x"))
-    front.box((0.0, PLAQUE_Y, s.z1 + 0.09), (2.5, 0.75, 0.02), c["lacquerDeep"], skip=hidden("+z"))
+    front.box((PLAQUE_X, PLAQUE_Y, s.z1 + 0.04), (2.7, 0.95, 0.08), c["gilt"], skip=hidden("+z", "+y", "-y", "+x", "-x"))
+    front.box((PLAQUE_X, PLAQUE_Y, s.z1 + 0.09), (2.5, 0.75, 0.02), c["lacquerDeep"], skip=hidden("+z"))
 
 
 def window(part, s, x, width):
