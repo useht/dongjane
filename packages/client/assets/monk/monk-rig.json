@@ -1,0 +1,17 @@
+{
+  "_source": "packages/client/assets/monk/build_monk.py",
+  "headHeight": 0.32,
+  "crownY": 0.3584,
+  "chinY": 0.0384,
+  "hipStand": 0.4,
+  "hipKneel": 0.2,
+  "skirtDrop": 0.36,
+  "torsoHeight": 0.4096,
+  "neckY": 0.4096,
+  "shoulderX": 0.18,
+  "shoulderY": 0.3496,
+  "upperArm": 0.18,
+  "foreArm": 0.17,
+  "footX": 0.09,
+  "footY": 0.045
+}
