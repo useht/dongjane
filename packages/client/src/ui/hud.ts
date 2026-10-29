@@ -1,6 +1,7 @@
 import { HALL_COUNT, type HallInfo, hallName } from "@dongjane/shared";
 import type { LinkState } from "../net/session.ts";
-import { type IconName, button, h, icon, iconButton, swapIcon } from "./dom.ts";
+import { button, h, iconButton, swapIcon } from "./dom.ts";
+import { type IconName, icon } from "./icons.ts";
 import { type ChantStatus, modeLabel } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 

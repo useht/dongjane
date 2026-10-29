@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { brandMarkSvg } from "../scripts/brand-mark.ts";
 import { themePlugin } from "../vite.config.ts";
 import { BACKGROUND_COLOR, BRAND_COLOR, THEME, cssVariables, withAlpha } from "../src/theme.ts";
 
-const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const read = (path: string): string =>
+  readFileSync(new URL(`../${path}`, import.meta.url), "utf8").replaceAll(String.fromCharCode(13, 10), String.fromCharCode(10));
 
 const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/g;
 const LAYOUT_VARIABLE = /^--(safe|hud)-/;
@@ -65,5 +67,23 @@ describe("theme in CSS and HTML", () => {
     expect(injected.find((tag) => tag.tag === "meta")?.attrs).toEqual({ name: "theme-color", content: BRAND_COLOR });
     expect(BRAND_COLOR).toBe(THEME.ui.ink);
     expect(BACKGROUND_COLOR).toBe(THEME.ui.wood);
+  });
+});
+
+describe("brand mark", () => {
+  it("matches the committed favicon", () => {
+    expect(read("public/favicon.svg")).toBe(brandMarkSvg(1));
+  });
+
+  it("paints with every brand token and no other colour", () => {
+    const svg = brandMarkSvg(1);
+    for (const color of Object.values(THEME.brand)) expect(svg).toContain(color);
+    const used = new Set(svg.match(/#[0-9a-f]{6}/g));
+    expect([...used].sort()).toEqual([...new Set(Object.values(THEME.brand))].sort());
+  });
+
+  it("shrinks the artwork for the maskable icon without touching the background", () => {
+    expect(brandMarkSvg(0.78)).toContain("scale(0.78)");
+    expect(brandMarkSvg(0.78)).toContain('<rect width="512" height="512" fill="url(#glow)"/>');
   });
 });
