@@ -564,7 +564,7 @@ button:disabled {
 /* Seated, the column keeps its full height so the stand-up button neither drops nor shifts while the main button hides. */
 .bow-actions.seated {
   justify-content: flex-start;
-  min-height: calc(var(--bow-size) + 36px + var(--main-gap));
+  min-height: calc(var(--bow-size) + 44px + var(--main-gap));
 }
 
 .bow-button {
@@ -637,23 +637,6 @@ button:disabled {
   to {
     transform: rotate(360deg);
   }
-}
-
-.stand-button {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-}
-
-.stand-button::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-}
-
-.stand-button svg {
-  width: 20px;
-  height: 20px;
 }
 
 .seat-hints,
