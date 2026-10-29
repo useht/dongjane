@@ -202,7 +202,7 @@ describe("npc and visitor cushions", () => {
     const problems: string[] = [];
     let ticks = 0;
     let seatedTicks = 0;
-    let evictions = 0;
+    let refusals = 0;
 
     hall.run(6 * 60_000, () => {
       problems.push(...hall.cushionProblems());
@@ -213,12 +213,18 @@ describe("npc and visitor cushions", () => {
       const roll = visitorChoice();
       if (roll < 0.7) {
         const cushionId = Math.floor(visitorChoice() * 8);
-        const holder = hall.sim.state.monks.get(hall.sim.state.cushions.get(String(cushionId))!.occupantId);
-        if (!hall.sim.sit(id, cushionId) || !holder?.npc) return;
-        evictions += 1;
-        expect(holder.cushionId).toBe(-1);
-        expect(holder.mode).toBe("stand");
-        expect(hall.sim.state.monks.get(id)!.cushionId).toBe(cushionId);
+        const cushion = hall.sim.state.cushions.get(String(cushionId))!;
+        const holder = hall.sim.state.monks.get(cushion.occupantId);
+        if (!holder?.npc) {
+          hall.sim.sit(id, cushionId);
+          return;
+        }
+        const guestCushion = hall.sim.state.monks.get(id)!.cushionId;
+        expect(hall.sim.sit(id, cushionId)).toBe(false);
+        refusals += 1;
+        expect(cushion.occupantId).toBe(holder.id);
+        expect(holder.cushionId).toBe(cushionId);
+        expect(hall.sim.state.monks.get(id)!.cushionId).toBe(guestCushion);
       } else if (roll < 0.85) hall.sim.stand(id);
       else hall.sim.move(id, visitorChoice() * 8 - 4, visitorChoice() * 6 - 2);
     });
@@ -226,23 +232,24 @@ describe("npc and visitor cushions", () => {
     expect(problems).toEqual([]);
     expect(hall.sim.humanCount).toBe(guests.length);
     expect(seatedTicks).toBeGreaterThan(0);
-    expect(evictions).toBeGreaterThan(0);
+    expect(refusals).toBeGreaterThan(0);
   });
 
-  it("evicts an npc from its cushion when a visitor sits there, and the npc carries on", () => {
+  it("refuses a visitor who sits where an npc already is, and the npc stays put", () => {
     const hall = new Hall(5);
     hall.run(60_000);
     const seated = hall.npcs().find((npc) => npc.cushionId >= 0);
     expect(seated).toBeDefined();
     const npc = seated!;
     const cushionId = npc.cushionId;
+    const { mode } = npc;
 
     hall.sim.join("guest", 0);
-    expect(hall.sim.sit("guest", cushionId)).toBe(true);
-    expect(npc.mode).toBe("stand");
-    expect(npc.cushionId).toBe(-1);
-    expect(hall.sim.state.cushions.get(String(cushionId))?.occupantId).toBe("guest");
-    expect(hall.sim.state.monks.get("guest")?.cushionId).toBe(cushionId);
+    expect(hall.sim.sit("guest", cushionId)).toBe(false);
+    expect(hall.sim.state.cushions.get(String(cushionId))?.occupantId).toBe(npc.id);
+    expect(npc.cushionId).toBe(cushionId);
+    expect(npc.mode).toBe(mode);
+    expect(hall.sim.state.monks.get("guest")?.cushionId).toBe(-1);
     expect(hall.cushionProblems()).toEqual([]);
 
     const problems: string[] = [];
@@ -250,7 +257,9 @@ describe("npc and visitor cushions", () => {
     hall.run(90_000, () => {
       problems.push(...hall.cushionProblems());
       modes.add(npc.mode);
-      expect(hall.sim.state.cushions.get(String(cushionId))?.occupantId).toBe("guest");
+      const holder = hall.sim.state.cushions.get(String(cushionId))?.occupantId;
+      if (npc.cushionId === cushionId) expect(holder).toBe(npc.id);
+      expect(holder).not.toBe("guest");
     });
     expect(problems).toEqual([]);
     expect(modes.has("walk")).toBe(true);

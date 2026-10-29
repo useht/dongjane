@@ -11,7 +11,7 @@ import {
 } from "./constants.ts";
 import { randomHue } from "./identity.ts";
 import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
-import { type NpcActions, type NpcBrain, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
+import { type NpcActions, type NpcBrain, createNpcBrain, thinkNpc } from "./npc.ts";
 import { Cushion, Monk, TempleState } from "./schema.ts";
 
 interface Target {
@@ -120,11 +120,7 @@ export class TempleSim {
     const cushion = this.state.cushions.get(String(cushionId));
     if (!monk || !runtime || !spot || !cushion) return false;
     if (monk.cushionId === cushionId) return true;
-    if (cushion.occupantId !== "") {
-      const holder = this.state.monks.get(cushion.occupantId);
-      if (monk.npc || !holder?.npc) return false;
-      this.evict(holder);
-    }
+    if (cushion.occupantId !== "") return false;
 
     this.releaseSeat(monk);
     cushion.occupantId = id;
@@ -240,13 +236,6 @@ export class TempleSim {
       },
       this.npcActions,
     );
-  }
-
-  private evict(npc: Monk): void {
-    this.releaseSeat(npc);
-    npc.mode = "stand";
-    const brain = this.runtimes.get(npc.id)?.brain;
-    if (brain) disturbNpc(brain, this.clock(), this.random);
   }
 
   private beginBow(monk: Monk, runtime: Runtime, now: number): void {

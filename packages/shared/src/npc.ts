@@ -48,7 +48,6 @@ const SETTLE_MS: Range = [1000, 3000];
 const SIT_MS: Range = [12_000, 40_000];
 const LINGER_MS: Range = [0, 6000];
 const AFTER_STAND_MS: Range = [1000, 3000];
-const EVICTED_MS: Range = [1000, 2500];
 const FAR_STROLL_CHANCE = 0.15;
 const CHANT_SIT_BOOST = 0.5;
 const WALK_RECHECK_MS = 300;
@@ -70,11 +69,6 @@ export function createNpcBrain(random: () => number, now: number): NpcBrain {
     nextThinkAt: now + span(random, FIRST_THINK_MS),
     seat: null,
   };
-}
-
-export function disturbNpc(brain: NpcBrain, now: number, random: () => number): void {
-  brain.seat = null;
-  brain.nextThinkAt = now + span(random, EVICTED_MS);
 }
 
 export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
