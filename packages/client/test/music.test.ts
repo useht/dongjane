@@ -290,7 +290,7 @@ describe("SyncedLoop", () => {
     expect(t.audio.currentTime).toBeCloseTo(aimAhead(t.place(), SUTRA_SECONDS), 6);
   });
 
-  it("keeps playing while the tab is hidden, held to the server's place in the loop", async () => {
+  it("keeps playing for as long as someone is in earshot, held to the server's place in the loop", async () => {
     const t = start();
     t.loop.setActive(true);
     t.loop.setMix(1);

@@ -301,7 +301,7 @@ describe("StageVideoController playback", () => {
     expect(t.funcs()).toEqual(["playVideo"]);
   });
 
-  it("keeps playing with nothing sent for as long as someone is in earshot, whatever the tab is doing", () => {
+  it("keeps playing with nothing sent for as long as someone is in earshot", () => {
     const t = rig();
     t.controller.open();
     t.controller.receive({ kind: "ready" });
