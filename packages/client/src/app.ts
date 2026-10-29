@@ -1,6 +1,7 @@
 import {
   CUSHION_SPOTS,
   type HallInfo,
+  JUMP_COOLDOWN_MS,
   type SeatResponse,
   type TempleState,
   hallName,
@@ -97,6 +98,7 @@ export class App {
   private occupiedCushions = new Set<number>();
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
+  private nextJumpAt = 0;
   private nextChantTick = 0;
   private nextSkyTick = 0;
   private chantOverride: { label: string; startsAt: number; durationMs: number } | null = null;
@@ -137,6 +139,7 @@ export class App {
         onOpenHalls: () => void this.refreshHalls(),
         onBow: () => this.bow(),
         onStand: () => this.stand(),
+        onJump: () => this.jump(),
         onEmote: (emote) => this.session?.emote(emote),
         onInvite: () => void this.copyInvite(),
         onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
@@ -154,7 +157,10 @@ export class App {
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
-      onBow: () => this.bow(),
+      onSpace: () => {
+        if (this.self && this.self.cushionId >= 0) this.bow();
+        else this.jump();
+      },
       onStand: () => {
         if (!this.hud.closeSheets()) this.stand();
       },
@@ -356,6 +362,7 @@ export class App {
         bowCount: monk.bowCount,
         emote: monk.emote,
         emoteSeq: monk.emoteSeq,
+        jumpSeq: monk.jumpSeq,
       });
       if (monk.npc) return;
       visitorIds.add(monk.id);
@@ -449,6 +456,16 @@ export class App {
       return;
     }
     session.bow(1);
+  }
+
+  private jump(): void {
+    const session = this.session;
+    const now = performance.now();
+    if (!session || !this.self || this.self.cushionId >= 0 || now < this.nextJumpAt) return;
+    this.audio.unlock();
+    this.nextJumpAt = now + JUMP_COOLDOWN_MS;
+    this.world.hopSelf(now);
+    session.jump();
   }
 
   private stand(): void {

@@ -99,6 +99,10 @@ export class HallSession {
     this.send(MSG.stand, {});
   }
 
+  jump(): void {
+    this.send(MSG.jump, {});
+  }
+
   bow(times: BowMessage["times"]): void {
     this.send(MSG.bow, { times });
   }

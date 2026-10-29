@@ -3,6 +3,7 @@ import {
   BOW_MS,
   CUSHION_SPOTS,
   EMOTE_COOLDOWN_MS,
+  JUMP_COOLDOWN_MS,
   NPC_PER_HALL,
   SPAWN_POINT,
   TICK_MS,
@@ -126,6 +127,26 @@ describe("SoloSession", () => {
     void session.leave();
   });
 
+  it("jumps while standing, not while seated, and waits out the cooldown", () => {
+    const { session } = open();
+    expect(self(session).jumpSeq).toBe(0);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(1);
+    expect(self(session).mode).toBe("stand");
+
+    session.jump();
+    expect(self(session).jumpSeq).toBe(1);
+    vi.advanceTimersByTime(JUMP_COOLDOWN_MS);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(2);
+
+    session.sit(SEAT.id);
+    vi.advanceTimersByTime(JUMP_COOLDOWN_MS);
+    session.jump();
+    expect(self(session).jumpSeq).toBe(2);
+    void session.leave();
+  });
+
   it("keeps the chant schedule current as time passes", () => {
     const { session } = open();
     const before = session.state.chant.startsAt;
@@ -151,8 +172,10 @@ describe("SoloSession", () => {
     session.sit(SEAT.id);
     session.bow(3);
     session.emote(2);
+    session.jump();
     session.stand();
     expect(self(session).emoteSeq).toBe(0);
+    expect(self(session).jumpSeq).toBe(0);
     expect(self(session).mode).toBe("stand");
     expect(self(session).cushionId).toBe(-1);
     expect(self(session).ackSeq).toBe(0);
