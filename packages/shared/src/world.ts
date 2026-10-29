@@ -8,6 +8,7 @@ export interface WorldInfo {
 
 export interface WorldListResponse {
   worlds: WorldInfo[];
+  serverTime: number;
 }
 
 export interface SeatRequest {

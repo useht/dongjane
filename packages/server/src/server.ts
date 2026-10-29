@@ -49,7 +49,7 @@ const json = (body: unknown, status = 200): Response =>
 
 function createWorldEndpoints(directory: WorldDirectory) {
   const worldsEndpoint = createEndpoint(WORLDS_PATH, { method: "GET" }, async () => {
-    const body: WorldListResponse = { worlds: directory.list() };
+    const body: WorldListResponse = { worlds: directory.list(), serverTime: Date.now() };
     return json(body);
   });
 

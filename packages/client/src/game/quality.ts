@@ -10,7 +10,8 @@ export interface QualityProfile {
   pixelRatioCap: number;
   shadows: boolean;
   shadowMapSize: number;
-  dust: number;
+  leaves: number;
+  precipitation: number;
   anisotropy: number;
   weak: boolean;
 }
@@ -24,7 +25,8 @@ export function detectQuality(env: QualityEnv): QualityProfile {
     pixelRatioCap: Math.min(dpr, weak ? 1.25 : env.coarsePointer ? 1.75 : 2),
     shadows: true,
     shadowMapSize: weak ? 512 : 1024,
-    dust: weak ? 36 : 80,
+    leaves: weak ? 40 : 90,
+    precipitation: weak ? 420 : 900,
     anisotropy: Math.max(1, Math.min(env.maxAnisotropy, weak ? 2 : 8)),
     weak,
   };

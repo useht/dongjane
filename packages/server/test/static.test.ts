@@ -59,14 +59,19 @@ describe("client static serving", () => {
   });
 
   it("keeps the world list and matchmaking working on the same origin", async () => {
+    const before = Date.now();
     const empty = (await (await fetch(`${base}${WORLDS_PATH}`)).json()) as WorldListResponse;
     expect(empty.worlds).toEqual([]);
+    expect(empty.serverTime).toBeGreaterThanOrEqual(before);
+    expect(empty.serverTime).toBeLessThanOrEqual(Date.now());
 
     const rig = new TestRig(game.port);
     const room = await rig.enter(1);
     const body = (await (await fetch(`${base}${WORLDS_PATH}`)).json()) as WorldListResponse;
     expect(body.worlds).toHaveLength(1);
     expect(room.roomId).toBe(body.worlds[0]!.roomId);
+    expect(room.state.serverTime).toBeGreaterThan(0);
+    expect(Math.abs(room.state.serverTime - Date.now())).toBeLessThan(5000);
     await rig.closeAll();
   });
 });

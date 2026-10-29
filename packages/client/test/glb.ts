@@ -175,12 +175,20 @@ export function rootNodes(glb: Glb): GlbNode[] {
   });
 }
 
-export function colors(glb: Glb, nodeName: string): { count: number; size: number; values: number[] } {
+function attribute(glb: Glb, nodeName: string, name: "POSITION" | "COLOR_0"): { count: number; size: number; values: number[] } {
   const { json } = glb;
   const index = json.nodes?.findIndex((node) => node.name === nodeName) ?? -1;
   const meshIndex = json.nodes?.[index]?.mesh;
   const primitive = meshIndex === undefined ? undefined : json.meshes?.[meshIndex]?.primitives[0];
-  const accessor = primitive?.attributes.COLOR_0;
-  if (accessor === undefined) throw new Error(`${nodeName} has no COLOR_0`);
+  const accessor = primitive?.attributes[name];
+  if (accessor === undefined) throw new Error(`${nodeName} has no ${name}`);
   return readAccessor(glb, accessor);
+}
+
+export function colors(glb: Glb, nodeName: string): { count: number; size: number; values: number[] } {
+  return attribute(glb, nodeName, "COLOR_0");
+}
+
+export function positions(glb: Glb, nodeName: string): { count: number; size: number; values: number[] } {
+  return attribute(glb, nodeName, "POSITION");
 }

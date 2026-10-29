@@ -1,12 +1,10 @@
 import {
-  AdditiveBlending,
   BackSide,
   BufferAttribute,
   BufferGeometry,
-  Camera,
+  type Camera,
   Color,
   DirectionalLight,
-  DoubleSide,
   DynamicDrawUsage,
   Float32BufferAttribute,
   Group,
@@ -18,29 +16,32 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  MeshStandardMaterial,
   PMREMGenerator,
-  PlaneGeometry,
-  PointLight,
   Points,
   PointsMaterial,
-  Quaternion,
   Scene,
+  ShaderMaterial,
   SphereGeometry,
+  Sprite,
+  SpriteMaterial,
   type Texture,
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { MAT_SPOTS } from "@dongjane/shared";
-import { type ModelMeshes, textureOf } from "../assets/registry.ts";
+import { GATBAWI_Z, MAT_COUNT, MAT_SPOTS, MAT_YAW, PLATFORM } from "@dongjane/shared";
+import { type ModelMeshes, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
-import { ALTAR_TOP, BUDDHA_Z, CANDLE_SPOTS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
-import { flameGlowTexture, mulberry32 } from "./textures.ts";
+import { MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
+import { Precipitation } from "./precipitation.ts";
+import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
+import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32 } from "./textures.ts";
 
 export interface LandscapeQuality {
   shadows: boolean;
   shadowMapSize: number;
-  dust: number;
+  leaves: number;
+  precipitation: number;
   anisotropy: number;
 }
 
@@ -49,6 +50,43 @@ interface Shadows {
   receive?: boolean;
 }
 
+// A change of weather or hour takes this long to show.
+const SKY_EASE_SECONDS = 1.5;
+const SKY_VISIBLE = 0.004;
+const REDUCED_PRECIPITATION_MOTION = 0.1;
+const CLOUD_TURN_PER_SECOND = 0.004;
+const STAR_COUNT = 260;
+const SUN_DISTANCE = 58;
+
+// The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted.
+const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35 } as const;
+
+const LEAF_AREA = { minX: -10, spanX: 20, minZ: -2, spanZ: 11, top: 8, floor: 0.05 } as const;
+const LEAF_FALL_PER_SECOND = 0.05;
+const LEAF_WIND = 3;
+const LEAF_SIZE = 0.2;
+
+const SKY_VERTEX = /* glsl */ `
+varying vec3 vDirection;
+void main() {
+  vDirection = normalize(position);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const SKY_FRAGMENT = /* glsl */ `
+uniform vec3 uTop;
+uniform vec3 uMid;
+uniform vec3 uHorizon;
+varying vec3 vDirection;
+void main() {
+  float height = clamp(vDirection.y, 0.0, 1.0);
+  vec3 color = mix(uHorizon, uMid, smoothstep(0.0, 0.32, height));
+  color = mix(color, uTop, smoothstep(0.18, 0.95, height));
+  gl_FragColor = vec4(color, 1.0);
+  #include <colorspace_fragment>
+}`;
+
+// A soft gradient of sky above and ground below, which the statue's stone reflects faintly.
 function buildEnvironment(renderer: WebGLRenderer): Texture {
   const { scene: palette } = THEME;
   const scene = new Scene();
@@ -70,24 +108,12 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   dome.setAttribute("color", new BufferAttribute(colors, 3));
   const domeMaterial = new MeshBasicMaterial({ vertexColors: true, side: BackSide });
   scene.add(new Mesh(dome, domeMaterial));
-  const panels = new PlaneGeometry(5, 4);
-  const lampMaterial = new MeshBasicMaterial({ color: new Color(palette.envLamp).multiplyScalar(7), side: DoubleSide });
-  const lamp = new Mesh(panels, lampMaterial);
-  lamp.position.set(8, 4, 0);
-  lamp.rotation.y = -Math.PI / 2;
-  scene.add(lamp);
-  const candleGeometry = new PlaneGeometry(3, 2);
-  const candleMaterial = new MeshBasicMaterial({ color: new Color(palette.envCandle).multiplyScalar(4), side: DoubleSide });
-  const candle = new Mesh(candleGeometry, candleMaterial);
-  candle.position.set(0, 2, 8);
-  candle.rotation.y = Math.PI;
-  scene.add(candle);
 
   const generator = new PMREMGenerator(renderer);
   const target = generator.fromScene(scene, 0.03);
   generator.dispose();
-  for (const geometry of [dome, panels, candleGeometry]) geometry.dispose();
-  for (const material of [domeMaterial, lampMaterial, candleMaterial]) material.dispose();
+  dome.dispose();
+  domeMaterial.dispose();
   return target.texture;
 }
 
@@ -95,222 +121,343 @@ export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
 
-  private readonly buddha: BuddhaPieces;
   private readonly environment: Texture;
-  private readonly candleLight: PointLight;
-  private readonly flames: InstancedMesh;
-  private readonly dust: Points;
-  private readonly dustSeeds: Float32Array;
-  private readonly matBody: InstancedMesh;
-  private readonly matTop: InstancedMesh;
-  private readonly glow: Texture;
+  private readonly hemisphere: HemisphereLight;
+  private readonly sky = new Group();
+  private readonly skyMaterial: ShaderMaterial;
+  private readonly clouds: Mesh;
+  private readonly stars: Points;
+  private readonly sunSprite: Sprite;
+  private readonly moonSprite: Sprite;
+  private readonly precipitation: Precipitation;
+  private readonly leaves: Points;
+  private readonly leafSeeds: Float32Array;
+  private readonly mats: InstancedMesh;
+  private readonly envMaterials: MeshStandardMaterial[] = [];
   private readonly materials: Material[] = [];
+  private readonly textures: Texture[] = [];
+  private readonly geometries: BufferGeometry[] = [];
   private readonly occupied = new Set<number>();
-  private readonly tmpMatrix = new Matrix4();
-  private readonly tmpQuat = new Quaternion();
-  private readonly tmpScale = new Vector3();
-  private readonly tmpPos = new Vector3();
   private readonly tint = new Color();
+  private readonly sunDirection = new Vector3(...SUN_POSITION).normalize();
+  private readonly moonDirection = new Vector3(...MOON_DIRECTION).normalize();
+  private target: SkyLook = cloneLook(DAY_LOOK);
+  private current: SkyLook = cloneLook(DAY_LOOK);
+  private skyKnown = false;
+  private cloudTurn = 0;
 
-  constructor(renderer: WebGLRenderer, quality: LandscapeQuality, meshes: ModelMeshes<"world">, buddha: ModelMeshes<"buddha">) {
-    const { scene: palette } = THEME;
+  constructor(renderer: WebGLRenderer, quality: LandscapeQuality, world: ModelMeshes<"world">, gatbawi: ModelMeshes<"gatbawi">) {
+    const { scene: palette, material: tokens } = THEME;
     this.group.name = "landscape";
     this.environment = buildEnvironment(renderer);
-    this.buddha = buildBuddha(buddha, this.environment);
     const { anisotropy } = quality;
 
-    this.group.add(new HemisphereLight(palette.hemiSky, palette.hemiGround, 1.25));
+    this.hemisphere = new HemisphereLight(packRgb(DAY_LOOK.hemisphereSky), packRgb(DAY_LOOK.hemisphereGround), DAY_LOOK.hemisphereIntensity);
+    this.group.add(this.hemisphere);
 
-    this.sun = new DirectionalLight(palette.sun, 3.1);
+    this.sun = new DirectionalLight(packRgb(DAY_LOOK.sunColor), DAY_LOOK.sunIntensity);
     this.sun.position.set(...SUN_POSITION);
     this.sun.target.position.set(...SUN_TARGET);
     this.sun.castShadow = quality.shadows;
     if (quality.shadows) {
       this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
       const camera = this.sun.shadow.camera;
-      camera.left = -11;
-      camera.right = 11;
-      camera.top = 11;
-      camera.bottom = -11;
+      camera.left = -SHADOW_HALF_EXTENT;
+      camera.right = SHADOW_HALF_EXTENT;
+      camera.top = SHADOW_HALF_EXTENT;
+      camera.bottom = -SHADOW_HALF_EXTENT;
       camera.near = 2;
-      camera.far = 40;
+      camera.far = 45;
       this.sun.shadow.bias = -0.0006;
       this.sun.shadow.normalBias = 0.035;
     }
     this.group.add(this.sun, this.sun.target);
 
-    this.candleLight = new PointLight(palette.candle, 9, 11, 2);
-    this.candleLight.position.set(0, 1.7, BUDDHA_Z + 1.4);
-    this.group.add(this.candleLight);
-
-    const lit = (): MeshLambertMaterial => new MeshLambertMaterial({ vertexColors: true });
-    this.add(meshes.structure, lit(), { cast: true, receive: true });
-    this.add(meshes.beams, lit());
-    this.add(meshes.paper, new MeshLambertMaterial({ vertexColors: true, emissive: palette.paperGlow, emissiveIntensity: 0.55 }));
-    this.add(meshes.outdoor, lit());
-    this.add(meshes.lanterns, new MeshBasicMaterial({ vertexColors: true, fog: false }));
-
-    const floorMap = textureOf(meshes.floor);
-    const backdropMap = textureOf(meshes.backdrop);
-    const matMap = textureOf(meshes.matTop);
-    for (const map of [floorMap, backdropMap, matMap]) map.anisotropy = anisotropy;
-    this.add(meshes.floor, new MeshLambertMaterial({ map: floorMap }), { receive: true });
-    this.add(
-      meshes.backdrop,
-      new MeshLambertMaterial({ map: backdropMap, emissive: palette.muralGlow, emissiveMap: backdropMap, emissiveIntensity: 0.55 }),
-      { receive: true },
-    );
-    this.add(meshes.sky, new MeshBasicMaterial({ map: textureOf(meshes.sky), fog: false, toneMapped: false }));
-    this.add(
-      meshes.sunbeams,
-      new MeshBasicMaterial({
-        map: textureOf(meshes.sunbeams),
-        color: palette.beamTint,
-        transparent: true,
-        opacity: 0.32,
-        depthWrite: false,
-        blending: AdditiveBlending,
-        side: DoubleSide,
-        fog: false,
-      }),
-    );
-
-    this.buddha.group.position.set(0, ALTAR_TOP, BUDDHA_Z - 0.5);
-    this.group.add(this.buddha.group);
-
-    this.matBody = this.instance(meshes.matBody, lit(), "mat-body", { cast: true, receive: true });
-    this.matTop = this.instance(meshes.matTop, new MeshLambertMaterial({ map: matMap }), "mat-top", { receive: true });
-    this.placeMats();
-
-    this.glow = flameGlowTexture();
-    this.flames = this.buildCandles();
-
-    const dustCount = quality.dust;
-    this.dustSeeds = new Float32Array(dustCount * 4);
-    const rand = mulberry32(31);
-    for (let i = 0; i < dustCount; i += 1) {
-      this.dustSeeds[i * 4] = rand() * Math.PI * 2;
-      this.dustSeeds[i * 4 + 1] = 0.2 + rand() * 0.5;
-      this.dustSeeds[i * 4 + 2] = rand();
-      this.dustSeeds[i * 4 + 3] = rand();
-    }
-    const dustGeometry = new BufferGeometry();
-    dustGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(dustCount * 3), 3));
-    const dustMaterial = new PointsMaterial({
-      map: this.glow,
-      size: 0.09,
-      transparent: true,
-      opacity: 0.55,
+    this.skyMaterial = new ShaderMaterial({
+      uniforms: { uTop: { value: new Color() }, uMid: { value: new Color() }, uHorizon: { value: new Color() } },
+      vertexShader: SKY_VERTEX,
+      fragmentShader: SKY_FRAGMENT,
+      side: BackSide,
+      depthTest: false,
       depthWrite: false,
-      blending: AdditiveBlending,
-      color: palette.dust,
       fog: false,
     });
-    this.materials.push(dustMaterial);
-    this.dust = new Points(dustGeometry, dustMaterial);
-    this.dust.frustumCulled = false;
-    this.group.add(this.dust);
-    this.update(0, null, true);
+    const dome = new Mesh(this.track(new SphereGeometry(SKY_RADIUS, 32, 16)), this.skyMaterial);
+    dome.name = "sky";
+    dome.renderOrder = -100;
+    dome.frustumCulled = false;
+    this.materials.push(this.skyMaterial);
+    this.sky.add(dome);
+
+    const cloudMap = this.texture(cloudTexture());
+    const cloudMaterial = new MeshBasicMaterial({ map: cloudMap, transparent: true, opacity: 0, depthWrite: false, side: BackSide, fog: false, toneMapped: false });
+    this.materials.push(cloudMaterial);
+    this.clouds = new Mesh(this.track(new SphereGeometry(SKY_RADIUS * 0.96, 40, 12, 0, Math.PI * 2, 0, Math.PI / 2)), cloudMaterial);
+    this.clouds.name = "clouds";
+    this.clouds.renderOrder = -1;
+    this.clouds.frustumCulled = false;
+    this.clouds.visible = false;
+    this.sky.add(this.clouds);
+
+    this.stars = this.buildStars(palette.star);
+    this.sky.add(this.stars);
+
+    const disc = this.texture(discGlowTexture());
+    this.sunSprite = this.buildDisc(disc, 13, this.sunDirection);
+    this.moonSprite = this.buildDisc(disc, 7, this.moonDirection);
+    this.moonSprite.material.color.set(palette.moon);
+    this.sky.add(this.sunSprite, this.moonSprite);
+    this.group.add(this.sky);
+
+    this.group.add(this.buildStatue(gatbawi, anisotropy));
+    this.add(world.ground, this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
+    this.add(world.steps, this.surface(world.steps, anisotropy, LIFT.stone), { cast: true, receive: true });
+    this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
+    this.add(world.pine, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
+    this.add(world.maple, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
+
+    this.mats = this.buildMats(world.mat, anisotropy);
+    this.group.add(this.mats);
+
+    const flake = this.texture(flakeTexture());
+    this.precipitation = new Precipitation(quality.precipitation, flake);
+    this.group.add(this.precipitation.group);
+
+    this.leafSeeds = new Float32Array(quality.leaves * 5);
+    const rand = mulberry32(31);
+    for (let i = 0; i < this.leafSeeds.length; i += 1) this.leafSeeds[i] = rand();
+    this.leaves = this.buildLeaves(quality.leaves, [tokens.maple, tokens.leafRed, tokens.ginkgo, tokens.litter]);
+    this.group.add(this.leaves);
+
+    this.applyLook(this.current);
+    this.update(0, 0, null, true);
   }
 
-  private add(source: Mesh, material: Material, shadows: Shadows = {}): void {
+  private track(geometry: BufferGeometry): BufferGeometry {
+    this.geometries.push(geometry);
+    return geometry;
+  }
+
+  private texture<T extends Texture>(texture: T): T {
+    this.textures.push(texture);
+    return texture;
+  }
+
+  private add(source: Mesh, material: Material, shadows: Shadows = {}, parent: Group = this.group): Mesh {
     const mesh = new Mesh(source.geometry, material);
     mesh.name = source.name;
     mesh.castShadow = shadows.cast ?? false;
     mesh.receiveShadow = shadows.receive ?? false;
     this.materials.push(material);
-    this.group.add(mesh);
-  }
-
-  private instance(source: Mesh, material: Material, name: string, shadows: Shadows): InstancedMesh {
-    const mesh = new InstancedMesh(source.geometry, material, MAT_SPOTS.length);
-    mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(MAT_SPOTS.length * 3).fill(1), 3);
-    mesh.instanceColor.setUsage(DynamicDrawUsage);
-    mesh.castShadow = shadows.cast ?? false;
-    mesh.receiveShadow = shadows.receive ?? false;
-    mesh.frustumCulled = false;
-    mesh.name = name;
-    this.materials.push(material);
-    this.group.add(mesh);
+    parent.add(mesh);
     return mesh;
   }
 
-  private placeMats(): void {
-    const m = new Matrix4();
-    for (const spot of MAT_SPOTS) {
-      m.makeTranslation(spot.x, 0, spot.z);
-      this.matBody.setMatrixAt(spot.id, m);
-      this.matTop.setMatrixAt(spot.id, m);
-    }
+  // The photograph and, when the glb has one, its normal map, times the colours painted into the vertices.
+  private surface(source: Mesh, anisotropy: number, lift: number): MeshLambertMaterial {
+    const map = textureOf(source);
+    const normalMap = normalOf(source);
+    map.anisotropy = anisotropy;
+    if (normalMap) normalMap.anisotropy = anisotropy;
+    const material = new MeshLambertMaterial({ map, normalMap, vertexColors: true });
+    material.color.setScalar(lift);
+    return material;
   }
 
-  private buildCandles(): InstancedMesh {
-    const material = new MeshBasicMaterial({ map: this.glow, transparent: true, depthWrite: false, blending: AdditiveBlending, fog: false });
+  private stoneOf(source: Mesh, anisotropy: number): MeshStandardMaterial {
+    const map = textureOf(source);
+    const normalMap = normalOf(source);
+    map.anisotropy = anisotropy;
+    if (normalMap) normalMap.anisotropy = anisotropy;
+    const material = new MeshStandardMaterial({ map, normalMap, vertexColors: true, roughness: 0.92, metalness: 0, envMap: this.environment });
+    material.color.setScalar(LIFT.stone);
+    this.envMaterials.push(material);
+    return material;
+  }
+
+  // Gatbawi stands on the platform; the glb draws him around the middle of his pedestal's foot.
+  private buildStatue(meshes: ModelMeshes<"gatbawi">, anisotropy: number): Group {
+    const statue = new Group();
+    statue.name = "gatbawi";
+    statue.position.set(0, PLATFORM.topY, GATBAWI_Z);
+    for (const name of ["figure", "hatStone", "pedestal"] as const) {
+      this.add(meshes[name], this.stoneOf(meshes[name], anisotropy), { cast: true, receive: true }, statue);
+    }
+    const offerings = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, envMap: this.environment });
+    this.envMaterials.push(offerings);
+    this.add(meshes.offerings, offerings, { cast: true, receive: true }, statue);
+    return statue;
+  }
+
+  private buildMats(source: Mesh, anisotropy: number): InstancedMesh {
+    const material = this.surface(source, anisotropy, LIFT.mat);
     this.materials.push(material);
-    const flames = new InstancedMesh(new PlaneGeometry(0.5, 0.62), material, CANDLE_SPOTS.length);
-    flames.frustumCulled = false;
-    flames.name = "flames";
-    this.group.add(flames);
-    return flames;
+    const mats = new InstancedMesh(source.geometry, material, MAT_COUNT);
+    mats.instanceColor = new InstancedBufferAttribute(new Float32Array(MAT_COUNT * 3).fill(1), 3);
+    mats.instanceColor.setUsage(DynamicDrawUsage);
+    mats.receiveShadow = true;
+    mats.frustumCulled = false;
+    mats.name = "mats";
+    const m = new Matrix4();
+    for (const spot of MAT_SPOTS) {
+      m.makeRotationY(MAT_YAW).setPosition(spot.x, 0, spot.z);
+      mats.setMatrixAt(spot.id, m);
+    }
+    return mats;
+  }
+
+  private buildStars(hex: string): Points {
+    const rand = mulberry32(5);
+    const positions = new Float32Array(STAR_COUNT * 3);
+    for (let i = 0; i < STAR_COUNT; i += 1) {
+      const height = 0.12 + rand() * 0.88;
+      const turn = rand() * Math.PI * 2;
+      const ring = Math.sqrt(1 - height * height);
+      positions[i * 3] = Math.cos(turn) * ring * SKY_RADIUS * 0.94;
+      positions[i * 3 + 1] = height * SKY_RADIUS * 0.94;
+      positions[i * 3 + 2] = Math.sin(turn) * ring * SKY_RADIUS * 0.94;
+    }
+    const geometry = this.track(new BufferGeometry());
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    const material = new PointsMaterial({ color: hex, size: 1.8, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false, toneMapped: false });
+    this.materials.push(material);
+    const stars = new Points(geometry, material);
+    stars.name = "stars";
+    stars.renderOrder = -2;
+    stars.frustumCulled = false;
+    stars.visible = false;
+    return stars;
+  }
+
+  private buildDisc(map: Texture, size: number, direction: Vector3): Sprite {
+    const material = new SpriteMaterial({ map, transparent: true, opacity: 0, depthWrite: false, fog: false, toneMapped: false });
+    this.materials.push(material);
+    const sprite = new Sprite(material);
+    sprite.position.copy(direction).multiplyScalar(SUN_DISTANCE);
+    sprite.scale.setScalar(size);
+    sprite.renderOrder = -3;
+    sprite.frustumCulled = false;
+    sprite.visible = false;
+    return sprite;
+  }
+
+  private buildLeaves(count: number, tones: readonly string[]): Points {
+    const map = this.texture(leafTexture());
+    const geometry = this.track(new BufferGeometry());
+    geometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(count * 3), 3));
+    const colors = new Float32Array(count * 3);
+    const color = new Color();
+    for (let i = 0; i < count; i += 1) {
+      const tone = tones[Math.floor((this.leafSeeds[i * 5 + 4] as number) * tones.length)] as string;
+      color.set(tone);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geometry.setAttribute("color", new BufferAttribute(colors, 3));
+    const material = new PointsMaterial({ map, size: LEAF_SIZE, vertexColors: true, alphaTest: 0.4 });
+    this.materials.push(material);
+    const leaves = new Points(geometry, material);
+    leaves.name = "leaves";
+    leaves.frustumCulled = false;
+    return leaves;
   }
 
   setOccupied(matId: number, occupied: boolean): void {
-    if (matId < 0 || matId >= MAT_SPOTS.length) return;
+    if (matId < 0 || matId >= MAT_COUNT) return;
     if (occupied === this.occupied.has(matId)) return;
     if (occupied) this.occupied.add(matId);
     else this.occupied.delete(matId);
     this.tint.setScalar(occupied ? 0.55 : 1);
-    for (const mesh of [this.matBody, this.matTop]) {
-      mesh.setColorAt(matId, this.tint);
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
+    this.mats.setColorAt(matId, this.tint);
+    if (this.mats.instanceColor) this.mats.instanceColor.needsUpdate = true;
   }
 
-  update(time: number, camera: Camera | null, reduceMotion: boolean): void {
-    const flicker = reduceMotion ? 0.35 : 1;
-    const base = this.tmpPos;
-    for (let i = 0; i < CANDLE_SPOTS.length; i += 1) {
-      const [x, z] = CANDLE_SPOTS[i] as readonly [number, number];
-      const wobble = 0.92 + flicker * (0.09 * Math.sin(time * 9 + i * 1.7) + 0.05 * Math.sin(time * 17 + i * 3.1));
-      base.set(x, ALTAR_TOP + 0.56, z);
-      if (camera) this.tmpQuat.copy(camera.quaternion);
-      else this.tmpQuat.identity();
-      this.tmpScale.set(wobble * 0.9, wobble, 1);
-      this.tmpMatrix.compose(base, this.tmpQuat, this.tmpScale);
-      this.flames.setMatrixAt(i, this.tmpMatrix);
-    }
-    this.flames.instanceMatrix.needsUpdate = true;
+  get look(): SkyLook {
+    return this.current;
+  }
 
-    this.candleLight.intensity = 9 * (0.93 + flicker * (0.07 * Math.sin(time * 7.3) + 0.04 * Math.sin(time * 13.1 + 1)));
-    this.buddha.glow.scale.setScalar(1 + (reduceMotion ? 0 : 0.015 * Math.sin(time * 0.9)));
+  // The first look snaps so the world never opens on the wrong hour; later ones ease in.
+  setSky(look: SkyLook): void {
+    this.target = look;
+    if (this.skyKnown) return;
+    this.skyKnown = true;
+    this.current = cloneLook(look);
+  }
 
-    const count = this.dustSeeds.length / 4;
-    const attribute = this.dust.geometry.getAttribute("position") as BufferAttribute;
-    const drift = reduceMotion ? 0 : time;
+  update(time: number, dt: number, camera: Camera | null, reduceMotion: boolean): void {
+    if (dt > 0) easeLook(this.current, this.target, 1 - Math.exp(-dt / SKY_EASE_SECONDS));
+    const look = this.current;
+    this.applyLook(look);
+    this.precipitation.update(dt, reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1, look.rain, look.snow, packRgb(look.precipTint));
+
+    if (camera) this.sky.position.copy(camera.position);
+    if (!reduceMotion) this.cloudTurn += dt * CLOUD_TURN_PER_SECOND;
+    this.clouds.rotation.y = this.cloudTurn;
+
+    this.driftLeaves(reduceMotion ? 0 : time);
+  }
+
+  private applyLook(look: SkyLook): void {
+    this.hemisphere.intensity = look.hemisphereIntensity;
+    this.hemisphere.color.setHex(packRgb(look.hemisphereSky));
+    this.hemisphere.groundColor.setHex(packRgb(look.hemisphereGround));
+    this.sun.intensity = look.sunIntensity;
+    this.sun.color.setHex(packRgb(look.sunColor));
+    for (const material of this.envMaterials) material.envMapIntensity = look.envIntensity;
+
+    const uniforms = this.skyMaterial.uniforms as Record<"uTop" | "uMid" | "uHorizon", { value: Color }>;
+    uniforms.uTop.value.setHex(packRgb(look.skyTop));
+    uniforms.uMid.value.setHex(packRgb(look.skyMid));
+    uniforms.uHorizon.value.setHex(packRgb(look.fogColor));
+
+    const cloud = this.clouds.material as MeshBasicMaterial;
+    cloud.opacity = look.cloudCover;
+    cloud.color.setHex(packRgb(look.cloudTint));
+    this.clouds.visible = look.cloudCover > SKY_VISIBLE;
+
+    const stars = this.stars.material as PointsMaterial;
+    stars.opacity = look.nightSky;
+    this.stars.visible = look.nightSky > SKY_VISIBLE;
+
+    this.sunSprite.material.opacity = look.sunGlow;
+    this.sunSprite.material.color.setHex(packRgb(look.sunColor));
+    this.sunSprite.visible = look.sunGlow > SKY_VISIBLE;
+    this.moonSprite.material.opacity = look.nightSky;
+    this.moonSprite.visible = look.nightSky > SKY_VISIBLE;
+
+    const leaves = this.leaves.material as PointsMaterial;
+    const fallout = Math.max(look.rain, look.snow);
+    leaves.size = LEAF_SIZE * (1 - fallout);
+    leaves.color.setScalar(1 - 0.7 * look.nightSky);
+    this.leaves.visible = fallout < 0.98;
+  }
+
+  private driftLeaves(drift: number): void {
+    const count = this.leafSeeds.length / 5;
+    const attribute = this.leaves.geometry.getAttribute("position") as BufferAttribute;
     for (let i = 0; i < count; i += 1) {
-      const phase = this.dustSeeds[i * 4] as number;
-      const speed = this.dustSeeds[i * 4 + 1] as number;
-      const a = this.dustSeeds[i * 4 + 2] as number;
-      const c = this.dustSeeds[i * 4 + 3] as number;
-      const along = (a + drift * 0.012 * speed) % 1;
+      const phase = (this.leafSeeds[i * 5] as number) * Math.PI * 2;
+      const speed = 0.6 + (this.leafSeeds[i * 5 + 1] as number) * 0.8;
+      const along = ((this.leafSeeds[i * 5 + 2] as number) + drift * LEAF_FALL_PER_SECOND * speed) % 1;
+      const across = this.leafSeeds[i * 5 + 3] as number;
       attribute.setXYZ(
         i,
-        6 - along * 8 + Math.sin(drift * 0.3 * speed + phase) * 0.4,
-        3.4 - along * 3.1 + Math.sin(drift * 0.5 * speed + phase * 2) * 0.35 + c * 0.6,
-        -2 + c * 4.6 + along * 1.4 + Math.cos(drift * 0.25 * speed + phase) * 0.4,
+        LEAF_AREA.minX + across * LEAF_AREA.spanX + along * LEAF_WIND + Math.sin(drift * 0.9 * speed + phase) * 0.6,
+        LEAF_AREA.floor + (1 - along) * LEAF_AREA.top,
+        LEAF_AREA.minZ + ((across * 7.31 + phase) % 1) * LEAF_AREA.spanZ + Math.cos(drift * 0.7 * speed + phase) * 0.5,
       );
     }
     attribute.needsUpdate = true;
   }
 
-  // The geometries and textures that came with the glb belong to the loaded assets; only what the landscape made is released here.
+  // The geometries and textures that came with the glbs belong to the loaded assets; only what the landscape made is released here.
   dispose(): void {
+    this.precipitation.dispose();
     for (const material of this.materials) material.dispose();
-    this.flames.geometry.dispose();
-    this.dust.geometry.dispose();
-    for (const mesh of [this.flames, this.matBody, this.matTop]) mesh.dispose();
-    this.glow.dispose();
-    this.buddha.dispose();
+    for (const geometry of this.geometries) geometry.dispose();
+    for (const texture of this.textures) texture.dispose();
+    this.mats.dispose();
     this.environment.dispose();
     this.group.removeFromParent();
   }

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
-import { SPAWN_POINT } from "@dongjane/shared";
+import { GATBAWI_Z, MAT_SIZE, MAT_SPOTS, PLATFORM, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas } from "../src/game/camera-rig.ts";
-import { BUDDHA_Z, LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
+import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
 
@@ -49,10 +49,10 @@ describe("CameraRig", () => {
     for (let i = 0; i < 50; i += 1) rig.zoom(0.5);
     expect(rig.distance).toBeGreaterThanOrEqual(2.6);
     for (let i = 0; i < 50; i += 1) rig.zoom(2);
-    expect(rig.distance).toBeLessThanOrEqual(9);
+    expect(rig.distance).toBeLessThanOrEqual(13);
   });
 
-  it("points forward toward the buddha at yaw 0 and rotates with orbit", () => {
+  it("points forward toward Gatbawi at yaw 0 and rotates with orbit", () => {
     const rig = make();
     expect(rig.forward.z).toBeCloseTo(-1, 6);
     rig.yaw = Math.PI / 2;
@@ -144,7 +144,9 @@ const SCREENS: ReadonlyArray<readonly [string, number, number, number, number]> 
 ];
 
 describe("default framing", () => {
-  it.each(SCREENS)("keeps the halo, altar and monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
+  const halfMat = { x: MAT_SIZE.x / 2, z: MAT_SIZE.z / 2 };
+
+  it.each(SCREENS)("keeps Gatbawi, all twelve mats and the monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
     const camera = new PerspectiveCamera();
     const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
     rig.reduceMotion = true;
@@ -155,18 +157,42 @@ describe("default framing", () => {
     camera.updateMatrixWorld();
     const screen = (x: number, y: number, z: number) => {
       const p = new Vector3(x, y, z).project(camera);
-      return { x: ((p.x + 1) / 2) * width, y: ((1 - p.y) / 2) * height };
+      return { x: ((p.x + 1) / 2) * width, y: ((1 - p.y) / 2) * height, depth: p.z };
     };
 
-    const haloTop = screen(0, 4.78, BUDDHA_Z - 1.05);
-    const bowl = screen(0, 1, BUDDHA_Z + 0.85);
-    const outerCandle = screen(3.1, 1.18, BUDDHA_Z + 0.8);
+    const hatTop = screen(0, PLATFORM.topY + 4.1, GATBAWI_Z);
+    expect(hatTop.y).toBeGreaterThan(top);
+    expect(hatTop.depth).toBeLessThan(1);
+    for (const spot of MAT_SPOTS) {
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const corner = screen(spot.x + sx * halfMat.x, 0.03, spot.z + sz * halfMat.z);
+          expect(corner.x, `mat ${spot.id} corner`).toBeGreaterThan(8);
+          expect(corner.x, `mat ${spot.id} corner`).toBeLessThan(width - 8);
+          expect(corner.y, `mat ${spot.id} corner`).toBeGreaterThan(top);
+          expect(corner.y, `mat ${spot.id} corner`).toBeLessThan(height - bottom);
+        }
+      }
+    }
     const feet = screen(SPAWN_POINT.x, 0, SPAWN_POINT.z);
-    expect(haloTop.y).toBeGreaterThan(top);
-    expect(bowl.y).toBeGreaterThan(top);
-    expect(outerCandle.y).toBeGreaterThan(top);
-    expect(outerCandle.x).toBeLessThan(width - 8);
+    const head = screen(SPAWN_POINT.x, 1.5, SPAWN_POINT.z);
+    expect(head.y).toBeGreaterThan(top);
     expect(feet.y).toBeLessThan(height - bottom);
+  });
+
+  it("keeps the camera inside the bounds and in front of the trees", () => {
+    const camera = new PerspectiveCamera();
+    const rig = new CameraRig(camera, LANDSCAPE_BOUNDS);
+    rig.reduceMotion = true;
+    rig.follow(SPAWN_POINT.x, SPAWN_POINT.z, 0, true);
+    rig.update(0.016);
+    const { x, y, z } = camera.position;
+    expect(x).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minX);
+    expect(x).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxX);
+    expect(y).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minY);
+    expect(y).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxY);
+    expect(z).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxZ);
+    expect(z).toBeCloseTo(SPAWN_POINT.z + DEFAULT_VIEW.distance * Math.cos(DEFAULT_VIEW.pitch), 6);
   });
 
   it("uses a wider lens on portrait screens", () => {

@@ -1,445 +1,316 @@
-"""world.glb: the prayer world, the garden seen through its window, and the mat prototypes.
+"""world.glb: the plaza and its autumn mountainside, and the mat prototype.
 
 Everything is drawn in the game's own coordinates (Y up, +Z toward the viewer) through a Part whose
-frame is GAME. Inside `part.placed(...)` a door bay is drawn in its own frame: x along the wall,
-y up, z into the world. Walls, beams and pillars are subdivided so the baked occlusion has vertices
-to land on; faces nobody can see are never built.
+frame is GAME. The plaza (flat paving the monks kneel on), the granite steps and platform, the
+rocks, the pines and the maples are placed from the layout in the inputs; only the dressing of the
+hillside (where the far trees and boulders go) is chosen here. The mat is built last, at the origin,
+so the baked occlusion never sees it.
 """
 
 import math
 import os
-import random
 
-from mathutils import Matrix, Vector
+from mathutils import Vector
 
 import common
-import flat_textures
-from common import GAME, Part, at, cells, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, turned
+from common import GAME, Part, at, fbm, from_game, hash01, mix, rgb, scaled, smoothstep, spun, to_game
 
-STEP = 0.75
-WHITE = (1.0, 1.0, 1.0)
+SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
+GROUND_TILE = 1.6  # metres of ground per repeat of the paving picture
+STONE_TILE = 2.4  # metres of rock per repeat of the rock picture
 
-SILL = 0.9
-OPENING = 3.7
-WALL_DEPTH = 0.5
-SIDE_BAYS = ((-4.25, 4.3), (-0.05, 4.1), (4.0, 4.0))  # (centre z, width) along each side wall
-FRONT_BAYS = ((-4.25, 4.3), (0.0, 4.2), (4.25, 4.3))  # (centre x, width) along the front wall
-WINDOW_BAY = 1  # the middle bay of the right wall stands open to the garden
-PILLAR_Z = (-6.4, -2.1, 2.0, 6.0)
-FRONT_PILLAR_Z = 7.4
-BEAM_Z = (-6.4, -2.1, 2.0, 6.0, 7.4)
-BEAM_DEPTH = 0.36
-PURLIN_WIDTH = 0.34
-LANTERN_X = (-4.4, -1.5, 1.5, 4.4)
-LANTERN_Z = (-3.2, 0.8, 4.8)
-SKY_DISTANCE = 32.0
-SKY_CENTER_Y = 5.5
-GARDEN_WALL_X = 9.3
-MAT_RADIUS = 0.4
+PLAZA_HALF = 6.5  # the paving runs this far to each side
+PLAZA_MARGIN = 1.2  # and this much past the last mat row
+PLATFORM_HALF = 3.8
+PLATFORM_BACK = 0.7  # the platform reaches this far behind the statue's pedestal into the hill
+STEP_HALF = 2.6
+STEP_RISE = 0.3
+GROUND_LIMIT = 64.0
+
+# (x, z, height above ground, radii, seed, segments); the outcrop stands behind Gatbawi
+OUTCROP = (
+    (0.0, -11.0, 2.4, (7.2, 4.6, 3.6), 1.0, 18),
+    (-5.2, -9.6, 1.2, (3.4, 3.0, 2.8), 2.0, 16),
+    (5.4, -9.8, 1.4, (3.6, 3.4, 3.0), 3.0, 16),
+    (1.2, -12.8, 4.6, (4.6, 3.6, 2.8), 4.0, 18),
+    (-3.0, -13.0, 3.4, (4.0, 3.4, 2.6), 5.0, 16),
+    (-9.5, -8.0, 0.5, (3.0, 2.2, 2.4), 6.0, 22),
+    (9.8, -7.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
+)
+BOULDERS = (
+    (-7.4, -0.8, 0.2, (1.3, 0.9, 1.1), 8.0, 18),
+    (7.7, 1.2, 0.2, (1.5, 1.1, 1.2), 9.0, 18),
+    (-8.0, 5.4, 0.15, (1.1, 0.8, 1.0), 10.0, 16),
+    (7.5, 6.2, 0.15, (1.0, 0.7, 0.9), 11.0, 16),
+    (-7.0, -3.8, 0.2, (1.2, 1.0, 1.3), 12.0, 16),
+)
+# (x, z, height); every tree stands outside the plaza and outside the camera's reach
+NEAR_PINES = ((-11.2, -2.8, 8.2), (11.6, -4.6, 9.0), (-9.8, 4.2, 7.0), (10.6, 7.4, 7.6), (-10.4, -8.8, 8.8))
+# (x, z, size, colour index into the maple palette)
+NEAR_MAPLES = ((-9.8, 1.2, 1.15, 0), (10.0, -0.8, 1.2, 1), (-9.6, -5.6, 1.0, 2), (9.8, 4.6, 1.1, 0), (-10.8, 7.2, 1.0, 1))
+FAR_PINES = 11
+FAR_MAPLES = 9
 
 
 class Plan:
     """What the world follows from the game, with the palette already in linear colour."""
 
     def __init__(self, inputs):
-        layout, world = inputs["layout"], inputs["world"]
-        self.half = layout["LANDSCAPE_HALF_WIDTH"]
-        self.front = layout["LANDSCAPE_FRONT_Z"]
-        self.buddha = layout["BUDDHA_Z"]
-        self.wall = world["WALL_X"]
-        self.back = world["BACK_Z"]
-        self.height = world["HEIGHT"]
-        self.altar_top = world["ALTAR_TOP"]
-        self.candles = world["CANDLE_SPOTS"]
-        self.sun = Vector(world["SUN_POSITION"])
-        self.target = Vector(world["SUN_TARGET"])
+        layout = inputs["layout"]
+        self.platform = layout["PLATFORM"]
+        self.steps = layout["STEPS"]
+        self.plaza = layout["PLAZA"]
+        self.statue_z = layout["GATBAWI_Z"]
+        self.mat = layout["MAT_SIZE"]
+        self.mat_top = inputs["monk"]["MAT_TOP"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
-        self.scene = inputs["scene"]
-        self.purlins = (-self.wall + 0.45, -3.4, 0.0, 3.4, self.wall - 0.45)
+        self.front = self.plaza["maxZ"] + PLAZA_MARGIN
+        self.back = self.platform["minZ"] - PLATFORM_BACK
 
-    def bays(self):
-        """(placement, width, is the open window) for every wooden bay of the three walls."""
-        for index, (z, width) in enumerate(SIDE_BAYS):
-            yield at(-self.wall, 0.0, z) @ turned(math.pi / 2), width, False
-            yield at(self.wall, 0.0, z) @ turned(-math.pi / 2), width, index == WINDOW_BAY
-        for x, width in FRONT_BAYS:
-            yield at(x, 0.0, self.front) @ turned(math.pi), width, False
+    def outside(self, x, z):
+        """How far (x, z) is from the paved plaza, negative inside it."""
+        dx = abs(x) - PLAZA_HALF
+        dz = max(self.plaza["minZ"] - z, z - self.front)
+        inside = max(dx, dz)
+        if inside < 0.0:
+            return inside
+        return math.hypot(max(dx, 0.0), max(dz, 0.0))
 
-
-def speckled(color, amount, seed):
-    """A colour that varies a little from place to place, like hand-finished plaster."""
-    return lambda co: scaled(color, 1.0 - amount + 2.0 * amount * hash01(co.x, co.y, co.z, seed))
-
-
-def panel(part, corner, across, along, color, step=STEP, uv=None):
-    """A flat grid cut into cells of about `step`; it faces across x along."""
-    columns = max(1, round(Vector(across).length / step))
-    rows = max(1, round(Vector(along).length / step))
-    return part.grid(corner, across, along, columns, rows, color, uv=uv)
+    def terrain(self, x, z):
+        d = max(self.outside(x, z), 0.0)
+        behind = -z - abs(self.platform["maxZ"])
+        rolling = 0.8 * smoothstep(1.5, 10.0, d) * (0.5 + 0.5 * fbm(x * 0.13, 0.0, z * 0.13, 3.0))
+        ridge = 14.0 * smoothstep(24.0, 60.0, d) * (0.55 + 0.45 * fbm(x * 0.06, 0.0, z * 0.06, 9.0))
+        slope = 1.5 * smoothstep(0.0, 3.0, behind) + 0.35 * max(0.0, behind - 3.0)
+        return rolling + ridge + slope
 
 
-def piece(part, center, size, color, *shown, step=STEP):
-    part.box(center, size, color, skip=hidden(*shown), cuts=cells(size, step))
+def axis_lines(low, high, step, limit):
+    """Grid lines every `step` from low to high, then wider and wider out to `limit` on both sides."""
+    count = round((high - low) / step)
+    lines = [low + (high - low) * i / count for i in range(count + 1)]
+    below, above, gap, lo, hi = [], [], step, low, high
+    while hi < limit:
+        gap *= 1.3
+        lo, hi = lo - gap, hi + gap
+        below.append(lo)
+        above.append(hi)
+    return list(reversed(below)) + lines + above
 
 
-def bay_wood(part, plan, width, window):
+def ground(plan):
+    part = Part("ground", frame=GAME)
     c = plan.c
-    inner = width - 0.2
-    top = SILL + OPENING
-    head = plan.height - top
-    dark = c["woodDark"]
 
-    piece(part, (0.0, SILL / 2, 0.07), (width, SILL, 0.14), c["woodMid"], "+z", "+y")
-    piece(part, (0.0, top + head / 2, 0.08), (width, head, 0.16), c["plasterShade"], "+z", "-y")
-    piece(part, (0.0, top + 0.04, 0.095), (width, 0.08, 0.17), dark, "+z")
-    for offset, color in ((0.125, c["dancheongGreen"]), (0.245, c["dancheongRed"]), (0.365, c["dancheongYellow"])):
-        piece(part, (0.0, top + offset, 0.1), (width, 0.09, 0.19), color, "+z", "+y", "-y")
+    def tone(p):
+        patch = 0.5 + 0.5 * fbm(p.x * 0.35, 0.0, p.z * 0.35, 8.0)
+        speck = 0.5 + 0.5 * fbm(p.x * 1.1, 0.0, p.z * 1.1, 13.0)
+        earth = mix(c["moss"], c["soil"], smoothstep(0.4, 0.75, patch))
+        earth = mix(earth, c["litter"], 0.6 * smoothstep(0.5, 0.85, speck))
+        rise = smoothstep(2.0, 9.0, p.y)
+        earth = mix(earth, scaled(c["graniteShade"], 0.8), 0.5 * rise)
+        paving = scaled(c["paving"], 0.88 + 0.12 * hash01(math.floor(p.x / 0.65), 0.0, math.floor(p.z / 0.65), 4.0))
+        edge = plan.outside(p.x, p.z) + 0.7 * fbm(p.x * 0.7, 0.0, p.z * 0.7, 5.0)
+        return mix(paving, earth, smoothstep(-0.15, 0.45, edge))
+
+    columns = axis_lines(-PLAZA_HALF, PLAZA_HALF, 0.65, GROUND_LIMIT)
+    rows = axis_lines(plan.plaza["minZ"], plan.front, 0.65, GROUND_LIMIT)
+    part.heightfield(columns, rows, plan.terrain, tone)
+    part.project_uv(GROUND_TILE)
+    return part
+
+
+def stone_tone(plan, seed):
+    c = plan.c
+
+    def tone(p):
+        grain = 0.5 + 0.5 * fbm(p.x * 0.9, p.y * 0.9, p.z * 0.9, seed)
+        base = mix(scaled(c["graniteShade"], 0.95 + 0.15 * grain), c["granite"], 0.35 + 0.4 * grain)
+        patch = 0.5 + 0.5 * fbm(p.x * 0.5, p.y * 0.5, p.z * 0.5, seed + 5.0)
+        low = 1.0 - smoothstep(0.2, 2.6, p.y - plan.terrain(p.x, p.z))
+        moss = mix(c["moss"], c["litter"], smoothstep(0.5, 0.9, 0.5 + 0.5 * fbm(p.x * 1.4, p.y * 1.4, p.z * 1.4, seed + 9.0)))
+        return mix(base, moss, min(0.75, 0.9 * low * smoothstep(0.4, 0.75, patch)))
+
+    return tone
+
+
+def steps(plan):
+    """The granite platform Gatbawi sits on, four steps up to it from the plaza, and a low kerb round the paving."""
+    part = Part("steps", frame=GAME)
+    c = plan.c
+    top = plan.platform["topY"]
+
+    def tone(seed):
+        base = stone_tone(plan, seed)
+        return part.in_game(lambda p: scaled(mix(base(p), c["granite"], 0.5), 0.95 + 0.1 * hash01(math.floor(p.x), 0.0, math.floor(p.z * 2.0), seed)))
+
+    def rough(faces, seed):
+        part.displace(faces, lambda co: tuple(0.02 * fbm(co.x * 3.1, co.y * 3.1, co.z * 3.1, seed + i) for i in range(3)))
+
+    front, back = plan.platform["maxZ"], plan.back
+    rough(part.box((0.0, top / 2, (front + back) / 2), (2 * PLATFORM_HALF, top, front - back), tone(1.0), skip=("-y", "-z"), cuts=(10, 2, 4)), 1.0)
+    count = round((plan.steps["maxZ"] - plan.steps["minZ"]) / 0.55)
+    depth = (plan.steps["maxZ"] - plan.steps["minZ"]) / count
+    for k in range(count):
+        height = top * (k + 1) / count
+        near = plan.steps["maxZ"] - depth * k
+        blocks = 3
+        width = (2 * STEP_HALF - 0.04 * (blocks - 1)) / blocks
+        for b in range(blocks):
+            x = -STEP_HALF + width / 2 + b * (width + 0.04)
+            faces = part.box((x, height / 2, near - depth / 2), (width, height, depth - 0.03), tone(2.0 + 3 * k + b), skip=("-y", "-z"), cuts=(3, 1, 1))
+            rough(faces, 2.0 + 3 * k + b)
+    kerb = (0.3, 0.14)
+    length = (plan.front - plan.plaza["minZ"]) / 6
     for side in (-1.0, 1.0):
-        piece(part, (side * (inner / 2 + 0.05), SILL + OPENING / 2, 0.07), (0.1, OPENING, 0.12), dark, "+z", "+x", "-x")
-
-    columns = max(2, round(inner / 0.42))
-    for i in range(1, columns):
-        x = -inner / 2 + inner * i / columns
-        piece(part, (x, SILL + OPENING / 2, 0.08), (0.035, OPENING, 0.05), dark, "+z", "+x", "-x")
-    for k in range(6):
-        piece(part, (0.0, SILL + OPENING * k / 5, 0.075), (inner, 0.035, 0.04), dark, "+z", "+y", "-y")
-    if window:
-        piece(part, (0.0, SILL + 0.02, 0.14), (width + 0.1, 0.08, 0.34), c["woodMid"], "+z", "+y", "-y", "+x", "-x")
-    else:
-        piece(part, (0.0, SILL + OPENING / 2, 0.09), (0.1, OPENING, 0.1), dark, "+z", "+x", "-x")
+        for i in range(6):
+            z = plan.plaza["minZ"] + length * (i + 0.5)
+            rough(part.box((side * (PLAZA_HALF - 0.05), kerb[1] / 2 - 0.01, z), (kerb[0], kerb[1], length - 0.04), tone(20.0 + i), skip=("-y",)), 20.0 + i)
+    run = 2 * PLAZA_HALF / 8
+    for i in range(8):
+        x = -PLAZA_HALF + run * (i + 0.5)
+        rough(part.box((x, kerb[1] / 2 - 0.01, plan.front - 0.05), (run - 0.04, kerb[1], kerb[0]), tone(30.0 + i), skip=("-y",)), 30.0 + i)
+    part.project_uv(STONE_TILE)
+    return part
 
 
-def bay_paper(part, plan, width):
-    inner = width - 0.2
+def craggy(centre, seed, strength):
+    """Pushes a rock's vertices in or out along the line from its centre, by ridged noise."""
+    middle = from_game(Vector(centre))
 
-    def sheet(co):
-        return scaled(plan.c["paper"], 0.9 + 0.1 * math.sin(math.pi * (co.y - SILL) / OPENING))
+    def offset(co):
+        g = to_game(co)
+        ridge = 1.0 - 2.0 * abs(fbm(g.x * 0.4, g.y * 0.4, g.z * 0.4, seed))
+        grit = fbm(g.x * 1.5, g.y * 1.5, g.z * 1.5, seed + 3.0)
+        return (co - middle) * (strength * (0.7 * ridge + 0.3 * grit))
 
-    part.grid((-inner / 2, SILL, 0.04), (inner, 0.0, 0.0), (0.0, OPENING, 0.0), 1, 4, sheet)
-
-
-def walls(part, plan):
-    c, wall, back, front, height = plan.c, plan.wall, plan.back, plan.front, plan.height
-    plaster = speckled(c["plaster"], 0.04, 1.0)
-    side_lo = min(z - width / 2 for z, width in SIDE_BAYS)
-    side_hi = max(z + width / 2 for z, width in SIDE_BAYS)
-    front_lo = min(x - width / 2 for x, width in FRONT_BAYS)
-    front_hi = max(x + width / 2 for x, width in FRONT_BAYS)
-    window_lo = SIDE_BAYS[WINDOW_BAY][0] - SIDE_BAYS[WINDOW_BAY][1] / 2
-    window_hi = SIDE_BAYS[WINDOW_BAY][0] + SIDE_BAYS[WINDOW_BAY][1] / 2
-    top = SILL + OPENING
-
-    # Doors hide the left wall between its corner strips. The right wall stays whole behind its
-    # doors because the sun must not reach the world through anything but the window.
-    for z0, z1 in ((back, side_lo), (side_hi, front)):
-        panel(part, (-wall, 0.0, z0), (0.0, height, 0.0), (0.0, 0.0, z1 - z0), plaster)
-    for z0, z1, y0, y1 in (
-        (back, window_lo, 0.0, height),
-        (window_hi, front, 0.0, height),
-        (window_lo, window_hi, 0.0, SILL),
-        (window_lo, window_hi, top, height),
-    ):
-        panel(part, (wall, y0, z0), (0.0, 0.0, z1 - z0), (0.0, y1 - y0, 0.0), plaster)
-    for x0, x1 in ((-wall, front_lo), (front_hi, wall)):
-        panel(part, (x0, 0.0, front), (0.0, height, 0.0), (x1 - x0, 0.0, 0.0), plaster)
-
-    # The wall is thick; its opening shows four plastered sides.
-    thickness = (WALL_DEPTH, 0.0, 0.0)
-    reveal = plaster
-    panel(part, (wall, top, window_lo), thickness, (0.0, 0.0, window_hi - window_lo), reveal, step=0.5)
-    panel(part, (wall, SILL, window_lo), (0.0, 0.0, window_hi - window_lo), thickness, reveal, step=0.5)
-    panel(part, (wall, SILL, window_lo), thickness, (0.0, OPENING, 0.0), reveal, step=0.5)
-    panel(part, (wall, SILL, window_hi), (0.0, OPENING, 0.0), thickness, reveal, step=0.5)
+    return offset
 
 
-def pillar(part, plan, x, z):
-    c, height = plan.c, plan.height
-    base, crown = 0.28, height - 0.2
-    entasis = smooth_profile(
-        [(radius, base + (crown - base) * t) for radius, t in ((0.272, 0.0), (0.283, 0.13), (0.29, 0.4), (0.272, 0.7), (0.25, 0.92), (0.246, 1.0))],
-        2,
+def rocks(plan):
+    part = Part("rocks", frame=GAME)
+    for index, (x, z, lift, radii, seed, segments) in enumerate(OUTCROP + BOULDERS):
+        centre = (x, plan.terrain(x, z) + lift, z)
+        faces = part.ellipsoid(centre, radii, segments, segments // 2 + 2, part.in_game(stone_tone(plan, seed)), smooth=False)
+        part.displace(faces, craggy(centre, seed, 0.38 if index < len(OUTCROP) else 0.3))
+    part.project_uv(STONE_TILE)
+    return part
+
+
+def pine(part, plan, x, z, height, seed):
+    """A dark conifer: a trunk and four tiers of ragged cones."""
+    c = plan.c
+    base = plan.terrain(x, z)
+    part.tube([(x, base - 0.3, z), (x, base + height * 0.3, z)], [0.03 * height, 0.012 * height], 6, c["trunk"])
+    for tier in range(4):
+        start = base + height * (0.16 + 0.17 * tier)
+        radius = height * 0.24 * (1.0 - 0.2 * tier)
+        rise = height * 0.3
+
+        def tone(p, start=start, rise=rise):
+            lit = smoothstep(start, start + rise, p.y)
+            wobble = 0.85 + 0.3 * hash01(p.x, p.y, p.z, seed)
+            return scaled(mix(c["pine"], c["pineLight"], 0.65 * lit), wobble)
+
+        def ragged(h, angle, tier=tier):
+            return 1.0 + 0.14 * (2.0 * hash01(angle, tier, 0.0, seed) - 1.0)
+
+        with part.placed(spun(x, start, z)):
+            part.lathe(((radius, 0.0), (radius * 0.6, rise * 0.5), (0.0, rise)), 8, part.in_game(tone), fold=ragged, cap_bottom=True)
+
+
+def maple(part, plan, x, z, size, palette, seed, crowns=4):
+    """A trunk with a crown of lumpy balls in autumn colours."""
+    c = plan.c
+    base = plan.terrain(x, z)
+    leaves = (c["maple"], c["leafRed"], c["ginkgo"])
+    part.tube(
+        [(x, base - 0.2, z), (x + 0.12 * size, base + 1.0 * size, z - 0.1 * size), (x - 0.05 * size, base + 2.0 * size, z + 0.05 * size)],
+        [0.2 * size, 0.14 * size, 0.1 * size],
+        7,
+        c["trunk"],
     )
+    heart = Vector((x, base + 2.9 * size, z))
+    offsets = ((0.0, 0.0, 0.0), (1.1, -0.35, 0.4), (-1.0, -0.25, -0.6), (0.2, 0.75, -0.9))
+    for i, (ox, oy, oz) in enumerate(offsets[:crowns]):
+        centre = heart + Vector((ox, oy, oz)) * size
+        radii = (1.7 * size, 1.4 * size, 1.7 * size)
+        hue = leaves[(palette + (i % 2)) % 3]
 
-    def lacquer(co):
-        return scaled(c["lacquer"], 0.9 + 0.1 * math.sin(math.pi * co.z / height))
+        def tone(p, hue=hue, centre=centre, size=size, i=i):
+            top = smoothstep(-1.4 * size, 1.4 * size, p.y - centre.y)
+            dapple = 0.82 + 0.3 * (0.5 + 0.5 * fbm(p.x * 1.6, p.y * 1.6, p.z * 1.6, seed + i))
+            return scaled(mix(scaled(hue, 0.8), hue, top), dapple)
 
-    ring = height - 0.55
-    with part.placed(spun(x, 0.0, z)):
-        part.lathe(entasis, 14, lacquer)
-        part.lathe(((0.38, 0.0), (0.38, 0.2), (0.345, base), (0.0, base)), 14, c["stone"])
-        part.lathe(((0.288, ring - 0.035), (0.305, ring), (0.288, ring + 0.035)), 14, c["gold"])
-        part.lathe(((0.25, height - 0.52), (0.36, height - 0.35)), 14, scaled(c["dancheongGreen"], 0.8))
-    part.box((x, height - 0.2, z), (0.7, 0.3, 0.7), c["dancheongGreen"], skip=hidden("+x", "-x", "+z", "-z", "-y"))
+        part.ellipsoid(tuple(centre), radii, 10, 7, part.in_game(tone), lump=0.1, seed=seed + i)
 
 
-def altar(part, plan):
+def scatter(count, seed, plan):
+    """Spots on the hillside for the far trees: out of the plaza's way and clear of the outcrop."""
+    spots = []
+    for i in range(count):
+        angle = math.tau * (i + 0.7 * hash01(i, 0.0, 0.0, seed)) / count
+        radius = 18.0 + 26.0 * hash01(i, 1.0, 0.0, seed)
+        x, z = radius * math.sin(angle) * 1.2, radius * math.cos(angle)
+        near = abs(x) < 12.5 and -18.0 < z < 14.0
+        if not near:
+            spots.append((x, z, hash01(i, 2.0, 0.0, seed)))
+    return spots
+
+
+def pines(plan):
+    part = Part("pine", frame=GAME)
+    for i, (x, z, height) in enumerate(NEAR_PINES):
+        pine(part, plan, x, z, height, 20.0 + i)
+    for i, (x, z, r) in enumerate(scatter(FAR_PINES, 3.0, plan)):
+        pine(part, plan, x, z, 7.0 + 4.0 * r, 40.0 + i)
+    return part
+
+
+def maples(plan):
+    part = Part("maple", frame=GAME)
+    for i, (x, z, size, palette) in enumerate(NEAR_MAPLES):
+        maple(part, plan, x, z, size, palette, 60.0 + 5 * i)
+    for i, (x, z, r) in enumerate(scatter(FAR_MAPLES, 7.0, plan)):
+        maple(part, plan, x, z, 1.6 + 1.2 * r, i, 100.0 + 5 * i, crowns=3)
+    return part
+
+
+def mat(plan):
+    """One woven mat, centred at the origin with its top at MAT_TOP; the game places twelve of them."""
+    part = Part("mat", frame=GAME)
     c = plan.c
-    z = plan.buddha - 0.3
+    width, depth, top = plan.mat["x"], plan.mat["z"], plan.mat_top
+    edge = 0.06
+    xs = (-width / 2, -width / 2 + edge, width / 2 - edge, width / 2)
+    zs = (-depth / 2, -depth / 2 + edge, depth / 2 - edge, depth / 2)
 
-    def slab(width, height, depth, y, color):
-        size = (width, height, depth)
-        part.box((0.0, y, z), size, color, skip=hidden("+x", "-x", "+z", "-z", "+y"), cuts=cells(size, STEP))
+    def on_picture(co):
+        return ((co.x + width / 2) / width, 0.5 * (co.z + depth / 2) / depth)
 
-    slab(7.8, 0.32, 3.2, 0.16, c["lacquer"])
-    slab(7.9, 0.05, 3.3, 0.34, c["gold"])
-    slab(6.8, 0.26, 2.6, 0.47, c["lacquerDeep"])
-    slab(6.9, 0.05, 2.7, plan.altar_top - 0.01, c["gold"])
-    accents = (c["gold"], c["dancheongGreen"], c["dancheongYellow"], c["dancheongRed"])
-    for i in range(7):
-        part.box((-3.0 + i, 0.16, z + 1.61), (0.6, 0.18, 0.04), accents[i % len(accents)], skip=hidden("+z", "+x", "-x", "+y", "-y"))
-
-    with part.placed(spun(0.0, plan.altar_top, plan.buddha + 0.85)):
-        part.lathe(((0.0, 0.0), (0.24, 0.02), (0.3, 0.1), (0.24, 0.2), (0.3, 0.26), (0.27, 0.28), (0.0, 0.26)), 16, c["brass"])
-    for x, candle_z in plan.candles:
-        with part.placed(spun(x, plan.altar_top, candle_z)):
-            part.lathe(((0.15, 0.0), (0.13, 0.06), (0.0, 0.06)), 12, c["brass"])
-            part.lathe(((0.055, 0.06), (0.05, 0.4), (0.0, 0.4)), 10, c["wax"])
-            part.lathe(((0.004, 0.4), (0.004, 0.45)), 4, c["wick"])
-
-
-def structure(plan):
-    part = Part("structure", frame=GAME)
-    walls(part, plan)
-    for placement, width, window in plan.bays():
-        with part.placed(placement):
-            bay_wood(part, plan, width, window)
-    for z in PILLAR_Z:
-        pillar(part, plan, -plan.wall + 0.45, z)
-        pillar(part, plan, plan.wall - 0.45, z)
-    for x in (-plan.wall + 0.45, plan.wall - 0.45):
-        pillar(part, plan, x, FRONT_PILLAR_Z)
-    altar(part, plan)
+    for i in range(3):
+        for j in range(3):
+            tint = c["straw"] if (i, j) == (1, 1) else c["strawBorder"]
+            part.grid((xs[i], top, zs[j]), (0.0, 0.0, zs[j + 1] - zs[j]), (xs[i + 1] - xs[i], 0.0, 0.0), 1, 1, tint, uv=on_picture)
+    sides = part.box((0.0, top / 2, 0.0), (width, top, depth), c["strawBorder"], skip=("+y", "-y"))
+    part.map_uv(sides, lambda co: ((co.x + width / 2) / width, 0.004 + 0.01 * co.y / top))
     return part
 
 
-def paper(plan):
-    part = Part("paper", frame=GAME)
-    for placement, width, window in plan.bays():
-        if not window:
-            with part.placed(placement):
-                bay_paper(part, plan, width)
-    return part
-
-
-def ceiling(part, plan):
-    c, half, height = plan.c, plan.half, plan.height
-    xs, zs = [-half], [plan.back]
-    for x in plan.purlins:
-        xs += [x - PURLIN_WIDTH / 2, x + PURLIN_WIDTH / 2]
-    for z in BEAM_Z:
-        zs += [z - BEAM_DEPTH / 2, z + BEAM_DEPTH / 2]
-    xs.append(half)
-    zs.append(plan.front)
-    boards = (scaled(c["dancheongGreen"], 0.55), scaled(c["lacquerDeep"], 0.9))
-    for i, (x0, x1) in enumerate(zip(xs, xs[1:])):
-        for j, (z0, z1) in enumerate(zip(zs, zs[1:])):
-            covered = i % 2 == 1 or i == len(xs) - 2 or i == 0 or j % 2 == 1
-            color = c["woodCeiling"] if covered else boards[(i // 2 + j // 2) % 2]
-            panel(part, (x0, height, z0), (x1 - x0, 0.0, 0.0), (0.0, 0.0, z1 - z0), color, step=1.0)
-            if not covered:
-                mid_x, mid_z = (x0 + x1) / 2, (z0 + z1) / 2
-                piece(part, (mid_x, height - 0.025, mid_z), (x1 - x0, 0.05, 0.08), c["woodMid"], "-y", "+z", "-z", step=1.0)
-                piece(part, (mid_x, height - 0.025, mid_z), (0.08, 0.05, z1 - z0), c["woodMid"], "-y", "+x", "-x", step=1.0)
-
-
-def beams(plan):
-    part = Part("beams", frame=GAME)
-    c, half, height = plan.c, plan.half, plan.height
-    ceiling(part, plan)
-    bands = (
-        (height - 0.8, 0.07, c["dancheongGreen"]),
-        (height - 0.87, 0.05, c["dancheongRed"]),
-        (height - 0.915, 0.03, c["dancheongYellow"]),
-    )
-    for z in BEAM_Z:
-        piece(part, (0.0, height - 0.55, z), (2 * half, 0.42, BEAM_DEPTH), c["woodDark"], "+z", "-z", "-y", step=1.0)
-        for y, thickness, color in bands:
-            piece(part, (0.0, y, z), (2 * half, thickness, 0.4), color, "+z", "-z", "-y", step=1.0)
-    length = plan.front - plan.back
-    for x in plan.purlins:
-        piece(part, (x, height - 0.2, (plan.front + plan.back) / 2), (PURLIN_WIDTH, 0.42, length), c["woodMid"], "-y", "+x", "-x", step=1.0)
-    return part
-
-
-def lantern(part, plan, tone, x, y, z):
-    c = plan.c
-    body = smooth_profile([(0.0, -0.3), (0.12, -0.28), (0.24, -0.15), (0.28, 0.0), (0.24, 0.15), (0.12, 0.28), (0.0, 0.3)], 2)
-
-    def paper_lit(co):
-        ribs = 0.88 + 0.12 * math.cos(6.0 * math.atan2(co.y, co.x))
-        glow = 1.0 - 0.28 * (co.z / 0.3) ** 2
-        return scaled(tone, ribs * glow)
-
-    with part.placed(spun(x, y, z)):
-        part.lathe(body, 12, paper_lit)
-        part.lathe(((0.1, 0.28), (0.1, 0.34), (0.0, 0.34)), 10, c["lanternWood"])
-        part.lathe(((0.012, 0.34), (0.012, plan.height - y)), 4, c["lanternWood"])
-        part.lathe(((0.01, -0.64), (0.07, -0.3)), 8, c["dancheongYellow"])
-
-
-def lanterns(plan):
-    part = Part("lanterns", frame=GAME)
-    c = plan.c
-    palette = (c["lanternCoral"], c["lanternAmber"], c["lanternRose"], c["lanternCream"])
-    index = 0
-    for x in LANTERN_X:
-        for z in LANTERN_Z:
-            lantern(part, plan, palette[index % len(palette)], x, 4.5 + ((index * 7) % 3) * 0.12, z)
-            index += 1
-    return part
-
-
-def tree(part, plan, rand, index, x, z):
-    c = plan.c
-    size = 0.8 + rand() * 0.9
-    tones = (c["maple"], c["ginkgo"], c["leafGreen"], c["leafDeep"], c["leafRed"])
-    tone = tones[int(rand() * len(tones))]
-
-    def leaves(low, high):
-        return lambda co: scaled(tone, (0.76 + 0.36 * smoothstep(low, high, co.y)) * (0.94 + 0.12 * hash01(co.x, co.y, co.z, index)))
-
-    with part.placed(spun(x, 0.0, z)):
-        part.lathe(((0.18 * size, 0.0), (0.12 * size, 2.2 * size)), 6, c["trunk"])
-    part.sphere((x, 2.9 * size, z), (1.15 * size, 1.32 * size, 1.15 * size), 14, 9, leaves(1.5 * size, 4.3 * size), lump=0.1, seed=index)
-    part.sphere((x + 0.6 * size, 2.3 * size, z + 0.3 * size), (0.8 * size,) * 3, 10, 7, leaves(1.3 * size, 3.2 * size), lump=0.1, seed=index + 0.5)
-
-
-def pine(part, plan, rand, x, z):
-    c = plan.c
-    size = 0.9 + rand() * 0.5
-    with part.placed(spun(x, 0.0, z)):
-        part.lathe(((0.1 * size, 0.0), (0.07 * size, 0.6 * size)), 6, c["trunk"])
-        for radius, low, high, shade in ((0.78, 0.3, 1.3, 0.8), (0.6, 0.9, 1.85, 0.92), (0.4, 1.45, 2.4, 1.05)):
-            part.lathe(((radius * size, low * size), (0.0, high * size)), 7, scaled(c["pine"], shade), cap_bottom=True)
-
-
-def garden_wall(part, plan):
-    c = plan.c
-    length = 28.0
-    part.box((GARDEN_WALL_X, 0.5, 0.0), (0.4, 1.0, length), speckled(c["plasterShade"], 0.05, 3.0), skip=hidden("-x", "+y", "+z", "-z"), cuts=cells((0.4, 1.0, length), 1.5))
-    part.box((GARDEN_WALL_X, 1.07, 0.0), (0.7, 0.14, length + 0.2), c["tile"], skip=hidden("-x", "+y", "-y", "+z", "-z"), cuts=cells((0.7, 0.14, length), 1.5))
-
-
-def outdoor(plan):
-    part = Part("outdoor", frame=GAME)
-    c = plan.c
-    reach = 36.0
-    panel(
-        part,
-        (plan.wall + WALL_DEPTH - 0.1, -0.06, -reach),
-        (0.0, 0.0, 2 * reach),
-        (SKY_DISTANCE + 2.0 - plan.wall, 0.0, 0.0),
-        speckled(c["ground"], 0.1, 5.0),
-        step=3.0,
-    )
-    garden_wall(part, plan)
-    rand = random.Random(11).random
-    for index in range(16):
-        tree(part, plan, rand, index, 10.4 + rand() * 10.0, -9.0 + rand() * 18.0)
-    for _ in range(6):
-        pine(part, plan, rand, 10.2 + rand() * 2.0, -4.0 + rand() * 8.0)
-    return part
-
-
-def floor(plan):
-    part = Part("floor", frame=GAME)
-    half = plan.half
-    meters = flat_textures.FLOOR_METERS
-    part.grid(
-        (-half, 0.0, plan.front),
-        (2 * half, 0.0, 0.0),
-        (0.0, 0.0, plan.back - plan.front),
-        1,
-        1,
-        WHITE,
-        uv=lambda co: ((co.x + half) / meters, (plan.front - co.z) / meters),
-    )
-    return part
-
-
-def backdrop(plan):
-    part = Part("backdrop", frame=GAME)
-    width, height = 2 * plan.half, plan.height
-    part.grid((-plan.half, 0.0, plan.back + 0.02), (width, 0.0, 0.0), (0.0, height, 0.0), 1, 1, WHITE, uv=lambda co: ((co.x + plan.half) / width, co.y / height))
-    return part
-
-
-def sky(plan):
-    part = Part("sky", frame=GAME)
-    width, height = flat_textures.SKY_METERS
-    low = SKY_CENTER_Y - height / 2
-    part.grid(
-        (SKY_DISTANCE, low, -width / 2),
-        (0.0, 0.0, width),
-        (0.0, height, 0.0),
-        1,
-        1,
-        WHITE,
-        uv=lambda co: ((co.z + width / 2) / width, (co.y - low) / height),
-    )
-    return part
-
-
-def sunbeams(plan):
-    part = Part("sunbeams", frame=GAME)
-    heading = (plan.target - plan.sun).normalized()
-    length, breadth = 11.0, 0.9
-    sideways = heading.cross(Vector((0.0, 1.0, 0.0))).normalized()
-    other = heading.cross(sideways).normalized()
-    for z in (-1.5, -0.1, 1.3):
-        start = Vector((plan.wall - 0.2, 2.8, z))
-        for across in (sideways, other):
-            def uv(co, start=start, across=across):
-                offset = co - start
-                return (0.5 + offset.dot(across) / breadth, 1.0 - offset.dot(heading) / length)
-
-            corners = [start - across * breadth / 2, start + across * breadth / 2, start + heading * length + across * breadth / 2, start + heading * length - across * breadth / 2]
-            part.polygon(corners, WHITE, uv=uv)
-    return part
-
-
-def mat_body(plan):
-    part = Part("matBody")
-    base = plan.c["mat"]
-    profile = ((0.46, 0.0), (0.465, 0.03), (0.46, 0.07), (0.435, 0.11), (0.42, 0.12), (0.0, 0.12))
-    part.lathe(profile, 20, lambda co: scaled(base, 0.78 + 0.22 * co.z / 0.12))
-    return part
-
-
-def mat_top(plan):
-    part = Part("matTop")
-    rim, crown = 0.122, 0.15
-    part.radial((0.0, 0.0, rim), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), MAT_RADIUS, 3, 20, WHITE, uv=lambda co: (co.x / (2 * MAT_RADIUS) + 0.5, co.y / (2 * MAT_RADIUS) + 0.5))
-    for vert in part.bm.verts:
-        vert.co.z = rim + (crown - rim) * (1.0 - (math.hypot(vert.co.x, vert.co.y) / MAT_RADIUS) ** 2)
-    return part
-
-
-def build(inputs, out_dir, pictures):
+def build(inputs, out_dir):
     plan = Plan(inputs)
-    if (2 * plan.half, plan.height) != flat_textures.MURAL_METERS:
-        raise RuntimeError(f"the mural is painted for {flat_textures.MURAL_METERS} m, the world wall is {2 * plan.half} x {plan.height} m")
-    solid = common.vertex_color_material("world")
-
-    def textured(name, part):
-        return part.build(common.image_material(name, pictures[name], repeat=name == "floor"), crease=False)
-
+    stone = common.textured_material("stone", os.path.join(SOURCES, "rock_boulder_dry_diff.jpg"), os.path.join(SOURCES, "rock_boulder_dry_nor_gl.jpg"))
+    paving = common.textured_material("paving", os.path.join(SOURCES, "grey_stone_path_diff.jpg"), os.path.join(SOURCES, "grey_stone_path_nor_gl.jpg"))
+    foliage = common.vertex_color_material("foliage")
     objects = {
-        "structure": structure(plan).build(solid),
-        "beams": beams(plan).build(solid),
-        "outdoor": outdoor(plan).build(solid, crease=False),
-        "floor": textured("floor", floor(plan)),
-        "backdrop": textured("backdrop", backdrop(plan)),
+        "ground": ground(plan).build(paving, crease=False),
+        "steps": steps(plan).build(stone),
+        "rocks": rocks(plan).build(stone),
+        "pine": pines(plan).build(foliage),
+        "maple": maples(plan).build(foliage),
     }
-    common.bake_vertex_occlusion([objects["structure"], objects["beams"]], distance=0.8, samples=48, floor=0.55)
-    common.bake_vertex_occlusion([objects["outdoor"]], distance=0.8, samples=32, floor=0.65)
-    objects["paper"] = paper(plan).build(solid, crease=False)
-    objects["lanterns"] = lanterns(plan).build(solid)
-    objects["sky"] = textured("sky", sky(plan))
-    objects["sunbeams"] = textured("sunbeams", sunbeams(plan))
-    objects["matBody"] = mat_body(plan).build(solid)
-    objects["matTop"] = textured("matTop", mat_top(plan))
-
+    common.bake_vertex_occlusion(list(objects.values()), distance=1.4, samples=48, floor=0.5)
+    objects["mat"] = mat(plan).build(common.textured_material("mat", os.path.join(SOURCES, "tatami_mat_diff.jpg")), crease=False)
     names = inputs["names"]["WORLD_MESHES"]
     if sorted(objects) != sorted(names):
         raise RuntimeError(f"world meshes {sorted(objects)} differ from the contract {sorted(names)}")

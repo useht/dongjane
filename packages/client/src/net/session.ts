@@ -87,8 +87,8 @@ export class WorldSession {
     return !this.closed;
   }
 
-  move(x: number, z: number): void {
-    this.send(MSG.move, { x, z });
+  move(x: number, z: number, seq?: number): void {
+    this.send(MSG.move, seq === undefined ? { x, z } : { x, z, seq });
   }
 
   sit(matId: number): void {

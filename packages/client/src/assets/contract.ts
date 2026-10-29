@@ -7,33 +7,21 @@
 
 export const MONK_PARTS = ["head", "face", "skirt", "torso", "trim", "sleeveUpper", "sleeveLower", "hand", "foot"] as const;
 
-export const WORLD_MESHES = [
-  "structure",
-  "beams",
-  "paper",
-  "floor",
-  "backdrop",
-  "lanterns",
-  "outdoor",
-  "sky",
-  "sunbeams",
-  "matBody",
-  "matTop",
-] as const;
+export const GATBAWI_MESHES = ["figure", "hatStone", "pedestal", "offerings"] as const;
+
+export const WORLD_MESHES = ["ground", "steps", "rocks", "pine", "maple", "mat"] as const;
 
 // Authored at the origin; the runtime instances them at the mat spots.
-export const WORLD_PROTOTYPES = ["matBody", "matTop"] as const;
-
-export const BUDDHA_MESHES = ["figure", "lotus", "halo", "glow"] as const;
+export const WORLD_PROTOTYPES = ["mat"] as const;
 
 // Carry TEXCOORD_0 and a texture; every other mesh carries COLOR_0 instead.
-export const TEXTURED = ["floor", "backdrop", "sky", "sunbeams", "matTop"] as const;
+export const TEXTURED = ["figure", "hatStone", "pedestal", "ground", "steps", "rocks", "mat"] as const;
 
 export const BUDGET = {
   monk: { bytes: 120_000, tris: 2_600 },
-  buddha: { bytes: 450_000, tris: 25_000 },
-  world: { bytes: 2_200_000, tris: 60_000 },
-  totalBytes: 2_800_000,
+  gatbawi: { bytes: 1_200_000, tris: 30_000 },
+  world: { bytes: 1_600_000, tris: 40_000 },
+  totalBytes: 3_000_000,
 } as const;
 
 export type MonkPart = (typeof MONK_PARTS)[number];

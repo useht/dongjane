@@ -10,6 +10,8 @@ describe("detectQuality", () => {
     expect(q.shadowMapSize).toBe(1024);
     expect(q.weak).toBe(false);
     expect(q.anisotropy).toBe(8);
+    expect(q.leaves).toBeGreaterThan(0);
+    expect(q.precipitation).toBeGreaterThan(0);
   });
 
   it("lowers the cost on weak phones", () => {
@@ -18,6 +20,11 @@ describe("detectQuality", () => {
     expect(q.pixelRatioCap).toBeLessThanOrEqual(1.25);
     expect(q.shadowMapSize).toBe(512);
     expect(q.anisotropy).toBe(2);
+    const strong = detectQuality(desktop);
+    expect(q.leaves).toBeLessThan(strong.leaves);
+    expect(q.precipitation).toBeLessThan(strong.precipitation);
+    expect(q.leaves).toBeGreaterThan(0);
+    expect(q.precipitation).toBeGreaterThan(0);
   });
 
   it("treats a capable phone as normal but below desktop resolution", () => {

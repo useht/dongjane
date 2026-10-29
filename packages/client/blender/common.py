@@ -93,6 +93,43 @@ def hash01(x, y, z, seed=0.0):
     return value - math.floor(value)
 
 
+def noise3(x, y, z, seed=0.0):
+    """Smooth value noise in [0, 1) that is the same on every run."""
+    xi, yi, zi = math.floor(x), math.floor(y), math.floor(z)
+    fx, fy, fz = (t * t * (3.0 - 2.0 * t) for t in (x - xi, y - yi, z - zi))
+
+    def corner(i, j, k):
+        return hash01(xi + i, yi + j, zi + k, seed)
+
+    def lerp(a, b, t):
+        return a + (b - a) * t
+
+    low = lerp(lerp(corner(0, 0, 0), corner(1, 0, 0), fx), lerp(corner(0, 1, 0), corner(1, 1, 0), fx), fy)
+    high = lerp(lerp(corner(0, 0, 1), corner(1, 0, 1), fx), lerp(corner(0, 1, 1), corner(1, 1, 1), fx), fy)
+    return lerp(low, high, fz)
+
+
+def fbm(x, y, z, seed=0.0, octaves=3):
+    """Layered noise centred on zero, within about +-1."""
+    total, amplitude, frequency, norm = 0.0, 1.0, 1.0, 0.0
+    for octave in range(octaves):
+        total += amplitude * (2.0 * noise3(x * frequency, y * frequency, z * frequency, seed + octave * 7.31) - 1.0)
+        norm += amplitude
+        amplitude *= 0.5
+        frequency *= 2.03
+    return total / norm
+
+
+def to_game(co):
+    """Authoring coordinates (Z up) as the game's (Y up, +Z toward the viewer)."""
+    return Vector((co.x, co.z, -co.y))
+
+
+def from_game(vector):
+    """A game-space vector as authoring coordinates."""
+    return Vector((vector.x, -vector.z, vector.y))
+
+
 def at(x, y, z):
     return Matrix.Translation((x, y, z))
 
@@ -157,6 +194,10 @@ class Part:
         """Inside this block primitives are given in the final authoring coordinates, frame ignored."""
         return self.placed(self.xf.inverted())
 
+    def in_game(self, color):
+        """A colour function of game-space positions, usable inside any `placed` block."""
+        return lambda co: color(to_game(self.xf @ co))
+
     def paint(self, faces, color):
         for face in faces:
             for loop in face.loops:
@@ -196,6 +237,25 @@ class Part:
         profile = tuple((radii[0] * math.sin(math.pi * i / rings), radii[2] * -math.cos(math.pi * i / rings)) for i in range(rings + 1))
         fold = (lambda height, angle: 1.0 + lump * (2.0 * hash01(height, angle, 0.0, seed) - 1.0)) if lump else None
         return self.lathe(profile, segments, color, offset=center, fold=fold, smooth=smooth, squash=radii[1] / radii[0])
+
+    def ellipsoid(self, center, radii, segments, rings, color, smooth=True, lump=0.0, seed=0.0):
+        """An ellipsoid with its poles up and down; centre and radii in the part's own coordinates."""
+        with self.placed(Matrix.Translation(center) @ SPIN_Y):
+            return self.sphere((0.0, 0.0, 0.0), (radii[0], radii[2], radii[1]), segments, rings, color, smooth=smooth, lump=lump, seed=seed)
+
+    def heightfield(self, columns, rows, height, color, smooth=True):
+        """A surface over the game's (x, z): `columns` and `rows` list the grid lines, `height(x, z)` gives y.
+
+        The vertices are shared between cells, so shading is smooth across the whole surface.
+        """
+        with self.world():
+            verts = [[self.bm.verts.new(from_game(Vector((x, height(x, z), z)))) for z in rows] for x in columns]
+            faces = [
+                self.bm.faces.new((verts[i][j], verts[i][j + 1], verts[i + 1][j + 1], verts[i + 1][j]))
+                for i in range(len(columns) - 1)
+                for j in range(len(rows) - 1)
+            ]
+            return self._finish(faces, self.in_game(color), smooth)
 
     def box(self, center, size, color, rotation=None, smooth=False, skip=(), cuts=(1, 1, 1)):
         """A cuboid built as one grid per face.
@@ -391,6 +451,31 @@ class Part:
             if len(edge.link_faces) == 2 and edge.calc_face_angle(0.0) > limit:
                 edge.smooth = False
 
+    def displace(self, faces, offset):
+        """Moves the vertices of `faces` by `offset(position)`, both in the final authoring coordinates."""
+        for vert in dict.fromkeys(vert for face in faces for vert in face.verts):
+            vert.co = vert.co + Vector(offset(vert.co))
+
+    def project_uv(self, scale):
+        """Box-projects every face onto the plane of its dominant axis, `scale` metres per texture repeat.
+
+        Walls get v = up, so a layered texture stays level. Neighbouring faces may pick different planes;
+        the exporter splits the vertices along those seams.
+        """
+        layer = self.bm.loops.layers.uv.verify()
+        for face in self.bm.faces:
+            face.normal_update()
+            nx, ny, nz = (abs(c) for c in face.normal)
+            for loop in face.loops:
+                co = loop.vert.co
+                if nz >= nx and nz >= ny:
+                    uv = (co.x, co.y)
+                elif nx >= ny:
+                    uv = (co.y, co.z)
+                else:
+                    uv = (co.x, co.z)
+                loop[layer].uv = (uv[0] / scale, uv[1] / scale)
+
     def raycaster(self):
         return BVHTree.FromBMesh(self.bm)
 
@@ -435,19 +520,43 @@ def vertex_color_material(name):
     return material
 
 
-def image_material(name, path, repeat=False):
-    """A Principled material whose base colour is the image at `path` (exported as an embedded JPEG)."""
+def textured_material(name, diffuse, normal=None):
+    """A Principled material: the diffuse image times the 'Color' vertex attribute, optionally with a normal map.
+
+    The exporter writes the product as COLOR_0 plus a base-colour texture (the game multiplies them
+    the same way) and the normal map as a normalTexture. Images mirror at their edges, so a repeat never
+    shows a seam.
+    """
     material = bpy.data.materials.new(name)
     if material.node_tree is None:
         material.use_nodes = True
     tree = material.node_tree
     principled = next(node for node in tree.nodes if node.type == "BSDF_PRINCIPLED")
-    texture = tree.nodes.new("ShaderNodeTexImage")
-    texture.image = bpy.data.images.load(path)
-    texture.image.name = name
-    texture.extension = "REPEAT" if repeat else "EXTEND"
-    texture.interpolation = "Linear"
-    tree.links.new(texture.outputs["Color"], principled.inputs["Base Color"])
+    principled.inputs["Roughness"].default_value = 1.0
+
+    def image_node(path, label, non_color=False):
+        node = tree.nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(path)
+        node.image.name = label
+        if non_color:
+            node.image.colorspace_settings.name = "Non-Color"
+        node.extension = "MIRROR"
+        node.interpolation = "Linear"
+        return node
+
+    colors = tree.nodes.new("ShaderNodeVertexColor")
+    colors.layer_name = "Color"
+    blend = tree.nodes.new("ShaderNodeMix")
+    blend.data_type = "RGBA"
+    blend.blend_type = "MULTIPLY"
+    blend.inputs[0].default_value = 1.0
+    tree.links.new(image_node(diffuse, name).outputs["Color"], blend.inputs[6])
+    tree.links.new(colors.outputs["Color"], blend.inputs[7])
+    tree.links.new(blend.outputs[2], principled.inputs["Base Color"])
+    if normal:
+        relief = tree.nodes.new("ShaderNodeNormalMap")
+        tree.links.new(image_node(normal, name + "_normal", non_color=True).outputs["Color"], relief.inputs["Color"])
+        tree.links.new(relief.outputs["Normal"], principled.inputs["Normal"])
     return material
 
 

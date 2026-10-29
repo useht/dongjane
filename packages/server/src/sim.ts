@@ -54,6 +54,7 @@ export class TempleSim {
     this.random = options.random ?? Math.random;
     this.chantEveryMs = options.chantEveryMs ?? CHANT_EVERY_MS;
     this.chantMs = options.chantMs ?? CHANT_MS;
+    this.state.serverTime = this.clock();
 
     for (const spot of MAT_SPOTS) {
       this.state.mats.set(String(spot.id), new Mat({ id: spot.id, occupantId: "" }));
@@ -89,9 +90,10 @@ export class TempleSim {
     this.runtimes.delete(id);
   }
 
-  move(id: string, x: number, z: number): boolean {
+  move(id: string, x: number, z: number, seq = 0): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
+    if (monk && seq > monk.ackSeq) monk.ackSeq = seq;
     if (!monk || !runtime || !Number.isFinite(x) || !Number.isFinite(z)) return false;
 
     this.releaseSeat(monk);
@@ -144,6 +146,7 @@ export class TempleSim {
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
+    this.state.serverTime = now;
 
     for (const [id, monk] of this.state.monks) {
       const runtime = this.runtimes.get(id);

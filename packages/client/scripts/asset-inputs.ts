@@ -1,5 +1,5 @@
-import { BUDDHA_MESHES, WORLD_MESHES, WORLD_PROTOTYPES, MONK_PARTS, TEXTURED } from "../src/assets/contract.ts";
-import { BUDDHA_Z, LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH, LANDSCAPE_LAYOUT } from "../src/game/landscape-layout.ts";
+import { GATBAWI_Z, MAT_SIZE, MAT_SPOTS, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
 import { MONK_RIG } from "../src/game/monk-rig.ts";
 import { THEME } from "../src/theme.ts";
 
@@ -7,11 +7,9 @@ import { THEME } from "../src/theme.ts";
 // dimension, colour or mesh name of their own, so the models cannot drift from the code.
 export function assetInputs() {
   return {
-    layout: { LANDSCAPE_HALF_WIDTH, LANDSCAPE_FRONT_Z, BUDDHA_Z },
-    world: LANDSCAPE_LAYOUT,
+    layout: { GATBAWI_Z, PLATFORM, STEPS, PLAZA, WORLD_BOUNDS, MAT_SIZE, MAT_SPOTS },
     monk: MONK_RIG,
-    scene: THEME.scene,
     material: THEME.material,
-    names: { MONK_PARTS, WORLD_MESHES, WORLD_PROTOTYPES, BUDDHA_MESHES, TEXTURED },
+    names: { MONK_PARTS, GATBAWI_MESHES, WORLD_MESHES, WORLD_PROTOTYPES, TEXTURED },
   };
 }

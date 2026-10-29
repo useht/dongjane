@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BUDDHA_MESHES, WORLD_MESHES, MONK_PARTS, TEXTURED } from "../src/assets/contract.ts";
-import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, textureOf } from "../src/assets/registry.ts";
+import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES } from "../src/assets/contract.ts";
+import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { monk: MONK_PARTS, world: WORLD_MESHES, buddha: BUDDHA_MESHES } as const;
+const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES } as const;
 const textured: readonly string[] = TEXTURED;
 
 function group(names: readonly string[], withMap = true): Group {
@@ -36,6 +36,10 @@ function diskLoader(): ModelLoader {
   };
 }
 
+function materialsOf(mesh: Mesh): Material[] {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+}
+
 describe("collectMeshes", () => {
   it("finds every contract mesh by name, wherever it sits in the scene", () => {
     const root = new Group();
@@ -47,26 +51,35 @@ describe("collectMeshes", () => {
   });
 
   it("names the model and the mesh that is missing", () => {
-    const root = group(WORLD_MESHES.filter((name) => name !== "sky"));
-    expect(() => collectMeshes(root, "world")).toThrow('world.glb: missing mesh "sky"');
+    const root = group(WORLD_MESHES.filter((name) => name !== "ground"));
+    expect(() => collectMeshes(root, "world")).toThrow('world.glb: missing mesh "ground"');
+    expect(() => collectMeshes(group(GATBAWI_MESHES.filter((name) => name !== "figure")), "gatbawi")).toThrow('gatbawi.glb: missing mesh "figure"');
   });
 
   it("rejects a textured mesh that lost its texture", () => {
     expect(() => collectMeshes(group(WORLD_MESHES, false), "world")).toThrow(/has no texture/);
+    expect(() => collectMeshes(group(GATBAWI_MESHES, false), "gatbawi")).toThrow(/has no texture/);
   });
 });
 
-describe("textureOf", () => {
-  it("returns the colour map of the mesh", () => {
+describe("textureOf and normalOf", () => {
+  it("return the colour map and the normal map of the mesh", () => {
     const map = new Texture();
-    const mesh = new Mesh(new BufferGeometry(), new MeshStandardMaterial({ map }));
+    const normalMap = new Texture();
+    const mesh = new Mesh(new BufferGeometry(), new MeshStandardMaterial({ map, normalMap }));
     expect(textureOf(mesh)).toBe(map);
+    expect(normalOf(mesh)).toBe(normalMap);
+  });
+
+  it("report no normal map when the mesh has none", () => {
+    const mesh = new Mesh(new BufferGeometry(), new MeshStandardMaterial({ map: new Texture() }));
+    expect(normalOf(mesh)).toBeNull();
   });
 });
 
 describe("loadGameAssets", () => {
   it("serves one glb per model", () => {
-    expect(Object.keys(MODELS).sort()).toEqual(["buddha", "monk", "world"]);
+    expect(Object.keys(MODELS).sort()).toEqual(["gatbawi", "monk", "world"]);
     for (const url of Object.values(MODELS)) expect(url).toMatch(/\.glb$/);
   });
 
@@ -84,31 +97,49 @@ describe("loadGameAssets", () => {
     }
   });
 
-  it("gives the world's mat prototypes a texture only on the top", async () => {
-    const { world } = (await loadGameAssets(diskLoader())).models;
-    expect(textureOf(world.matTop)).toBeInstanceOf(Texture);
-    expect(world.matBody.geometry.hasAttribute("color")).toBe(true);
+  it("gives every photographed surface but the flat woven mat a normal map, and the painted ones none", async () => {
+    const { gatbawi, world } = (await loadGameAssets(diskLoader())).models;
+    const meshes: Record<string, Mesh> = { ...gatbawi, ...world };
+    for (const [name, mesh] of Object.entries(meshes)) {
+      if (textured.includes(name) && name !== "mat") expect(normalOf(mesh), name).toBeInstanceOf(Texture);
+      else expect(normalOf(mesh), name).toBeNull();
+    }
   });
 
-  it("releases the geometries, materials and textures it owns", async () => {
+  it("gives the world one textured mat prototype that also carries vertex colour", async () => {
+    const { world } = (await loadGameAssets(diskLoader())).models;
+    expect(textureOf(world.mat)).toBeInstanceOf(Texture);
+    expect(world.mat.geometry.hasAttribute("color")).toBe(true);
+    expect(world.mat.geometry.hasAttribute("uv")).toBe(true);
+  });
+
+  it("releases every geometry, material and texture it owns exactly once", async () => {
     const assets = await loadGameAssets(diskLoader());
-    let geometries = 0;
-    let textures = 0;
+    const geometries = new Map<BufferGeometry, number>();
+    const textures = new Map<Texture, number>();
     const owned = new Set<Material>();
     const released = new Set<Material>();
+    const watch = <T extends { addEventListener(type: "dispose", listener: () => void): void }>(item: T, counts: Map<T, number>): void => {
+      if (counts.has(item)) return;
+      counts.set(item, 0);
+      item.addEventListener("dispose", () => counts.set(item, (counts.get(item) ?? 0) + 1));
+    };
     for (const meshes of Object.values(assets.models) as Array<Record<string, Mesh>>) {
       for (const mesh of Object.values(meshes)) {
-        mesh.geometry.addEventListener("dispose", () => (geometries += 1));
-        if (textured.includes(mesh.name)) textureOf(mesh).addEventListener("dispose", () => (textures += 1));
-        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+        watch(mesh.geometry, geometries);
+        for (const material of materialsOf(mesh)) {
+          const { map, normalMap } = material as MeshStandardMaterial;
+          for (const texture of [map, normalMap]) if (texture) watch(texture, textures);
           owned.add(material);
           material.addEventListener("dispose", () => released.add(material));
         }
       }
     }
     assets.dispose();
-    expect(geometries).toBe(MONK_PARTS.length + WORLD_MESHES.length + BUDDHA_MESHES.length);
-    expect(textures).toBe(TEXTURED.length);
+    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length);
+    expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
+    expect([...geometries.values()].every((times) => times === 1)).toBe(true);
+    expect([...textures.values()].every((times) => times === 1)).toBe(true);
     expect(owned.size).toBeGreaterThan(0);
     expect(released).toEqual(owned);
   });

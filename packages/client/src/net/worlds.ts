@@ -39,9 +39,15 @@ async function request(
   }
 }
 
-export async function fetchWorlds(base: string, fetchFn: typeof fetch = defaultFetch, timeoutMs = 6000): Promise<WorldInfo[]> {
+export async function fetchWorlds(
+  base: string,
+  fetchFn: typeof fetch = defaultFetch,
+  timeoutMs = 6000,
+  onServerTime?: (serverTime: number) => void,
+): Promise<WorldInfo[]> {
   const body = (await request(`${base}${WORLDS_PATH}`, {}, fetchFn, timeoutMs)) as Partial<WorldListResponse> | null;
   if (!Array.isArray(body?.worlds)) throw new WorldsUnavailableError("malformed world list");
+  if (typeof body.serverTime === "number") onServerTime?.(body.serverTime);
   return body.worlds.filter((info): info is WorldInfo => isValidWorld(info?.world));
 }
 

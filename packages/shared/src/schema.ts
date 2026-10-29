@@ -11,6 +11,7 @@ export const Monk = schema(
     mode: t.string().default("stand"),
     matId: t.int8().default(-1),
     bowCount: t.uint32().default(0),
+    ackSeq: t.uint32().default(0),
   },
   "Monk",
 );
@@ -40,6 +41,7 @@ export const TempleState = schema(
     monks: t.map(Monk),
     mats: t.map(Mat),
     chant: t.ref(Chant).default(() => new Chant()),
+    serverTime: t.float64().default(0),
   },
   "TempleState",
 );

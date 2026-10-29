@@ -83,7 +83,7 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
     this.onMessage(MSG.move, (client, payload) => {
       if (!this.allow(client)) return;
       const message = parseMove(payload);
-      if (message) this.sim.move(client.sessionId, message.x, message.z);
+      if (message) this.sim.move(client.sessionId, message.x, message.z, message.seq);
     });
     this.onMessage(MSG.sit, (client, payload) => {
       if (!this.allow(client)) return;

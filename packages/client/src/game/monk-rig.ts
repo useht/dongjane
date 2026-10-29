@@ -13,7 +13,7 @@ export const UPPER_ARM = 0.18;
 export const FORE_ARM = 0.16;
 export const FOOT_X = 0.085;
 export const FOOT_Y = 0.045;
-export const MAT_TOP = 0.13;
+export const MAT_TOP = 0.03;
 
 export const MONK_RIG = {
   HIP_STAND,

@@ -1,11 +1,10 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { MAT_SPOTS } from "@dongjane/shared";
-import { BUDDHA_MESHES, BUDGET, WORLD_MESHES, WORLD_PROTOTYPES, MONK_PARTS, TEXTURED, type MonkPart } from "../src/assets/contract.ts";
-import { LANDSCAPE_FRONT_Z, LANDSCAPE_HALF_WIDTH, LANDSCAPE_LAYOUT } from "../src/game/landscape-layout.ts";
+import { GATBAWI_Z, MAT_COUNT, MAT_SIZE, MAT_SPOTS, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { BUDGET, GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { THEME } from "../src/theme.ts";
-import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";
+import { type Glb, type GlbNode, colors, loadGlb, positions, rootNodes } from "./glb.ts";
 
 const MODELS = new URL("../src/assets/models/", import.meta.url);
 const TOLERANCE = 0.03;
@@ -154,7 +153,7 @@ function byName(nodes: readonly GlbNode[]): (name: string) => GlbNode {
 
 // A token a mesh is built from must show up as its linear value and never as its sRGB spelling.
 function expectLinearColors(glb: Glb, nodes: readonly GlbNode[], signatures: Readonly<Record<string, MaterialToken>>): void {
-  for (const node of nodes.filter((candidate) => !textured.includes(candidate.name))) {
+  for (const node of nodes) {
     const { values } = colors(glb, node.name);
     expect(Math.min(...values), `${node.name} darkest`).toBeGreaterThanOrEqual(0);
     expect(Math.max(...values), `${node.name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
@@ -169,39 +168,79 @@ function expectLinearColors(glb: Glb, nodes: readonly GlbNode[], signatures: Rea
   }
 }
 
-describe("buddha.glb", () => {
-  const glb = loadGlb(new URL("buddha.glb", MODELS));
-  const nodes = expectContract(glb, BUDDHA_MESHES);
+// Stone and straw are photographs times the colours painted into the vertices, so no token appears
+// exactly. What can be told is how bright a vertex gets: the token in linear light, not as sRGB.
+function expectCeiling(glb: Glb, name: string, token: MaterialToken): void {
+  const hex = THEME.material[token];
+  const linear = linearOf(hex);
+  const srgb = channels(hex).map((channel) => channel / 255);
+  expect(Math.max(...linear.map((channel, c) => Math.abs(channel - (srgb[c] as number)))), `${token} tells linear from sRGB`).toBeGreaterThan(0.05);
+  const { values, size, count } = colors(glb, name);
+  const brightest = linear.map((_, c) => {
+    let top = 0;
+    for (let i = 0; i < count; i += 1) top = Math.max(top, values[i * size + c] as number);
+    return top;
+  });
+  brightest.forEach((top, c) => {
+    expect(top, `${name} channel ${c} stays under ${token} in linear light`).toBeLessThanOrEqual((linear[c] as number) + COLOR_TOLERANCE);
+  });
+  const reach = Math.max(...brightest.map((top, c) => top / (linear[c] as number)));
+  expect(reach, `${name} gets as bright as ${token}`).toBeGreaterThan(0.75);
+}
+
+describe("gatbawi.glb", () => {
+  const glb = loadGlb(new URL("gatbawi.glb", MODELS));
+  const nodes = expectContract(glb, GATBAWI_MESHES);
   const mesh = byName(nodes);
 
   it("stays inside its size budget", () => {
-    expect(nodes.reduce((sum, node) => sum + node.triangles, 0)).toBeLessThanOrEqual(BUDGET.buddha.tris);
-    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.buddha.bytes);
+    expect(nodes.reduce((sum, node) => sum + node.triangles, 0)).toBeLessThanOrEqual(BUDGET.gatbawi.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.gatbawi.bytes);
   });
 
-  it("is centred on the altar line, so the group can be placed at BUDDHA_Z", () => {
+  it("is centred on the pedestal's foot, so the group can stand at GATBAWI_Z", () => {
     for (const node of nodes) {
-      expect(Math.abs((node.positions.min[0] + node.positions.max[0]) / 2), node.name).toBeLessThanOrEqual(TOLERANCE);
+      expect(Math.abs((node.positions.min[0] + node.positions.max[0]) / 2), node.name).toBeLessThanOrEqual(0.08);
     }
+    expect(Math.abs(mesh("pedestal").positions.min[1])).toBeLessThanOrEqual(TOLERANCE);
   });
 
-  it("sits on its lotus, facing +Z into the world", () => {
+  it("is a four-metre figure on its pedestal, the hat stone on his head, facing +Z", () => {
     const figure = mesh("figure").positions;
-    const lotus = mesh("lotus").positions;
-    expect(Math.abs(lotus.max[1])).toBeLessThanOrEqual(0.3);
-    expect(lotus.min[1]).toBeLessThan(0);
-    expect(figure.min[1]).toBeGreaterThanOrEqual(lotus.min[1]);
-    expect(figure.max[1] - figure.min[1]).toBeGreaterThan(2.5);
+    const hat = mesh("hatStone").positions;
+    const pedestal = mesh("pedestal").positions;
+    expect(figure.min[1]).toBeGreaterThanOrEqual(pedestal.max[1] - 0.1);
+    expect(hat.min[1]).toBeGreaterThan(figure.max[1] - 0.4);
+    const height = Math.max(...nodes.map((node) => node.positions.max[1]));
+    expect(height).toBeGreaterThanOrEqual(3.5);
+    expect(height).toBeLessThanOrEqual(4.5);
     expect(figure.max[2]).toBeGreaterThan(-figure.min[2]);
   });
 
-  it("puts the halo and the glow behind the figure", () => {
-    expect(mesh("halo").positions.max[2]).toBeLessThan(0);
-    expect(mesh("glow").positions.max[2]).toBeLessThan(0);
+  it("lays the offerings on the platform in front of the pedestal", () => {
+    const offerings = mesh("offerings").positions;
+    expect(offerings.min[2]).toBeGreaterThanOrEqual(mesh("pedestal").positions.max[2] - 0.1);
+    expect(offerings.min[1]).toBeGreaterThanOrEqual(-TOLERANCE);
+    expect(offerings.max[1]).toBeLessThan(1.2);
+  });
+
+  it("fits on the platform it stands on", () => {
+    const extent = nodes.reduce(
+      (all, node) => ({
+        minZ: Math.min(all.minZ, node.positions.min[2]),
+        maxZ: Math.max(all.maxZ, node.positions.max[2]),
+        halfX: Math.max(all.halfX, node.positions.max[0], -node.positions.min[0]),
+      }),
+      { minZ: Infinity, maxZ: -Infinity, halfX: 0 },
+    );
+    expect(GATBAWI_Z + extent.maxZ).toBeLessThanOrEqual(PLATFORM.maxZ);
+    expect(GATBAWI_Z + extent.minZ).toBeGreaterThanOrEqual(PLATFORM.minZ - 0.8);
+    expect(extent.halfX).toBeLessThanOrEqual(3.8);
   });
 
   it("paints vertices in linear light, never as sRGB", () => {
-    expectLinearColors(glb, nodes, { figure: "buddhaGold", halo: "buddhaGoldPale", lotus: "petal" });
+    expectLinearColors(glb, nodes, { offerings: "woodDark" });
+    for (const name of ["figure", "hatStone", "pedestal"]) expectCeiling(glb, name, "granite");
   });
 });
 
@@ -209,61 +248,77 @@ describe("world.glb", () => {
   const glb = loadGlb(new URL("world.glb", MODELS));
   const nodes = expectContract(glb, WORLD_MESHES);
   const mesh = byName(nodes);
-  const { BACK_Z, HEIGHT } = LANDSCAPE_LAYOUT;
   const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
 
   it("stays inside its size budget, counting every mat the game draws", () => {
     const prototypes: readonly string[] = WORLD_PROTOTYPES;
-    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? MAT_SPOTS.length : 1), 0);
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? MAT_COUNT : 1), 0);
     expect(triangles).toBeLessThanOrEqual(BUDGET.world.tris);
     expect(glb.bytes).toBeLessThanOrEqual(BUDGET.world.bytes);
   });
 
-  it("lays the floor over exactly the room the server lets players walk in", () => {
-    const { min, max } = mesh("floor").positions;
-    near(min[0], -LANDSCAPE_HALF_WIDTH);
-    near(max[0], LANDSCAPE_HALF_WIDTH);
-    near(min[2], BACK_Z);
-    near(max[2], LANDSCAPE_FRONT_Z);
+  it("is level under the plaza and rolls on into hills far away", () => {
+    const { min, max } = mesh("ground").positions;
     near(min[1], 0);
-    near(max[1], 0);
+    expect(max[1]).toBeGreaterThan(10);
+    for (const edge of [min[0], min[2], -max[0], -max[2]]) expect(edge).toBeLessThan(-60);
   });
 
-  it("hangs the mural across the whole back wall", () => {
-    const { min, max } = mesh("backdrop").positions;
-    near(min[0], -LANDSCAPE_HALF_WIDTH);
-    near(max[0], LANDSCAPE_HALF_WIDTH);
+  it("builds the platform, the steps and the plaza paving at the heights and depths the server uses", () => {
+    const { min, max } = mesh("steps").positions;
+    near(max[1], PLATFORM.topY);
     near(min[1], 0);
-    near(max[1], HEIGHT);
-    near(min[2], BACK_Z);
+    expect(min[2]).toBeLessThanOrEqual(PLATFORM.minZ);
+    expect(max[2]).toBeGreaterThanOrEqual(PLAZA.maxZ);
+    expect(min[0]).toBeLessThanOrEqual(WORLD_BOUNDS.minX);
+    expect(max[0]).toBeGreaterThanOrEqual(WORLD_BOUNDS.maxX);
+    expect(STEPS.minZ).toBe(PLATFORM.maxZ);
+    expect(STEPS.maxZ).toBe(PLAZA.minZ);
   });
 
-  it("keeps everything indoors under the roof", () => {
-    for (const name of ["structure", "beams", "paper", "lanterns"]) {
-      expect(mesh(name).positions.max[1], name).toBeLessThanOrEqual(HEIGHT + 0.05);
-      expect(mesh(name).positions.min[1], name).toBeGreaterThanOrEqual(-0.05);
+  it("keeps trees and boulders out of the area players walk in", () => {
+    for (const name of ["pine", "maple", "rocks"]) {
+      const { values, count } = positions(glb, name);
+      let inside = 0;
+      for (let i = 0; i < count; i += 1) {
+        const x = values[i * 3] as number;
+        const y = values[i * 3 + 1] as number;
+        const z = values[i * 3 + 2] as number;
+        if (y > 0.3 && x >= WORLD_BOUNDS.minX && x <= WORLD_BOUNDS.maxX && z >= WORLD_BOUNDS.minZ && z <= WORLD_BOUNDS.maxZ) inside += 1;
+      }
+      expect(inside, `${name} vertices above the paving inside the walkable area`).toBe(0);
     }
   });
 
-  it("authors the mat prototypes at the origin, ready to be instanced", () => {
+  it("authors one mat prototype at the origin, the size the mats are laid out for", () => {
     for (const name of WORLD_PROTOTYPES) {
       const { min, max } = mesh(name).positions;
-      expect(Math.abs((min[0] + max[0]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
-      expect(Math.abs((min[2] + max[2]) / 2), name).toBeLessThanOrEqual(TOLERANCE);
+      near((min[0] + max[0]) / 2, 0);
+      near((min[2] + max[2]) / 2, 0);
+      near(max[0] - min[0], MAT_SIZE.x);
+      near(max[2] - min[2], MAT_SIZE.z);
       expect(min[1], name).toBeGreaterThanOrEqual(-0.01);
-      expect(max[1], name).toBeLessThan(0.3);
+      expect(max[1], name).toBeLessThanOrEqual(0.05);
+    }
+  });
+
+  it("leaves every mat on the plaza paving, clear of the steps and of each other", () => {
+    for (const a of MAT_SPOTS) {
+      expect(a.z - MAT_SIZE.z / 2, `mat ${a.id} front`).toBeGreaterThanOrEqual(PLAZA.minZ);
+      expect(a.z + MAT_SIZE.z / 2, `mat ${a.id} back`).toBeLessThanOrEqual(PLAZA.maxZ);
+      expect(Math.abs(a.x) + MAT_SIZE.x / 2, `mat ${a.id} side`).toBeLessThanOrEqual(WORLD_BOUNDS.maxX);
+      for (const b of MAT_SPOTS.filter((other) => other.id > a.id)) {
+        const apart = Math.abs(a.x - b.x) >= MAT_SIZE.x || Math.abs(a.z - b.z) >= MAT_SIZE.z;
+        expect(apart, `mats ${a.id} and ${b.id} do not overlap`).toBe(true);
+      }
     }
   });
 
   it("paints vertices in linear light, never as sRGB", () => {
-    expectLinearColors(glb, nodes, {
-      structure: "lacquer",
-      beams: "dancheongGreen",
-      lanterns: "lanternCoral",
-      paper: "paper",
-      matBody: "mat",
-      outdoor: "pine",
-    });
+    expectLinearColors(glb, nodes, { pine: "pine", maple: "maple", ground: "moss", mat: "strawBorder" });
+    expectCeiling(glb, "steps", "paving");
+    expectCeiling(glb, "rocks", "granite");
+    expectCeiling(glb, "mat", "straw");
   });
 });
 
@@ -273,5 +328,9 @@ describe("the model set", () => {
       .filter((file) => file.endsWith(".glb"))
       .reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, 0);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
+  });
+
+  it("has no glb the game does not load", () => {
+    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual(["gatbawi.glb", "monk.glb", "world.glb"]);
   });
 });

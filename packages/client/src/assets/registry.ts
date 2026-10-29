@@ -1,17 +1,17 @@
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { BUDDHA_MESHES, WORLD_MESHES, MONK_PARTS, TEXTURED } from "./contract.ts";
-import buddhaUrl from "./models/buddha.glb?url";
-import worldUrl from "./models/world.glb?url";
+import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES } from "./contract.ts";
+import gatbawiUrl from "./models/gatbawi.glb?url";
 import monkUrl from "./models/monk.glb?url";
+import worldUrl from "./models/world.glb?url";
 
-export const MODELS = { monk: monkUrl, world: worldUrl, buddha: buddhaUrl } as const;
+export const MODELS = { monk: monkUrl, gatbawi: gatbawiUrl, world: worldUrl } as const;
 
 export type ModelKey = keyof typeof MODELS;
 
-const NAMES = { monk: MONK_PARTS, world: WORLD_MESHES, buddha: BUDDHA_MESHES } as const;
+const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES } as const;
 
-// The glTF materials are placeholders: the game builds its own and only borrows the texture.
+// The glTF materials are placeholders: the game builds its own and only borrows the textures.
 export type ModelMeshes<K extends ModelKey> = { readonly [Name in (typeof NAMES)[K][number]]: Mesh };
 
 export interface GameAssets {
@@ -37,6 +37,15 @@ export function textureOf(mesh: Mesh): Texture {
   throw new Error(`mesh "${mesh.name}" has no texture`);
 }
 
+// The normal map the glb gave the mesh, if it has one.
+export function normalOf(mesh: Mesh): Texture | null {
+  for (const material of materialsOf(mesh)) {
+    const { normalMap } = material as MeshStandardMaterial;
+    if (normalMap) return normalMap;
+  }
+  return null;
+}
+
 export function collectMeshes<K extends ModelKey>(root: Object3D, key: K): ModelMeshes<K> {
   const found = new Map<string, Mesh>();
   root.traverse((object) => {
@@ -52,14 +61,19 @@ export function collectMeshes<K extends ModelKey>(root: Object3D, key: K): Model
   return meshes as ModelMeshes<K>;
 }
 
+// Meshes of one glb share textures, so each is released once.
 function disposeMeshes(meshes: Readonly<Record<string, Mesh>>): void {
+  const textures = new Set<Texture>();
   for (const mesh of Object.values(meshes)) {
     mesh.geometry.dispose();
     for (const material of materialsOf(mesh)) {
-      (material as MeshStandardMaterial).map?.dispose();
+      const { map, normalMap } = material as MeshStandardMaterial;
+      if (map) textures.add(map);
+      if (normalMap) textures.add(normalMap);
       material.dispose();
     }
   }
+  for (const texture of textures) texture.dispose();
 }
 
 export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Promise<GameAssets> {
@@ -69,11 +83,11 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
     });
     return collectMeshes(scene, key);
   };
-  const [monk, world, buddha] = await Promise.all([load("monk"), load("world"), load("buddha")]);
+  const [monk, gatbawi, world] = await Promise.all([load("monk"), load("gatbawi"), load("world")]);
   return {
-    models: { monk, world, buddha },
+    models: { monk, gatbawi, world },
     dispose(): void {
-      for (const meshes of [monk, world, buddha]) disposeMeshes(meshes);
+      for (const meshes of [monk, gatbawi, world]) disposeMeshes(meshes);
     },
   };
 }

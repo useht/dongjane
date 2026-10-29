@@ -21,6 +21,15 @@ describe("fetchWorlds", () => {
     expect(result).toEqual([world(1, 3)]);
   });
 
+  it("hands the server time to the observer when the response carries one", async () => {
+    const seen: number[] = [];
+    await fetchWorlds("http://x", respond({ worlds: [world(1, 3)], serverTime: 1_800_000_000_000 }) as typeof fetch, 6000, (time) =>
+      seen.push(time),
+    );
+    await fetchWorlds("http://x", respond({ worlds: [world(1, 3)] }) as typeof fetch, 6000, (time) => seen.push(time));
+    expect(seen).toEqual([1_800_000_000_000]);
+  });
+
   it("accepts a server with no worlds open", async () => {
     expect(await fetchWorlds("http://x", respond({ worlds: [] }) as typeof fetch)).toEqual([]);
   });

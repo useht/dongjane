@@ -36,10 +36,10 @@ export interface RigLimits {
   maxPitch: number;
 }
 
-const LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 9, minPitch: 0.16, maxPitch: 1.3 };
+const LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 13, minPitch: 0.16, maxPitch: 1.3 };
 
-// A low, wide view from the back of the world: the Buddha's halo, the altar and the monk all fit between the HUD bands.
-export const DEFAULT_VIEW = { yaw: 0, pitch: 0.3, distance: 5.6 } as const;
+// A low view from the back of the plaza: Gatbawi's hat stone, all twelve mats and the monk fit between the HUD bands.
+export const DEFAULT_VIEW = { yaw: 0, pitch: 0.38, distance: 8.5 } as const;
 
 export interface Lens {
   fov: number;
@@ -48,7 +48,7 @@ export interface Lens {
 }
 
 export function lensFor(aspect: number): Lens {
-  return aspect < 1 ? { fov: 66, lift: 0.15 } : { fov: 62, lift: 0.15 };
+  return aspect < 1 ? { fov: 74, lift: 0.15 } : { fov: 62, lift: 0.15 };
 }
 
 // Applies the lens for the canvas size and moves the principal point into the band the HUD leaves free.
