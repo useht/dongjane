@@ -2,13 +2,10 @@ import {
   ACESFilmicToneMapping,
   Box3,
   Color,
-  DoubleSide,
   Fog,
   Mesh,
-  MeshBasicMaterial,
   PerspectiveCamera,
   Raycaster,
-  RingGeometry,
   Scene,
   Vector2,
   Vector3,
@@ -108,7 +105,6 @@ export class World {
   private selfPrediction: SelfDisplay | null = null;
   private readonly input: PointerInput;
   private readonly adaptive: AdaptiveScale;
-  private readonly selfRing: Mesh;
   private readonly resizeObserver: ResizeObserver;
   private frame = 0;
   private last = 0;
@@ -158,14 +154,6 @@ export class World {
     const region = regionFor(this.zone);
     this.rig = new CameraRig(this.camera, region.bounds, region.limits);
     this.rig.follow(ZONE_SPAWN.gatbawi.x, ZONE_SPAWN.gatbawi.z, 0, true);
-
-    this.selfRing = new Mesh(
-      new RingGeometry(0.36, 0.42, 32),
-      new MeshBasicMaterial({ color: THEME.scene.selfRing, transparent: true, opacity: 0.6, depthWrite: false, side: DoubleSide, fog: false }),
-    );
-    this.selfRing.rotation.x = -Math.PI / 2;
-    this.selfRing.visible = false;
-    this.scene.add(this.selfRing);
 
     this.input = new PointerInput(canvas, {
       onOrbit: (dx, dy) => {
@@ -439,7 +427,6 @@ export class World {
     this.dharma?.dispose();
     this.landscape.dispose();
     this.assets.dispose();
-    this.selfRing.geometry.dispose();
     this.renderer.dispose();
   }
 
@@ -512,12 +499,8 @@ export class World {
     const self = this.selfId ? this.entries.get(this.selfId) : undefined;
     if (self) {
       this.rig.follow(self.x, self.z, dt);
-      const grounded = self.avatar.mode === "stand" || self.avatar.mode === "walk";
-      this.selfRing.visible = grounded;
-      this.selfRing.position.set(self.x, 0.028, self.z);
-    } else {
-      this.selfRing.visible = false;
-      if (this.idleSpin && !this.reduceMotion) this.rig.yaw += dt * 0.05;
+    } else if (this.idleSpin && !this.reduceMotion) {
+      this.rig.yaw += dt * 0.05;
     }
     this.rig.update(dt);
     this.camera.updateMatrixWorld();

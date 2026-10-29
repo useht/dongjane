@@ -50,7 +50,6 @@ export const THEME = {
     envTop: "#8fc0f0",
     envMid: "#e4edf0",
     envLow: "#9a8a64",
-    selfRing: "#ffd27a",
     lanternPink: "#ff7aa8",
     lanternWhite: "#fff4de",
     lanternYellow: "#ffd45a",
