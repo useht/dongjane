@@ -120,22 +120,32 @@ describe("monk assets", () => {
     expect(lightness("torso"), "the jacket is the lighter grey").toBeGreaterThan(lightness("trousers") + 0.04);
   });
 
-  it("tints the grey with a faint hint of the monk's hue, never a saturated robe", async () => {
+  it("gives every monk its hue as a muted tint on the grey: clearly different colours, still a grey 승복", async () => {
     const parts = await loadParts();
-    const color = parts.torso.getAttribute("color");
-    const base = new Color(color.getX(0), color.getY(0), color.getZ(0));
-    const tint = new Color();
-    const seen = new Set<string>();
-    for (let hue = 0; hue < 360; hue += 30) {
-      robeColor(hue, tint);
-      const shown = base.clone().multiply(tint);
-      const hsl = shown.getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
-      expect(hsl.s, `jacket saturation at hue ${hue}`).toBeLessThan(0.3);
-      expect(hsl.l, `jacket lightness at hue ${hue}`).toBeGreaterThan(0.4);
-      expect(hsl.l, `jacket lightness at hue ${hue}`).toBeLessThan(0.7);
-      seen.add(shown.getHexString());
+    const shownOf = (part: PartName, hue: number): Color => {
+      const color = parts[part].getAttribute("color");
+      return new Color(color.getX(0), color.getY(0), color.getZ(0)).multiply(robeColor(hue, new Color()));
+    };
+    const hues: number[] = [];
+    for (let hue = 0; hue < 360; hue += 30) hues.push(hue);
+    for (const part of ["torso", "trousers"] as const) {
+      const shown = hues.map((hue) => shownOf(part, hue));
+      shown.forEach((color, i) => {
+        const hsl = color.getHSL({ h: 0, s: 0, l: 0 }, SRGBColorSpace);
+        expect(hsl.s, `${part} saturation at hue ${hues[i]}: tinted, not grey`).toBeGreaterThan(0.12);
+        expect(hsl.s, `${part} saturation at hue ${hues[i]}: muted, not a bright robe`).toBeLessThan(0.35);
+        expect(hsl.l, `${part} lightness at hue ${hues[i]}`).toBeGreaterThan(0.3);
+        expect(hsl.l, `${part} lightness at hue ${hues[i]}`).toBeLessThan(0.65);
+      });
+      // Monks whose hues are 60 degrees apart (the spread of the identity colours) differ clearly in the colour the player sees.
+      shown.forEach((color, i) => {
+        const other = shown[(i + 2) % shown.length] as Color;
+        const a = color.clone().convertLinearToSRGB();
+        const b = other.clone().convertLinearToSRGB();
+        const seen = Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+        expect(seen, `${part}: hue ${hues[i]} and ${hues[(i + 2) % hues.length]} look different`).toBeGreaterThan(0.07);
+      });
     }
-    expect(seen.size, "different hues still look different").toBeGreaterThan(6);
     expect(robeColor(-210, new Color()).getHex(), "hues wrap around").toBe(robeColor(150, new Color()).getHex());
   });
 

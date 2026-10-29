@@ -25,6 +25,6 @@
   "kneelPelvisScaleY": 1.0,
   "kneelPelvisLift": 0.0,
   "cushionTop": 0.13,
-  "robeTintSaturation": 0.6,
-  "robeTintLightness": 0.92
+  "robeTintSaturation": 1.0,
+  "robeTintLightness": 0.78
 }

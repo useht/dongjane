@@ -247,7 +247,8 @@ export class MonkAvatar {
   }
 }
 
-// The jacket and trousers are baked ash grey, so the tint is a near-white pastel of the monk's hue: grey times pastel stays grey with a hint of colour.
+// The jacket and trousers are baked ash grey; the tint is multiplied into that grey (three.js reads the HSL as linear channel values),
+// giving every monk a muted version of its hue that still reads as a grey 승복.
 export function robeColor(hue: number, into: Color): Color {
   return into.setHSL((((hue % 360) + 360) % 360) / 360, ROBE_TINT_SATURATION, ROBE_TINT_LIGHTNESS);
 }

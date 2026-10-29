@@ -27,7 +27,7 @@ bound to the hips, which closes the gap between the two legs and rests on the cu
 The jacket ends JACKET_HEM below the hip pivot, the trouser cuff stops CUFF_ABOVE_ANKLE above the ankle, and the cream sock
 shows below it.
 Robe parts (torso, pelvis, trousers, sleeveUpper, sleeveLower) are light and dark grey; the game tints them per monk by
-multiplying a near-white pastel into that grey (robe_tint below mirrors monk-model.ts).
+multiplying a muted hue (HSL(hue, robeTintSaturation, robeTintLightness)) into that grey (robe_tint below mirrors monk-model.ts).
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
 Blender axes: X right, Y forward (the face looks toward +Y), Z up. glTF export maps (x, y, z) -> (x, z, -y).
@@ -106,8 +106,8 @@ RIG = {  # pivots and lengths the animation code uses
     "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the cushion
     "kneelPelvisLift": 0.0,
     "cushionTop": 0.13,
-    "robeTintSaturation": 0.6,  # the game multiplies HSL(hue, this, that) into the grey robe: a near-white pastel keeps the grey grey
-    "robeTintLightness": 0.92,
+    "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
+    "robeTintLightness": 0.78,
 }
 RIG["hipKneel"] = round(RIG["pelvisDrop"] * RIG["kneelPelvisScaleY"] + 0.007, 3)  # the kneeling crotch hangs 7 mm over the cushion
 RIG["shoulderDrop"] = round((RATIO["chin_to_shoulder"] - RATIO["neck"]) * HEAD_H, 4)
@@ -1154,9 +1154,10 @@ def pose_matrices(kneel, cushion, stride=0.0):
 
 
 def robe_tint(hue):
-    """The colour monk-model.ts multiplies into the robe's vertex colours for a monk of this hue (HSL in sRGB, as three.js reads it)."""
+    """The colour monk-model.ts multiplies into the robe's vertex colours for a monk of this hue. three.js' setHSL reads the HSL as
+    linear channel values (the working colour space), so no sRGB conversion here."""
     r, g, b = colorsys.hls_to_rgb((hue % 360) / 360.0, RIG["robeTintLightness"], RIG["robeTintSaturation"])
-    return (linear_channel(r), linear_channel(g), linear_channel(b), 1.0)
+    return (r, g, b, 1.0)
 
 
 def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["cushionTop"], stride=0.0):
