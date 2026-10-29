@@ -32,6 +32,13 @@ const ICONS = {
     '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   sit: '<circle cx="12" cy="6" r="2.2"/><path d="M8.5 15c0-3.2 1.4-5 3.5-5s3.5 1.8 3.5 5"/><ellipse cx="12" cy="18.5" rx="8" ry="2.5"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4"/>',
+  moon: '<path d="M20.5 12.8A8.6 8.6 0 1 1 11.2 3.5 6.8 6.8 0 0 0 20.5 12.8z"/>',
+  cloud: '<path d="M7.5 18.5a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.4 1.1A3.9 3.9 0 0 1 17.5 18.5z"/>',
+  rain: '<path d="M7.5 14a4 4 0 0 1-.6-7.95 5.4 5.4 0 0 1 10.3 1A3.5 3.5 0 0 1 17 14z"/><path d="M8.5 17l-1 3M12.5 17l-1 3M16.5 17l-1 3"/>',
+  snow: '<path d="M7.5 14a4 4 0 0 1-.6-7.95 5.4 5.4 0 0 1 10.3 1A3.5 3.5 0 0 1 17 14z"/><circle cx="8" cy="18" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="20.2" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="18" r="1" fill="currentColor" stroke="none"/>',
+  bow: '<circle cx="17.8" cy="8.8" r="2.4"/><path d="M7 9.4l8-2.6M7 9.4 5.8 20.5M7 9.4l2.6 11.1M13.3 7.4l.9 6.4"/>',
+  stand: '<circle cx="12" cy="5" r="2.2"/><path d="M12 8.4v6.6M8 11.6l4-2 4 2M12 15l-2.6 6M12 15l2.6 6"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -42,8 +49,8 @@ export function icon(name: IconName): SVGSVGElement {
   return wrapper.firstElementChild as SVGSVGElement;
 }
 
-export function iconButton(name: IconName, label: string, onClick: () => void): HTMLButtonElement {
-  const node = h("button", "icon-button", icon(name));
+export function iconButton(name: IconName, label: string, onClick: () => void, className = "icon-button"): HTMLButtonElement {
+  const node = h("button", className, icon(name));
   node.type = "button";
   node.setAttribute("aria-label", label);
   node.title = label;
@@ -51,6 +58,6 @@ export function iconButton(name: IconName, label: string, onClick: () => void): 
   return node;
 }
 
-export function swapIcon(buttonNode: HTMLButtonElement, name: IconName): void {
-  buttonNode.replaceChildren(icon(name));
+export function swapIcon(holder: HTMLElement, name: IconName): void {
+  holder.replaceChildren(icon(name));
 }

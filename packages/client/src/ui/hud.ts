@@ -1,7 +1,8 @@
-import { type HallInfo, hallName, seatLabel } from "@dongjane/shared";
+import { type HallInfo, type SkyState, hallName, seatLabel } from "@dongjane/shared";
 import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
-import { type IconName, button, h, icon, iconButton, swapIcon } from "./dom.ts";
+import { ClockWidget } from "./clock.ts";
+import { button, h, icon, iconButton } from "./dom.ts";
 import { type ChantStatus, modeLabel } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 
@@ -23,7 +24,8 @@ export interface SelfStatus {
 export interface HudHandlers {
   onSwitchHall(hall: number): void;
   onOpenHalls(): void;
-  onBow(times: 1 | 3): void;
+  onBow(): void;
+  onStand(): void;
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
@@ -37,17 +39,16 @@ export class Hud {
   private readonly hallButton = h("button", "hall-button");
   private readonly hallLabel = h("span", "hall-label", "법당");
   private readonly hallCount = h("span", "hall-count", "");
-  private readonly visitorsButton: HTMLButtonElement;
-  private readonly visitorBadge = h("span", "badge", "0");
-  private readonly soundButton: HTMLButtonElement;
+  private readonly clock: ClockWidget;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
   private readonly toasts = h("div", "toasts");
   private readonly statusLine = h("p", "status-line");
   private readonly bowTally = h("span", "bow-tally");
+  private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
-  private readonly samBaeButton: HTMLButtonElement;
-  private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · 3 삼배 · Esc 일어서기 · Q/E 돌리기");
+  private readonly standButton: HTMLButtonElement;
+  private readonly keyHint = h("p", "key-hint", "방향키·WASD 걷기 · Space 절 · Esc 일어서기 · Q/E 돌리기");
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
   private readonly visitorSheet: Sheet;
@@ -59,7 +60,6 @@ export class Hud {
   private visitorKey = "";
   private lastSelf = "";
   private lastChant = "";
-  private soundOn = true;
 
   constructor(
     host: HTMLElement,
@@ -73,26 +73,22 @@ export class Hud {
       if (this.hallSheet.isOpen) handlers.onOpenHalls();
     });
 
-    const invite = iconButton("link", "초대 링크 복사", () => handlers.onInvite());
-    this.visitorsButton = iconButton("people", "방문객 보기", () => this.visitorSheet.toggle());
-    this.visitorsButton.append(this.visitorBadge);
-    this.soundButton = iconButton("soundOn", "소리 켜고 끄기", () => handlers.onToggleSound());
-    const settings = iconButton("gear", "설정", () => handlers.onOpenSettings());
+    this.clock = new ClockWidget(host, {
+      onOpenVisitors: () => this.visitorSheet.open(),
+      onInvite: () => handlers.onInvite(),
+      onToggleSound: () => handlers.onToggleSound(),
+      onOpenSettings: () => handlers.onOpenSettings(),
+    });
+    const top = h("div", "topbar", this.hallButton, this.clock.button);
 
-    const top = h(
-      "div",
-      "topbar",
-      this.hallButton,
-      h("div", "top-actions", invite, this.visitorsButton, this.soundButton, settings),
-    );
-
-    this.bowButton = button("절하기", "bow-button", () => handlers.onBow(1));
-    this.samBaeButton = button("삼배", "triple-button", () => handlers.onBow(3));
+    this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
+    this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
+    this.bowActions.append(this.standButton, this.bowButton);
     const bottom = h(
       "div",
       "bottombar",
       h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally), this.keyHint),
-      h("div", "bow-actions", this.samBaeButton, this.bowButton),
+      this.bowActions,
     );
 
     this.hallInput.type = "text";
@@ -145,7 +141,7 @@ export class Hud {
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
-    this.visitorBadge.textContent = String(rows.length);
+    this.clock.setVisitorCount(rows.length);
     const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
@@ -167,8 +163,9 @@ export class Hud {
     this.lastSelf = key;
     const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
     const bowing = self.mode === "bow";
-    this.bowButton.disabled = !seated || bowing;
-    this.samBaeButton.disabled = !seated || bowing;
+    this.bowButton.classList.toggle("hidden", !seated || bowing);
+    this.standButton.classList.toggle("hidden", !seated);
+    this.bowActions.classList.toggle("seated", seated);
     this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
     this.statusLine.textContent = seated
       ? bowing
@@ -202,15 +199,12 @@ export class Hud {
     }
   }
 
-  setSoundOn(on: boolean): void {
-    this.soundOn = on;
-    const name: IconName = on ? "soundOn" : "soundOff";
-    swapIcon(this.soundButton, name);
-    this.soundButton.setAttribute("aria-pressed", String(on));
+  setSky(sky: SkyState | null): void {
+    this.clock.setSky(sky);
   }
 
-  get isSoundOn(): boolean {
-    return this.soundOn;
+  setSoundOn(on: boolean): void {
+    this.clock.setSoundOn(on);
   }
 
   toast(text: string): void {

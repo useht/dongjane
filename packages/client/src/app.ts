@@ -91,10 +91,11 @@ export class App {
     this.hud = new Hud(this.ui, {
       onSwitchHall: (hall) => void this.enter(hall),
       onOpenHalls: () => void this.refreshHalls(),
-      onBow: (times) => this.bow(times),
+      onBow: () => this.bow(),
+      onStand: () => this.stand(),
       onInvite: () => void this.copyInvite(),
       onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
-      onOpenSettings: () => this.settingsSheet.sheet.toggle(),
+      onOpenSettings: () => this.settingsSheet.sheet.open(),
     });
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -106,7 +107,7 @@ export class App {
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
-      onBow: (times) => this.bow(times === 3 ? 3 : 1),
+      onBow: () => this.bow(),
       onStand: () => {
         if (!this.hud.closeSheets()) this.stand();
       },
@@ -326,7 +327,7 @@ export class App {
     }
   }
 
-  private bow(times: 1 | 3): void {
+  private bow(): void {
     const session = this.session;
     if (!session) return;
     this.audio.unlock();
@@ -335,7 +336,7 @@ export class App {
       if (this.self?.mode !== "bow") this.hud.toast("방석에 앉아야 절할 수 있어요");
       return;
     }
-    session.bow(times);
+    session.bow(1);
   }
 
   private stand(): void {
@@ -507,7 +508,9 @@ export class App {
 
   private tickSky(): void {
     const serverNow = this.world.serverNowAt(performance.now());
-    if (serverNow !== null) this.world.setSky(skyAt(serverNow));
+    const sky = serverNow === null ? null : skyAt(serverNow);
+    if (sky) this.world.setSky(sky);
+    this.hud.setSky(sky);
   }
 
   private tickChant(): void {
