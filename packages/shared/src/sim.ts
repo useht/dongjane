@@ -191,7 +191,7 @@ export class TempleSim {
   knock(id: string): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    if (!monk || !runtime || !this.isSeated(monk)) return false;
+    if (!monk || !runtime || monk.mode !== "kneel" || monk.cushionId < 0) return false;
 
     const now = this.clock();
     if (now < runtime.nextKnockAt) return false;
@@ -204,7 +204,8 @@ export class TempleSim {
   chant(id: string, on: boolean): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    if (!monk || !runtime || !this.isSeated(monk)) return false;
+    if (!monk || !runtime || monk.cushionId < 0) return false;
+    if (monk.mode !== "kneel" && monk.mode !== "bow") return false;
     monk.chanting = on;
     return true;
   }
@@ -354,10 +355,6 @@ export class TempleSim {
     } else {
       monk.mode = "stand";
     }
-  }
-
-  private isSeated(monk: Monk): boolean {
-    return monk.mode === "kneel" && monk.cushionId >= 0;
   }
 
   private releaseSeat(monk: Monk): void {

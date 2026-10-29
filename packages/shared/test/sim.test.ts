@@ -397,12 +397,18 @@ describe("wooden fish", () => {
     expect(h.monk("b").knockSeq).toBe(1);
   });
 
-  it("rejects a knock and a chant while the monk is mid-bow", () => {
+  it("rejects a knock mid-bow but lets the chant be switched on and off", () => {
     h.seat("a", 0);
+    expect(h.sim.chant("a", true)).toBe(true);
     expect(h.sim.bow("a", 1)).toBe(true);
     expect(h.monk("a").mode).toBe("bow");
     expect(h.sim.knock("a")).toBe(false);
-    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.monk("a").chanting).toBe(true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    h.advance(BOW_MS + TICK_MS);
+    expect(h.sim.knock("a")).toBe(true);
   });
 
   it("starts every monk silent", () => {
