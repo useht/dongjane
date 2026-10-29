@@ -298,7 +298,7 @@ export class Hall {
     dustGeometry.setAttribute("position", new Float32BufferAttribute(dustPositions, 3));
     const dustMap = flameGlowTexture();
     const flakeMap = flakeTexture();
-    this.precipitation = new Precipitation(Math.round(quality.dust * 6), flakeMap);
+    this.precipitation = new Precipitation(Math.round(quality.dust * 10), flakeMap);
     this.group.add(this.precipitation.group);
     this.textures.push(floorMap, backdropMap, dustMap, flakeMap);
     this.dust = new Points(

@@ -92,10 +92,10 @@ export function skyLook(sky: SkyState): SkyLook {
   const cloudStorm = mixRgb(rgb(0x1c2230), rgb(0x9aa3b0), d);
 
   return {
-    sunIntensity: mix(0.18, 3.1, d) * (1 - 0.6 * overcast),
+    sunIntensity: mix(0.25, 3.1, d) * (1 - 0.6 * overcast),
     sunColor: ramp(0x7f93c8, 0xff9a5c, 0xffd8a0, d),
-    hemisphereIntensity: mix(0.32, 1.25, d) * (1 - 0.12 * overcast),
-    hemisphereSky: mixRgb(ramp(0x4a5c9c, 0xffb48c, 0xffe2b4, d), overcastGrey, 0.4 * overcast),
+    hemisphereIntensity: mix(0.5, 1.25, d) * (1 - 0.12 * overcast),
+    hemisphereSky: mixRgb(ramp(0x5a70b8, 0xffb48c, 0xffe2b4, d), overcastGrey, 0.4 * overcast),
     hemisphereGround: mixRgb(ramp(0x1a1e30, 0x4a3a34, 0x6b4a2a, d), overcastGrey, 0.2 * overcast),
     candleBoost: 1 + 0.85 * (1 - d),
     paperGlow: mix(0.1, 0.55, d) * (1 - 0.25 * overcast),

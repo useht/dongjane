@@ -12,9 +12,9 @@ import {
 import { mulberry32 } from "./textures.ts";
 
 const X_MIN = 8.5;
-const X_SPAN = 14;
-const Z_MIN = -10;
-const Z_SPAN = 20;
+const X_SPAN = 12;
+const Z_MIN = -7;
+const Z_SPAN = 14;
 const Y_TOP = 11;
 const RAIN_SPEED = 13;
 const SNOW_SPEED = 1.1;
@@ -38,7 +38,7 @@ export class Precipitation {
     rainGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(count * 6), 3));
     this.rain = new LineSegments(
       rainGeometry,
-      new LineBasicMaterial({ color: 0xd8e4f0, transparent: true, opacity: 0.5, depthWrite: false, fog: false }),
+      new LineBasicMaterial({ color: 0xd8e4f0, transparent: true, opacity: 0.6, depthWrite: false, fog: false }),
     );
     this.rain.name = "rain";
 
@@ -46,7 +46,7 @@ export class Precipitation {
     snowGeometry.setAttribute("position", new Float32BufferAttribute(new Float32Array(count * 3), 3));
     this.snow = new Points(
       snowGeometry,
-      new PointsMaterial({ map: flake, color: 0xd8e4f0, size: 0.17, transparent: true, opacity: 0.9, depthWrite: false, fog: false }),
+      new PointsMaterial({ map: flake, color: 0xd8e4f0, size: 0.22, transparent: true, opacity: 0.9, depthWrite: false, fog: false }),
     );
     this.snow.name = "snow";
 
