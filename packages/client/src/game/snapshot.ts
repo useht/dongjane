@@ -155,6 +155,11 @@ export class ServerClock {
     this.jitter += (deviation - this.jitter) * (deviation > this.jitter ? JITTER_RISE : JITTER_FALL);
   }
 
+  // Server epoch time at a local timestamp, from the best arrival in the window; null until a sample has been observed.
+  serverNowAt(localMs: number): number | null {
+    return this.window.length === 0 ? null : localMs - this.offset;
+  }
+
   // Server time that should be on screen now; it never runs backwards and only drifts toward the target by bounded slew.
   advance(localMs: number): number {
     if (this.window.length === 0) return this.render;

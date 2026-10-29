@@ -17,7 +17,6 @@ import { SelfPrediction } from "./game/prediction.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
-import { ServerClock } from "./net/server-clock.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
@@ -50,7 +49,6 @@ export class App {
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
   private readonly chantBell = new ChantBellScheduler();
-  private readonly serverClock = new ServerClock();
   private readonly canvas: HTMLCanvasElement;
   private readonly ui: HTMLElement;
   private readonly world: World;
@@ -242,7 +240,6 @@ export class App {
   }
 
   private handleState(state: TempleState): void {
-    this.serverClock.observe(state.serverTime);
     const session = this.session;
     if (!session) return;
     const now = performance.now();
@@ -409,13 +406,15 @@ export class App {
       sessionId: () => this.session?.sessionId ?? null,
       hall: () => this.currentHall,
       bellCount: () => this.audio.bellCount,
-      serverNow: () => this.serverClock.now(),
+      serverNow: () => this.world.serverNowAt(performance.now()),
     };
   }
 
   private async refreshHalls(): Promise<void> {
     try {
-      this.halls = await fetchHalls(this.base, undefined, undefined, (serverTime) => this.serverClock.observe(serverTime));
+      this.halls = await fetchHalls(this.base, undefined, undefined, (serverTime) =>
+        this.world.seedServerTime(serverTime, performance.now()),
+      );
       if (this.currentHall) this.hud.setHalls(this.halls, this.currentHall);
     } catch {
       // the list keeps its last known counts; joining reports a real failure
@@ -507,7 +506,7 @@ export class App {
   }
 
   private tickSky(): void {
-    const serverNow = this.serverClock.now();
+    const serverNow = this.world.serverNowAt(performance.now());
     if (serverNow !== null) this.world.setSky(skyAt(serverNow));
   }
 

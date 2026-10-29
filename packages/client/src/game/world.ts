@@ -162,6 +162,15 @@ export class World {
     this.hall.setSky(skyLook(sky));
   }
 
+  serverNowAt(localMs: number): number | null {
+    return this.clock.serverNowAt(localMs);
+  }
+
+  // A hall-list reply carries a whole HTTP round trip, so it may only seed an empty clock; later it would read as jitter and stretch the remote-monk delay.
+  seedServerTime(serverMs: number, localMs: number): void {
+    if (this.clock.serverNowAt(localMs) === null) this.clock.observe(serverMs, localMs);
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;

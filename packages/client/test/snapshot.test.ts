@@ -162,6 +162,24 @@ describe("ServerClock", () => {
     expect(clock.advance(5150)).toBeCloseTo(S0 + 150 - clock.delay);
   });
 
+  it("reports server time at a local time only once a sample has been observed", () => {
+    const clock = new ServerClock();
+    expect(clock.serverNowAt(5000)).toBeNull();
+    clock.observe(S0, 5000);
+    expect(clock.serverNowAt(5000)).not.toBeNull();
+    clock.reset();
+    expect(clock.serverNowAt(5000)).toBeNull();
+  });
+
+  it("estimates server time as the local time minus the smallest offset seen", () => {
+    const clock = new ServerClock();
+    clock.observe(S0, 5000);
+    clock.observe(S0 + 100, 5080);
+    expect(clock.serverNowAt(5300)).toBe(S0 + 320);
+    clock.observe(S0 + 200, 5400);
+    expect(clock.serverNowAt(5300)).toBe(S0 + 320);
+  });
+
   it("starts at the minimum delay on a steady link and rises with jitter up to the cap", () => {
     const clock = new ServerClock();
     let i = 0;
