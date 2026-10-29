@@ -12,6 +12,8 @@ export const Monk = schema(
     cushionId: t.int8().default(-1),
     bowCount: t.uint32().default(0),
     ackSeq: t.uint32().default(0),
+    emote: t.uint8().default(0),
+    emoteSeq: t.uint32().default(0),
     npc: t.boolean().default(false),
   },
   "Monk",

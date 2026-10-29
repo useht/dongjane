@@ -1,9 +1,13 @@
 import { type HallInfo, type SkyState, hallName, seatLabel } from "@dongjane/shared";
 import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
+import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
-import { type ChantStatus, modeLabel } from "./format.ts";
+import { EmotePicker } from "./emote-picker.ts";
+import { type ChantStatus, describeSky, modeLabel } from "./format.ts";
+import { Phone } from "./phone.ts";
+import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
@@ -18,7 +22,6 @@ export interface VisitorRow {
 export interface SelfStatus {
   mode: string;
   cushionId: number;
-  bowCount: number;
 }
 
 export interface HudHandlers {
@@ -26,9 +29,9 @@ export interface HudHandlers {
   onOpenHalls(): void;
   onBow(): void;
   onStand(): void;
+  onEmote(emote: number): void;
   onInvite(): void;
   onToggleSound(): void;
-  onOpenSettings(): void;
   onCancelReturn(): void;
   onReturnNow(): void;
 }
@@ -44,32 +47,34 @@ export class Hud {
   private readonly hallLabel = h("span", "hall-label", "법당");
   private readonly hallCount = h("span", "hall-count", "");
   private readonly clock: ClockWidget;
+  private readonly phone: Phone;
+  private readonly quests: QuestPanel;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
   private readonly linkText = h("span", "link-text");
   private readonly linkAction = button("", "link-action hidden", () => this.linkRun?.());
   private linkRun: (() => void) | null = null;
   private readonly toasts = h("div", "toasts");
-  private readonly statusLine = h("p", "status-line");
-  private readonly bowTally = h("span", "bow-tally");
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
-  private readonly visitorSheet: Sheet;
+  private readonly emotePicker: EmotePicker;
   private readonly hallList = h("ul", "list");
   private readonly hallInput = h("input", "name-input");
   private readonly visitorList = h("ul", "list");
   private halls: HallInfo[] = [];
   private currentHall = 0;
   private visitorKey = "";
+  private lastSky = "";
   private lastSelf = "";
   private lastChant = "";
 
   constructor(
     host: HTMLElement,
     private readonly handlers: HudHandlers,
+    settings: HTMLElement,
   ) {
     this.hallButton.type = "button";
     this.hallButton.append(icon("hall"), this.hallLabel, this.hallCount);
@@ -79,23 +84,22 @@ export class Hud {
       if (this.hallSheet.isOpen) handlers.onOpenHalls();
     });
 
-    this.clock = new ClockWidget(host, {
-      onOpenVisitors: () => this.visitorSheet.open(),
-      onInvite: () => handlers.onInvite(),
-      onToggleSound: () => handlers.onToggleSound(),
-      onOpenSettings: () => handlers.onOpenSettings(),
-    });
-    const top = h("div", "topbar", this.hallButton, this.clock.button);
+    this.phone = new Phone(
+      host,
+      { onInvite: () => handlers.onInvite(), onToggleSound: () => handlers.onToggleSound() },
+      { visitors: this.visitorList, settings },
+    );
+    this.clock = new ClockWidget(() => this.phone.toggle());
+    this.quests = new QuestPanel(host);
+    const top = h("div", "topbar", h("div", "topbar-start", h("div", "hall-stack", this.hallButton, this.quests.button)), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
     this.bowActions.append(this.standButton, this.bowButton);
-    const bottom = h(
-      "div",
-      "bottombar",
-      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally)),
-      this.bowActions,
-    );
+    this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
+    const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
+    emoteButton.setAttribute("aria-haspopup", "dialog");
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions));
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";
@@ -117,11 +121,6 @@ export class Hud {
       hallForm,
       button("이 법당 초대 링크 복사", "primary wide", () => handlers.onInvite()),
     );
-    this.visitorSheet = new Sheet(host, "함께 있는 동자승");
-    this.visitorSheet.body.append(
-      this.visitorList,
-      button("초대 링크 복사", "primary wide", () => handlers.onInvite()),
-    );
 
     this.linkBanner.setAttribute("role", "status");
     this.linkBanner.append(this.linkText, this.linkAction);
@@ -130,7 +129,8 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
+    this.setSelf({ mode: "stand", cushionId: -1 });
+    this.setSky(null);
   }
 
   closeSheets(): boolean {
@@ -147,7 +147,7 @@ export class Hud {
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {
-    this.clock.setVisitorCount(rows.length);
+    this.phone.setVisitorCount(rows.length);
     const key = rows.map((row) => `${row.id}|${row.slot}|${row.mode}|${row.cushionId}|${row.bowCount}|${row.isSelf}`).join(";");
     if (key === this.visitorKey) return;
     this.visitorKey = key;
@@ -164,7 +164,7 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}|${self.bowCount}`;
+    const key = `${self.mode}|${self.cushionId}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
     const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
@@ -172,14 +172,6 @@ export class Hud {
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
     this.bowActions.classList.toggle("seated", seated);
-    this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
-    this.statusLine.textContent = seated
-      ? bowing
-        ? "절하는 중이에요"
-        : "방석에 앉았어요. 절을 해 보세요"
-      : self.cushionId >= 0
-        ? "방석으로 가는 중이에요"
-        : "방석 가까이 가서 앉기 버튼을 눌러 보세요";
   }
 
   setChant(status: ChantStatus | null): void {
@@ -205,7 +197,20 @@ export class Hud {
   }
 
   setSky(sky: SkyState | null): void {
-    this.clock.setSky(sky);
+    const view = describeSky(sky);
+    const key = `${view.time}|${view.weather}|${view.note}|${view.icon}`;
+    if (key === this.lastSky) return;
+    this.lastSky = key;
+    this.clock.setSky(view);
+    this.phone.setSky(view);
+  }
+
+  setCollection(bows: number): void {
+    this.phone.collection.setBows(bows);
+  }
+
+  setQuests(views: readonly QuestView[]): void {
+    this.quests.setQuests(views);
   }
 
   setSolo(status: SoloStatus): void {
@@ -224,7 +229,7 @@ export class Hud {
   }
 
   setSoundOn(on: boolean): void {
-    this.clock.setSoundOn(on);
+    this.phone.setSoundOn(on);
   }
 
   toast(text: string): void {

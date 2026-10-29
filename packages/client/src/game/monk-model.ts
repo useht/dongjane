@@ -12,6 +12,7 @@ import {
   BoxGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
+  Vector3,
 } from "three";
 import { BOW_MS } from "@dongjane/shared";
 import { GeometryBuilder } from "./geometry.ts";
@@ -52,15 +53,19 @@ const HIP_KNEEL = 0.2;
 const SKIRT_DROP = 0.36;
 const TORSO_HEIGHT = 0.38;
 const NECK_Y = TORSO_HEIGHT;
+const HEAD_CENTER_Y = 0.22;
+const HEAD_RADIUS = 0.19;
+const HEAD_TOP_OFFSET = HEAD_CENTER_Y + HEAD_RADIUS;
 const SHOULDER_X = 0.165;
 const SHOULDER_Y = 0.33;
 const UPPER_ARM = 0.18;
 const FORE_ARM = 0.16;
 const CUSHION_TOP = 0.13;
+const EMOTE_ANCHOR_Y = 0.45;
 
 function buildPartGeometries(): Record<PartName, BufferGeometry> {
   const head = new GeometryBuilder()
-    .add(new SphereGeometry(0.19, 22, 16), SKIN, { y: 0.22 })
+    .add(new SphereGeometry(HEAD_RADIUS, 22, 16), SKIN, { y: HEAD_CENTER_Y })
     .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: -0.186, y: 0.22, sx: 0.55, sy: 1.15 })
     .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: 0.186, y: 0.22, sx: 0.55, sy: 1.15 })
     .add(new CylinderGeometry(0.06, 0.07, 0.1, 10), SKIN, { y: 0.02 })
@@ -140,6 +145,7 @@ export class MonkAvatar {
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
     this.id = id;
@@ -250,6 +256,15 @@ export class MonkAvatar {
     }
 
     this.root.updateMatrixWorld(true);
+  }
+
+  headTopY(): number {
+    return this.headNode.getWorldPosition(this.headPoint).y + HEAD_TOP_OFFSET;
+  }
+
+  // The world point just above the crown, following the head through kneel and bow.
+  emoteAnchor(out: Vector3): Vector3 {
+    return this.headNode.localToWorld(out.set(0, EMOTE_ANCHOR_Y, 0));
   }
 
   dispose(): void {
