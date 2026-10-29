@@ -389,43 +389,8 @@ button:disabled {
   bottom: calc(var(--safe-bottom) + var(--edge));
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.status-stack {
-  min-width: 0;
-  display: grid;
-  justify-items: start;
-  gap: 6px;
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.status-line {
-  display: none;
-}
-
-.status:has(.bow-tally:empty) {
-  display: none;
-}
-
-.bow-tally {
-  color: var(--gold);
-  font-weight: 700;
-}
-
-.bow-tally:empty {
-  display: none;
 }
 
 .bow-actions {
