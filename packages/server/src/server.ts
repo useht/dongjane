@@ -19,6 +19,7 @@ import {
   isValidHall,
 } from "@dongjane/shared";
 import { HallRoom, hallCreationKey } from "./hall-room.ts";
+import { createStaticHandler } from "./static.ts";
 
 export interface GameServerOptions {
   port?: number;
@@ -26,6 +27,8 @@ export interface GameServerOptions {
   reconnectSeconds?: number;
   handleSignals?: boolean;
   greet?: boolean;
+  /** Directory of the built client to serve on the same origin (e.g. packages/client/dist). */
+  clientDir?: string;
 }
 
 export interface GameServer {
@@ -71,12 +74,14 @@ export async function startGameServer(options: GameServerOptions = {}): Promise<
   let stopping = false;
 
   const handler = defineRoom(HallRoom).filterBy(["hall"]);
+  const clientDir = options.clientDir;
   const server = defineServer({
     rooms: { [ROOM_NAME]: handler },
     routes: createRouter({ hallsEndpoint }, { openapi: { disabled: true } }),
     transport: new WebSocketTransport(),
     gracefullyShutdown: options.handleSignals ?? false,
     greet: options.greet ?? false,
+    ...(clientDir ? { express: (app) => void app.use(createStaticHandler(clientDir)) } : {}),
   });
 
   const ensureHalls = async () => {
