@@ -1,7 +1,6 @@
 import { createServer } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { HALL_COUNT } from "@dongjane/shared";
-import { HallsUnavailableError, fetchHalls, loadHalls } from "../../client/src/net/halls.ts";
+import { HallsUnavailableError, fetchHalls, requestSeat } from "../../client/src/net/halls.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { sleep } from "./helpers.ts";
 
@@ -29,15 +28,15 @@ describe("cold start", () => {
     await expect(fetchHalls(`http://127.0.0.1:${port}`)).rejects.toBeInstanceOf(HallsUnavailableError);
   });
 
-  it("loadHalls rides out a server that starts after the first request", async () => {
+  it("requestSeat rides out a server that starts after the first request and opens hall 1", async () => {
     const port = await freePort();
     const retries: number[] = [];
-    const pending = loadHalls(`http://127.0.0.1:${port}`, { onRetry: (failures) => retries.push(failures) });
+    const pending = requestSeat(`http://127.0.0.1:${port}`, null, { onRetry: (failures) => retries.push(failures) });
     await sleep(900);
     game = await startGameServer({ port, hostname: "127.0.0.1", handleSignals: false });
-    const halls = await pending;
+    const seat = await pending;
     expect(retries.length).toBeGreaterThan(0);
-    expect(halls).toHaveLength(HALL_COUNT);
-    expect(halls.every((info) => info.roomId !== null)).toBe(true);
+    expect(seat).toMatchObject({ hall: 1, fellBack: false });
+    expect(seat.roomId).toEqual(expect.any(String));
   });
 });

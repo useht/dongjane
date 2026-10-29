@@ -7,6 +7,7 @@ import {
   CHANT_MS,
   CUSHION_SPOTS,
   Cushion,
+  HALL_CAPACITY,
   Monk,
   SPAWN_POINT,
   TempleState,
@@ -15,7 +16,6 @@ import {
   chantEndsAt,
   cushionSpot,
   resolveWalkable,
-  sanitizeName,
   yawFromDirection,
 } from "@dongjane/shared";
 
@@ -62,10 +62,14 @@ export class TempleSim {
     this.updateChant();
   }
 
-  join(id: string, name: string, hue: number): Monk {
+  join(id: string, hue: number): Monk {
+    const taken = new Set<number>();
+    for (const other of this.state.monks.values()) taken.add(other.slot);
+    let slot = 1;
+    while (slot <= HALL_CAPACITY && taken.has(slot)) slot += 1;
     const monk = new Monk({
       id,
-      name,
+      slot,
       hue,
       x: SPAWN_POINT.x + (this.random() - 0.5) * 4,
       z: SPAWN_POINT.z,
@@ -84,14 +88,6 @@ export class TempleSim {
     if (monk) this.releaseSeat(monk);
     this.state.monks.delete(id);
     this.runtimes.delete(id);
-  }
-
-  setName(id: string, raw: string): boolean {
-    const monk = this.state.monks.get(id);
-    const name = sanitizeName(raw);
-    if (!monk || name === "") return false;
-    monk.name = name;
-    return true;
   }
 
   move(id: string, x: number, z: number): boolean {

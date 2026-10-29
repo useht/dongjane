@@ -29,7 +29,7 @@ class Harness {
   }
 
   seat(id: string, cushionId: number): void {
-    this.sim.join(id, id, 10);
+    this.sim.join(id, 10);
     expect(this.sim.sit(id, cushionId)).toBe(true);
     this.advance(8000);
     expect(this.sim.state.monks.get(id)?.mode).toBe("kneel");
@@ -56,7 +56,7 @@ beforeEach(() => {
 describe("join and movement", () => {
   it("creates eight free cushions and spawns monks standing at the entrance", () => {
     expect(h.sim.state.cushions.size).toBe(8);
-    h.sim.join("a", "동자", 120);
+    h.sim.join("a", 120);
     const a = h.monk("a");
     expect(a.mode).toBe("stand");
     expect(a.z).toBe(SPAWN_POINT.z);
@@ -66,7 +66,7 @@ describe("join and movement", () => {
   });
 
   it("walks toward the target at WALK_SPEED and then stands", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     const startZ = h.monk("a").z;
     expect(h.sim.move("a", h.monk("a").x, startZ - 4)).toBe(true);
     expect(h.monk("a").mode).toBe("walk");
@@ -79,7 +79,7 @@ describe("join and movement", () => {
   });
 
   it("clamps targets to the walkable rect", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     h.sim.move("a", 500, -500);
     h.advance(20_000);
     expect(h.monk("a").x).toBeCloseTo(WALK_BOUNDS.maxX, 4);
@@ -87,7 +87,7 @@ describe("join and movement", () => {
   });
 
   it("ignores non-finite targets and unknown ids", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     expect(h.sim.move("a", Number.NaN, 0)).toBe(false);
     expect(h.sim.move("a", 0, Number.POSITIVE_INFINITY)).toBe(false);
     expect(h.sim.move("ghost", 0, 0)).toBe(false);
@@ -107,7 +107,7 @@ describe("server clock", () => {
   });
 
   it("stamps monk positions with the time they were computed at", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     const startZ = h.monk("a").z;
     h.sim.move("a", h.monk("a").x, startZ - 4);
     h.advance(1000);
@@ -118,7 +118,7 @@ describe("server clock", () => {
 
 describe("cushions", () => {
   it("claims a cushion, walks over, and kneels facing the Buddha", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     expect(h.sim.sit("a", 5)).toBe(true);
     expect(h.cushion(5).occupantId).toBe("a");
     expect(h.monk("a").mode).toBe("walk");
@@ -132,8 +132,8 @@ describe("cushions", () => {
   });
 
   it("gives a contested cushion to exactly one monk", () => {
-    h.sim.join("a", "a", 0);
-    h.sim.join("b", "b", 0);
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
     const results = [h.sim.sit("a", 2), h.sim.sit("b", 2)];
     expect(results).toEqual([true, false]);
     expect(h.cushion(2).occupantId).toBe("a");
@@ -141,7 +141,7 @@ describe("cushions", () => {
   });
 
   it("rejects invalid cushion ids", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     expect(h.sim.sit("a", 8)).toBe(false);
     expect(h.sim.sit("a", -1)).toBe(false);
     expect(h.sim.sit("a", 1.5)).toBe(false);
@@ -160,7 +160,7 @@ describe("cushions", () => {
     expect(h.cushion(3).occupantId).toBe("");
     expect(h.monk("a").mode).toBe("stand");
     expect(h.monk("a").cushionId).toBe(-1);
-    h.sim.join("b", "b", 0);
+    h.sim.join("b", 0);
     expect(h.sim.sit("b", 3)).toBe(true);
   });
 
@@ -173,7 +173,7 @@ describe("cushions", () => {
   });
 
   it("frees the cushion when the monk leaves, even mid-walk", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     h.sim.sit("a", 6);
     h.advance(300);
     h.sim.leave("a");
@@ -182,7 +182,7 @@ describe("cushions", () => {
   });
 
   it("never leaves two cushions owned by one monk or two monks on one cushion", () => {
-    for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, `m${i}`, i);
+    for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
     for (let round = 0; round < 6; round += 1) {
       for (let i = 0; i < 12; i += 1) h.sim.sit(`m${i}`, (i + round * 3) % 8);
       h.advance(500);
@@ -199,7 +199,7 @@ describe("cushions", () => {
 
 describe("bowing", () => {
   it("rejects bows unless kneeling on a cushion", () => {
-    h.sim.join("a", "a", 0);
+    h.sim.join("a", 0);
     expect(h.sim.bow("a", 1)).toBe(false);
     h.sim.sit("a", 0);
     expect(h.sim.bow("a", 1)).toBe(false);
@@ -288,14 +288,21 @@ describe("bowing", () => {
   });
 });
 
-describe("names", () => {
-  it("sanitizes names on change and ignores empty results", () => {
-    h.sim.join("a", "동자", 0);
-    expect(h.sim.setName("a", "  \u0000새  이름입니다아아아  ")).toBe(true);
-    expect(h.monk("a").name).toBe("새 이름입니다아");
-    expect(Array.from(h.monk("a").name).length).toBeLessThanOrEqual(8);
-    expect(h.sim.setName("a", " \u0007 ")).toBe(false);
-    expect(h.monk("a").name).toBe("새 이름입니다아");
+describe("seat numbers", () => {
+  it("numbers monks from 1 and reuses the lowest free number after a leave", () => {
+    h.sim.join("a", 0);
+    h.sim.join("b", 0);
+    h.sim.join("c", 0);
+    expect([h.monk("a").slot, h.monk("b").slot, h.monk("c").slot]).toEqual([1, 2, 3]);
+    h.sim.leave("b");
+    h.sim.join("d", 0);
+    expect(h.monk("d").slot).toBe(2);
+  });
+
+  it("numbers a full hall 1 through its capacity", () => {
+    for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
+    const slots = Array.from(h.sim.state.monks.values(), (monk) => monk.slot).sort((x, y) => x - y);
+    expect(slots).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 });
 

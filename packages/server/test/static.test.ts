@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { HALLS_PATH, HALL_COUNT, type HallListResponse } from "@dongjane/shared";
+import { HALLS_PATH, type HallListResponse } from "@dongjane/shared";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { TestRig } from "./helpers.ts";
 
@@ -59,12 +59,13 @@ describe("client static serving", () => {
   });
 
   it("keeps the hall list and matchmaking working on the same origin", async () => {
-    const response = await fetch(`${base}${HALLS_PATH}`);
-    const body = (await response.json()) as HallListResponse;
-    expect(body.halls).toHaveLength(HALL_COUNT);
+    const empty = (await (await fetch(`${base}${HALLS_PATH}`)).json()) as HallListResponse;
+    expect(empty.halls).toEqual([]);
 
     const rig = new TestRig(game.port);
-    const room = await rig.enter(1, { name: "동자" });
+    const room = await rig.enter(1);
+    const body = (await (await fetch(`${base}${HALLS_PATH}`)).json()) as HallListResponse;
+    expect(body.halls).toHaveLength(1);
     expect(room.roomId).toBe(body.halls[0]!.roomId);
     await rig.closeAll();
   });

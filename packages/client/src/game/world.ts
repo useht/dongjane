@@ -21,7 +21,6 @@ import { RemoteTrack, ServerClock, type Sample } from "./snapshot.ts";
 
 export interface MonkView {
   id: string;
-  name: string;
   hue: number;
   x: number;
   z: number;
@@ -183,12 +182,8 @@ export class World {
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
-      if (entry && entry.avatar.name !== view.name) {
-        this.dropEntry(view.id);
-        entry = undefined;
-      }
       if (!entry) {
-        const avatar = new MonkAvatar(view.id, view.name, view.hue, view.id === this.selfId);
+        const avatar = new MonkAvatar(view.id, view.hue, view.id === this.selfId);
         if (!this.pool.add(avatar)) {
           avatar.dispose();
           continue;
@@ -330,7 +325,6 @@ export class World {
     }
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
-    for (const entry of this.entries.values()) entry.avatar.fitPlate(this.camera);
 
     this.hall.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
