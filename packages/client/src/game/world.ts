@@ -37,6 +37,7 @@ export interface MonkView {
   emoteSeq: number;
   knockSeq: number;
   chanting: boolean;
+  item: number;
 }
 
 export interface WorldCallbacks {
@@ -73,6 +74,7 @@ export class World {
   readonly quality: QualityProfile;
   readonly emotes = new EmoteTracker();
   private readonly knocks = new KnockTracker();
+  private readonly remoteKnockers: MonkView[] = [];
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
@@ -216,11 +218,12 @@ export class World {
     this.selfPrediction = display;
   }
 
-  // Returns how many other monks struck their wooden fish since the last call; the caller plays the sound.
-  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): number {
+  // Returns the other monks who struck their wooden fish since the last call (the array is reused); the caller plays the sound.
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): readonly MonkView[] {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
-    let remoteKnocks = 0;
+    const remoteKnockers = this.remoteKnockers;
+    remoteKnockers.length = 0;
     for (const view of views) {
       seen.add(view.id);
       let entry = this.entries.get(view.id);
@@ -256,9 +259,11 @@ export class World {
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
       entry.avatar.chanting = view.chanting;
+      entry.avatar.item = view.item;
+      // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
       if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
         entry.avatar.knock(nowMs);
-        remoteKnocks += 1;
+        remoteKnockers.push(view);
       }
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
@@ -266,7 +271,7 @@ export class World {
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
-    return remoteKnocks;
+    return remoteKnockers;
   }
 
   // Optimistic local feedback for the player's own knock; the server echo is ignored for the player.

@@ -1,11 +1,13 @@
-import { type HallInfo, type SkyState, hallName, seatLabel } from "@dongjane/shared";
+import { type HallInfo, ITEM_CHANT, ITEM_MOKT, ITEM_NONE, type SkyState, hallName, seatLabel } from "@dongjane/shared";
 import { checkHallEntry } from "../net/halls.ts";
 import type { LinkState } from "../net/session.ts";
+import { type HeldAction, heldAction, isSeated } from "../game/held-action.ts";
 import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
 import { EmotePicker } from "./emote-picker.ts";
 import { type ChantStatus, describeSky, modeLabel } from "./format.ts";
+import { HELD_ITEMS, ITEM_INFO, type HeldItem, itemImage } from "./item-art.ts";
 import { Phone } from "./phone.ts";
 import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
@@ -23,6 +25,7 @@ export interface SelfStatus {
   mode: string;
   cushionId: number;
   chanting: boolean;
+  item: number;
 }
 
 export interface HudHandlers {
@@ -33,6 +36,7 @@ export interface HudHandlers {
   onEmote(emote: number): void;
   onKnock(): void;
   onChant(on: boolean): void;
+  onEquip(item: number): void;
   onInvite(): void;
   onToggleSound(): void;
   onCancelReturn(): void;
@@ -62,12 +66,12 @@ export class Hud {
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
   private readonly toolButton: HTMLButtonElement;
-  private readonly knockButton: HTMLButtonElement;
-  private readonly chantButton: HTMLButtonElement;
-  private readonly toolHint = h("p", "tool-hint", "방석에 앉으면 쓸 수 있어요");
+  private readonly actionButton: HTMLButtonElement;
+  private readonly equipRows = new Map<HeldItem, HTMLButtonElement>();
+  private readonly putDownRow: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
-  private readonly toolSheet: Sheet;
+  private readonly equipSheet: Sheet;
   private readonly emotePicker: EmotePicker;
   private readonly hallList = h("ul", "list");
   private readonly hallInput = h("input", "name-input");
@@ -79,6 +83,8 @@ export class Hud {
   private lastSelf = "";
   private lastChant = "";
   private selfChanting = false;
+  private selfAction: HeldAction | null = null;
+  private selfItem: number = ITEM_NONE;
 
   constructor(
     host: HTMLElement,
@@ -104,16 +110,39 @@ export class Hud {
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
-    this.bowActions.append(this.standButton, this.bowButton);
+    this.actionButton = h("button", "bow-button action-button hidden");
+    this.actionButton.type = "button";
+    this.actionButton.addEventListener("click", () => {
+      if (this.selfAction === "knock") handlers.onKnock();
+      else if (this.selfAction === "chant") handlers.onChant(!this.selfChanting);
+    });
+    this.bowActions.append(this.standButton, this.bowButton, this.actionButton);
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
-    this.toolSheet = new Sheet(host, "도구");
-    this.toolButton = iconButton("mokt", "도구", () => this.toolSheet.toggle(), "icon-button tool-button");
+    this.equipSheet = new Sheet(host, "장비");
+    this.toolButton = iconButton("equip", "장비", () => this.equipSheet.toggle(), "icon-button tool-button");
     this.toolButton.setAttribute("aria-haspopup", "dialog");
-    this.knockButton = button("목탁 치기", "primary wide", () => handlers.onKnock());
-    this.chantButton = button("염불 시작", "primary wide", () => handlers.onChant(!this.selfChanting));
-    this.toolSheet.body.append(h("div", "tool-actions", this.knockButton, this.chantButton), this.toolHint);
+    const equipList = h("div", "equip-list");
+    for (const item of HELD_ITEMS) {
+      const info = ITEM_INFO[item];
+      const row = h(
+        "button",
+        "equip-row",
+        itemImage(item, "equip-art"),
+        h("span", "equip-text", h("strong", "", info.name), h("span", "equip-note", info.note)),
+        h("span", "equip-check", icon("check")),
+      );
+      row.type = "button";
+      row.addEventListener("click", () => this.pickItem(item));
+      this.equipRows.set(item, row);
+      equipList.append(row);
+    }
+    this.putDownRow = h("button", "equip-row equip-putdown hidden", h("span", "equip-text", h("strong", "", "내려놓기")));
+    this.putDownRow.type = "button";
+    this.putDownRow.addEventListener("click", () => this.pickItem(ITEM_NONE));
+    equipList.append(this.putDownRow);
+    this.equipSheet.body.append(equipList);
     const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions, this.toolButton));
 
     this.hallInput.type = "text";
@@ -144,7 +173,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1, chanting: false });
+    this.setSelf({ mode: "stand", cushionId: -1, chanting: false, item: ITEM_NONE });
     this.setSky(null);
   }
 
@@ -179,21 +208,38 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}|${self.chanting}`;
+    const key = `${self.mode}|${self.cushionId}|${self.chanting}|${self.item}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const seated = isSeated(self);
     const bowing = self.mode === "bow";
-    this.bowButton.classList.toggle("hidden", !seated || bowing);
+    const action = heldAction(self);
+    this.selfAction = action;
+    this.selfItem = self.item;
+    this.selfChanting = action === "chant" && self.chanting;
+    this.bowButton.classList.toggle("hidden", !seated || bowing || action !== null);
     this.standButton.classList.toggle("hidden", !seated);
     this.bowActions.classList.toggle("seated", seated);
-    this.selfChanting = seated && self.chanting;
-    this.toolButton.classList.toggle("ready", seated);
-    this.knockButton.disabled = !seated;
-    this.chantButton.disabled = !seated;
-    this.chantButton.textContent = this.selfChanting ? "염불 그만두기" : "염불 시작";
-    this.chantButton.setAttribute("aria-pressed", String(this.selfChanting));
-    this.toolHint.classList.toggle("hidden", seated);
+    this.toolButton.classList.toggle("ready", self.item !== ITEM_NONE);
+
+    const item = self.item === ITEM_MOKT || self.item === ITEM_CHANT ? self.item : null;
+    this.actionButton.classList.toggle("hidden", action === null || (action === "knock" && bowing));
+    this.actionButton.classList.toggle("active", this.selfChanting);
+    if (action && item !== null) {
+      const label = action === "knock" ? "목탁치기" : this.selfChanting ? "염불 그만두기" : "염불하기";
+      this.actionButton.replaceChildren(itemImage(item));
+      this.actionButton.setAttribute("aria-label", label);
+      this.actionButton.title = label;
+      if (action === "chant") this.actionButton.setAttribute("aria-pressed", String(this.selfChanting));
+      else this.actionButton.removeAttribute("aria-pressed");
+    }
+
+    for (const [held, row] of this.equipRows) {
+      const holding = held === self.item;
+      row.classList.toggle("held", holding);
+      row.setAttribute("aria-pressed", String(holding));
+    }
+    this.putDownRow.classList.toggle("hidden", item === null);
   }
 
   setChant(status: ChantStatus | null): void {
@@ -265,6 +311,11 @@ export class Hud {
   setStats(text: string | null): void {
     this.stats.classList.toggle("hidden", text === null);
     if (text !== null) this.stats.textContent = text;
+  }
+
+  private pickItem(item: number): void {
+    this.equipSheet.close();
+    this.handlers.onEquip(item === this.selfItem ? ITEM_NONE : item);
   }
 
   private showLink(text: string, action?: { label: string; run(): void }): void {

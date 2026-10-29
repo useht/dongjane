@@ -483,16 +483,72 @@ button:disabled {
   color: var(--gold);
 }
 
-.tool-actions {
+.equip-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
-.tool-hint {
-  margin: 12px 0 0;
+.equip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: rgba(255, 240, 210, 0.06);
+  color: var(--cream);
+  text-align: left;
+}
+
+.equip-row:active {
+  background: rgba(70, 44, 24, 0.9);
+  border-color: var(--gold);
+}
+
+.equip-row.held {
+  border-color: var(--gold);
+}
+
+.equip-art {
+  flex: none;
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.equip-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.equip-note {
+  font-size: 12px;
   color: var(--muted);
-  font-size: 13px;
-  text-align: center;
+}
+
+.equip-check {
+  flex: none;
+  display: none;
+  color: var(--gold);
+}
+
+.equip-row.held .equip-check {
+  display: inline-grid;
+}
+
+.equip-putdown {
+  justify-content: center;
+  color: var(--muted);
+}
+
+.equip-putdown .equip-text {
+  flex: none;
 }
 
 .bow-actions {
@@ -533,6 +589,20 @@ button:disabled {
   width: calc(var(--bow-size) * 0.55);
   height: calc(var(--bow-size) * 0.55);
   stroke-width: 1.7;
+}
+
+.bow-button img {
+  display: block;
+  width: calc(var(--bow-size) * 0.55);
+  height: calc(var(--bow-size) * 0.55);
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.action-button.active {
+  background: linear-gradient(180deg, #fff0c8, var(--gold));
+  box-shadow: 0 0 0 3px rgba(255, 224, 160, 0.45), 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .stand-button {

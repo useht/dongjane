@@ -12,9 +12,10 @@ import {
   BoxGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
+  Matrix4,
   Vector3,
 } from "three";
-import { BOW_MS } from "@dongjane/shared";
+import { BOW_MS, ITEM_CHANT, ITEM_MOKT } from "@dongjane/shared";
 import { GeometryBuilder } from "./geometry.ts";
 import { PoseBlend, approach, bowDepth } from "./pose.ts";
 
@@ -28,6 +29,8 @@ export const PART_NAMES = [
   "sleeveLower",
   "hand",
   "foot",
+  "mokt",
+  "beads",
 ] as const;
 export type PartName = (typeof PART_NAMES)[number];
 
@@ -41,11 +44,20 @@ const PART_COPIES: Record<PartName, number> = {
   sleeveLower: 2,
   hand: 2,
   foot: 2,
+  mokt: 1,
+  beads: 1,
 };
 
 const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
+const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
+
 const SKIN = 0xf3cba2;
+const WOOD = 0xb8793b;
+const WOOD_DARK = 0x3a2112;
+const BEAD = 0x6b3f26;
+const BEAD_MARK = 0xc99a3a;
+const BEAD_COUNT = 11;
 const WHITE = 0xffffff;
 
 const HIP_STAND = 0.4;
@@ -118,13 +130,32 @@ function buildPartGeometries(): Record<PartName, BufferGeometry> {
     .add(new CapsuleGeometry(0.05, 0.1, 4, 8), 0xf4eee0, { rx: Math.PI / 2, sy: 1, sz: 0.8, z: -0.03 })
     .build();
 
-  return { head, face, skirt, torso, trim, sleeveUpper, sleeveLower, hand, foot };
+  const mokt = new GeometryBuilder()
+    .add(new SphereGeometry(0.064, 14, 10), WOOD, { y: -0.078, sx: 1, sy: 0.82, sz: 1.12 })
+    .add(new BoxGeometry(0.09, 0.012, 0.014), WOOD_DARK, { y: -0.07, z: 0.068 })
+    .add(new BoxGeometry(0.09, 0.012, 0.014), WOOD_DARK, { y: -0.07, z: -0.068 })
+    .add(new CylinderGeometry(0.011, 0.014, 0.05, 6), WOOD, { y: -0.012, z: 0.02, rx: 0.4 })
+    .build();
+
+  const beadRing = new GeometryBuilder();
+  for (let i = 0; i < BEAD_COUNT; i += 1) {
+    const angle = (i / BEAD_COUNT) * Math.PI * 2;
+    beadRing.add(new SphereGeometry(i === 0 ? 0.024 : 0.018, 7, 5), i === 0 ? BEAD_MARK : BEAD, {
+      x: Math.cos(angle) * 0.055,
+      y: -0.105 + Math.sin(angle) * 0.055,
+      z: 0.01,
+    });
+  }
+  const beads = beadRing.build();
+
+  return { head, face, skirt, torso, trim, sleeveUpper, sleeveLower, hand, foot, mokt, beads };
 }
 
 interface Binding {
   part: PartName;
   copy: number;
   node: Object3D;
+  item?: number;
 }
 
 let sharedGeometries: Record<PartName, BufferGeometry> | null = null;
@@ -140,6 +171,7 @@ export class MonkAvatar {
   modeSince = 0;
   slot = -1;
   chanting = false;
+  item = 0;
 
   private readonly hips = new Object3D();
   private readonly skirtNode = new Object3D();
@@ -178,8 +210,8 @@ export class MonkAvatar {
       (this.feet[side] as Object3D).position.set(sign * 0.085, 0.045, 0);
     }
 
-    const bind = (part: PartName, node: Object3D, copy = 0): void => {
-      this.bindings.push({ part, copy, node });
+    const bind = (part: PartName, node: Object3D, copy = 0, item?: number): void => {
+      this.bindings.push({ part, copy, node, item });
     };
     bind("head", this.headNode);
     bind("face", this.headNode);
@@ -192,6 +224,8 @@ export class MonkAvatar {
       bind("hand", this.handNodes[side] as Object3D, side);
       bind("foot", this.feet[side] as Object3D, side);
     }
+    bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
+    bind("beads", this.handNodes[0], 0, ITEM_CHANT);
   }
 
   setMode(mode: string, nowMs: number): void {
@@ -358,9 +392,10 @@ export class MonkPool {
 
   flush(): void {
     for (const avatar of this.avatars) {
-      for (const { part, copy, node } of avatar.bindings) {
+      for (const { part, copy, node, item } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
-        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, node.matrixWorld);
+        const held = item === undefined || item === avatar.item;
+        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, held ? node.matrixWorld : HIDDEN_MATRIX);
       }
     }
     for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;
