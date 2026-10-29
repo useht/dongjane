@@ -50,6 +50,7 @@ interface Seat {
   bowBase: number;
   bowsAsked: boolean;
   greetBows: number;
+  settleAt: number;
   leaveAt: number;
 }
 
@@ -76,6 +77,7 @@ const APPROACH_GAP_M: Range = [1, 1.5];
 const GREET_RANGE_M = 3;
 const TOO_CLOSE_M = 1.5;
 const NEAR_M = 3;
+const MIN_RETREAT_M = 0.5;
 const APPROACH_FACTOR = 0.5;
 const FAR_STROLL_CHANCE = 0.15;
 const CHANT_SIT_BOOST = 0.5;
@@ -106,7 +108,7 @@ export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, action
   if (monk.cushionId < 0) {
     brain.seat = null;
   } else if (brain.seat?.cushionId !== monk.cushionId) {
-    brain.seat = { cushionId: monk.cushionId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, leaveAt: 0 };
+    brain.seat = { cushionId: monk.cushionId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, leaveAt: 0 };
     brain.greetAt = 0;
   }
 
@@ -157,7 +159,8 @@ function thinkSeated(
   if (seat.bows < 0) {
     seat.bows = rollBows(brain, random);
     seat.bowBase = monk.bowCount;
-    brain.nextThinkAt = now + span(random, SETTLE_MS);
+    seat.settleAt = now + span(random, SETTLE_MS);
+    brain.nextThinkAt = seat.settleAt;
     return;
   }
 
@@ -172,6 +175,11 @@ function thinkSeated(
       return;
     }
     brain.greetAt = now + BOW_RECHECK_MS;
+  }
+
+  if (now < seat.settleAt) {
+    brain.nextThinkAt = seat.settleAt;
+    return;
   }
 
   if (seat.bows > 0 && !seat.bowsAsked) {
@@ -214,8 +222,11 @@ function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions:
   const near = nearestVisitor(monk, world.visitors);
   if (near && near.distance <= TOO_CLOSE_M) {
     if (random() < persona.shyness) {
-      walkTo(brain, monk, world, actions, stepAway(monk, near.visitor, random));
-      return;
+      const away = stepAway(monk, near.visitor, random);
+      if (Math.hypot(away.x - monk.x, away.z - monk.z) >= MIN_RETREAT_M) {
+        walkTo(brain, monk, world, actions, away);
+        return;
+      }
     }
   } else if (near && near.distance <= NEAR_M && random() < persona.sociability * APPROACH_FACTOR) {
     walkTo(brain, monk, world, actions, approach(monk, near.visitor, random));

@@ -403,19 +403,22 @@ describe("npc front row preference", () => {
 });
 
 describe("npc brain reactions", () => {
-  function rig(visitorX: number, random: () => number, persona: Persona) {
-    const body = { id: "npc-1", mode: "kneel", x: 0, z: 0, cushionId: 2, bowCount: 0 };
+  function rig(visitorX: number, random: () => number, persona: Persona, start = { x: 0, z: 0 }, seated = true) {
+    const body = { id: "npc-1", mode: seated ? "kneel" : "stand", ...start, cushionId: seated ? 2 : -1, bowCount: 0 };
     const world: NpcWorld = {
       now: 0,
       random,
       chantEndsAt: null,
-      visitors: [{ id: "v", x: visitorX, z: 0, bowCount: 0 }],
+      visitors: [{ id: "v", x: visitorX, z: start.z, bowCount: 0 }],
       isFree: () => false,
     };
-    const calls = { bows: [] as number[], stands: 0 };
+    const calls = { bows: [] as number[], moves: [] as { x: number; z: number }[], stands: 0 };
     const refuse = { bows: false };
     const actions: NpcActions = {
-      move: () => true,
+      move: (_id, x, z) => {
+        calls.moves.push({ x, z });
+        return true;
+      },
       sit: () => true,
       stand: () => {
         calls.stands += 1;
@@ -481,6 +484,24 @@ describe("npc brain reactions", () => {
     think(4400);
     think(5400);
     expect(calls.bows).toEqual([1, 1]);
+  });
+
+  it("waits out its settling time before asking for its bows, however often it re-thinks", () => {
+    const { think, calls } = rig(1, () => 0.5, BASE);
+    think(0);
+    for (let now = 250; now < 2000; now += 250) think(now);
+    expect(calls.bows).toEqual([]);
+    think(2000);
+    expect(calls.bows).toEqual([3]);
+  });
+
+  it("walks on as usual when a shy retreat would go nowhere because it is cornered", () => {
+    const corner = { x: -5, z: -3 };
+    const { think, calls } = rig(-4, () => 0.5, { ...BASE, shyness: 1 }, corner, false);
+    think(0);
+    expect(calls.moves).toHaveLength(1);
+    const [move] = calls.moves;
+    expect(Math.hypot(move!.x - corner.x, move!.z - corner.z)).toBeGreaterThan(0.5);
   });
 
   it("does not count its greeting bow towards the bows it planned before standing up", () => {
