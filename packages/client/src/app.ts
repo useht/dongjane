@@ -11,6 +11,7 @@ import {
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { serverHttpBase } from "./config.ts";
+import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
@@ -19,14 +20,24 @@ import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { HallSession, JoinError, type LinkState } from "./net/session.ts";
 import { SoloSession } from "./net/solo.ts";
-import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
+import {
+  type Profile,
+  type Settings,
+  loadBows,
+  loadProfile,
+  loadSettings,
+  newHue,
+  saveBows,
+  saveProfile,
+  saveSettings,
+} from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
-import { SettingsSheet } from "./ui/settings.ts";
+import { SettingsPanel } from "./ui/settings.ts";
 
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
@@ -56,13 +67,15 @@ export class App {
   private readonly hud: Hud;
   private readonly hudFrame: HudFrame;
   private readonly overlay: Overlay;
-  private readonly settingsSheet: SettingsSheet;
+  private readonly settingsPanel: SettingsPanel;
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
   private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
+  private bows: number = loadBows();
+  private lastSelfBows: number | null = null;
   private session: HallSession | SoloSession | null = null;
   private halls: HallInfo[] = [];
   private currentHall = 0;
@@ -91,18 +104,22 @@ export class App {
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
 
-    this.hud = new Hud(this.ui, {
-      onSwitchHall: (hall) => void this.enter(hall),
-      onOpenHalls: () => void this.refreshHalls(),
-      onBow: () => this.bow(),
-      onStand: () => this.stand(),
-      onInvite: () => void this.copyInvite(),
-      onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
-      onOpenSettings: () => this.settingsSheet.sheet.open(),
-    });
-    this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
+    this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
     });
+    this.hud = new Hud(
+      this.ui,
+      {
+        onSwitchHall: (hall) => void this.enter(hall),
+        onOpenHalls: () => void this.refreshHalls(),
+        onBow: () => this.bow(),
+        onStand: () => this.stand(),
+        onInvite: () => void this.copyInvite(),
+        onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
+      },
+      this.settingsPanel.root,
+    );
+    this.hud.setCollection(this.bows);
     this.seatHints = new SeatHints(this.ui, (id) => {
       this.prediction.cancel();
       this.session?.sit(id);
@@ -145,6 +162,7 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.lastSelfBows = null;
     this.self = null;
     this.prediction.cancel();
     this.occupiedCushions.clear();
@@ -240,6 +258,7 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.lastSelfBows = null;
     this.self = null;
     this.prediction.cancel();
     this.occupiedCushions.clear();
@@ -317,6 +336,7 @@ export class App {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
         this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
+        this.creditBows(monk.bowCount);
       }
     });
     this.lastViews = views;
@@ -338,6 +358,17 @@ export class App {
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
+  }
+
+  private creditBows(current: number): void {
+    const gained = gainedBows(this.lastSelfBows, current);
+    this.lastSelfBows = current;
+    if (gained <= 0) return;
+    const before = this.bows;
+    this.bows += gained;
+    saveBows(this.bows);
+    this.hud.setCollection(this.bows);
+    for (const title of titlesCrossed(before, this.bows)) this.hud.toast(`‘${title.name}’ 칭호를 얻었어요`);
   }
 
   private syncHallCount(count: number): void {
@@ -389,7 +420,7 @@ export class App {
   private updateSettings(next: Settings): void {
     this.settings = next;
     saveSettings(next);
-    this.settingsSheet.sync(next);
+    this.settingsPanel.sync(next);
     this.hud.setSoundOn(next.sound);
     this.world.setReduceMotion(next.reduceMotion);
     this.applyAudio();

@@ -516,6 +516,60 @@ button:disabled {
   }
 }
 
+.sheet.phone {
+  width: 100%;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  background: linear-gradient(180deg, #3a2512, var(--panel-solid) 42%, var(--wood-soft));
+}
+
+.sheet-backdrop.phone-backdrop {
+  align-items: stretch;
+}
+
+.phone .sheet-header {
+  gap: 6px;
+  padding: 8px 10px 8px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.phone .sheet-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.phone .sheet-back {
+  margin-left: -8px;
+}
+
+.phone .sheet-body {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 16px 24px;
+}
+
+.phone-home .clock-hero {
+  padding-top: 8px;
+}
+
+@media (min-width: 720px) {
+  .sheet-backdrop.phone-backdrop {
+    align-items: center;
+  }
+
+  .sheet.phone {
+    width: 390px;
+    height: min(780px, 92vh);
+    padding: 0;
+    overflow: hidden;
+    border: 8px solid #120b06;
+    border-radius: 42px;
+    box-shadow: 0 0 0 1px var(--line), 0 28px 70px rgba(0, 0, 0, 0.6);
+  }
+}
+
 .list {
   list-style: none;
   margin: 0 0 12px;
@@ -706,47 +760,50 @@ button:disabled {
   font-size: 16px;
 }
 
-.tool-list {
+.app-grid {
   display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px 8px;
+  padding-top: 20px;
 }
 
-.tool-row {
-  width: 100%;
-  justify-content: flex-start;
-  padding: 6px 4px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  background: transparent;
-  text-align: left;
-}
-
-.tool-row:last-child {
-  border-bottom: 0;
-}
-
-.tool-row:active {
-  background: rgba(255, 240, 210, 0.06);
-}
-
-.tool-row .row-text {
-  flex: 1;
+.app-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 7px;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  word-break: keep-all;
 }
 
-.tool-row .badge {
-  position: static;
-  flex: none;
-}
-
-.tool-icon {
-  flex: none;
+.app-tile-icon {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 240, 210, 0.08);
+  width: 58px;
+  height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: linear-gradient(160deg, rgba(255, 240, 210, 0.16), rgba(255, 240, 210, 0.05));
   color: var(--gold);
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.app-tile-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.app-tile:active .app-tile-icon {
+  background: rgba(255, 240, 210, 0.22);
+  transform: scale(0.95);
 }
 
 .clock-hero {
@@ -777,6 +834,95 @@ button:disabled {
   margin: 0;
   color: var(--muted);
   font-size: 14px;
+}
+
+.collection-summary {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 240, 210, 0.06);
+}
+
+.collection-stats {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.collection-stats strong {
+  color: var(--gold);
+  font-size: 18px;
+}
+
+.collection-stats span,
+.collection-next {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.collection-progress {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.collection-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+  transition: width 0.3s ease;
+}
+
+.collection-next {
+  margin: 0;
+}
+
+.title-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.title-row {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: rgba(255, 240, 210, 0.05);
+}
+
+.title-row.earned {
+  border-color: rgba(255, 210, 122, 0.4);
+}
+
+.title-row.earned .title-name {
+  color: var(--gold);
+}
+
+.title-row.locked .title-name,
+.title-row.locked .title-desc,
+.title-meta {
+  color: var(--muted);
+}
+
+.title-row.locked .title-name {
+  letter-spacing: 2px;
+}
+
+.title-desc {
+  font-size: 14px;
+}
+
+.title-meta {
+  font-size: 12px;
 }
 
 .fine-print {
