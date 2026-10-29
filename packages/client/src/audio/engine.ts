@@ -17,6 +17,11 @@ export const BELL_PARTIALS: readonly BellPartial[] = [
 export const BELL_STRIKES = 3;
 export const BELL_GAP_SECONDS = 5.5;
 
+// A recorded wooden-fish strike; the synthesized knock below stands in until it has loaded or if it cannot.
+export const MOKT_SAMPLE_URL = "/audio/mokt.mp3";
+// The recording peaks near full scale, far above the synthesized knock, so it is trimmed to sit beside the bell.
+export const MOKT_SAMPLE_GAIN = 0.5;
+
 type AudioContextCtor = typeof AudioContext;
 
 function contextClass(): AudioContextCtor | undefined {
@@ -24,13 +29,15 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// All sound is synthesized: sine partials with exponential decay for the bell, filtered noise for wind.
+// Bell and wind are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a recording.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private effects: GainNode | null = null;
   private ambience: GainNode | null = null;
   private ambientVolume = 0.7;
   private effectVolume = 0.7;
+  private moktSample: AudioBuffer | null = null;
+  private moktLoad: Promise<void> | null = null;
   bellCount = 0;
 
   get unlocked(): boolean {
@@ -59,6 +66,7 @@ export class AudioEngine {
       this.startWind();
       this.applyLevels();
     }
+    this.loadMoktSample();
     if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => undefined);
   }
 
@@ -74,6 +82,25 @@ export class AudioEngine {
     const ctx = this.ctx;
     const level = Math.min(1, Math.max(0, volume));
     if (!ctx || !this.effects || level <= 0) return;
+    this.loadMoktSample();
+    if (this.moktSample) this.playMoktSample(ctx, this.moktSample, level);
+    else this.synthesizeKnock(ctx, level);
+  }
+
+  private playMoktSample(ctx: AudioContext, buffer: AudioBuffer, level: number): void {
+    const effects = this.effects;
+    if (!effects) return;
+    const source = ctx.createBufferSource();
+    const envelope = ctx.createGain();
+    source.buffer = buffer;
+    envelope.gain.value = MOKT_SAMPLE_GAIN * level;
+    source.connect(envelope).connect(effects);
+    source.start();
+  }
+
+  private synthesizeKnock(ctx: AudioContext, level: number): void {
+    const effects = this.effects;
+    if (!effects) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const envelope = ctx.createGain();
@@ -83,7 +110,7 @@ export class AudioEngine {
     envelope.gain.setValueAtTime(0.0001, now);
     envelope.gain.linearRampToValueAtTime(0.22 * level, now + 0.006);
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-    osc.connect(envelope).connect(this.effects);
+    osc.connect(envelope).connect(effects);
     osc.start(now);
     osc.stop(now + 0.2);
   }
@@ -93,7 +120,23 @@ export class AudioEngine {
     this.ctx = null;
     this.effects = null;
     this.ambience = null;
+    this.moktSample = null;
+    this.moktLoad = null;
     if (ctx) void ctx.close().catch(() => undefined);
+  }
+
+  // Fetched and decoded at most once per context; a missing or undecodable file leaves the synthesized knock in place.
+  private loadMoktSample(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.moktLoad) return;
+    this.moktLoad = this.fetchMoktSample(ctx).catch(() => undefined);
+  }
+
+  private async fetchMoktSample(ctx: AudioContext): Promise<void> {
+    const response = await fetch(MOKT_SAMPLE_URL);
+    if (!response.ok) return;
+    const buffer = await ctx.decodeAudioData(await response.arrayBuffer());
+    if (this.ctx === ctx) this.moktSample = buffer;
   }
 
   private strike(at: number, strength: number): void {
