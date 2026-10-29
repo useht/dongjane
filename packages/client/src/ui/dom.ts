@@ -39,7 +39,6 @@ const ICONS = {
   cloud: '<path d="M7.5 18.5a4.5 4.5 0 0 1-.7-8.95 6 6 0 0 1 11.4 1.1A3.9 3.9 0 0 1 17.5 18.5z"/>',
   rain: '<path d="M7.5 14a4 4 0 0 1-.6-7.95 5.4 5.4 0 0 1 10.3 1A3.5 3.5 0 0 1 17 14z"/><path d="M8.5 17l-1 3M12.5 17l-1 3M16.5 17l-1 3"/>',
   snow: '<path d="M7.5 14a4 4 0 0 1-.6-7.95 5.4 5.4 0 0 1 10.3 1A3.5 3.5 0 0 1 17 14z"/><circle cx="8" cy="18" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="20.2" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="18" r="1" fill="currentColor" stroke="none"/>',
-  bow: '<circle cx="17.8" cy="8.8" r="2.4"/><path d="M7 9.4l8-2.6M7 9.4 5.8 20.5M7 9.4l2.6 11.1M13.3 7.4l.9 6.4"/>',
   stand: '<circle cx="12" cy="5" r="2.2"/><path d="M12 8.4v6.6M8 11.6l4-2 4 2M12 15l-2.6 6M12 15l2.6 6"/>',
   jump: '<path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9M6.5 19.5h11"/>',
   check: '<path d="m5.5 12.5 4.2 4.2L18.5 7.8"/>',

@@ -7,7 +7,7 @@ import { ClockWidget } from "./clock.ts";
 import { button, h, icon, iconButton } from "./dom.ts";
 import { EmotePicker } from "./emote-picker.ts";
 import { type ChantStatus, describeSky, modeLabel } from "./format.ts";
-import { HELD_ITEMS, ITEM_INFO, type HeldItem, itemImage } from "./item-art.ts";
+import { BOW_IMAGE, HELD_ITEMS, ITEM_INFO, type HeldItem, artImage, itemImage } from "./item-art.ts";
 import { Phone } from "./phone.ts";
 import { QuestPanel } from "./quest.ts";
 import { Sheet } from "./sheet.ts";
@@ -111,8 +111,11 @@ export class Hud {
     const top = h("div", "topbar", h("div", "topbar-start", h("div", "hall-stack", this.hallButton, this.quests.button)), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
-    this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
-    this.bowButton.querySelector("svg")?.setAttribute("viewBox", "3.5 5 18 18"); // crop the glyph's margin so it fills the big button
+    this.bowButton = h("button", "bow-button", artImage(BOW_IMAGE));
+    this.bowButton.type = "button";
+    this.bowButton.setAttribute("aria-label", "절하기");
+    this.bowButton.title = "절하기";
+    this.bowButton.addEventListener("click", () => handlers.onBow());
     this.actionButton = h("button", "bow-button action-button hidden");
     this.actionButton.type = "button";
     this.actionButton.addEventListener("click", () => {
@@ -223,6 +226,7 @@ export class Hud {
     this.standButton.classList.toggle("hidden", !seated);
     this.jumpButton.classList.toggle("hidden", !self || self.cushionId >= 0);
     this.bowActions.classList.toggle("seated", seated);
+    this.bowActions.classList.toggle("hidden", !self);
     this.toolButton.classList.toggle("ready", this.selfItem !== ITEM_NONE);
 
     const item = self && (self.item === ITEM_MOKT || self.item === ITEM_CHANT) ? self.item : null;

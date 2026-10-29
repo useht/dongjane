@@ -9,11 +9,17 @@ export const ITEM_INFO: Record<HeldItem, { name: string; note: string; image: st
   [ITEM_CHANT]: { name: "염불", note: "방석에 앉아 염불을 외워요", image: "/items/chant.png" },
 };
 
-export function itemImage(item: HeldItem, className = ""): HTMLImageElement {
+export const BOW_IMAGE = "/items/bow.png";
+
+export function artImage(src: string, className = ""): HTMLImageElement {
   const image = document.createElement("img");
-  image.src = ITEM_INFO[item].image;
+  image.src = src;
   image.alt = "";
   image.draggable = false;
   if (className) image.className = className;
   return image;
+}
+
+export function itemImage(item: HeldItem, className = ""): HTMLImageElement {
+  return artImage(ITEM_INFO[item].image, className);
 }
