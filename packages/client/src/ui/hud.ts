@@ -352,10 +352,9 @@ export class Hud {
         const pick = h("button", `world-row${here ? " here" : ""}`);
         pick.type = "button";
         pick.disabled = here || full;
-        pick.append(
-          h("strong", "", worldName(info.world)),
-          h("span", "world-meta", here ? "지금 여기 있어요" : full ? "가득 찼어요" : `${info.clients + info.npcs}/${info.capacity}명`),
-        );
+        const status = here ? "지금 여기 있어요" : full ? "가득 찼어요" : "";
+        const count = `${info.clients + info.npcs}/${info.capacity}명`;
+        pick.append(h("strong", "", worldName(info.world)), h("span", "world-meta", status ? `${count} · ${status}` : count));
         pick.addEventListener("click", () => {
           this.worldSheet.close();
           this.handlers.onSwitchWorld(info.world);
