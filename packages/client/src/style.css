@@ -263,7 +263,30 @@ button:disabled {
 
 .link-banner {
   top: calc(var(--safe-top) + var(--edge) + 90px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: rgba(120, 52, 28, 0.9);
+}
+
+.link-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-action {
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  margin: -2px -8px -2px 0;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 224, 160, 0.4);
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .toasts {

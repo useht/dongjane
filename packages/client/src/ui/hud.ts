@@ -29,7 +29,11 @@ export interface HudHandlers {
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
+  onCancelReturn(): void;
+  onReturnNow(): void;
 }
+
+export type SoloStatus = { kind: "idle" } | { kind: "countdown"; seconds: number } | { kind: "held" };
 
 const MAX_TOASTS = 3;
 const TOAST_MS = 3200;
@@ -42,6 +46,9 @@ export class Hud {
   private readonly clock: ClockWidget;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
+  private readonly linkText = h("span", "link-text");
+  private readonly linkAction = button("", "link-action hidden", () => this.linkRun?.());
+  private linkRun: (() => void) | null = null;
   private readonly toasts = h("div", "toasts");
   private readonly statusLine = h("p", "status-line");
   private readonly bowTally = h("span", "bow-tally");
@@ -117,6 +124,7 @@ export class Hud {
     );
 
     this.linkBanner.setAttribute("role", "status");
+    this.linkBanner.append(this.linkText, this.linkAction);
     this.toasts.setAttribute("aria-live", "polite");
     this.root.append(top, this.chantPill, this.linkBanner, this.toasts, bottom, this.stats);
     host.append(this.root);
@@ -190,8 +198,7 @@ export class Hud {
 
   setLink(link: LinkState): void {
     if (link === "reconnecting") {
-      this.linkBanner.textContent = "연결이 흔들려요. 다시 이어 보는 중…";
-      this.linkBanner.classList.remove("hidden");
+      this.showLink("연결이 흔들려요. 다시 이어 보는 중…");
     } else {
       this.linkBanner.classList.add("hidden");
     }
@@ -201,14 +208,19 @@ export class Hud {
     this.clock.setSky(sky);
   }
 
-  setSolo(): void {
+  setSolo(status: SoloStatus): void {
     this.halls = [];
     this.currentHall = 0;
     this.hallLabel.textContent = "혼자 있는 법당";
     this.hallCount.textContent = "";
     this.renderHalls();
-    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 법당으로 다시 모셔요";
-    this.linkBanner.classList.remove("hidden");
+    if (status.kind === "countdown") {
+      this.showLink(`${status.seconds}초 뒤 법당으로 옮겨 드려요`, { label: "이동 취소", run: () => this.handlers.onCancelReturn() });
+    } else if (status.kind === "held") {
+      this.showLink("이동을 취소했어요. 혼자 쉬고 있어요", { label: "법당으로 가기", run: () => this.handlers.onReturnNow() });
+    } else {
+      this.showLink("서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 법당으로 다시 모셔요");
+    }
   }
 
   setSoundOn(on: boolean): void {
@@ -226,6 +238,14 @@ export class Hud {
   setStats(text: string | null): void {
     this.stats.classList.toggle("hidden", text === null);
     if (text !== null) this.stats.textContent = text;
+  }
+
+  private showLink(text: string, action?: { label: string; run(): void }): void {
+    this.linkText.textContent = text;
+    this.linkRun = action?.run ?? null;
+    if (action) this.linkAction.textContent = action.label;
+    this.linkAction.classList.toggle("hidden", !action);
+    this.linkBanner.classList.remove("hidden");
   }
 
   private submitHall(): void {
