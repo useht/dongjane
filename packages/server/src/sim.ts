@@ -33,8 +33,6 @@ interface Runtime {
   lastBowEndedAt: number;
 }
 
-const SERVER_TIME_SYNC_MS = 1000;
-
 export interface SimOptions {
   clock?: () => number;
   random?: () => number;
@@ -56,11 +54,11 @@ export class TempleSim {
     this.random = options.random ?? Math.random;
     this.chantEveryMs = options.chantEveryMs ?? CHANT_EVERY_MS;
     this.chantMs = options.chantMs ?? CHANT_MS;
+    this.state.serverTime = this.clock();
 
     for (const spot of CUSHION_SPOTS) {
       this.state.cushions.set(String(spot.id), new Cushion({ id: spot.id, occupantId: "" }));
     }
-    this.state.serverTime = this.clock();
     this.updateChant();
   }
 
@@ -92,9 +90,10 @@ export class TempleSim {
     this.runtimes.delete(id);
   }
 
-  move(id: string, x: number, z: number): boolean {
+  move(id: string, x: number, z: number, seq = 0): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
+    if (monk && seq > monk.ackSeq) monk.ackSeq = seq;
     if (!monk || !runtime || !Number.isFinite(x) || !Number.isFinite(z)) return false;
 
     this.releaseSeat(monk);
@@ -147,7 +146,7 @@ export class TempleSim {
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
-    if (Math.abs(now - this.state.serverTime) >= SERVER_TIME_SYNC_MS) this.state.serverTime = now;
+    this.state.serverTime = now;
 
     for (const [id, monk] of this.state.monks) {
       const runtime = this.runtimes.get(id);

@@ -16,8 +16,9 @@ import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
+import type { SelfDisplay } from "./prediction.ts";
 import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
-import { SnapshotBuffer, type Sample } from "./snapshot.ts";
+import { RemoteTrack, ServerClock, type Sample } from "./snapshot.ts";
 
 export interface MonkView {
   id: string;
@@ -45,7 +46,7 @@ export interface WorldStats {
 
 interface Entry {
   avatar: MonkAvatar;
-  buffer: SnapshotBuffer;
+  track: RemoteTrack;
   x: number;
   z: number;
   yaw: number;
@@ -54,7 +55,6 @@ interface Entry {
   targetYaw: number;
 }
 
-const INTERPOLATION_DELAY_MS = 100;
 const MAX_MONKS = 40;
 
 export class World {
@@ -71,6 +71,8 @@ export class World {
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
+  private readonly clock = new ServerClock();
+  private selfPrediction: SelfDisplay | null = null;
   private readonly input: PointerInput;
   private readonly adaptive: AdaptiveScale;
   private readonly selfRing: Mesh;
@@ -177,7 +179,12 @@ export class World {
     cancelAnimationFrame(this.frame);
   }
 
-  applyMonks(views: readonly MonkView[], nowMs: number): void {
+  setSelfPrediction(display: SelfDisplay | null): void {
+    this.selfPrediction = display;
+  }
+
+  applyMonks(views: readonly MonkView[], nowMs: number, serverTime: number): void {
+    this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
     for (const view of views) {
       seen.add(view.id);
@@ -190,7 +197,7 @@ export class World {
         }
         entry = {
           avatar,
-          buffer: new SnapshotBuffer(),
+          track: new RemoteTrack(),
           x: view.x,
           z: view.z,
           yaw: view.yaw,
@@ -211,8 +218,9 @@ export class World {
       entry.targetX = view.x;
       entry.targetZ = view.z;
       entry.targetYaw = view.yaw;
-      if (view.id !== this.selfId) entry.buffer.push(nowMs, view.x, view.z, view.yaw);
-      entry.avatar.setMode(view.mode, nowMs);
+      const isSelf = view.id === this.selfId;
+      if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
+      if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
     }
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
@@ -226,6 +234,8 @@ export class World {
   clear(): void {
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
     this.selfId = null;
+    this.selfPrediction = null;
+    this.clock.reset();
     this.setOccupancy(new Set());
   }
 
@@ -291,15 +301,23 @@ export class World {
     this.callbacks.onFrame(dt, nowMs);
 
     const k = 1 - Math.exp(-dt * 14);
-    const renderTime = nowMs - INTERPOLATION_DELAY_MS;
+    const renderTime = this.clock.advance(nowMs);
     for (const entry of this.entries.values()) {
       const px = entry.x;
       const pz = entry.z;
       if (entry.avatar.id === this.selfId) {
-        entry.x += (entry.targetX - entry.x) * k;
-        entry.z += (entry.targetZ - entry.z) * k;
-        entry.yaw = lerpAngle(entry.yaw, entry.targetYaw, k);
-      } else if (entry.buffer.sample(renderTime, this.sample)) {
+        const predicted = this.selfPrediction;
+        if (predicted) {
+          entry.x = predicted.x;
+          entry.z = predicted.z;
+          entry.yaw = lerpAngle(entry.yaw, predicted.yaw, k);
+          entry.avatar.setMode(predicted.walking ? "walk" : "stand", nowMs);
+        } else {
+          entry.x += (entry.targetX - entry.x) * k;
+          entry.z += (entry.targetZ - entry.z) * k;
+          entry.yaw = lerpAngle(entry.yaw, entry.targetYaw, k);
+        }
+      } else if (entry.track.sample(renderTime, dt, this.sample)) {
         entry.x = this.sample.x;
         entry.z = this.sample.z;
         entry.yaw = this.sample.yaw;

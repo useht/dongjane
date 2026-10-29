@@ -93,6 +93,70 @@ describe("join and movement", () => {
     expect(h.sim.move("ghost", 0, 0)).toBe(false);
     expect(h.monk("a").mode).toBe("stand");
   });
+
+  it("acks the highest move seq it has seen, never going backwards", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").ackSeq).toBe(0);
+    h.sim.move("a", 0, 3, 5);
+    expect(h.monk("a").ackSeq).toBe(5);
+    h.sim.move("a", 0, 2, 3);
+    expect(h.monk("a").ackSeq).toBe(5);
+    h.sim.move("a", 0, 1, 9);
+    expect(h.monk("a").ackSeq).toBe(9);
+    h.sim.move("a", 0, 1);
+    expect(h.monk("a").ackSeq).toBe(9);
+  });
+
+  it("advances the ack even when the move itself is ignored", () => {
+    h.sim.join("a", 0);
+    const { x, z } = h.monk("a");
+    expect(h.sim.move("a", Number.NaN, 0, 4)).toBe(false);
+    expect(h.monk("a").ackSeq).toBe(4);
+    expect(h.sim.move("a", 0, Number.POSITIVE_INFINITY, 6)).toBe(false);
+    expect(h.monk("a").ackSeq).toBe(6);
+    expect(h.monk("a").mode).toBe("stand");
+    expect([h.monk("a").x, h.monk("a").z]).toEqual([x, z]);
+    expect(h.sim.move("ghost", 0, 0, 8)).toBe(false);
+  });
+
+  it("acks a move that only snaps the monk onto where it already stands", () => {
+    h.sim.join("a", 0);
+    const { x, z } = h.monk("a");
+    expect(h.sim.move("a", x, z, 2)).toBe(true);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").ackSeq).toBe(2);
+  });
+
+  it("acks a move together with the walk it starts, in the same state", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", h.monk("a").x, h.monk("a").z - 2, 11);
+    expect(h.monk("a").ackSeq).toBe(11);
+    expect(h.monk("a").mode).toBe("walk");
+    h.advance(2000);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").ackSeq).toBe(11);
+  });
+});
+
+describe("server clock", () => {
+  it("starts at the sim clock and advances with every tick", () => {
+    expect(h.sim.state.serverTime).toBe(T0);
+    const seen: number[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      h.advance(TICK_MS);
+      seen.push(h.sim.state.serverTime);
+    }
+    expect(seen).toEqual([1, 2, 3, 4, 5].map((n) => T0 + n * TICK_MS));
+  });
+
+  it("stamps monk positions with the time they were computed at", () => {
+    h.sim.join("a", 0);
+    const startZ = h.monk("a").z;
+    h.sim.move("a", h.monk("a").x, startZ - 4);
+    h.advance(1000);
+    expect(h.sim.state.serverTime).toBe(T0 + 1000);
+    expect(startZ - h.monk("a").z).toBeCloseTo((WALK_SPEED * (h.sim.state.serverTime - T0)) / 1000, 4);
+  });
 });
 
 describe("cushions", () => {
@@ -282,27 +346,6 @@ describe("seat numbers", () => {
     for (let i = 0; i < 12; i += 1) h.sim.join(`m${i}`, i);
     const slots = Array.from(h.sim.state.monks.values(), (monk) => monk.slot).sort((x, y) => x - y);
     expect(slots).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-  });
-});
-
-describe("server time", () => {
-  it("starts at the clock", () => {
-    expect(h.sim.state.serverTime).toBe(T0);
-  });
-
-  it("stays put while less than a second has passed", () => {
-    h.advance(950);
-    expect(h.now).toBe(T0 + 950);
-    expect(h.sim.state.serverTime).toBe(T0);
-  });
-
-  it("catches up to the clock once a second has passed", () => {
-    h.advance(950);
-    h.advance(50);
-    expect(h.sim.state.serverTime).toBe(T0 + 1000);
-    h.advance(2500);
-    expect(h.sim.state.serverTime).toBeGreaterThanOrEqual(h.now - 1000);
-    expect(h.sim.state.serverTime).toBeLessThanOrEqual(h.now);
   });
 });
 
