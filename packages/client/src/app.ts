@@ -83,7 +83,7 @@ export class App {
   private returnHeld = false;
   private readonly returnCountdown = new ReturnCountdown(
     (seconds) => this.hud.setSolo({ kind: "countdown", seconds }),
-    () => void this.enter(this.soloReturnHall),
+    () => void this.returnToHall(),
   );
 
   constructor() {
@@ -484,6 +484,13 @@ export class App {
     if (reachable && this.inSolo && !this.returnHeld && !this.returnCountdown.running) {
       this.returnCountdown.start(RETURN_COUNTDOWN_SECONDS);
     }
+  }
+
+  private async returnToHall(): Promise<void> {
+    const reachable = await this.refreshHalls();
+    if (!this.inSolo || this.returnHeld) return;
+    if (reachable) void this.enter(this.soloReturnHall);
+    else this.hud.setSolo({ kind: "idle" });
   }
 
   private holdReturn(): void {
