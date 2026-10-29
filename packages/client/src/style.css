@@ -3,6 +3,7 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  --hud-edge: 16px;
   --hud-top: calc(var(--safe-top) + 100px);
   --hud-bottom: calc(var(--safe-bottom) + 112px);
   --hud-bow-size: 84px;
@@ -117,9 +118,9 @@ button:disabled {
 
 .topbar {
   position: absolute;
-  top: calc(var(--safe-top) + 10px);
-  left: calc(var(--safe-left) + 10px);
-  right: calc(var(--safe-right) + 10px);
+  top: calc(var(--safe-top) + var(--hud-edge));
+  left: calc(var(--safe-left) + var(--hud-edge));
+  right: calc(var(--safe-right) + var(--hud-edge));
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -236,7 +237,7 @@ button:disabled {
 }
 
 .chant-pill {
-  top: calc(var(--safe-top) + 62px);
+  top: calc(var(--safe-top) + var(--hud-edge) + 52px);
 }
 
 .chant-pill.soon {
@@ -250,14 +251,37 @@ button:disabled {
 }
 
 .link-banner {
-  top: calc(var(--safe-top) + 100px);
+  top: calc(var(--safe-top) + var(--hud-edge) + 90px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
   background: color-mix(in srgb, var(--ember) 90%, transparent);
+}
+
+.link-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-action {
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  margin: -2px -8px -2px 0;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--gold-pale) 40%, transparent);
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 150px);
+  bottom: calc(var(--safe-bottom) + var(--hud-edge) + 138px);
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
@@ -283,44 +307,13 @@ button:disabled {
 
 .bottombar {
   position: absolute;
-  left: calc(var(--safe-left) + 10px);
-  right: calc(var(--safe-right) + 10px);
-  bottom: calc(var(--safe-bottom) + 12px);
+  left: calc(var(--safe-left) + var(--hud-edge));
+  right: calc(var(--safe-right) + var(--hud-edge));
+  bottom: calc(var(--safe-bottom) + var(--hud-edge));
   display: flex;
   align-items: flex-end;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.status-stack {
-  min-width: 0;
-  display: grid;
-  justify-items: start;
-  gap: 6px;
-}
-
-.status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--panel) 78%, transparent);
-  border: 1px solid var(--line);
-  font-size: 13px;
-}
-
-.status-line {
-  margin: 0;
-}
-
-.bow-tally {
-  color: var(--gold);
-  font-weight: 700;
-}
-
-.bow-tally:empty {
-  display: none;
 }
 
 .bow-actions {
@@ -331,9 +324,10 @@ button:disabled {
   gap: 10px;
 }
 
-/* Seated, the column keeps its full height so the stand-up button does not drop while the bow button hides. */
+/* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
 .bow-actions.seated {
   justify-content: flex-start;
+  min-width: var(--hud-bow-size);
   min-height: calc(var(--hud-bow-size) + 46px);
 }
 
@@ -438,8 +432,8 @@ button:disabled {
 
 .stats {
   position: absolute;
-  left: calc(var(--safe-left) + 10px);
-  top: calc(var(--safe-top) + 112px);
+  left: calc(var(--safe-left) + var(--hud-edge));
+  top: calc(var(--safe-top) + var(--hud-edge) + 102px);
   margin: 0;
   padding: 6px 8px;
   border-radius: 8px;
@@ -806,6 +800,10 @@ button:disabled {
 }
 
 .overlay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
   margin-top: 8px;
 }
 
@@ -885,21 +883,21 @@ noscript {
 
 @media (max-height: 520px) and (orientation: landscape) {
   :root {
-    --hud-top: calc(var(--safe-top) + 58px);
+    --hud-top: calc(var(--safe-top) + var(--hud-edge) + 48px);
     --hud-bottom: calc(var(--safe-bottom) + 96px);
     --hud-bow-size: 72px;
   }
 
   .chant-pill {
-    top: calc(var(--safe-top) + 14px);
+    top: calc(var(--safe-top) + var(--hud-edge) + 4px);
   }
 
   .link-banner {
-    top: calc(var(--safe-top) + 62px);
+    top: calc(var(--safe-top) + var(--hud-edge) + 52px);
   }
 
   .toasts {
-    bottom: calc(var(--safe-bottom) + 138px);
+    bottom: calc(var(--safe-bottom) + var(--hud-edge) + 126px);
   }
 }
 

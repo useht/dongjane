@@ -22,6 +22,7 @@ import { SelfPrediction } from "./game/prediction.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
+import { ReturnCountdown } from "./net/return-countdown.ts";
 import { WorldSession, JoinError, type LinkState } from "./net/session.ts";
 import { SoloSession } from "./net/solo.ts";
 import { type Profile, type Settings, loadProfile, loadSettings, newHue, saveProfile, saveSettings } from "./storage.ts";
@@ -38,6 +39,7 @@ const SEAT_HINT_HEIGHT = 0.6;
 const CHANT_TICK_MS = 250;
 const SKY_TICK_MS = 1000;
 const WORLD_POLL_MS = 10_000;
+const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 
@@ -84,6 +86,11 @@ export class App {
   private lost = false;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
+  private returnHeld = false;
+  private readonly returnCountdown = new ReturnCountdown(
+    (seconds) => this.hud.setSolo({ kind: "countdown", seconds }),
+    () => void this.returnToWorld(),
+  );
 
   constructor(assets: GameAssets) {
     this.canvas = document.getElementById("stage") as HTMLCanvasElement;
@@ -109,6 +116,8 @@ export class App {
       onInvite: () => void this.copyInvite(),
       onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
       onOpenSettings: () => this.settingsSheet.sheet.open(),
+      onCancelReturn: () => this.holdReturn(),
+      onReturnNow: () => void this.enter(this.soloReturnWorld),
     });
     this.settingsSheet = new SettingsSheet(this.ui, this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -147,6 +156,7 @@ export class App {
   private async enter(requested: number | null): Promise<void> {
     const profile = this.profile;
     if (!profile) return;
+    this.returnCountdown.cancel();
     const token = ++this.joinToken;
     this.lost = false;
     this.inSolo = false;
@@ -244,6 +254,8 @@ export class App {
 
   private async enterSolo(returnWorld: number | null): Promise<void> {
     const profile = this.ensureProfile();
+    this.returnCountdown.cancel();
+    this.returnHeld = false;
     const token = ++this.joinToken;
     this.lost = false;
     await this.leaveCurrent();
@@ -268,7 +280,7 @@ export class App {
     this.world.selfId = session.sessionId;
     this.world.resetCamera();
     this.world.seedServerTime(Date.now(), performance.now());
-    this.hud.setSolo();
+    this.hud.setSolo({ kind: "idle" });
     this.overlay.hide();
     this.handleState(session.state);
   }
@@ -342,7 +354,7 @@ export class App {
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, zone: monk.zone, seatId: monk.seatId, bowCount: monk.bowCount });
+        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId });
       }
     });
     this.lastViews = views;
@@ -510,7 +522,22 @@ export class App {
   private async pollWorlds(): Promise<void> {
     if (document.visibilityState !== "visible" || !this.session) return;
     const reachable = await this.refreshWorlds();
-    if (reachable && this.inSolo) void this.enter(this.soloReturnWorld);
+    if (reachable && this.inSolo && !this.returnHeld && !this.returnCountdown.running) {
+      this.returnCountdown.start(RETURN_COUNTDOWN_SECONDS);
+    }
+  }
+
+  private async returnToWorld(): Promise<void> {
+    const reachable = await this.refreshWorlds();
+    if (!this.inSolo || this.returnHeld) return;
+    if (reachable) void this.enter(this.soloReturnWorld);
+    else this.hud.setSolo({ kind: "idle" });
+  }
+
+  private holdReturn(): void {
+    this.returnCountdown.cancel();
+    this.returnHeld = true;
+    this.hud.setSolo({ kind: "held" });
   }
 
   private async copyInvite(): Promise<void> {

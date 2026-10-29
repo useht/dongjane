@@ -4,7 +4,7 @@ import type { LinkState } from "../net/session.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, iconButton } from "./dom.ts";
 import { icon } from "./icons.ts";
-import { type ChantStatus, modeLabel, seatDirection, seatName, zoneName } from "./format.ts";
+import { type ChantStatus, modeLabel, zoneName } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
@@ -19,9 +19,7 @@ export interface VisitorRow {
 
 export interface SelfStatus {
   mode: string;
-  zone: string;
   seatId: number;
-  bowCount: number;
 }
 
 export interface HudHandlers {
@@ -32,7 +30,11 @@ export interface HudHandlers {
   onInvite(): void;
   onToggleSound(): void;
   onOpenSettings(): void;
+  onCancelReturn(): void;
+  onReturnNow(): void;
 }
+
+export type SoloStatus = { kind: "idle" } | { kind: "countdown"; seconds: number } | { kind: "held" };
 
 const MAX_TOASTS = 3;
 const TOAST_MS = 3200;
@@ -45,9 +47,10 @@ export class Hud {
   private readonly clock: ClockWidget;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
+  private readonly linkText = h("span", "link-text");
+  private readonly linkAction = button("", "link-action hidden", () => this.linkRun?.());
+  private linkRun: (() => void) | null = null;
   private readonly toasts = h("div", "toasts");
-  private readonly statusLine = h("p", "status-line");
-  private readonly bowTally = h("span", "bow-tally");
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
@@ -86,12 +89,7 @@ export class Hud {
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
     this.bowActions.append(this.standButton, this.bowButton);
-    const bottom = h(
-      "div",
-      "bottombar",
-      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally)),
-      this.bowActions,
-    );
+    const bottom = h("div", "bottombar", this.bowActions);
 
     this.worldInput.type = "text";
     this.worldInput.inputMode = "numeric";
@@ -120,12 +118,13 @@ export class Hud {
     );
 
     this.linkBanner.setAttribute("role", "status");
+    this.linkBanner.append(this.linkText, this.linkAction);
     this.toasts.setAttribute("aria-live", "polite");
     this.root.append(top, this.chantPill, this.linkBanner, this.toasts, bottom, this.stats);
     host.append(this.root);
 
     this.renderWorlds();
-    this.setSelf({ mode: "stand", zone: "gatbawi", seatId: -1, bowCount: 0 });
+    this.setSelf({ mode: "stand", seatId: -1 });
   }
 
   closeSheets(): boolean {
@@ -159,7 +158,7 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.zone}|${self.seatId}|${self.bowCount}`;
+    const key = `${self.mode}|${self.seatId}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
     const seated = self.seatId >= 0 && (self.mode === "kneel" || self.mode === "bow");
@@ -167,14 +166,6 @@ export class Hud {
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
     this.bowActions.classList.toggle("seated", seated);
-    this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
-    this.statusLine.textContent = seated
-      ? bowing
-        ? "절하는 중이에요"
-        : `${seatName(self.zone)}에 앉았어요. 절을 해 보세요`
-      : self.seatId >= 0
-        ? `${seatDirection(self.zone)} 가는 중이에요`
-        : `${seatName(self.zone)} 가까이 가서 앉기 버튼을 눌러 보세요`;
   }
 
   setChant(status: ChantStatus | null): void {
@@ -193,8 +184,7 @@ export class Hud {
 
   setLink(link: LinkState): void {
     if (link === "reconnecting") {
-      this.linkBanner.textContent = "연결이 흔들려요. 다시 이어 보는 중…";
-      this.linkBanner.classList.remove("hidden");
+      this.showLink("연결이 흔들려요. 다시 이어 보는 중…");
     } else {
       this.linkBanner.classList.add("hidden");
     }
@@ -204,14 +194,19 @@ export class Hud {
     this.clock.setSky(sky);
   }
 
-  setSolo(): void {
+  setSolo(status: SoloStatus): void {
     this.worlds = [];
     this.currentWorld = 0;
     this.worldLabel.textContent = "혼자 있는 월드";
     this.worldCount.textContent = "";
     this.renderWorlds();
-    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 월드로 다시 모셔요";
-    this.linkBanner.classList.remove("hidden");
+    if (status.kind === "countdown") {
+      this.showLink(`${status.seconds}초 뒤 월드로 옮겨 드려요`, { label: "이동 취소", run: () => this.handlers.onCancelReturn() });
+    } else if (status.kind === "held") {
+      this.showLink("이동을 취소했어요. 혼자 쉬고 있어요", { label: "월드로 가기", run: () => this.handlers.onReturnNow() });
+    } else {
+      this.showLink("서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 월드로 다시 모셔요");
+    }
   }
 
   setSoundOn(on: boolean): void {
@@ -229,6 +224,14 @@ export class Hud {
   setStats(text: string | null): void {
     this.stats.classList.toggle("hidden", text === null);
     if (text !== null) this.stats.textContent = text;
+  }
+
+  private showLink(text: string, action?: { label: string; run(): void }): void {
+    this.linkText.textContent = text;
+    this.linkRun = action?.run ?? null;
+    if (action) this.linkAction.textContent = action.label;
+    this.linkAction.classList.toggle("hidden", !action);
+    this.linkBanner.classList.remove("hidden");
   }
 
   private submitWorld(): void {
