@@ -5,6 +5,7 @@ import {
   type HallSnapshot,
   HallDirectory,
   HallsBusyError,
+  MAX_PENDING_SEATS,
   chooseSeat,
   planHalls,
 } from "../src/hall-directory.ts";
@@ -40,6 +41,17 @@ describe("chooseSeat", () => {
     expect(chooseSeat(halls, 1)).toEqual({ hall: 2, create: false });
   });
 
+  it("does not honour a request for a hall nobody is in, so the visitor is not merged straight back", () => {
+    const halls = [snap(1, HALL_SPARE_AT), snap(2, 0)];
+    expect(chooseSeat(halls, 2)).toEqual({ hall: 1, create: false });
+    expect(chooseSeat([snap(1, HALL_SPARE_AT), snap(2, 0, { pending: 1 })], 2)).toEqual({ hall: 1, create: false });
+  });
+
+  it("still uses an empty hall when it is the only one with room", () => {
+    expect(chooseSeat([snap(1, HALL_CAPACITY), snap(2, 0)], 2)).toEqual({ hall: 2, create: false });
+    expect(chooseSeat([snap(1, HALL_CAPACITY), snap(2, 0)], null)).toEqual({ hall: 2, create: false });
+  });
+
   it("opens the next number after the highest hall when every hall is full", () => {
     const halls = [snap(1, HALL_CAPACITY), snap(3, HALL_CAPACITY), snap(4, 2, { draining: true })];
     expect(chooseSeat(halls, 1)).toEqual({ hall: 5, create: true });
@@ -63,6 +75,15 @@ describe("planHalls", () => {
     expect(planHalls([snap(1, HALL_SPARE_AT - 1)])).toEqual({ create: null, dispose: [], relocation: null });
     expect(planHalls([snap(1, HALL_SPARE_AT)]).create).toBe(2);
     expect(planHalls([snap(1, HALL_SPARE_AT), snap(2, 0)])).toEqual({ create: null, dispose: [], relocation: null });
+  });
+
+  it("counts only visitors toward the spare threshold, not seats still waiting", () => {
+    expect(planHalls([snap(1, HALL_SPARE_AT - 1, { pending: 1 })]).create).toBeNull();
+    expect(planHalls([snap(1, HALL_SPARE_AT - 1), snap(2, 0, { pending: 3 })])).toEqual({
+      create: null,
+      dispose: [],
+      relocation: null,
+    });
   });
 
   it("measures the spare rule from the highest hall that has visitors", () => {
@@ -95,8 +116,15 @@ describe("planHalls", () => {
     it("never targets an empty hall or a full one", () => {
       expect(planHalls([snap(1, 0), snap(2, 1)]).relocation).toBeNull();
       expect(planHalls([snap(1, HALL_CAPACITY), snap(2, 1)]).relocation).toBeNull();
-      expect(planHalls([snap(1, HALL_CAPACITY - 1, { pending: 1 }), snap(2, 1)]).relocation).toBeNull();
       expect(planHalls([snap(1, HALL_CAPACITY - 1), snap(2, 1)]).relocation).toEqual({ source: 2, target: 1 });
+    });
+
+    it("counts only visitors when judging a target, not seats still waiting", () => {
+      expect(planHalls([snap(1, 1), snap(2, 0, { pending: 1 })]).relocation).toBeNull();
+      expect(planHalls([snap(1, HALL_CAPACITY - 1, { pending: 1 }), snap(2, 1)]).relocation).toEqual({
+        source: 2,
+        target: 1,
+      });
     });
 
     it("merges the higher of two lone halls into the lower one", () => {
@@ -150,9 +178,17 @@ class FakeRoom implements DirectoryRoom {
     this.directory.changed();
   }
 
+  drainMode: "ok" | "hang" | "fail" = "ok";
+
   async drain(target: number): Promise<void> {
     this.draining = true;
     this.drainedTo = target;
+    if (this.drainMode === "hang") await new Promise<never>(() => undefined);
+    if (this.drainMode === "fail") {
+      this.draining = false;
+      this.drainedTo = null;
+      throw new Error("lock failed");
+    }
   }
 
   async close(): Promise<void> {
@@ -264,6 +300,74 @@ describe("HallDirectory", () => {
     second.leave();
     await settle();
     expect(second.closed).toBe(true);
+  });
+
+  it("seats a visitor who asks for the empty spare hall in the crowded hall and leaves them there", async () => {
+    const { directory, rooms } = makeDirectory();
+    await directory.seat(null);
+    const first = rooms.get(1)!;
+    for (let i = 0; i < HALL_SPARE_AT; i += 1) first.join();
+    await settle();
+    const spare = rooms.get(2)!;
+
+    expect(await directory.seat(2)).toEqual({ hall: 1, roomId: "room1", fellBack: true });
+    first.join();
+    await settle();
+    expect(first.drainedTo).toBeNull();
+    expect(spare.drainedTo).toBeNull();
+    expect(spare.closed).toBe(false);
+  });
+
+  describe("hand-overs", () => {
+    async function loneVisitorInSecondHall() {
+      const rig = makeDirectory();
+      await rig.directory.seat(null);
+      const first = rig.rooms.get(1)!;
+      for (let i = 0; i < HALL_CAPACITY; i += 1) first.join();
+      await settle();
+      const second = rig.rooms.get(2)!;
+      await rig.directory.seat(2);
+      second.join();
+      await settle();
+      return { ...rig, first, second };
+    }
+
+    it("keeps handing out seats while a hall is still locking for its hand-over", async () => {
+      const { directory, first, second } = await loneVisitorInSecondHall();
+      second.drainMode = "hang";
+      first.leave();
+      await settle();
+      expect(second.drainedTo).toBe(1);
+
+      const outcome = await Promise.race([directory.seat(null), new Promise<"stalled">((resolve) => setTimeout(() => resolve("stalled"), 500))]);
+      expect(outcome).toMatchObject({ hall: 1 });
+    });
+
+    it("reports a failed hand-over and offers it again on the next change", async () => {
+      const { directory, errors, first, second } = await loneVisitorInSecondHall();
+      second.drainMode = "fail";
+      first.leave();
+      await settle();
+      expect(errors).toHaveLength(1);
+      expect(second.draining).toBe(false);
+      expect(directory.list().map((info) => info.hall)).toEqual([1, 2]);
+
+      second.drainMode = "ok";
+      first.leave();
+      await settle();
+      expect(second.drainedTo).toBe(1);
+      expect(directory.list().map((info) => info.hall)).toEqual([1]);
+    });
+  });
+
+  it("refuses seats while too many are waiting to be used and accepts again once one is taken", async () => {
+    const { directory, rooms } = makeDirectory();
+    for (let i = 0; i < MAX_PENDING_SEATS; i += 1) await directory.seat(null);
+    await expect(directory.seat(null)).rejects.toBeInstanceOf(HallsBusyError);
+
+    rooms.get(1)!.join();
+    await expect(directory.seat(null)).resolves.toMatchObject({ fellBack: false });
+    await expect(directory.seat(null)).rejects.toBeInstanceOf(HallsBusyError);
   });
 
   it("refuses seats once the server is shutting down", async () => {

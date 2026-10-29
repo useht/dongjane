@@ -2,7 +2,7 @@ import { HALL_CAPACITY, HALL_SPARE_AT, type HallInfo, type SeatResponse } from "
 
 export const SEAT_RESERVATION_MS = 5000;
 export const RELOCATION_GRACE_MS = 5000;
-const MAX_PENDING_SEATS = 200;
+export const MAX_PENDING_SEATS = 200;
 
 export interface HallSnapshot {
   hall: number;
@@ -22,15 +22,15 @@ const byHall = (a: HallSnapshot, b: HallSnapshot): number => a.hall - b.hall;
 
 export function chooseSeat(halls: readonly HallSnapshot[], requested: number | null): { hall: number; create: boolean } {
   const open = halls.filter((info) => !info.draining && load(info) < HALL_CAPACITY).sort(byHall);
-  const chosen = open.find((info) => info.hall === requested) ?? open[0];
+  const chosen = open.find((info) => info.hall === requested && info.clients >= 1) ?? open[0];
   if (chosen) return { hall: chosen.hall, create: false };
   return { hall: halls.reduce((highest, info) => Math.max(highest, info.hall), 0) + 1, create: true };
 }
 
 export function planHalls(halls: readonly HallSnapshot[]): HallPlan {
   const active = halls.filter((info) => !info.draining);
-  const top = active.filter((info) => load(info) > 0).sort(byHall).at(-1);
-  const spare = top !== undefined && load(top) >= HALL_SPARE_AT ? top.hall + 1 : null;
+  const top = active.filter((info) => info.clients > 0).sort(byHall).at(-1);
+  const spare = top !== undefined && top.clients >= HALL_SPARE_AT ? top.hall + 1 : null;
 
   return {
     create: spare !== null && !halls.some((info) => info.hall === spare) ? spare : null,
@@ -46,7 +46,7 @@ function planRelocation(active: readonly HallSnapshot[]): HallPlan["relocation"]
   const lone = active.filter((info) => info.clients === 1 && info.pending === 0).sort(byHall).reverse();
   for (const source of lone) {
     const target = active
-      .filter((info) => info.hall !== source.hall && load(info) >= 1 && load(info) < HALL_CAPACITY)
+      .filter((info) => info.hall !== source.hall && info.clients >= 1 && info.clients < HALL_CAPACITY)
       .sort(byHall)[0];
     if (target) return { source: source.hall, target: target.hall };
   }
@@ -58,6 +58,7 @@ export interface DirectoryRoom {
   readonly hall: number;
   readonly population: number;
   readonly draining: boolean;
+  /** Starts the hand-over; must have cleared `draining` again if it rejects. */
   drain(target: number): Promise<void>;
   close(): Promise<unknown>;
 }
@@ -167,7 +168,8 @@ export class HallDirectory {
     for (const hall of plan.dispose) await this.rooms.get(hall)?.close();
     if (plan.create !== null && !this.closing) await this.options.create(plan.create);
     if (plan.relocation && !this.closing) {
-      await this.rooms.get(plan.relocation.source)?.drain(plan.relocation.target);
+      const { source, target } = plan.relocation;
+      void this.rooms.get(source)?.drain(target).catch((error: unknown) => this.options.onError?.(error));
     }
   }
 

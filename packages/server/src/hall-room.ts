@@ -1,4 +1,4 @@
-import { type Client, Room, ServerError } from "@colyseus/core";
+import { type Client, Room, ServerError, logger } from "@colyseus/core";
 import {
   type JoinOptions,
   HALL_CAPACITY,
@@ -116,12 +116,16 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
     const name = sanitizeName(options?.name) || defaultName();
     const hue = normalizeHue(options?.hue) ?? randomHue();
     this.sim.join(client.sessionId, name, hue);
-    if (this.drainTarget !== null) client.send(MSG.relocate, { hall: this.drainTarget } satisfies RelocateMessage);
+    this.sendRelocation(client);
     this.directory?.joined(this);
   }
 
   override onDrop(client: Client): void {
     this.allowReconnection(client, this.reconnectSeconds);
+  }
+
+  override onReconnect(client: Client): void {
+    this.sendRelocation(client);
   }
 
   override onLeave(client: Client): void {
@@ -141,11 +145,23 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
   async drain(target: number): Promise<void> {
     if (this.drainTarget !== null) return;
     this.drainTarget = target;
-    await this.lock();
-    this.broadcast(MSG.relocate, { hall: target } satisfies RelocateMessage);
-    this.clock.setTimeout(() => {
-      if (this.population > 0) void this.disconnect();
-    }, this.relocationGraceMs);
+    try {
+      await this.lock();
+      this.broadcast(MSG.relocate, { hall: target } satisfies RelocateMessage);
+      this.clock.setTimeout(() => {
+        if (this.population > 0) {
+          this.disconnect().catch((error: unknown) => logger.error("closing merged hall failed", error));
+        }
+      }, this.relocationGraceMs);
+    } catch (error) {
+      this.drainTarget = null;
+      await this.unlock().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private sendRelocation(client: Client): void {
+    if (this.drainTarget !== null) client.send(MSG.relocate, { hall: this.drainTarget } satisfies RelocateMessage);
   }
 
   private scheduleChant(): void {

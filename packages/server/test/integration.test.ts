@@ -1,4 +1,5 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { logger } from "@colyseus/core";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   BOW_MS,
   CHANT_MS,
@@ -10,6 +11,7 @@ import {
   SEAT_PATH,
   isHallFullError,
 } from "@dongjane/shared";
+import { HallRoom } from "../src/hall-room.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { type HallClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
@@ -79,11 +81,30 @@ describe("seating", () => {
   it("takes visitors to the hall whose number they give and falls back to the lowest hall with room", async () => {
     await rig.fill(1, HALL_CAPACITY);
     await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+    await rig.enter(2);
 
     expect(await rig.seat(2)).toMatchObject({ hall: 2, fellBack: false });
     expect(await rig.seat(1)).toMatchObject({ hall: 2, fellBack: true });
     expect(await rig.seat(9)).toMatchObject({ hall: 2, fellBack: true });
     expect(await rig.seat(null)).toMatchObject({ hall: 2, fellBack: false });
+  }, 20_000);
+
+  it("seats a visitor who asks for the empty spare hall in the crowded hall and does not merge them back", async () => {
+    await rig.fill(1, HALL_SPARE_AT);
+    await eventually(() => rig.halls(), (list) => list.some((info) => info.hall === 2), "hall 2 opened");
+
+    const { seat, room } = await rig.arrive(2);
+    expect(seat).toMatchObject({ hall: 1, fellBack: true });
+    const relocations: number[] = [];
+    room.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+    await sleep(500);
+
+    expect(relocations).toEqual([]);
+    expect(room.connection.isOpen).toBe(true);
+    expect((await rig.halls()).map((info) => [info.hall, info.clients])).toEqual([
+      [1, HALL_SPARE_AT + 1],
+      [2, 0],
+    ]);
   }, 20_000);
 
   it("treats an unusable hall number as no preference", async () => {
@@ -162,6 +183,26 @@ describe("merging halls", () => {
       4000,
     );
     expect(halls.find((info) => info.hall === 1)?.clients).toBe(HALL_CAPACITY);
+  }, 20_000);
+
+  it("offers the hand-over again after one fails and does not leave the hall stuck", async () => {
+    const { crowd, relocations } = await loneVisitorInHall2();
+    const lock = vi.spyOn(HallRoom.prototype, "lock").mockRejectedValueOnce(new Error("lock failed"));
+    const reported = vi.spyOn(logger, "error").mockImplementation(() => undefined);
+    try {
+      await crowd[0]!.leave(true);
+      await waitFor(() => reported.mock.calls.length > 0, "failure reported", 3000);
+      expect(lock).toHaveBeenCalledTimes(1);
+      expect((await rig.hall(2)).clients).toBe(1);
+      expect(relocations).toEqual([]);
+
+      await crowd[1]!.leave(true);
+      await waitFor(() => relocations.length > 0, "relocation notice after the retry", 3000);
+      expect(relocations).toEqual([1]);
+    } finally {
+      lock.mockRestore();
+      reported.mockRestore();
+    }
   }, 20_000);
 
   it("closes the hall on a visitor who does not follow the relocation notice", async () => {

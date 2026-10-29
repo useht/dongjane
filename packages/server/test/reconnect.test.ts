@@ -1,4 +1,5 @@
 import { CloseCode } from "@colyseus/sdk";
+import { HALL_CAPACITY, MSG, TempleState } from "@dongjane/shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { TestRig, eventually, sleep, waitFor } from "./helpers.ts";
@@ -24,6 +25,26 @@ afterAll(async () => {
 });
 
 describe("reconnection window", () => {
+  it("tells a visitor who comes back into a hall that is being merged to move on", async () => {
+    const crowd = await rig.fill(1, HALL_CAPACITY);
+    await eventually(() => rig.halls(), (halls) => halls.some((info) => info.hall === 2), "hall 2 opened");
+    const lone = await rig.enter(2);
+    const token = lone.reconnectionToken;
+    lone.reconnection.enabled = false;
+    lone.connection.close(CloseCode.MAY_TRY_RECONNECT);
+    await sleep(200);
+
+    await crowd[0]!.leave(true);
+    await eventually(() => rig.halls(), (halls) => halls.every((info) => info.hall !== 2), "hall 2 hidden while merging");
+
+    const back = await rig.client.reconnect(token, TempleState);
+    rig.rooms.push(back);
+    const relocations: number[] = [];
+    back.onMessage(MSG.relocate, (message: { hall: number }) => relocations.push(message.hall));
+    await waitFor(() => relocations.length > 0, "relocation notice after reconnecting", 3000);
+    expect(relocations).toEqual([1]);
+  }, 20_000);
+
   it("keeps a hall open while its only visitor is reconnecting", async () => {
     const a = await rig.enter(1);
     const sessionId = a.sessionId;
