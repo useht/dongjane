@@ -1,0 +1,16 @@
+{
+  "title": "석조여래좌상 (부여 군수리 석조여래좌상, 1963, 보물, 소장품번호 M번435)",
+  "url": "https://www.museum.go.kr/MUSEUM/contents/M0505000000.do?schM=view&searchId=search&relicId=188866",
+  "file": "mno000435-30004.obj",
+  "sha256": "0bdafabb6560cf1881b1b2067287b88cf611b483eb10c869ef25bf1f8fde2269",
+  "author": "국립중앙박물관",
+  "licence": "국립중앙박물관이(가) 창작한 석조여래좌상 저작물은 공공누리 \"출처표시\" 조건에 따라 이용할 수 있습니다.",
+  "licenceKind": "KOGL 제1유형 (출처표시)",
+  "replicaNotice": "지정문화유산의 실물 복제품을 제작하고자 하는 경우는 별도의 허가 신청이 필요합니다.",
+  "upAxis": "Y",
+  "frontAxis": "+Z",
+  "companions": {
+    "mno000435-30004.mtl": "4d675e73bb3b0f959e74f00906ddd55461df620c607ba06ca8df07b578dc0348",
+    "museum31744_diffuse_2048_q85.jpg": "2b1d8a220495c0b7c037a105c1862dd2c6fe760381a4a2a1f1d73778d9378a6b"
+  }
+}

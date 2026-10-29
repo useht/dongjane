@@ -2,20 +2,23 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
-import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
+import { BUDDHA_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
+import { MODELS, type ModelKey, type ModelLoader, collectMeshes, headOf, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
-const EAGER_KEYS = ["gatbawi", "venue", "world"];
+const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
+const EAGER_KEYS = ["buddha", "gatbawi", "venue", "world"];
 const textured: readonly string[] = TEXTURED;
 
-function group(names: readonly string[], withMap = true): Group {
+const HEAD = { headTop: [0, 1, 0.04], headRadius: 0.074 };
+
+function group(names: readonly string[], withMap = true, extras: Record<string, unknown> = HEAD): Group {
   const root = new Group();
   for (const name of names) {
     const material = new MeshStandardMaterial();
     if (withMap && textured.includes(name)) material.map = new Texture();
     const mesh = new Mesh(new BufferGeometry(), material);
     mesh.name = name;
+    if (name === "buddha") Object.assign(mesh.userData, extras);
     root.add(mesh);
   }
   return root;
@@ -54,12 +57,27 @@ describe("collectMeshes", () => {
   it("names the model and the mesh that is missing", () => {
     const root = group(WORLD_MESHES.filter((name) => name !== "ground"));
     expect(() => collectMeshes(root, "world")).toThrow('world.glb: missing mesh "ground"');
-    expect(() => collectMeshes(group(GATBAWI_MESHES.filter((name) => name !== "figure")), "gatbawi")).toThrow('gatbawi.glb: missing mesh "figure"');
+    expect(() => collectMeshes(group(GATBAWI_MESHES.filter((name) => name !== "hatStone")), "gatbawi")).toThrow('gatbawi.glb: missing mesh "hatStone"');
+    expect(() => collectMeshes(group([]), "buddha")).toThrow('buddha.glb: missing mesh "buddha"');
+  });
+
+  it("rejects a Buddha that does not say where his head is", () => {
+    expect(collectMeshes(group(BUDDHA_MESHES), "buddha").buddha.name).toBe("buddha");
+    for (const extras of [{}, { headTop: [0, 1, 0] }, { headRadius: 0.07 }, { headTop: [0, 1], headRadius: 0.07 }, { headTop: [0, "1", 0], headRadius: 0.07 }, { headTop: [0, 1, 0], headRadius: 0 }]) {
+      expect(() => collectMeshes(group(BUDDHA_MESHES, true, extras), "buddha"), JSON.stringify(extras)).toThrow(/does not say where its head is/);
+    }
   });
 
   it("rejects a textured mesh that lost its texture", () => {
     expect(() => collectMeshes(group(WORLD_MESHES, false), "world")).toThrow(/has no texture/);
     expect(() => collectMeshes(group(GATBAWI_MESHES, false), "gatbawi")).toThrow(/has no texture/);
+  });
+});
+
+describe("headOf", () => {
+  it("reads the crown and the head radius off the mesh", () => {
+    const mesh = collectMeshes(group(BUDDHA_MESHES), "buddha").buddha;
+    expect(headOf(mesh)).toEqual({ top: [0, 1, 0.04], radius: 0.074 });
   });
 });
 
@@ -80,7 +98,7 @@ describe("textureOf and normalOf", () => {
 
 describe("loadGameAssets", () => {
   it("serves one glb per model", () => {
-    expect(Object.keys(MODELS).sort()).toEqual(["dharma", ...EAGER_KEYS]);
+    expect(Object.keys(MODELS).sort()).toEqual([...EAGER_KEYS, "dharma"].sort());
     for (const url of Object.values(MODELS)) expect(url).toMatch(/\.glb$/);
   });
 
@@ -153,6 +171,17 @@ describe("loadGameAssets", () => {
     }
   });
 
+  it("gives the shipped Buddha one picture, no vertex colour, and the head the game seats the hat stone on", async () => {
+    const { buddha } = (await loadGameAssets(diskLoader())).models;
+    expect(textureOf(buddha.buddha)).toBeInstanceOf(Texture);
+    expect(normalOf(buddha.buddha)).toBeNull();
+    expect(buddha.buddha.geometry.hasAttribute("color")).toBe(false);
+    const { top, radius } = headOf(buddha.buddha);
+    expect(top[1]).toBeCloseTo(1, 2);
+    expect(radius).toBeGreaterThan(0.04);
+    expect(radius).toBeLessThan(0.12);
+  });
+
   it("gives the world one textured mat prototype that also carries vertex colour", async () => {
     const { world } = (await loadGameAssets(diskLoader())).models;
     expect(textureOf(world.mat)).toBeInstanceOf(Texture);
@@ -184,7 +213,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries.size).toBe(GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
+    expect(geometries.size).toBe(GATBAWI_MESHES.length + BUDDHA_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
     expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
     expect([...geometries.values()].every((times) => times === 1)).toBe(true);
     expect([...textures.values()].every((times) => times === 1)).toBe(true);

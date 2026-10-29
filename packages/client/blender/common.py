@@ -624,13 +624,14 @@ GLTF_OPTIONS = {
 }
 
 
-def export_glb(objects, path):
+def export_glb(objects, path, **overrides):
+    options = {**GLTF_OPTIONS, **overrides}
     properties = bpy.ops.export_scene.gltf.get_rna_type().properties
-    unknown = [key for key in GLTF_OPTIONS if key not in properties]
+    unknown = [key for key in options if key not in properties]
     if unknown:
         raise RuntimeError(f"glTF exporter in Blender {bpy.app.version_string} has no option(s): {unknown}")
     bpy.ops.object.select_all(action="DESELECT")
     for obj in objects:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
-    bpy.ops.export_scene.gltf(filepath=path, **GLTF_OPTIONS)
+    bpy.ops.export_scene.gltf(filepath=path, **options)

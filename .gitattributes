@@ -1,3 +1,4 @@
 *.glb binary
 *.jpg binary
 *.py text eol=lf
+packages/client/blender/sources/buddha/* binary

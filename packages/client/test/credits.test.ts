@@ -8,6 +8,13 @@ describe("credits", () => {
     expect(chant?.licence).toBe("CC BY");
   });
 
+  it("name the museum's seated Buddha, free to use with its name credited", () => {
+    const buddha = CREDITS.find((credit) => credit.title === "부여 군수리 석조여래좌상");
+    expect(buddha?.author).toBe("국립중앙박물관");
+    expect(buddha?.licence).toContain("공공누리 제1유형");
+    expect(buddha?.url).toContain("relicId=188866");
+  });
+
   it("are complete, each with a page to visit", () => {
     for (const credit of CREDITS) {
       for (const field of [credit.title, credit.author, credit.provider, credit.licence, credit.changes]) {

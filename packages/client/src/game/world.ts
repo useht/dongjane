@@ -145,7 +145,7 @@ export class World {
     this.scene.background = this.background;
     this.scene.fog = this.fog;
 
-    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.venue);
+    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.buddha, assets.models.venue);
     this.scene.add(this.landscape.group);
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
@@ -207,7 +207,7 @@ export class World {
       .loadDharma()
       .then((meshes) => {
         if (this.disposed) return false;
-        const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.venue.lantern);
+        const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.buddha.buddha, this.assets.models.venue.lantern);
         scene.setPresence(this.indoorShare());
         this.scene.add(scene.group);
         this.dharma = scene;

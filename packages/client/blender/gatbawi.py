@@ -1,10 +1,12 @@
-"""gatbawi.glb: the stone Buddha of Palgongsan with his hat stone, his pedestal and the offerings.
+"""gatbawi.glb: what stands around the stone Buddha of Palgongsan - his hat stone, his pedestal and the offerings.
 
-There is no licence-clean scan of the statue, so it is modelled by hand here. Everything is drawn in
-the game's own coordinates (Y up, the face toward +Z) through a Part whose frame is GAME, around one
-origin: the middle of the pedestal's foot. The game stands that origin on the platform at GATBAWI_Z.
-The three stone meshes share one rock picture (box-projected UVs, vertex colours multiply it); the
-offerings are plain vertex colours.
+The Buddha himself is buddha.glb (buddha.py); the game stands it on the pedestal's top. Everything here is drawn
+in the game's own coordinates (Y up, the face toward +Z) through a Part whose frame is GAME, around one origin:
+the middle of the pedestal's foot, which the game stands on the platform at GATBAWI_Z. The hat stone and the
+pedestal share one rock picture (box-projected UVs, vertex colours multiply it); the offerings are plain vertex
+colours. The hat stone is drawn one metre in radius, centred on its underside: the game scales it to the statue's
+head (its size comes from the head buddha.py measured) and sets it on the crown, and its picture is laid out
+to match the size it will have.
 """
 
 import math
@@ -13,20 +15,12 @@ import os
 from mathutils import Matrix, Vector
 
 import common
-from common import GAME, SPIN_Y, Part, at, fbm, interpolate, mix, rgb, scaled, smooth_profile, smoothstep, spun
+from common import GAME, SPIN_Y, Part, at, fbm, mix, rgb, scaled, smoothstep, spun
 
 SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
 STONE_TILE = 1.6  # metres of statue per repeat of the rock picture
 
 PEDESTAL_TIERS = ((3.4, 0.4, 1.9), (3.0, 0.32, 1.6))  # width, height, depth; stacked from y = 0
-PEDESTAL_Z = 0.05
-HEAD = Vector((0.0, 3.22, 0.04))
-HEAD_RADII = (0.55, 0.56, 0.47)
-HAT_BASE = 3.62
-LAP = {"center": (0.0, 1.1, 0.1), "radii": (1.45, 0.42, 0.78)}
-TORSO_BASE = 1.0
-TORSO_SQUASH = 0.6
-TORSO = ((1.05, 1.0), (1.0, 1.35), (0.92, 1.8), (0.88, 2.15), (0.95, 2.45), (0.72, 2.68), (0.34, 2.84), (0.3, 2.95))
 
 TABLE_Z = 1.25
 TABLE = (2.3, 0.46)  # width, depth
@@ -34,137 +28,57 @@ TABLE_HEIGHT = 0.38
 POT_COUNT = 8
 
 
-def stone_tone(c, seed):
-    """Granite that is a little blotchy, stained in the cracks and mossy near the ground; a function of position."""
+def stone_tone(c, seed, size=1.0, mossy=True):
+    """Granite that is a little blotchy, stained in the cracks and, when `mossy`, green near the ground.
+
+    A function of position; `size` is the factor the game will scale the part by, so the blotches come out the size
+    they would be on a part drawn at its final size."""
     granite, shade, moss = rgb(c["granite"]), rgb(c["graniteShade"]), rgb(c["moss"])
+    frequency = 1.0 / size
 
     def tone(p):
-        blotch = 0.5 + 0.5 * fbm(p.x * 1.7, p.y * 1.7, p.z * 1.7, seed)
+        x, y, z = p.x * frequency, p.y * frequency, p.z * frequency
+        blotch = 0.5 + 0.5 * fbm(x * 1.7, y * 1.7, z * 1.7, seed)
         base = mix(scaled(granite, 0.92 + 0.08 * blotch), shade, 0.38 * smoothstep(0.55, 0.95, blotch))
-        patch = 0.5 + 0.5 * fbm(p.x * 3.1, p.y * 3.1, p.z * 3.1, seed + 11.0)
-        low = 1.0 - smoothstep(0.05, 0.55, p.y)
+        if not mossy:
+            return base
+        patch = 0.5 + 0.5 * fbm(x * 3.1, y * 3.1, z * 3.1, seed + 11.0)
+        low = 1.0 - smoothstep(0.05, 0.55, y)
         return mix(base, moss, min(0.7, 0.8 * low * smoothstep(0.35, 0.8, patch)))
 
     return tone
 
 
-def head_z(x, y):
-    """Where the face is at (x, y): the front of the head ellipsoid."""
-    rx, ry, rz = HEAD_RADII
-    inside = 1.0 - (x / rx) ** 2 - ((y - HEAD.y) / ry) ** 2
-    return HEAD.z + rz * math.sqrt(max(inside, 0.0))
-
-
-def torso_z(x, y):
-    """Where the robe front is at (x, y): the torso lathe, flattened front to back."""
-    radius = interpolate(TORSO, y)
-    return TORSO_SQUASH * math.sqrt(max(radius * radius - x * x, 0.0))
-
-
-def pedestal(c):
+def pedestal(c, z):
     part = Part("pedestal", frame=GAME)
     tone = part.in_game(stone_tone(c, 3.0))
     base = 0.0
     for width, height, depth in PEDESTAL_TIERS:
-        faces = part.box((0.0, base + height / 2, PEDESTAL_Z), (width, height, depth), tone, skip=("-y",), cuts=(9, 2, 5))
+        faces = part.box((0.0, base + height / 2, z), (width, height, depth), tone, skip=("-y",), cuts=(9, 2, 5))
         part.displace(faces, lambda co: tuple(0.025 * fbm(co.x * 2.3, co.y * 2.3, co.z * 2.3, seed) for seed in (1.0, 2.0, 3.0)))
         base += height
     part.project_uv(STONE_TILE)
     return part
 
 
-def body(part, c):
-    """The robed body: a broad lap, two knees and the torso with its pleats."""
-    tone = part.in_game(stone_tone(c, 5.0))
-    part.ellipsoid(LAP["center"], LAP["radii"], 40, 14, tone)
-    for side in (-1.0, 1.0):
-        part.ellipsoid((side * 0.92, 1.22, 0.52), (0.46, 0.3, 0.34), 20, 10, tone)
+def hat_stone(c, radius):
+    """A thin, irregular slab, slightly dished and tilted, drawn one metre in radius on its underside's middle.
 
-    def pleats(height, angle):
-        band = smoothstep(1.05, 1.5, height) * (1.0 - smoothstep(2.3, 2.6, height))
-        return 1.0 + 0.035 * band * math.cos(7.0 * angle) + 0.012 * math.cos(13.0 * angle + 1.0)
-
-    profile = smooth_profile([(r, h - TORSO_BASE) for r, h in TORSO], 3)
-    with part.placed(spun(0.0, TORSO_BASE, 0.0)):
-        part.lathe(profile, 44, tone, fold=lambda h, a: pleats(h + TORSO_BASE, a), squash=TORSO_SQUASH)
-
-
-def arms(part, c):
-    tone = part.in_game(stone_tone(c, 7.0))
-    for side in (-1.0, 1.0):
-        arm = [(side * 0.86, 2.42, 0.02), (side * 1.12, 1.78, 0.08), (side * 1.03, 1.55, 0.5)]
-        part.tube(arm, [0.27, 0.27, 0.21], 12, tone, up=(0.0, 0.0, 1.0))
-        part.ellipsoid(arm[0], (0.27, 0.27, 0.27), 14, 8, tone)
-        part.ellipsoid((side * 0.98, 1.47, 0.7), (0.21, 0.1, 0.23), 12, 6, tone)
-
-
-def robe_lines(part, c):
-    """A V neckline and a sash across the chest, raised a little off the robe."""
-    groove = scaled(rgb(c["graniteShade"]), 0.62)
-    sash_color = mix(rgb(c["graniteShade"]), rgb(c["granite"]), 0.55)
-    lift = 0.03
-    for side in (-1.0, 1.0):
-        neck = [(side * 0.34 * t, 2.82 - 0.7 * t) for t in (1.0, 0.7, 0.4, 0.0)]
-        part.tube([(x, y, torso_z(x, y) + lift) for x, y in neck], [0.026] * 4, 5, groove, up=(0.0, 0.0, 1.0), flat=0.6)
-    sash = []
-    for i in range(9):
-        t = i / 8.0
-        x, y = -0.5 + 1.15 * t, 2.62 - 0.95 * t
-        sash.append((x, y, torso_z(x, y) + lift))
-    part.tube(sash, [0.08] * 9, 6, sash_color, up=(0.0, 0.0, 1.0), flat=0.45)
-
-
-def face(part, c):
-    dark = scaled(rgb(c["graniteShade"]), 0.5)
-    mid = rgb(c["graniteShade"])
-    skin = part.in_game(stone_tone(c, 9.0))
-    lift = 0.012
-
-    def on_face(x, y, extra=lift):
-        return (x, y, head_z(x, y) + extra)
-
-    for side in (-1.0, 1.0):
-        brow = [on_face(side * (0.08 + 0.2 * t), 3.4 + 0.035 * math.sin(math.pi * t)) for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
-        part.tube(brow, [0.0, 0.022, 0.026, 0.02, 0.0], 5, mid, up=(0.0, 0.0, 1.0), flat=0.6)
-        eye = [on_face(side * (0.09 + 0.18 * t), 3.31 - 0.02 * math.sin(math.pi * t)) for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
-        part.tube(eye, [0.0, 0.014, 0.018, 0.014, 0.0], 5, dark, up=(0.0, 0.0, 1.0), flat=0.5)
-        ear = [(side * 0.5, 3.4, 0.0), (side * 0.545, 3.12, 0.0), (side * 0.5, 2.8, 0.03)]
-        part.tube(ear, [0.045, 0.075, 0.045], 6, skin, up=(1.0, 0.0, 0.0), flat=0.45)
-        part.ellipsoid(on_face(side * 0.045, 3.1, 0.01), (0.022, 0.016, 0.02), 6, 4, dark)
-    part.tube([on_face(0.0, 3.34), on_face(0.0, 3.24, 0.03), on_face(0.0, 3.14, 0.05)], [0.03, 0.04, 0.05], 6, skin, up=(1.0, 0.0, 0.0))
-    part.ellipsoid(on_face(0.0, 3.1, 0.045), (0.07, 0.05, 0.05), 10, 6, skin)
-    mouth = [on_face(x, 2.98 - 0.02 * (1.0 - (x / 0.13) ** 2) + 0.01 * (x / 0.13) ** 2) for x in (-0.13, -0.065, 0.0, 0.065, 0.13)]
-    part.tube(mouth, [0.0, 0.014, 0.016, 0.014, 0.0], 5, dark, up=(0.0, 0.0, 1.0), flat=0.5)
-    part.ellipsoid(on_face(0.0, 2.93, 0.018), (0.095, 0.03, 0.035), 10, 5, skin)
-
-
-def figure(c):
-    part = Part("figure", frame=GAME)
-    body(part, c)
-    arms(part, c)
-    part.ellipsoid(tuple(HEAD), HEAD_RADII, 36, 20, part.in_game(stone_tone(c, 8.0)))
-    face(part, c)
-    robe_lines(part, c)
-    part.project_uv(STONE_TILE)
-    return part
-
-
-def hat_stone(c):
-    """A thin, irregular slab, slightly dished and tilted, overhanging the head all round."""
+    `radius` is the size the game will scale it to; it sets the size of the rock picture's repeat and blotches."""
     part = Part("hatStone", frame=GAME)
     under = scaled(rgb(c["graniteShade"]), 0.8)
-    upper = stone_tone(c, 12.0)
+    upper = stone_tone(c, 12.0, radius, mossy=False)
 
     def tone(p):
-        return mix(under, upper(p), smoothstep(HAT_BASE - 0.02, HAT_BASE + 0.06, p.y))
+        return mix(under, upper(p), smoothstep(-0.02, 0.06, p.y))
 
     def outline(height, angle):
         return 1.0 + 0.07 * fbm(math.cos(angle) * 1.6, math.sin(angle) * 1.6, 0.0, 4.0) + 0.025 * math.cos(5.0 * angle + 0.4)
 
     profile = ((0.0, 0.0), (0.88, 0.0), (0.99, 0.045), (1.02, 0.12), (0.98, 0.2), (0.82, 0.235), (0.3, 0.215), (0.0, 0.205))
-    with part.placed(spun(0.0, HAT_BASE, 0.02) @ Matrix.Rotation(0.035, 4, "X")):
+    with part.placed(spun(0.0, 0.0, 0.0) @ Matrix.Rotation(0.035, 4, "X")):
         part.lathe(profile, 44, part.in_game(tone), fold=outline, squash=0.93)
-    part.project_uv(STONE_TILE)
+    part.project_uv(STONE_TILE / radius)
     return part
 
 
@@ -213,17 +127,26 @@ def offerings(c):
     return part
 
 
-def build(inputs, out_dir):
+def build(inputs, out_dir, head):
+    """`head` is what buddha.py measured on the statue: the hat stone is made the size the game will give it."""
     c = inputs["material"]
+    statue = inputs["layout"]["GATBAWI_STATUE"]
+    if abs(sum(height for _, height, _ in PEDESTAL_TIERS) - statue["seatY"]) > 1e-6:
+        raise RuntimeError("the pedestal is not as tall as the statue's seat in GATBAWI_STATUE")
+    hat_radius = statue["hatHeads"] * head["headRadius"] * statue["height"]
     stone = common.textured_material("gatbawi", os.path.join(SOURCES, "rock_boulder_dry_diff.jpg"), os.path.join(SOURCES, "rock_boulder_dry_nor_gl.jpg"))
     plain = common.vertex_color_material("offerings")
+    # The hat stone is drawn at the origin, inside the pedestal: it is shaded alone, then kept out of the others' light.
+    hat = hat_stone(c, hat_radius).build(stone)
+    common.bake_vertex_occlusion([hat], distance=0.45 / hat_radius, samples=64, floor=0.45)
+    hat.hide_render = True
     objects = {
-        "figure": figure(c).build(stone),
-        "hatStone": hat_stone(c).build(stone),
-        "pedestal": pedestal(c).build(stone),
+        "hatStone": hat,
+        "pedestal": pedestal(c, statue["seatZ"]).build(stone),
         "offerings": offerings(c).build(plain),
     }
-    common.bake_vertex_occlusion(list(objects.values()), distance=0.45, samples=64, floor=0.45)
+    common.bake_vertex_occlusion([objects["pedestal"], objects["offerings"]], distance=0.45, samples=64, floor=0.45)
+    hat.hide_render = False
     names = inputs["names"]["GATBAWI_MESHES"]
     if sorted(objects) != sorted(names):
         raise RuntimeError(f"gatbawi meshes {sorted(objects)} differ from the contract {sorted(names)}")

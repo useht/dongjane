@@ -17,9 +17,11 @@ export const DHARMA = {
 // The 수미단 the Buddha sits on, against the back wall.
 export const ALTAR = { halfWidth: 4, minZ: -7.9, maxZ: -5.3, topY: 1 } as const;
 
-// The Buddha model is drawn with its lotus throne's bottom 0.45 m below its own origin, so the
-// origin stands that far above the altar's top and the lotus rests on it.
-export const BUDDHA_AT = { x: 0, y: ALTAR.topY + 0.45, z: -6.6 } as const;
+// The scanned Buddha (buddha.glb, which is 1 m tall and stands on its own origin) is scaled to `BUDDHA_HEIGHT` and stood at
+// `BUDDHA_AT`: the middle of his base, `LOTUS_EMBED` below the lotus' flat top, which dharma.glb draws with its foot on the altar.
+export const BUDDHA_HEIGHT = 2.2;
+export const LOTUS_EMBED = 0.1;
+export const BUDDHA_AT = { x: 0, y: ALTAR.topY + 0.2, z: -6.6 } as const;
 
 // The doorway in the front wall: always open, it is where visitors walk in from the court.
 export const DHARMA_DOOR = { halfWidth: 1.6, height: 3.4 } as const;

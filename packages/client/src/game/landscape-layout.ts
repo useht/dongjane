@@ -7,6 +7,12 @@ export const SUN_TARGET = [2.5, 1, 6.5] as const;
 // The moon rises over the statue, in front of the default view.
 export const MOON_DIRECTION = [0.3, 0.5, -0.8] as const;
 
+// The scanned Buddha (buddha.glb, 1 m tall) is scaled to `height` and stood on the pedestal's top, `seatY` above the platform
+// and `seatZ` in front of the pedestal's foot (gatbawi.py draws the pedestal to match). The hat stone is authored one metre
+// in radius; the game makes its radius `hatHeads` head radii (the head's radius is in the glb) and sinks its underside
+// `hatSink` head radii under the crown, so the topknot is hidden in it.
+export const GATBAWI_STATUE = { height: 3.4, seatY: 0.72, seatZ: 0.05, hatHeads: 2.3, hatSink: 0.5 } as const;
+
 export const SKY_RADIUS = 70;
 export const SHADOW_HALF_EXTENT = 15;
 

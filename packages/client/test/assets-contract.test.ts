@@ -1,11 +1,12 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
-import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
-import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
+import { BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
+import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
+import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
-import { type Glb, type GlbNode, colors, loadGlb, positions, rootNodes } from "./glb.ts";
+import { type Glb, type GlbNode, colors, jpegSize, loadGlb, positions, rootNodes } from "./glb.ts";
 
 const MODELS = new URL("../src/assets/models/", import.meta.url);
 const TOLERANCE = 0.03;
@@ -134,16 +135,16 @@ describe("gatbawi.glb", () => {
     expect(Math.abs(mesh("pedestal").positions.min[1])).toBeLessThanOrEqual(TOLERANCE);
   });
 
-  it("is a four-metre figure on its pedestal, the hat stone on his head, facing +Z", () => {
-    const figure = mesh("figure").positions;
+  it("tops the pedestal where the scanned statue sits, and draws the hat stone a metre in radius on its own underside", () => {
+    expect(Math.abs(mesh("pedestal").positions.max[1] - GATBAWI_STATUE.seatY)).toBeLessThanOrEqual(TOLERANCE);
     const hat = mesh("hatStone").positions;
-    const pedestal = mesh("pedestal").positions;
-    expect(figure.min[1]).toBeGreaterThanOrEqual(pedestal.max[1] - 0.1);
-    expect(hat.min[1]).toBeGreaterThan(figure.max[1] - 0.4);
-    const height = Math.max(...nodes.map((node) => node.positions.max[1]));
-    expect(height).toBeGreaterThanOrEqual(3.5);
-    expect(height).toBeLessThanOrEqual(4.5);
-    expect(figure.max[2]).toBeGreaterThan(-figure.min[2]);
+    expect(hat.min[1]).toBeGreaterThanOrEqual(-0.06);
+    expect(hat.min[1]).toBeLessThanOrEqual(0);
+    expect(hat.max[1]).toBeLessThan(0.4);
+    for (const axis of [0, 2] as const) {
+      expect(hat.max[axis] - hat.min[axis], "the hat stone is drawn about two metres across").toBeGreaterThan(1.7);
+      expect(hat.max[axis] - hat.min[axis]).toBeLessThan(2.3);
+    }
   });
 
   it("lays the offerings on the platform in front of the pedestal", () => {
@@ -154,7 +155,8 @@ describe("gatbawi.glb", () => {
   });
 
   it("fits on the platform it stands on", () => {
-    const extent = nodes.reduce(
+    // The hat stone is drawn at the origin, to be scaled and lifted onto the statue's head: the statue's own test places it.
+    const extent = nodes.filter((node) => node.name !== "hatStone").reduce(
       (all, node) => ({
         minZ: Math.min(all.minZ, node.positions.min[2]),
         maxZ: Math.max(all.maxZ, node.positions.max[2]),
@@ -169,7 +171,92 @@ describe("gatbawi.glb", () => {
 
   it("paints vertices in linear light, never as sRGB", () => {
     expectLinearColors(glb, nodes, { offerings: "woodDark" });
-    for (const name of ["figure", "hatStone", "pedestal"]) expectCeiling(glb, name, "granite");
+    for (const name of ["hatStone", "pedestal"]) expectCeiling(glb, name, "granite");
+  });
+});
+
+describe("buddha.glb", () => {
+  const glb = loadGlb(new URL("buddha.glb", MODELS));
+  const nodes = expectContract(glb, BUDDHA_MESHES);
+  const buddha = byName(nodes)("buddha");
+  const { min, max } = buddha.positions;
+  const headTop = buddha.extras.headTop as number[];
+  const headRadius = buddha.extras.headRadius as number;
+
+  it("stays inside its size budget", () => {
+    expect(buddha.triangles).toBeLessThanOrEqual(BUDDHA.maxTriangles);
+    expect(buddha.triangles).toBeLessThanOrEqual(BUDGET.buddha.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.buddha.bytes);
+  });
+
+  it("is one metre tall, with its base on the origin and its face toward +Z", () => {
+    expect(Math.abs(max[1] - min[1] - BUDDHA.height)).toBeLessThanOrEqual(0.005);
+    expect(Math.abs(min[1])).toBeLessThanOrEqual(0.005);
+    expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(0.05);
+    expect(max[2], "the knees are in front").toBeGreaterThan(-min[2]);
+  });
+
+  it("says where its head is: the crown inside its bounding box and a head radius that fits a head", () => {
+    expect(Object.keys(buddha.extras).sort()).toEqual([...BUDDHA_EXTRAS].sort());
+    expect(headTop).toHaveLength(3);
+    headTop.forEach((value, axis) => {
+      expect(Number.isFinite(value)).toBe(true);
+      expect(value).toBeGreaterThanOrEqual((min[axis] as number) - 1e-3);
+      expect(value).toBeLessThanOrEqual((max[axis] as number) + 1e-3);
+    });
+    expect(headTop[1], "the crown is the top").toBeGreaterThan(0.95 * BUDDHA.height);
+    expect(headRadius).toBeGreaterThan(0.04);
+    expect(headRadius).toBeLessThan(0.12);
+  });
+
+  it("carries one picture of its light and shade, of the size the build bakes, and no vertex colour", () => {
+    expect(buddha.attributes).not.toContain("COLOR_0");
+    expect(glb.json.images ?? []).toHaveLength(1);
+    expect(jpegSize(glb, 0)).toEqual({ width: BUDDHA.textureSize, height: BUDDHA.textureSize });
+  });
+});
+
+describe("Gatbawi's statue, the scanned Buddha on the pedestal", () => {
+  const gatbawi = loadGlb(new URL("gatbawi.glb", MODELS));
+  const nodes = rootNodes(gatbawi);
+  const buddha = byName(rootNodes(loadGlb(new URL("buddha.glb", MODELS))))("buddha");
+  const { height, seatY, seatZ, hatHeads, hatSink } = GATBAWI_STATUE;
+  const headTop = buddha.extras.headTop as number[];
+  const headRadius = buddha.extras.headRadius as number;
+  const hat = byName(nodes)("hatStone").positions;
+  const hatRadius = hatHeads * headRadius * height;
+  // Where the hat stone's underside is set, in the group's own metres (the platform's top is y = 0).
+  const hatAt = { x: (headTop[0] as number) * height, y: seatY + ((headTop[1] as number) - hatSink * headRadius) * height, z: seatZ + (headTop[2] as number) * height };
+
+  it("stands about three and a half metres tall on a pedestal whose top tier it fits on", () => {
+    expect(height).toBeGreaterThanOrEqual(3.2);
+    expect(height).toBeLessThanOrEqual(3.8);
+    const { values, count } = positions(gatbawi, "pedestal");
+    const top = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+    for (let i = 0; i < count; i += 1) {
+      if ((values[i * 3 + 1] as number) < seatY - 0.02) continue;
+      top.minX = Math.min(top.minX, values[i * 3] as number);
+      top.maxX = Math.max(top.maxX, values[i * 3] as number);
+      top.minZ = Math.min(top.minZ, values[i * 3 + 2] as number);
+      top.maxZ = Math.max(top.maxZ, values[i * 3 + 2] as number);
+    }
+    expect(buddha.positions.min[0] * height).toBeGreaterThanOrEqual(top.minX);
+    expect(buddha.positions.max[0] * height).toBeLessThanOrEqual(top.maxX);
+    expect(seatZ + buddha.positions.min[2] * height).toBeGreaterThanOrEqual(top.minZ);
+    expect(seatZ + buddha.positions.max[2] * height).toBeLessThanOrEqual(top.maxZ);
+  });
+
+  it("wears the hat stone over its head, wider than the head and not far above it, on the platform", () => {
+    expect(hatRadius).toBeGreaterThan(headRadius * height);
+    expect(hatRadius).toBeLessThan(1.2);
+    const crown = seatY + (headTop[1] as number) * height;
+    expect(hatAt.y).toBeLessThan(crown);
+    expect(hatAt.y).toBeGreaterThan(crown - 0.5);
+    const top = hatAt.y + hat.max[1] * hatRadius;
+    expect(top).toBeGreaterThan(crown);
+    expect(top).toBeLessThan(crown + 0.6);
+    expect(GATBAWI_Z + hatAt.z + hat.max[2] * hatRadius).toBeLessThanOrEqual(PLATFORM.maxZ);
+    expect(GATBAWI_Z + hatAt.z + hat.min[2] * hatRadius).toBeGreaterThanOrEqual(PLATFORM.minZ);
   });
 });
 
@@ -466,10 +553,31 @@ describe("dharma.glb", () => {
     expect(lotus.max[0]).toBeLessThanOrEqual(ALTAR.halfWidth);
     expect(lotus.min[2]).toBeGreaterThanOrEqual(ALTAR.minZ - 0.05);
     expect(lotus.max[2]).toBeLessThanOrEqual(ALTAR.maxZ + 0.05);
-    const buddha = mesh("buddha").positions;
-    near((buddha.min[0] + buddha.max[0]) / 2, BUDDHA_AT.x);
-    expect(buddha.min[1]).toBeGreaterThanOrEqual(BUDDHA_AT.y - 0.1);
+    near((lotus.min[0] + lotus.max[0]) / 2, BUDDHA_AT.x);
+    near((lotus.min[2] + lotus.max[2]) / 2, BUDDHA_AT.z);
+    expect(BUDDHA_AT.y, "his base stands on the lotus, above the altar").toBeGreaterThan(ALTAR.topY);
+    expect(BUDDHA_AT.y).toBeLessThan(lotus.max[1]);
     expect(room.minZ, "visitors stop short of the altar").toBeGreaterThan(ALTAR.maxZ);
+  });
+
+  it("fits the scanned Buddha on its lotus and under the ceiling, the halo and glow behind his head", () => {
+    const scan = byName(rootNodes(loadGlb(new URL("buddha.glb", MODELS))))("buddha");
+    const lotus = mesh("lotus").positions;
+    const headTop = scan.extras.headTop as number[];
+    const headRadius = scan.extras.headRadius as number;
+    const width = Math.max(scan.positions.max[0], -scan.positions.min[0]) * BUDDHA_HEIGHT;
+    expect(BUDDHA_AT.x - width).toBeGreaterThanOrEqual(lotus.min[0]);
+    expect(BUDDHA_AT.x + width).toBeLessThanOrEqual(lotus.max[0]);
+    expect(BUDDHA_AT.y + BUDDHA_HEIGHT).toBeLessThan(DHARMA.ceilingHeight - 1);
+    const headY = BUDDHA_AT.y + ((headTop[1] as number) - headRadius) * BUDDHA_HEIGHT;
+    const behind = BUDDHA_AT.z + scan.positions.min[2] * BUDDHA_HEIGHT;
+    for (const name of ["halo", "glow"]) {
+      const { min, max } = mesh(name).positions;
+      expect(max[2], `${name} stands behind the Buddha's back`).toBeLessThan(behind);
+      expect(min[1], `${name} reaches below his head`).toBeLessThan(headY);
+      expect(max[1], `${name} reaches above his head`).toBeGreaterThan(headY + headRadius * BUDDHA_HEIGHT);
+      near((min[0] + max[0]) / 2, BUDDHA_AT.x + (headTop[0] as number) * BUDDHA_HEIGHT);
+    }
   });
 
   it("keeps the seats clear of the altar and inside the room, each facing the Buddha", () => {
@@ -513,7 +621,7 @@ describe("dharma.glb", () => {
 
 describe("the model set", () => {
   // The glbs the game loads before its first frame; dharma.glb is fetched after it and has a budget of its own.
-  const EAGER = ["gatbawi.glb", "venue.glb", "world.glb"];
+  const EAGER = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
   const LAZY = ["dharma.glb"];
 
   it("fits the total byte budget, counted in the files' actual sizes", () => {

@@ -5,3 +5,4 @@ dev-dist
 .DS_Store
 packages/client/blender/.inputs.json
 __pycache__
+packages/client/blender/.cache

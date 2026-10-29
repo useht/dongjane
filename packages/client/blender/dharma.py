@@ -1,42 +1,37 @@
-"""dharma.glb: the 법당's inside, its Buddha and one seat to instance. The front wall has an open doorway.
+"""dharma.glb: the 법당's inside, the lotus, halo and glow of its Buddha, and one seat to instance. The front wall has an open doorway.
 
 Everything is drawn in the game's own coordinates through Parts whose frame is GAME. A wall's fittings
 are drawn in the wall's own frame (x along the wall, y up, z into the room) inside `part.placed(...)`.
 Walls, beams and pillars are subdivided so the baked occlusion has vertices to land on, and faces
-nobody can see are never built. The Buddha is drawn at the lotus' origin and moved onto the altar.
+nobody can see are never built. The Buddha is buddha.glb, which the game puts on the altar at BUDDHA_AT: the lotus
+under him, the halo and glow behind him and the mural's disc are placed from where buddha.py found his head.
 """
 
 import math
 import os
 
-import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 import common
-from common import GAME, Part, at, cells, from_game, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, surface_point, turned
+from common import GAME, Part, at, cells, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, turned
 
 STEP = 0.75
 BEAM_BAND = 0.8  # height of the painted beam under the frieze
 BEAM_DEPTH = 0.36
 WINDOW = (1.5, 4.5)  # bottom and top of the lattice windows
 FLOOR_PLANK = 0.5
-LIFT = 0.05  # the figure sits a little above the lotus
-SQUASH = 0.78  # the body is shallower than it is wide
-HEAD = Vector((0.0, 2.3, 0.0))
-HEAD_RADIUS = 0.4
-HALO_AT = (0.0, 2.45, -0.55)
-GLOW_AT = (0.0, 2.45, -0.62)
+SQUASH = 0.78  # the lotus is shallower than it is wide
+LOTUS_FOOT, LOTUS_TOP = -0.45, -0.12  # the lotus is drawn from its foot to its flat top between these heights
+DRAWN_FOR = 2.75  # the halo and glow are drawn for a Buddha this tall; they are scaled to the one in the game
+HALO_BEHIND = 0.5  # how far behind the statue's middle the halo's plane stands
+GLOW_BEHIND = 0.57
 GLOW_RADIUS = 2.3
-BODY = (
-    (1.0, 0.0), (1.12, 0.12), (1.0, 0.3), (0.78, 0.46), (0.6, 0.62), (0.56, 0.95),
-    (0.62, 1.3), (0.7, 1.55), (0.52, 1.8), (0.2, 1.93), (0.0, 1.96),
-)
 
 
 class Plan:
     """What the room follows from the game, with the palette already in linear colour."""
 
-    def __init__(self, inputs):
+    def __init__(self, inputs, head):
         d = inputs["dharma"]
         room = d["DHARMA"]
         self.half = room["halfWidth"]
@@ -47,6 +42,17 @@ class Plan:
         self.inset = room["inset"]
         self.altar = d["ALTAR"]
         self.buddha_at = (d["BUDDHA_AT"]["x"], d["BUDDHA_AT"]["y"], d["BUDDHA_AT"]["z"])
+        height = d["BUDDHA_HEIGHT"]
+        top = head["headTop"]
+        # The middle of his head, in the game: the crown less a head's radius.
+        self.head = (
+            self.buddha_at[0] + top[0] * height,
+            self.buddha_at[1] + (top[1] - head["headRadius"]) * height,
+            self.buddha_at[2] + top[2] * height,
+        )
+        self.fit = height / DRAWN_FOR
+        # The lotus is scaled so that its flat top stands LOTUS_EMBED above the statue's base, with its foot on the altar.
+        self.lotus_scale = (self.buddha_at[1] - d["ALTAR"]["topY"] + d["LOTUS_EMBED"]) / (LOTUS_TOP - LOTUS_FOOT)
         self.door = d["DHARMA_DOOR"]
         self.candles = d["CANDLE_SPOTS"]
         self.lanterns = d["lanterns"]
@@ -326,7 +332,7 @@ def mural(plan):
     z = plan.back + 0.02
     left, right = -plan.half + 0.8, plan.half - 0.8
     low, high = 0.9, plan.wall - BEAM_BAND
-    centre = (0.0, 3.9)
+    centre = (0.0, plan.head[1])
 
     def field(co):
         glow_amount = 1.0 - smoothstep(0.0, 8.5, math.hypot(co.x - centre[0], (co.y - centre[1]) * 1.3))
@@ -376,169 +382,10 @@ def mural(plan):
     return part
 
 
-def shift(part, plan):
-    """Moves a finished Part from the figure's own origin onto the altar."""
-    bmesh.ops.translate(part.bm, vec=from_game(Vector(plan.buddha_at)), verts=part.bm.verts)
-
-
-def head_point(azimuth, latitude, grow=0.0):
-    """A point on the head sphere; azimuth 0 faces the viewer (+Z)."""
-    radius = HEAD_RADIUS + grow
-    ring = radius * math.cos(latitude)
-    return Vector((ring * math.sin(azimuth), HEAD.y + radius * math.sin(latitude), ring * math.cos(azimuth)))
-
-
-def hairline(azimuth):
-    """Latitude where the hair starts: high on the forehead, low at the nape."""
-    return 0.62 - 0.74 * smoothstep(0.3, 2.5, abs(azimuth))
-
-
-def curls(part, mat):
-    hair = mat["buddhaHair"]
-    rows = 11
-    for row in range(rows):
-        latitude = -0.12 + row * (1.12 - -0.12) / (rows - 1)
-        circumference = math.tau * HEAD_RADIUS * math.cos(latitude)
-        count = max(6, round(circumference / 0.125))
-        for i in range(count):
-            azimuth = math.tau * (i + 0.5 * (row % 2)) / count
-            azimuth = (azimuth + math.pi) % math.tau - math.pi
-            if latitude < hairline(azimuth):
-                continue
-            centre = head_point(azimuth, latitude, 0.012)
-            tone = scaled(hair, 0.8 + 0.2 * smoothstep(-0.1, 1.1, latitude))
-            part.sphere(centre, (0.058, 0.058, 0.052), 6, 3, tone)
-
-
-def body(part, mat):
-    gold, deep, pale = mat["buddhaGold"], mat["buddhaGoldDeep"], mat["buddhaGoldPale"]
-
-    def drape(height, angle):
-        band = smoothstep(0.35, 0.8, height) * (1.0 - smoothstep(1.5, 1.9, height))
-        return 1.0 + 0.026 * band * math.cos(8.0 * angle)
-
-    def tone(co):
-        height = co.z
-        ridge = 0.5 + 0.5 * math.cos(8.0 * math.atan2(co.y, co.x))
-        base = mix(deep, gold, smoothstep(0.1, 0.6, height))
-        base = mix(base, pale, 0.5 * smoothstep(1.5, 1.9, height))
-        return scaled(base, 0.9 + 0.1 * ridge)
-
-    with part.placed(spun(0.0, 0.0, 0.0)):
-        part.lathe(smooth_profile(BODY, 3), 32, tone, fold=drape, squash=SQUASH)
-
-    hem = [(0.97 * math.cos(math.tau * i / 36), 0.3, 0.97 * math.sin(math.tau * i / 36) * SQUASH) for i in range(36)]
-    part.tube(hem, [0.085] * 36, 6, deep, up=(0.0, 1.0, 0.0), flat=0.9, closed=True)
-
-    for side in (-1.0, 1.0):
-        part.sphere((side * 0.74, 0.4, 0.58), (0.36, 0.2, 0.34), 10, 6, scaled(gold, 0.95))
-        part.sphere((side * 0.36, 0.38, 0.9), (0.2, 0.05, 0.25), 8, 4, pale)
-
-    part.sphere((0.0, 0.78, 0.62), (0.3, 0.11, 0.2), 10, 6, pale)
-    for side in (-1.0, 1.0):
-        part.sphere((side * 0.14, 0.82, 0.7), (0.17, 0.07, 0.12), 8, 5, scaled(pale, 0.97))
-
-
-def arms(part, mat):
-    gold = mat["buddhaGold"]
-    for side in (-1.0, 1.0):
-        upper = [(side * 0.66, 1.74, 0.04), (side * 0.74, 1.42, 0.08), (side * 0.77, 1.08, 0.14)]
-        part.tube(upper, [0.17, 0.165, 0.15], 8, gold, up=(0.0, 0.0, 1.0), caps=False)
-        fore = [(side * 0.77, 1.08, 0.14), (side * 0.6, 0.93, 0.46), (side * 0.3, 0.86, 0.7)]
-        part.tube(fore, [0.15, 0.135, 0.11], 8, gold, up=(0.0, 1.0, 0.0), caps=False)
-        part.sphere((side * 0.66, 1.74, 0.04), (0.17,) * 3, 10, 6, gold)
-        part.sphere((side * 0.77, 1.08, 0.14), (0.152,) * 3, 10, 6, gold)
-        part.sphere((side * 0.3, 0.86, 0.7), (0.112,) * 3, 8, 5, gold)
-
-
-def robe_band(part, mat, body_tree):
-    red = mat["buddhaRobe"]
-    start, end = Vector((-0.4, 1.7)), Vector((0.45, 1.05))
-    along = (end - start).normalized()
-    lanes = ([], [], [])
-    for i in range(20):
-        t = i / 19.0
-        centre = start + (end - start) * t
-        half = 0.085 * (1.0 - 0.25 * t)
-        for lane, sign in zip(lanes, (1.0, 0.0, -1.0)):
-            x = centre.x + sign * half * -along.y
-            y = centre.y + sign * half * along.x
-            lane.append(surface_point(body_tree, x, y + LIFT, 0.016, side=-1.0))
-    with part.world():
-        for first, second in zip(lanes, lanes[1:]):
-            part.ribbon(first, second, red, toward=lambda co: co + Vector((0.0, -1.0, 0.0)), smooth=True)
-
-
-def face(part, mat, skull_tree):
-    pale = mat["buddhaGoldPale"]
-    lift = 0.003
-    middle = Vector((0.0, 0.0, HEAD.y + LIFT))
-
-    def outward(co):
-        return co + (co - middle)
-
-    def point(x, height, extra=lift):
-        return surface_point(skull_tree, x, height + LIFT, extra, side=-1.0)
-
-    def crescent(cx, cy, half_width, sag, thickness, points, color):
-        upper, lower = [], []
-        for i in range(points):
-            u = -1.0 + 2.0 * i / (points - 1)
-            y = cy - sag * (1.0 - u * u)
-            t = thickness * math.sqrt(1.0 - u * u) + 0.0008
-            upper.append(point(cx + u * half_width, y + t))
-            lower.append(point(cx + u * half_width, y - t))
-        part.ribbon(lower, upper, color, toward=outward)
-
-    with part.world():
-        for side in (-1.0, 1.0):
-            crescent(side * 0.135, 2.29, 0.065, 0.016, 0.006, 7, mat["eye"])
-            crescent(side * 0.14, 2.385, 0.085, -0.014, 0.007, 6, mat["brow"])
-            hub = point(side * 0.23, 2.17)
-            ring = [point(side * 0.23 + 0.05 * math.cos(a), 2.17 + 0.035 * math.sin(a)) for a in (math.tau * i / 8 for i in range(8))]
-            faces = part.fan(hub, ring, mix(pale, mat["blush"], 0.8), pale)
-            part.orient(faces, outward)
-        crescent(0.0, 2.075, 0.05, 0.012, 0.004, 5, mat["mouth"])
-        part.sphere(point(0.0, 2.19, 0.008), (0.034, 0.04, 0.045), 7, 5, scaled(pale, 0.97))
-        part.sphere(point(0.0, 2.455, 0.003), (0.03, 0.02, 0.03), 7, 4, mat["buddhaUrna"])
-
-
-def head(part, mat):
-    pale, gold = mat["buddhaGoldPale"], mat["buddhaGold"]
-    part.sphere(HEAD, (HEAD_RADIUS,) * 3, 20, 14, pale)
-    part.sphere((0.0, 2.66, 0.0), (0.17, 0.17 * 0.9, 0.17), 12, 8, pale)
-    curls(part, mat)
-    for side in (-1.0, 1.0):
-        ear = [(side * 0.4, 2.42, -0.02), (side * 0.43, 2.2, 0.0), (side * 0.42, 1.92, 0.03)]
-        part.tube(ear, [0.05, 0.07, 0.035], 6, scaled(pale, 0.96), up=(1.0, 0.0, 0.0), flat=0.7)
-    part.sphere((0.0, 1.98, 0.0), (0.2, 0.18, 0.2), 10, 6, gold)
-
-    scratch = Part("skull", frame=GAME @ at(0.0, LIFT, 0.0))
-    scratch.sphere(HEAD, (HEAD_RADIUS,) * 3, 20, 14, pale)
-    tree = scratch.raycaster()
-    face(part, mat, tree)
-    scratch.bm.free()
-
-
-def buddha(plan):
-    mat = plan.c
-    part = Part("buddha", frame=GAME @ at(0.0, LIFT, 0.0))
-    body(part, mat)
-    arms(part, mat)
-    head(part, mat)
-    scratch = Part("torso", frame=GAME @ at(0.0, LIFT, 0.0))
-    with scratch.placed(spun(0.0, 0.0, 0.0)):
-        scratch.lathe(smooth_profile(BODY, 3), 32, (1.0, 1.0, 1.0), squash=SQUASH)
-    robe_band(part, mat, scratch.raycaster())
-    scratch.bm.free()
-    shift(part, plan)
-    return part
-
-
 def halo(plan):
     mat = plan.c
     gold, pale, deep = mat["buddhaGold"], mat["buddhaGoldPale"], mat["buddhaGoldDeep"]
-    part = Part("halo", frame=GAME @ at(*HALO_AT))
+    part = Part("halo", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - HALO_BEHIND) @ Matrix.Scale(plan.fit, 4))
     for radius, thickness, steps, color in ((1.62, 0.06, 48, gold), (1.2, 0.04, 40, pale), (0.86, 0.035, 32, deep)):
         ring = [(radius * math.cos(math.tau * i / steps), radius * math.sin(math.tau * i / steps), 0.0) for i in range(steps)]
         part.tube(ring, [thickness] * steps, 5, color, up=(0.0, 0.0, 1.0), closed=True)
@@ -554,7 +401,6 @@ def halo(plan):
         sway = Vector((math.cos(angle), -math.sin(angle), 0.0))
         path = [radial * (1.64 + length * s) + sway * (0.025 * math.sin(math.tau * s)) for s in (0.0, 0.33, 0.66, 1.0)]
         part.tube(path, [0.05, 0.056, 0.034, 0.0], 5, gold if long else pale, up=(0.0, 0.0, 1.0), flat=0.5)
-    shift(part, plan)
     return part
 
 
@@ -562,7 +408,9 @@ def lotus(plan):
     mat = plan.c
     pale, deep = mat["petal"], mat["petalDeep"]
     base = mat["buddhaGoldDeep"]
-    part = Part("lotus", frame=GAME)
+    x, _, z = plan.buddha_at
+    s = plan.lotus_scale
+    part = Part("lotus", frame=GAME @ at(x, plan.altar["topY"] - LOTUS_FOOT * s, z) @ Matrix.Scale(s, 4))
     rows = (
         (20, 0.0, deep, pale, (1.1, -0.2), (1.62, -0.04)),
         (26, 0.12, pale, deep, (0.95, 0.0), (1.42, 0.22)),
@@ -580,27 +428,26 @@ def lotus(plan):
                 path.append(radial * r + Vector((0.0, h, 0.0)))
             color = lambda co, root=root, tip=tip, r0=r0, r1=r1: mix(root, tip, smoothstep(r0, r1, math.hypot(co.x, co.z / SQUASH)))  # noqa: E731
             part.tube(path, [0.0, 0.17, 0.24, 0.16, 0.0], 5, color, up=normal, flat=0.28)
-    profile = ((1.3, -0.45), (1.3, -0.4), (1.14, -0.33), (1.06, -0.3), (1.12, -0.22), (1.12, -0.15), (0.9, -0.12))
+    profile = ((1.3, LOTUS_FOOT), (1.3, -0.4), (1.14, -0.33), (1.06, -0.3), (1.12, -0.22), (1.12, -0.15), (0.9, LOTUS_TOP), (0.0, LOTUS_TOP))
     with part.placed(spun(0.0, 0.0, 0.0)):
-        part.lathe(profile, 16, lambda co: scaled(base, 0.85 + 0.3 * smoothstep(-0.45, -0.12, co.z)), cap_bottom=True, squash=SQUASH)
-    shift(part, plan)
+        part.lathe(profile, 16, lambda co: scaled(base, 0.85 + 0.3 * smoothstep(LOTUS_FOOT, LOTUS_TOP, co.z)), cap_bottom=True, squash=SQUASH)
     return part
 
 
 def glow(plan):
     mat = plan.c
     core, middle, edge = mat["flameCore"], mat["flameMid"], mat["flameEdge"]
-    part = Part("glow", frame=GAME @ at(*GLOW_AT))
+    radius = GLOW_RADIUS * plan.fit
+    part = Part("glow", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - GLOW_BEHIND))
 
     def spot(co):
-        d = min(co.length / GLOW_RADIUS, 1.0)
+        d = min(co.length / radius, 1.0)
         tint = mix(core, middle, smoothstep(0.0, 0.3, d))
         tint = mix(tint, edge, smoothstep(0.3, 1.0, d))
         alpha = 1.0 - 0.3 * smoothstep(0.0, 0.3, d) - 0.7 * smoothstep(0.3, 1.0, d)
         return scaled(tint, alpha)
 
-    part.radial((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), GLOW_RADIUS, 5, 20, spot)
-    shift(part, plan)
+    part.radial((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), radius, 5, 20, spot)
     return part
 
 
@@ -625,19 +472,18 @@ def seat(plan):
     return part
 
 
-def build(inputs, out_dir):
-    plan = Plan(inputs)
+def build(inputs, out_dir, head):
+    plan = Plan(inputs, head)
     solid = common.vertex_color_material("dharma")
     objects = {
         "structure": structure(plan).build(solid),
         "ceiling": ceiling(plan).build(solid),
         "floor": floor(plan).build(solid, crease=False),
-        "buddha": buddha(plan).build(solid, crease=False),
         "lotus": lotus(plan).build(solid, crease=False),
         "halo": halo(plan).build(solid, crease=False),
     }
     common.bake_vertex_occlusion([objects["structure"], objects["ceiling"], objects["floor"]], distance=0.9, samples=40, floor=0.55)
-    common.bake_vertex_occlusion([objects["buddha"], objects["lotus"], objects["halo"]], distance=0.35, samples=64, floor=0.5)
+    common.bake_vertex_occlusion([objects["lotus"], objects["halo"]], distance=0.35, samples=64, floor=0.5)
     objects["glow"] = glow(plan).build(solid, crease=False)
     objects["paper"] = paper(plan).build(solid, crease=False)
     objects["mural"] = mural(plan).build(solid, crease=False)

@@ -31,9 +31,9 @@ import {
   type WebGLRenderer,
 } from "three";
 import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAW } from "@dongjane/shared";
-import { type ModelMeshes, normalOf, textureOf } from "../assets/registry.ts";
+import { type ModelMeshes, headOf, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
+import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32, stagePosterTexture } from "./textures.ts";
@@ -62,8 +62,9 @@ const CLOUD_TURN_PER_SECOND = 0.004;
 const STAR_COUNT = 260;
 const SUN_DISTANCE = 58;
 
-// The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted.
-const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35 } as const;
+// The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted. The scanned
+// Buddha is only a grey picture of light and shade, tinted granite, and is lifted the same way.
+const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
 
 // The paper lanterns glow a little by day and fully at night.
 const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;
@@ -169,6 +170,7 @@ export class Landscape {
     quality: LandscapeQuality,
     world: ModelMeshes<"world">,
     gatbawi: ModelMeshes<"gatbawi">,
+    buddha: ModelMeshes<"buddha">,
     venue: ModelMeshes<"venue">,
   ) {
     const { scene: palette, material: tokens } = THEME;
@@ -233,7 +235,7 @@ export class Landscape {
     this.sky.add(this.sunSprite, this.moonSprite);
     this.group.add(this.sky);
 
-    this.group.add(this.buildStatue(gatbawi, anisotropy));
+    this.group.add(this.buildStatue(gatbawi, buddha.buddha, anisotropy));
     this.add(world.ground, this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
     this.add(world.steps, this.surface(world.steps, anisotropy, LIFT.stone), { cast: true, receive: true });
     this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
@@ -340,14 +342,30 @@ export class Landscape {
     return material;
   }
 
-  // Gatbawi stands on the platform; the glb draws him around the middle of his pedestal's foot.
-  private buildStatue(meshes: ModelMeshes<"gatbawi">, anisotropy: number): Group {
+  private granite(source: Mesh, anisotropy: number): MeshLambertMaterial {
+    const map = textureOf(source);
+    map.anisotropy = anisotropy;
+    const material = new MeshLambertMaterial({ map });
+    material.color.set(THEME.material.granite).multiplyScalar(LIFT.statue);
+    return material;
+  }
+
+  // Gatbawi stands on the platform; the glb draws the pedestal around the middle of its foot. The scanned Buddha is scaled to
+  // the statue's height and seated on the pedestal's top; the hat stone, drawn one metre in radius, is scaled to the Buddha's
+  // head (the glb says where it is) and set on the crown, its underside sunk a little so the topknot is under it.
+  private buildStatue(meshes: ModelMeshes<"gatbawi">, scan: Mesh, anisotropy: number): Group {
     const statue = new Group();
     statue.name = "gatbawi";
     statue.position.set(0, PLATFORM.topY, GATBAWI_Z);
-    for (const name of ["figure", "hatStone", "pedestal"] as const) {
-      this.add(meshes[name], this.stoneOf(meshes[name], anisotropy), { cast: true, receive: true }, statue);
-    }
+    const { height, seatY, seatZ, hatHeads, hatSink } = GATBAWI_STATUE;
+    const figure = this.add(scan, this.granite(scan, anisotropy), { cast: true, receive: true }, statue);
+    figure.scale.setScalar(height);
+    figure.position.set(0, seatY, seatZ);
+    const head = headOf(scan);
+    const hat = this.add(meshes.hatStone, this.stoneOf(meshes.hatStone, anisotropy), { cast: true, receive: true }, statue);
+    hat.scale.setScalar(hatHeads * head.radius * height);
+    hat.position.set(head.top[0] * height, seatY + (head.top[1] - hatSink * head.radius) * height, seatZ + head.top[2] * height);
+    this.add(meshes.pedestal, this.stoneOf(meshes.pedestal, anisotropy), { cast: true, receive: true }, statue);
     const offerings = new MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, envMap: this.environment });
     this.envMaterials.push(offerings);
     this.add(meshes.offerings, offerings, { cast: true, receive: true }, statue);

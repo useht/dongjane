@@ -32,9 +32,9 @@ import {
   type WebGLRenderer,
 } from "three";
 import { DHARMA_ORIGIN, SEAT_COUNT, SEAT_YAW, ZONE_SEATS } from "@dongjane/shared";
-import type { ModelMeshes } from "../assets/registry.ts";
+import { type ModelMeshes, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { ALTAR, CANDLE_SPOTS, FLAME_HEIGHT, hangingLanterns } from "./dharma-layout.ts";
+import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, FLAME_HEIGHT, hangingLanterns } from "./dharma-layout.ts";
 import { flameGlowTexture, mulberry32 } from "./textures.ts";
 import { vertexGlowMaterial } from "./vertex-glow.ts";
 
@@ -142,7 +142,7 @@ export class DharmaScene {
   private readonly tmpPos = new Vector3();
   private presence = 0;
 
-  constructor(renderer: WebGLRenderer, quality: DharmaQuality, meshes: ModelMeshes<"dharma">, lantern: Mesh) {
+  constructor(renderer: WebGLRenderer, quality: DharmaQuality, meshes: ModelMeshes<"dharma">, scan: Mesh, lantern: Mesh) {
     const { scene: palette } = THEME;
     this.group.name = "dharma";
     this.group.position.set(DHARMA_ORIGIN.x, 0, DHARMA_ORIGIN.z);
@@ -191,7 +191,22 @@ export class DharmaScene {
       envMapIntensity: 1.1,
     });
     const petals = new MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.1, emissive: palette.lotusGlow, emissiveIntensity: 0.25 });
-    this.add(meshes.buddha, gold);
+    // The scanned Buddha is a grey picture of light and shade: gilded here, the picture keeps its folds and its glow.
+    const map = textureOf(scan);
+    const gilt = new MeshStandardMaterial({
+      map,
+      metalness: 0.55,
+      roughness: 0.4,
+      emissive: palette.goldGlow,
+      emissiveMap: map,
+      emissiveIntensity: 0.3,
+      envMap: this.environment,
+      envMapIntensity: 1.1,
+    });
+    gilt.color.set(THEME.material.buddhaGold);
+    const buddha = this.add(scan, gilt);
+    buddha.scale.setScalar(BUDDHA_HEIGHT);
+    buddha.position.set(BUDDHA_AT.x, BUDDHA_AT.y, BUDDHA_AT.z);
     this.add(meshes.halo, gold);
     this.add(meshes.lotus, petals);
 

@@ -26,13 +26,15 @@ import { WorldRoom } from "../src/world-room.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
+const SEAT_RESERVATION_MS = 1500;
+
 let game: GameServer;
 let rig: TestRig;
 
 const humansIn = (room: WorldClientRoom) => [...room.state.monks.values()].filter((monk) => !monk.npc);
 
 beforeAll(async () => {
-  game = await startGameServer({ port: 0, handleSignals: false, seatReservationMs: 1500, relocationGraceMs: 600 });
+  game = await startGameServer({ port: 0, handleSignals: false, seatReservationMs: SEAT_RESERVATION_MS, relocationGraceMs: 600 });
   rig = new TestRig(game.port);
 });
 
@@ -213,6 +215,9 @@ describe("merging worlds", () => {
 
   it("offers the hand-over again after one fails and does not leave the world stuck", async () => {
     const { crowd, relocations } = await loneVisitorInWorld2();
+    // Every seat handed out in the setup makes the directory look at the worlds again when its reservation lapses. One that lapsed
+    // after the failure below would offer the hand-over again on its own and make this test count a second, welcome, offer.
+    await sleep(SEAT_RESERVATION_MS);
     const lock = vi.spyOn(WorldRoom.prototype, "lock").mockRejectedValueOnce(new Error("lock failed"));
     const reported = vi.spyOn(logger, "error").mockImplementation(() => undefined);
     try {

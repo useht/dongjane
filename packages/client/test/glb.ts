@@ -33,6 +33,7 @@ export interface GltfJson {
     skin?: number;
     camera?: number;
     extensions?: Record<string, unknown>;
+    extras?: Record<string, unknown>;
   }>;
   meshes?: Array<{ name?: string; primitives: GltfPrimitive[] }>;
   materials?: Array<{ name?: string; pbrMetallicRoughness?: { baseColorTexture?: { index: number } } }>;
@@ -121,6 +122,7 @@ export function readAccessor(glb: Glb, index: number): { count: number; size: nu
 
 export interface GlbNode {
   name: string;
+  extras: Record<string, unknown>;
   meshName: string;
   primitives: number;
   triangles: number;
@@ -160,6 +162,7 @@ export function rootNodes(glb: Glb): GlbNode[] {
         : false;
     return {
       name: node.name ?? "",
+      extras: node.extras ?? {},
       meshName: mesh?.name ?? "",
       primitives: primitives.length,
       triangles: triangleCount,
@@ -191,4 +194,22 @@ export function colors(glb: Glb, nodeName: string): { count: number; size: numbe
 
 export function positions(glb: Glb, nodeName: string): { count: number; size: number; values: number[] } {
   return attribute(glb, nodeName, "POSITION");
+}
+
+// The pixel size of an embedded JPEG, read from its start-of-frame marker.
+export function jpegSize(glb: Glb, imageIndex: number): { width: number; height: number } {
+  const view = glb.json.bufferViews?.[glb.json.images?.[imageIndex]?.bufferView ?? -1];
+  if (!view) throw new Error(`image ${imageIndex} has no buffer view`);
+  const bytes = glb.bin.subarray(view.byteOffset ?? 0, (view.byteOffset ?? 0) + view.byteLength);
+  if (bytes[0] !== 0xff || bytes[1] !== 0xd8) throw new Error(`image ${imageIndex} is not a JPEG`);
+  for (let at = 2; at + 9 < bytes.length; ) {
+    if (bytes[at] !== 0xff) throw new Error(`image ${imageIndex}: bad marker at ${at}`);
+    const marker = bytes[at + 1] as number;
+    const length = ((bytes[at + 2] as number) << 8) | (bytes[at + 3] as number);
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      return { height: ((bytes[at + 5] as number) << 8) | (bytes[at + 6] as number), width: ((bytes[at + 7] as number) << 8) | (bytes[at + 8] as number) };
+    }
+    at += 2 + length;
+  }
+  throw new Error(`image ${imageIndex} has no frame header`);
 }
