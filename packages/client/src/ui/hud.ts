@@ -110,6 +110,7 @@ export class Hud {
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
+    this.bowButton.querySelector("svg")?.setAttribute("viewBox", "3.5 5 18 18"); // crop the glyph's margin so it fills the big button
     this.actionButton = h("button", "bow-button action-button hidden");
     this.actionButton.type = "button";
     this.actionButton.addEventListener("click", () => {
@@ -126,24 +127,22 @@ export class Hud {
     const equipList = h("div", "equip-list");
     for (const item of HELD_ITEMS) {
       const info = ITEM_INFO[item];
-      const row = h(
-        "button",
-        "equip-row",
-        itemImage(item, "equip-art"),
-        h("span", "equip-text", h("strong", "", info.name), h("span", "equip-note", info.note)),
-        h("span", "equip-check", icon("check")),
-      );
+      const row = h("button", "equip-row", itemImage(item, "equip-art"), h("span", "equip-check", icon("check")));
       row.type = "button";
+      row.setAttribute("aria-label", info.name);
+      row.title = `${info.name} - ${info.note}`;
       row.addEventListener("click", () => this.pickItem(item));
       this.equipRows.set(item, row);
       equipList.append(row);
     }
-    this.putDownRow = h("button", "equip-row equip-putdown hidden", h("span", "equip-text", h("strong", "", "내려놓기")));
+    this.putDownRow = h("button", "equip-row equip-putdown hidden", icon("putDown"));
     this.putDownRow.type = "button";
+    this.putDownRow.setAttribute("aria-label", "내려놓기");
+    this.putDownRow.title = "내려놓기";
     this.putDownRow.addEventListener("click", () => this.pickItem(ITEM_NONE));
     equipList.append(this.putDownRow);
     this.equipSheet.body.append(equipList);
-    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions, this.toolButton));
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", this.bowActions, h("div", "bottom-tools", emoteButton, this.toolButton)));
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";

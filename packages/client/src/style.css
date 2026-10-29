@@ -7,8 +7,9 @@
   --edge: 16px;
   --quest-drop: 46px;
   --hud-top: calc(var(--safe-top) + 100px + var(--quest-drop));
-  --hud-bottom: calc(var(--safe-bottom) + 112px);
-  --bow-size: 84px;
+  --hud-bottom: calc(var(--safe-bottom) + 136px);
+  --bow-size: 64px;
+  --tool-size: 44px;
   --wood: #1c120b;
   --wood-soft: #2b1b10;
   --panel: rgba(38, 24, 14, 0.78);
@@ -449,7 +450,14 @@ button:disabled {
 .bottom-actions {
   flex: none;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.bottom-tools {
+  display: flex;
+  gap: 10px;
 }
 
 .emote-button {
@@ -457,7 +465,6 @@ button:disabled {
 }
 
 .tool-button {
-  margin-left: 10px;
   color: var(--muted);
 }
 
@@ -466,22 +473,25 @@ button:disabled {
 }
 
 .equip-list {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 0 2px;
 }
 
 .equip-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 56px;
-  padding: 8px 12px;
-  border-radius: 14px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 84px;
+  height: 84px;
+  padding: 0;
+  border-radius: 18px;
   border: 1px solid transparent;
   background: rgba(255, 240, 210, 0.06);
   color: var(--cream);
-  text-align: left;
 }
 
 .equip-row:active {
@@ -494,59 +504,65 @@ button:disabled {
 }
 
 .equip-art {
-  flex: none;
   display: block;
-  width: 32px;
-  height: 32px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   object-fit: cover;
-}
-
-.equip-text {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.equip-note {
-  font-size: 12px;
-  color: var(--muted);
+  pointer-events: none;
 }
 
 .equip-check {
-  flex: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   display: none;
-  color: var(--gold);
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  pointer-events: none;
+}
+
+.equip-check svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.6;
 }
 
 .equip-row.held .equip-check {
-  display: inline-grid;
+  display: grid;
 }
 
 .equip-putdown {
-  justify-content: center;
   color: var(--muted);
 }
 
-.equip-putdown .equip-text {
-  flex: none;
+.equip-putdown svg {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.6;
 }
 
+/* A fixed square slot so the main button never changes size while the action behind it swaps; the stand button hangs off its left edge. */
 .bow-actions {
+  position: relative;
   flex: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
+  width: var(--bow-size);
+  height: var(--bow-size);
 }
 
-/* Seated, the column keeps its full size so the stand-up button neither drops nor shifts while the bow button hides. */
-.bow-actions.seated {
-  margin-left: 10px;
-  justify-content: flex-start;
-  min-width: var(--bow-size);
-  min-height: calc(var(--bow-size) + 46px);
+.bow-actions:not(.seated) {
+  display: none;
+}
+
+.bow-actions .stand-button {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 10px);
+  transform: translateY(-50%);
 }
 
 .bow-button {
@@ -568,15 +584,15 @@ button:disabled {
 }
 
 .bow-button svg {
-  width: calc(var(--bow-size) * 0.55);
-  height: calc(var(--bow-size) * 0.55);
-  stroke-width: 1.7;
+  width: calc(var(--bow-size) * 0.68);
+  height: calc(var(--bow-size) * 0.68);
+  stroke-width: 1.3;
 }
 
 .bow-button img {
   display: block;
-  width: calc(var(--bow-size) * 0.55);
-  height: calc(var(--bow-size) * 0.55);
+  width: calc(var(--bow-size) * 0.68);
+  height: calc(var(--bow-size) * 0.68);
   border-radius: 50%;
   object-fit: cover;
   pointer-events: none;
@@ -1457,7 +1473,7 @@ noscript {
   }
 
   :root {
-    --bow-size: 72px;
+    --bow-size: 60px;
   }
 }
 
@@ -1465,7 +1481,7 @@ noscript {
   :root {
     --hud-top: calc(var(--safe-top) + var(--edge) + 48px + var(--quest-drop));
     --hud-bottom: calc(var(--safe-bottom) + 96px);
-    --bow-size: 72px;
+    --bow-size: 60px;
   }
 
   .has-install-banner {

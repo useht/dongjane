@@ -44,6 +44,7 @@ const ICONS = {
   check: '<path d="m5.5 12.5 4.2 4.2L18.5 7.8"/>',
   emote:
     '<circle cx="12" cy="12" r="9"/><path d="M8.2 14.2a4.6 4.6 0 0 0 7.6 0"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>',
+  putDown: '<circle cx="12" cy="6" r="2.8"/><path d="M12 11v6M9.2 14.4l2.8 2.8 2.8-2.8"/><path d="M5 20.5h14"/>',
   equip: '<path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8"/><path d="M6 8h12l1.2 12H4.8z"/><path d="M9.5 13h5"/>',
 } as const;
 
