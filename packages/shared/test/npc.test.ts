@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { CHANT_MS, NPC_PER_ZONE, TICK_MS, ZONE_CAPACITY } from "../src/constants.ts";
-import { GATBAWI_SEATS, ZONES, ZONE_BOUNDS, seatKey, type Zone } from "../src/layout.ts";
+import { GATBAWI_SEATS, ZONES, seatKey, type Zone } from "../src/layout.ts";
 import { type NpcActions, type NpcBody, type NpcVisitor, type NpcWorld, createNpcBrain, thinkNpc } from "../src/npc.ts";
 import type { Persona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
+import { HOME_AREAS, zoneAt } from "../src/walk.ts";
 
 const CHANT_START = 1_800_000_000_000;
 const QUIET_START = CHANT_START + 5 * 60_000;
 const NPC_TOTAL = NPC_PER_ZONE * ZONES.length;
+
+// The zone a computer-driven monk lives in is the one it stands in: it never walks out of it.
+const zoneOf = (monk: { x: number; z: number }): Zone => zoneAt(monk.x, monk.z);
 
 function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
@@ -61,13 +65,15 @@ class World {
       if (owners.has(seat.occupantId)) problems.push(`${seat.occupantId} holds two seats`);
       owners.add(seat.occupantId);
       const owner = this.sim.state.monks.get(seat.occupantId);
-      if (owner?.seatId !== seat.id || owner.zone !== seat.zone) {
+      if (owner?.seatId !== seat.id) {
         problems.push(`seat ${seat.zone}:${seat.id} points at ${seat.occupantId} who sits elsewhere`);
       }
     }
     for (const monk of this.sim.state.monks.values()) {
-      if (monk.seatId >= 0 && this.holder(monk.zone as Zone, monk.seatId) !== monk.id) {
-        problems.push(`${monk.id} claims seat ${monk.zone}:${monk.seatId} it does not hold`);
+      if (monk.seatId < 0) continue;
+      const held = [...this.sim.state.seats.values()].filter((seat) => seat.occupantId === monk.id);
+      if (held.length !== 1 || held[0]?.id !== monk.seatId) {
+        problems.push(`${monk.id} claims seat ${monk.seatId} it does not hold`);
       }
     }
     return problems;
@@ -84,7 +90,7 @@ class World {
 
 function snapshot(world: World): string {
   return [...world.sim.state.monks.values()]
-    .map((monk) => [monk.id, monk.zone, monk.mode, monk.seatId, monk.bowCount, monk.x.toFixed(3), monk.z.toFixed(3)].join(":"))
+    .map((monk) => [monk.id, zoneOf(monk), monk.mode, monk.seatId, monk.bowCount, monk.x.toFixed(3), monk.z.toFixed(3)].join(":"))
     .join("|");
 }
 
@@ -96,11 +102,11 @@ describe("npc spawning", () => {
     expect(world.sim.humanCount).toBe(0);
     expect(new Set(npcs.map((npc) => npc.id)).size).toBe(NPC_TOTAL);
     for (const zone of ZONES) {
-      expect(npcs.filter((npc) => npc.zone === zone)).toHaveLength(NPC_PER_ZONE);
+      expect(npcs.filter((npc) => zoneOf(npc) === zone)).toHaveLength(NPC_PER_ZONE);
       expect(world.sim.zoneCount(zone)).toBe(0);
     }
     for (const npc of npcs) {
-      const bounds = ZONE_BOUNDS[npc.zone as Zone];
+      const bounds = HOME_AREAS[zoneOf(npc)];
       expect(npc.slot).toBe(0);
       expect(npc.id).toMatch(/^npc-\d+$/);
       expect(npc.mode).toBe("stand");
@@ -173,11 +179,11 @@ describe("npc behaviour", () => {
 
   it("keeps every npc inside the zone it was born in", () => {
     const world = new World(13);
-    const born = new Map(world.npcs().map((npc) => [npc.id, npc.zone]));
+    const born = new Map(world.npcs().map((npc) => [npc.id, zoneOf(npc)]));
     world.run(3 * 60_000, () => {
       for (const npc of world.npcs()) {
-        const bounds = ZONE_BOUNDS[npc.zone as Zone];
-        expect(npc.zone).toBe(born.get(npc.id));
+        const bounds = HOME_AREAS[born.get(npc.id)!];
+        expect(zoneOf(npc)).toBe(born.get(npc.id));
         expect(npc.x).toBeGreaterThanOrEqual(bounds.minX - 1e-4);
         expect(npc.x).toBeLessThanOrEqual(bounds.maxX + 1e-4);
         expect(npc.z).toBeGreaterThanOrEqual(bounds.minZ - 1e-4);
@@ -198,7 +204,7 @@ describe("npc behaviour", () => {
     expect(new Set(firstMove.values()).size).toBeGreaterThan(NPC_TOTAL / 2);
 
     world.run(50_000);
-    expect(new Set(world.npcs().map((npc) => `${npc.zone}:${npc.x.toFixed(2)},${npc.z.toFixed(2)}`)).size).toBe(NPC_TOTAL);
+    expect(new Set(world.npcs().map((npc) => `${zoneOf(npc)}:${npc.x.toFixed(2)},${npc.z.toFixed(2)}`)).size).toBe(NPC_TOTAL);
   });
 
   it("sits more while the chant is on", () => {
@@ -245,7 +251,7 @@ describe("npc and visitor seats", () => {
       const id = guests[Math.floor(visitorChoice() * guests.length)]!;
       const roll = visitorChoice();
       if (roll < 0.7) {
-        const held = world.npcs().filter((npc) => npc.zone === "gatbawi" && npc.seatId >= 0);
+        const held = world.npcs().filter((npc) => zoneOf(npc) === "gatbawi" && npc.seatId >= 0);
         const seatId =
           held.length > 0 && visitorChoice() < 0.6
             ? held[Math.floor(visitorChoice() * held.length)]!.seatId
@@ -272,10 +278,10 @@ describe("npc and visitor seats", () => {
     const seated = world.npcs().find((npc) => npc.seatId >= 0);
     expect(seated).toBeDefined();
     const npc = seated!;
-    const zone = npc.zone as Zone;
+    const zone = zoneOf(npc);
     const seatId = npc.seatId;
 
-    world.sim.join("guest", 0, zone);
+    world.sim.join("guest", 0);
     expect(world.sim.sit("guest", zone, seatId)).toBe(true);
     expect(npc.mode).toBe("stand");
     expect(npc.seatId).toBe(-1);
@@ -306,7 +312,7 @@ describe("npc and visitor seats", () => {
     expect(world.holder("gatbawi", 3)).toBe("npc-1");
     expect(world.sim.state.monks.get("npc-2")?.seatId).toBe(-1);
 
-    expect(world.sim.state.monks.get("npc-3")?.zone).toBe("dharma");
+    expect(zoneOf(world.sim.state.monks.get("npc-3")!)).toBe("dharma");
     expect(world.sim.sit("npc-3", "gatbawi", 5)).toBe(false);
     expect(world.sim.sit("npc-3", "dharma", 5)).toBe(true);
 
@@ -315,24 +321,25 @@ describe("npc and visitor seats", () => {
     expect(world.seatProblems()).toEqual([]);
   });
 
-  it("does not count npcs toward a zone's capacity, and gives a newcomer a seat an npc leaves", () => {
+  it("does not count npcs toward a zone's headcount, and gives a newcomer a seat an npc holds", () => {
     const world = new World(5);
     world.sim.join("guest", 0);
     for (let n = 1; n < ZONE_CAPACITY; n += 1) {
-      world.sim.join(`s${n}`, 0, "dharma");
+      world.sim.join(`s${n}`, 0);
       expect(world.sim.sit(`s${n}`, "dharma", n - 1)).toBe(true);
     }
+    world.run(40_000);
     expect(world.sim.zoneCount("dharma")).toBe(ZONE_CAPACITY - 1);
-    expect(world.sim.chooseZone("dharma")).toEqual({ zone: "dharma", redirected: false });
+    expect(world.sim.zoneCount("gatbawi")).toBe(1);
 
-    world.now += 5_000;
-    expect(world.sim.changeZone("guest", "dharma")).toBe("moved");
+    expect(world.sim.sit("guest", "dharma", ZONE_CAPACITY - 1)).toBe(true);
+    world.run(40_000);
     expect(world.sim.zoneCount("dharma")).toBe(ZONE_CAPACITY);
-    expect(world.sim.chooseZone("dharma")).toEqual({ zone: "gatbawi", redirected: true });
     expect(world.seatProblems()).toEqual([]);
 
     const guest = world.sim.state.monks.get("guest")!;
     expect(guest.seatId).toBe(ZONE_CAPACITY - 1);
+    expect(world.holder("dharma", ZONE_CAPACITY - 1)).toBe("guest");
   });
 });
 
@@ -460,8 +467,9 @@ describe("npc front row preference", () => {
 
 describe("npc brain reactions", () => {
   function rig(visitorX: number, random: () => number, persona: Persona, start = { x: 0, z: 0 }, seated = true) {
-    const body = { id: "npc-1", zone: "gatbawi", mode: seated ? "kneel" : "stand", ...start, seatId: seated ? 2 : -1, bowCount: 0 };
+    const body = { id: "npc-1", mode: seated ? "kneel" : "stand", ...start, seatId: seated ? 2 : -1, bowCount: 0 };
     const world: NpcWorld = {
+      zone: "gatbawi",
       now: 0,
       random,
       chantEndsAt: null,
@@ -552,7 +560,7 @@ describe("npc brain reactions", () => {
   });
 
   it("walks on as usual when a shy retreat would go nowhere because it is cornered", () => {
-    const corner = { x: ZONE_BOUNDS.gatbawi.minX, z: ZONE_BOUNDS.gatbawi.minZ };
+    const corner = { x: HOME_AREAS.gatbawi.minX, z: HOME_AREAS.gatbawi.minZ };
     const { think, calls } = rig(corner.x + 1, () => 0.5, { ...BASE, shyness: 1 }, corner, false);
     think(0);
     expect(calls.moves).toHaveLength(1);

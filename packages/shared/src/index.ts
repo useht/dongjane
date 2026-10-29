@@ -1,6 +1,7 @@
 export * from "./constants.ts";
 export * from "./emote.ts";
 export * from "./layout.ts";
+export * from "./walk.ts";
 export * from "./schema.ts";
 export * from "./messages.ts";
 export * from "./identity.ts";

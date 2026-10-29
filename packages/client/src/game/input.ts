@@ -71,45 +71,6 @@ export interface PointerHandlers {
   onOrbit(dxRadians: number, dyRadians: number): void;
   onZoom(factor: number): void;
   onStick(stick: StickState | null): void;
-  onTap(clientX: number, clientY: number): void;
-}
-
-export const TAP_MAX_MS = 400;
-export const TAP_MAX_MOVE_PX = 12;
-
-export interface TapPoint {
-  x: number;
-  y: number;
-}
-
-// Tells a tap from a drag: a press that is let go soon and has hardly moved. A second finger down spoils every
-// press until all fingers are up, so a pinch never ends in a tap.
-export class TapDetector {
-  private readonly presses = new Map<number, { x: number; y: number; at: number }>();
-  private spoiled = false;
-
-  begin(id: number, x: number, y: number, at: number): void {
-    if (this.presses.size > 0) this.spoiled = true;
-    this.presses.set(id, { x, y, at });
-  }
-
-  end(id: number, x: number, y: number, at: number): TapPoint | null {
-    const press = this.presses.get(id);
-    if (!press) return null;
-    this.presses.delete(id);
-    if (this.spoiled) {
-      if (this.presses.size === 0) this.spoiled = false;
-      return null;
-    }
-    const quick = at - press.at <= TAP_MAX_MS;
-    const still = Math.hypot(x - press.x, y - press.y) <= TAP_MAX_MOVE_PX;
-    return quick && still ? { x, y } : null;
-  }
-
-  cancel(id: number): void {
-    this.presses.delete(id);
-    if (this.presses.size === 0) this.spoiled = false;
-  }
 }
 
 interface Tracked {
@@ -119,7 +80,6 @@ interface Tracked {
 
 export class PointerInput {
   private readonly pointers = new Map<number, Tracked>();
-  private readonly taps = new TapDetector();
   private pinchDistance = 0;
   private stickId: number | null = null;
   private stickX = 0;
@@ -150,7 +110,6 @@ export class PointerInput {
   // The stick finger stays out of `pointers`, so it never counts toward a pinch.
   private readonly down = (event: PointerEvent): void => {
     this.capture(event.pointerId);
-    if (event.pointerType !== "mouse" || event.button === 0) this.taps.begin(event.pointerId, event.clientX, event.clientY, event.timeStamp);
     if (this.stickId === null && event.pointerType === "touch" && this.inStickZone(event.clientX)) {
       this.stickId = event.pointerId;
       this.stickX = event.clientX;
@@ -189,8 +148,6 @@ export class PointerInput {
   };
 
   private readonly up = (event: PointerEvent): void => {
-    const tap = this.taps.end(event.pointerId, event.clientX, event.clientY, event.timeStamp);
-    if (tap) this.handlers.onTap(tap.x, tap.y);
     if (event.pointerId === this.stickId) {
       this.release(event.pointerId);
       this.endStick();
@@ -202,7 +159,6 @@ export class PointerInput {
   };
 
   private readonly cancel = (event: PointerEvent): void => {
-    this.taps.cancel(event.pointerId);
     if (event.pointerId === this.stickId) this.endStick();
     else this.pointers.delete(event.pointerId);
   };

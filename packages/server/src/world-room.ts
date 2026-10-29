@@ -11,7 +11,6 @@ import {
   type RelocateMessage,
   type TempleState,
   type Zone,
-  type ZoneFullMessage,
   ZONES,
   worldName,
   isValidWorld,
@@ -20,7 +19,6 @@ import {
   parseEmote,
   parseMove,
   parseSit,
-  parseZone,
   randomHue,
 } from "@dongjane/shared";
 import { type DirectoryRoom, type WorldDirectory, RELOCATION_GRACE_MS } from "./world-directory.ts";
@@ -100,12 +98,6 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
       const message = parseSit(payload);
       if (message) this.sim.sit(client.sessionId, message.zone, message.seatId);
     });
-    this.onMessage(MSG.zone, (client, payload) => {
-      if (!this.allow(client)) return;
-      const message = parseZone(payload);
-      if (!message) return;
-      if (this.sim.changeZone(client.sessionId, message.zone) === "full") this.sendZoneFull(client, message.zone);
-    });
     this.onMessage(MSG.stand, (client) => {
       if (this.allow(client)) this.sim.stand(client.sessionId);
     });
@@ -130,10 +122,7 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
 
   override onJoin(client: Client, options?: JoinOptions): void {
     const hue = normalizeHue(options?.hue) ?? randomHue();
-    const requested = ZONES.find((zone) => zone === options?.zone) ?? null;
-    const choice = this.sim.chooseZone(requested);
-    this.sim.join(client.sessionId, hue, choice.zone);
-    if (choice.redirected && requested) this.sendZoneFull(client, requested);
+    this.sim.join(client.sessionId, hue);
     this.sendRelocation(client);
     this.directory?.joined(this);
   }
@@ -183,10 +172,6 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
   private async abortDrain(): Promise<void> {
     this.drainTarget = null;
     await this.unlock().catch(() => undefined);
-  }
-
-  private sendZoneFull(client: Client, zone: Zone): void {
-    client.send(MSG.zoneFull, { zone } satisfies ZoneFullMessage);
   }
 
   private sendRelocation(client: Client): void {

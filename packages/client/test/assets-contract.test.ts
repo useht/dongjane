@@ -1,6 +1,6 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DHARMA_BOUNDS, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
 import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR } from "../src/game/dharma-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
@@ -439,6 +439,8 @@ describe("dharma.glb", () => {
   const nodes = expectContract(glb, DHARMA_MESHES);
   const mesh = byName(nodes);
   const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
+  // The glb is authored around the middle of the floor; the game puts that middle at DHARMA_ORIGIN.
+  const room = { minX: DHARMA_BOUNDS.minX - DHARMA_ORIGIN.x, maxX: DHARMA_BOUNDS.maxX - DHARMA_ORIGIN.x, minZ: DHARMA_BOUNDS.minZ - DHARMA_ORIGIN.z, maxZ: DHARMA_BOUNDS.maxZ - DHARMA_ORIGIN.z };
 
   it("stays inside its size budget, counting every seat the game lays out", () => {
     const prototypes: readonly string[] = DHARMA_PROTOTYPES;
@@ -453,10 +455,10 @@ describe("dharma.glb", () => {
     near(floor.max[0], DHARMA.halfWidth);
     near(floor.min[2], DHARMA.backZ);
     near(floor.max[2], DHARMA.frontZ);
-    expect(DHARMA_BOUNDS.minX).toBeGreaterThan(-DHARMA.halfWidth);
-    expect(DHARMA_BOUNDS.maxX).toBeLessThan(DHARMA.halfWidth);
-    expect(DHARMA_BOUNDS.minZ).toBeGreaterThan(DHARMA.backZ);
-    expect(DHARMA_BOUNDS.maxZ).toBeLessThan(DHARMA.frontZ);
+    expect(room.minX).toBeGreaterThan(-DHARMA.halfWidth);
+    expect(room.maxX).toBeLessThan(DHARMA.halfWidth);
+    expect(room.minZ).toBeGreaterThan(DHARMA.backZ);
+    expect(room.maxZ).toBeLessThan(DHARMA.frontZ);
     near(mesh("ceiling").positions.max[1], DHARMA.ceilingHeight);
     near(mesh("structure").positions.max[1], DHARMA.ceilingHeight);
     expect(mesh("ceiling").positions.min[1], "the ceiling starts above the walls' foot").toBeGreaterThan(DHARMA.wallHeight - 1);
@@ -472,14 +474,16 @@ describe("dharma.glb", () => {
     const buddha = mesh("buddha").positions;
     near((buddha.min[0] + buddha.max[0]) / 2, BUDDHA_AT.x);
     expect(buddha.min[1]).toBeGreaterThanOrEqual(BUDDHA_AT.y - 0.1);
-    expect(DHARMA_BOUNDS.minZ, "visitors stop short of the altar").toBeGreaterThan(ALTAR.maxZ);
+    expect(room.minZ, "visitors stop short of the altar").toBeGreaterThan(ALTAR.maxZ);
   });
 
   it("keeps the seats clear of the altar and inside the room, each facing the Buddha", () => {
     for (const spot of DHARMA_SEATS) {
-      expect(spot.z - DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeGreaterThan(ALTAR.maxZ);
-      expect(spot.z + DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeLessThanOrEqual(DHARMA_BOUNDS.maxZ);
-      expect(Math.abs(spot.x) + DHARMA_SEAT_SIZE.x / 2, `seat ${spot.id}`).toBeLessThanOrEqual(DHARMA_BOUNDS.maxX);
+      const x = spot.x - DHARMA_ORIGIN.x;
+      const z = spot.z - DHARMA_ORIGIN.z;
+      expect(z - DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeGreaterThan(ALTAR.maxZ);
+      expect(z + DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeLessThanOrEqual(room.maxZ);
+      expect(Math.abs(x) + DHARMA_SEAT_SIZE.x / 2, `seat ${spot.id}`).toBeLessThanOrEqual(room.maxX);
     }
   });
 

@@ -5,7 +5,6 @@ import {
   TempleSim,
   type TempleState,
   type Zone,
-  type ZoneChangeResult,
   normalizeHue,
   randomHue,
 } from "@dongjane/shared";
@@ -45,10 +44,6 @@ export class SoloSession {
 
   sit(zone: Zone, seatId: number): void {
     if (!this.closed) this.sim.sit(SOLO_ID, zone, seatId);
-  }
-
-  changeZone(zone: Zone): ZoneChangeResult {
-    return this.closed ? "unknown" : this.sim.changeZone(SOLO_ID, zone);
   }
 
   stand(): void {

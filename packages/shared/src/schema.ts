@@ -8,7 +8,6 @@ export const Monk = schema(
     x: t.float32().default(0),
     z: t.float32().default(0),
     yaw: t.float32().default(0),
-    zone: t.string().default("gatbawi"),
     mode: t.string().default("stand"),
     seatId: t.int8().default(-1),
     bowCount: t.uint32().default(0),

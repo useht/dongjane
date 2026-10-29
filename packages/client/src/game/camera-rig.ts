@@ -1,5 +1,5 @@
 import { PerspectiveCamera, Vector3 } from "three";
-import type { Zone } from "@dongjane/shared";
+import { DHARMA_ORIGIN, type Zone } from "@dongjane/shared";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
 export interface Box {
@@ -41,7 +41,15 @@ export interface RigLimits {
 const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 18, minPitch: 0.16, maxPitch: 1.3 };
 const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 9.5, minPitch: 0.16, maxPitch: 1.3 };
 
-export const DHARMA_CAMERA_BOUNDS: Box = { minX: -9.6, maxX: 9.6, minY: 0.5, maxY: 7, minZ: -5, maxZ: 8.8 };
+// Inside the 법당: the room is a lit box and the camera stays within it, a little short of its walls.
+export const DHARMA_CAMERA_BOUNDS: Box = {
+  minX: DHARMA_ORIGIN.x - 9.6,
+  maxX: DHARMA_ORIGIN.x + 9.6,
+  minY: 0.5,
+  maxY: 7,
+  minZ: DHARMA_ORIGIN.z - 5,
+  maxZ: DHARMA_ORIGIN.z + 8.8,
+};
 
 export interface View {
   yaw: number;
@@ -127,6 +135,14 @@ export function projectUnclipped(
   return Number.isFinite(out.x) && Number.isFinite(out.y);
 }
 
+const BOX_KEYS = ["minX", "maxX", "minY", "maxY", "minZ", "maxZ"] as const;
+// How fast the zoom distance follows a new range while the camera box is changing.
+const DISTANCE_EASE = 5;
+
+function smooth(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
 export class CameraRig {
   yaw: number = DEFAULT_VIEW.yaw;
   pitch: number = DEFAULT_VIEW.pitch;
@@ -137,17 +153,55 @@ export class CameraRig {
   private readonly dir = new Vector3();
   private readonly aim = new Vector3();
   private clock = 0;
+  // The box in force this frame; while a change is under way it lies between `blendFrom` and `blendTo`.
+  private bounds: Box;
+  private blendFrom: Box;
+  private blendTo: Box;
+  private blendElapsed = 0;
+  private blendSeconds = 0;
 
   constructor(
     readonly camera: PerspectiveCamera,
-    private bounds: Box,
+    bounds: Box,
     private limits: RigLimits = GATBAWI_LIMITS,
-  ) {}
+  ) {
+    this.bounds = { ...bounds };
+    this.blendFrom = { ...bounds };
+    this.blendTo = { ...bounds };
+  }
 
-  setRegion(bounds: Box, limits: RigLimits): void {
-    this.bounds = bounds;
+  // Moves the camera's box and zoom range; with `blendSeconds` the box slides to the new one and the distance eases into the
+  // new range, which is how the camera follows a monk through a doorway without a cut.
+  setRegion(bounds: Box, limits: RigLimits, blendSeconds = 0): void {
     this.limits = limits;
-    this.distance = Math.min(limits.maxDistance, Math.max(limits.minDistance, this.distance));
+    this.blendTo = { ...bounds };
+    if (blendSeconds <= 0 || this.reduceMotion) {
+      this.bounds = { ...bounds };
+      this.blendSeconds = 0;
+      this.distance = this.clampDistance(this.distance);
+      return;
+    }
+    this.blendFrom = { ...this.bounds };
+    this.blendElapsed = 0;
+    this.blendSeconds = blendSeconds;
+  }
+
+  private clampDistance(distance: number): number {
+    return Math.min(this.limits.maxDistance, Math.max(this.limits.minDistance, distance));
+  }
+
+  private stepRegion(dt: number): void {
+    if (this.blendSeconds <= 0) return;
+    this.blendElapsed = Math.min(this.blendSeconds, this.blendElapsed + dt);
+    const t = smooth(this.blendElapsed / this.blendSeconds);
+    for (const key of BOX_KEYS) this.bounds[key] = this.blendFrom[key] + (this.blendTo[key] - this.blendFrom[key]) * t;
+    const wanted = this.clampDistance(this.distance);
+    if (this.blendElapsed >= this.blendSeconds) {
+      this.blendSeconds = 0;
+      this.distance = wanted;
+    } else {
+      this.distance += (wanted - this.distance) * (1 - Math.exp(-dt * DISTANCE_EASE));
+    }
   }
 
   orbit(dxRadians: number, dyRadians: number): void {
@@ -172,6 +226,7 @@ export class CameraRig {
 
   update(dt: number): void {
     this.clock += dt;
+    this.stepRegion(dt);
     const sway = this.reduceMotion ? 0 : Math.sin(this.clock * 0.35) * 0.02;
     const bob = this.reduceMotion ? 0 : Math.sin(this.clock * 0.5 + 1) * 0.012;
     const yaw = this.yaw + sway;

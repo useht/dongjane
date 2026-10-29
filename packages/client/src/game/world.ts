@@ -1,17 +1,5 @@
-import {
-  ACESFilmicToneMapping,
-  Box3,
-  Color,
-  Fog,
-  Mesh,
-  PerspectiveCamera,
-  Raycaster,
-  Scene,
-  Vector2,
-  Vector3,
-  WebGLRenderer,
-} from "three";
-import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle, otherZone } from "@dongjane/shared";
+import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "three";
+import { ARRIVAL, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
@@ -35,7 +23,6 @@ export interface MonkView {
   z: number;
   yaw: number;
   mode: string;
-  zone: Zone;
   seatId: number;
   npc: boolean;
   bowCount: number;
@@ -48,8 +35,8 @@ export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
   onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
-  // The visitor tapped a door; this is the zone it leads to.
-  onDoorTap(zone: Zone): void;
+  // The visitor's monk crossed the 법당's threshold: this is the part of the world the camera is in now.
+  onZone(zone: Zone): void;
 }
 
 export interface WorldStats {
@@ -71,10 +58,10 @@ interface Entry {
   targetYaw: number;
 }
 
-// One zone is drawn at a time, so the pool holds a zone full of visitors and its computer-driven monks.
-const MAX_MONKS = ZONE_CAPACITY + NPC_PER_ZONE;
-// A door is easy to hit: the tap may land this far (metres) outside its frame.
-const DOOR_TAP_PAD = 0.4;
+// Every monk of the world is in the scene, so the pool holds a world full of visitors and every zone's computer-driven monks.
+const MAX_MONKS = WORLD_CAPACITY + ZONES.length * NPC_PER_ZONE;
+// How long the camera takes to slide between the open ground's box and the room's box when the monk crosses the doorway.
+const REGION_BLEND_SECONDS = 0.5;
 
 export class World {
   readonly scene = new Scene();
@@ -84,7 +71,9 @@ export class World {
   readonly emotes = new EmoteTracker();
   selfId: string | null = null;
 
-  private zone: Zone = "gatbawi";
+  // Where the camera is: the 법당 once the followed monk is inside its door, the open ground otherwise.
+  private area: Zone = "gatbawi";
+  private readonly occupied: Record<Zone, ReadonlySet<number>> = { gatbawi: new Set(), dharma: new Set() };
   private readonly renderer: WebGLRenderer;
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
@@ -93,9 +82,6 @@ export class World {
   private dharmaLoading: Promise<boolean> | null = null;
   private disposed = false;
   private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
-  private readonly raycaster = new Raycaster();
-  private readonly pointer = new Vector2();
-  private readonly doorBoxes = new Map<Mesh, Box3>();
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly jumps = new JumpTracker();
@@ -151,9 +137,9 @@ export class World {
     this.scene.add(this.landscape.group);
     this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
 
-    const region = regionFor(this.zone);
+    const region = regionFor(this.area);
     this.rig = new CameraRig(this.camera, region.bounds, region.limits);
-    this.rig.follow(ZONE_SPAWN.gatbawi.x, ZONE_SPAWN.gatbawi.z, 0, true);
+    this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
     this.input = new PointerInput(canvas, {
       onOrbit: (dx, dy) => {
@@ -162,10 +148,6 @@ export class World {
       },
       onZoom: (factor) => this.rig.zoom(factor),
       onStick: (stick) => this.callbacks.onStick(stick),
-      onTap: (x, y) => {
-        const zone = this.pickDoor(x, y);
-        if (zone) this.callbacks.onDoorTap(zone);
-      },
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -181,14 +163,15 @@ export class World {
 
   displayedPosition(id: string, out: { x: number; z: number }): boolean {
     const entry = this.entries.get(id);
-    if (!entry) return false;
+    if (!entry || entry.avatar.hidden) return false;
     out.x = entry.x;
     out.z = entry.z;
     return true;
   }
 
   headTopOf(id: string): number | null {
-    return this.entries.get(id)?.avatar.headTopY() ?? null;
+    const entry = this.entries.get(id);
+    return entry && !entry.avatar.hidden ? entry.avatar.headTopY() : null;
   }
 
   get currentStats(): WorldStats {
@@ -200,14 +183,11 @@ export class World {
   }
 
   get currentZone(): Zone {
-    return this.zone;
+    return this.area;
   }
 
-  get indoorReady(): boolean {
-    return this.dharma !== null;
-  }
-
-  // The 법당's inside is fetched only when someone is about to need it. Resolves false when it could not be had; asking again retries.
+  // The 법당's inside is fetched while the visitor settles in, and at the latest when they reach its door. Resolves false when it
+  // could not be had; asking again retries.
   ensureDharma(): Promise<boolean> {
     if (this.dharma) return Promise.resolve(true);
     if (this.dharmaLoading) return this.dharmaLoading;
@@ -216,9 +196,10 @@ export class World {
       .then((meshes) => {
         if (this.disposed) return false;
         const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.venue.lantern);
-        scene.group.visible = this.zone === "dharma";
+        scene.group.visible = this.area === "dharma";
         this.scene.add(scene.group);
         this.dharma = scene;
+        this.applyOccupancy("dharma");
         return true;
       })
       .catch(() => false);
@@ -229,22 +210,26 @@ export class World {
     return loading;
   }
 
-  // Only the monks of the zone the visitor is in are drawn, so changing zone drops them all and the next state brings the new ones.
-  // False when the zone's scene has not arrived yet, in which case nothing changed.
-  setZone(zone: Zone): boolean {
-    if (zone === this.zone) return true;
-    if (zone === "dharma" && !this.dharma) return false;
-    this.setOccupancy(new Set());
-    this.zone = zone;
+  // The camera goes where the followed monk stands. The 법당's inside has to be here before the camera enters it, so a monk
+  // who walks in early is followed from outside until it has arrived.
+  private followArea(x: number, z: number): void {
+    const wanted = zoneAt(x, z);
+    if (wanted === this.area) return;
+    if (wanted === "dharma" && !this.dharma) {
+      void this.ensureDharma();
+      return;
+    }
+    this.setArea(wanted);
+  }
+
+  private setArea(zone: Zone): void {
+    if (zone === this.area) return;
+    this.area = zone;
     this.landscape.setActive(zone === "gatbawi");
     if (this.dharma) this.dharma.group.visible = zone === "dharma";
-    for (const id of [...this.entries.keys()]) this.dropEntry(id);
-    this.selfPrediction = null;
     const region = regionFor(zone);
-    this.rig.setRegion(region.bounds, region.limits);
-    this.resetCamera();
-    this.rig.follow(ZONE_SPAWN[zone].x, ZONE_SPAWN[zone].z, 0, true);
-    return true;
+    this.rig.setRegion(region.bounds, region.limits, REGION_BLEND_SECONDS);
+    this.callbacks.onZone(zone);
   }
 
   setReduceMotion(value: boolean): void {
@@ -290,7 +275,6 @@ export class World {
     this.clock.observe(serverTime, nowMs);
     const seen = new Set<string>();
     for (const view of views) {
-      if (view.zone !== this.zone) continue;
       seen.add(view.id);
       let entry = this.entries.get(view.id);
       if (!entry) {
@@ -301,7 +285,7 @@ export class World {
         }
         entry = {
           avatar,
-          track: new RemoteTrack(this.zone),
+          track: new RemoteTrack(),
           x: view.x,
           z: view.z,
           yaw: view.yaw,
@@ -339,28 +323,18 @@ export class World {
     entry?.avatar.hop(nowMs);
   }
 
-  setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < SEAT_COUNT; id += 1) {
-      if (this.zone === "dharma") this.dharma?.setOccupied(id, occupied.has(id));
-      else this.landscape.setOccupied(id, occupied.has(id));
-    }
+  // Which seats of a zone are taken. The 법당's are remembered until its inside has arrived.
+  setOccupancy(zone: Zone, occupied: ReadonlySet<number>): void {
+    this.occupied[zone] = occupied;
+    this.applyOccupancy(zone);
   }
 
-  // The zone a tap at these screen coordinates leads to, when it hit this zone's door.
-  pickDoor(clientX: number, clientY: number): Zone | null {
-    const door = this.zone === "dharma" ? this.dharma?.door : this.landscape.templeDoor;
-    if (!door) return null;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    let box = this.doorBoxes.get(door);
-    if (!box) {
-      door.geometry.computeBoundingBox();
-      box = new Box3().copy(door.geometry.boundingBox as Box3).applyMatrix4(door.matrixWorld).expandByScalar(DOOR_TAP_PAD);
-      this.doorBoxes.set(door, box);
+  private applyOccupancy(zone: Zone): void {
+    const occupied = this.occupied[zone];
+    for (let id = 0; id < SEAT_COUNT; id += 1) {
+      if (zone === "dharma") this.dharma?.setOccupied(id, occupied.has(id));
+      else this.landscape.setOccupied(id, occupied.has(id));
     }
-    return this.raycaster.ray.intersectsBox(box) ? otherZone(this.zone) : null;
   }
 
   clear(): void {
@@ -368,11 +342,13 @@ export class World {
     this.selfId = null;
     this.selfPrediction = null;
     this.clock.reset();
-    this.setOccupancy(new Set());
+    for (const zone of ZONES) this.setOccupancy(zone, new Set());
+    this.setArea("gatbawi");
+    this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
   }
 
   resetCamera(): void {
-    const view = viewFor(this.zone, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
+    const view = viewFor(this.area, this.canvas.clientWidth / Math.max(1, this.canvas.clientHeight));
     this.rig.yaw = view.yaw;
     this.rig.pitch = view.pitch;
     this.rig.distance = view.distance;
@@ -394,9 +370,9 @@ export class World {
   }
 
   // Where the concert screen's corners are on the canvas (bottom-left, bottom-right, top-right, top-left), or null
-  // when it is not in this zone or any corner is behind the camera. The points are reused between calls.
+  // when the camera is inside the 법당 or any corner is behind the camera. The points are reused between calls.
   screenQuad(): Quad | null {
-    if (this.zone !== "gatbawi") return null;
+    if (this.area !== "gatbawi") return null;
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     for (let i = 0; i < this.screenCorners.length; i += 1) {
@@ -412,7 +388,7 @@ export class World {
 
   projectEmoteAnchor(monkId: string, out: { x: number; y: number }): boolean {
     const entry = this.entries.get(monkId);
-    if (!entry) return false;
+    if (!entry || entry.avatar.hidden) return false;
     entry.avatar.emoteAnchor(this.anchor);
     return this.projectToScreen(this.anchor.x, this.anchor.y, this.anchor.z, out);
   }
@@ -441,7 +417,7 @@ export class World {
   }
 
   private applyAtmosphere(): void {
-    if (this.zone === "dharma") {
+    if (this.area === "dharma") {
       this.background.copy(this.indoorColor);
       this.fog.color.copy(this.indoorColor);
       this.fog.near = DHARMA_FOG.near;
@@ -494,9 +470,14 @@ export class World {
       entry.avatar.place(entry.x, entry.z, entry.yaw);
       entry.avatar.animate(dt, nowMs, speed, this.reduceMotion);
     }
-    this.pool.flush();
 
     const self = this.selfId ? this.entries.get(this.selfId) : undefined;
+    if (self) this.followArea(self.x, self.z);
+    for (const entry of this.entries.values()) {
+      entry.avatar.hidden = entry !== self && zoneAt(entry.x, entry.z) !== this.area;
+    }
+    this.pool.flush();
+
     if (self) {
       this.rig.follow(self.x, self.z, dt);
     } else if (this.idleSpin && !this.reduceMotion) {
@@ -505,7 +486,7 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    if (this.zone === "dharma") this.dharma?.update(this.time, this.camera, this.reduceMotion);
+    if (this.area === "dharma") this.dharma?.update(this.time, this.camera, this.reduceMotion);
     else this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
     this.applyAtmosphere();
     this.renderer.render(this.scene, this.camera);

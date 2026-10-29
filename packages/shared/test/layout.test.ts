@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARRIVAL,
   DHARMA_BOUNDS,
+  DHARMA_ORIGIN,
   DHARMA_SEATS,
   DHARMA_SEAT_SIZE,
   GATBAWI_SEATS,
@@ -13,13 +15,10 @@ import {
   STEPS,
   WORLD_BOUNDS,
   ZONES,
-  ZONE_BOUNDS,
   ZONE_CAPACITY,
   ZONE_SEATS,
-  ZONE_SPAWN,
   isZone,
   lerpAngle,
-  otherZone,
   pickSeat,
   resolveWalkable,
   seatKey,
@@ -36,8 +35,6 @@ describe("zones", () => {
     expect(isZone("dharma")).toBe(true);
     expect(isZone("garden")).toBe(false);
     expect(isZone(undefined)).toBe(false);
-    expect(otherZone("gatbawi")).toBe("dharma");
-    expect(otherZone("dharma")).toBe("gatbawi");
   });
 
   it("seats exactly as many as each zone admits", () => {
@@ -59,7 +56,7 @@ describe("gatbawi seats", () => {
 
   it("keeps the mats apart and on the plaza, clear of the steps", () => {
     for (const spot of GATBAWI_SEATS) {
-      expect(resolveWalkable("gatbawi", spot.x, spot.z)).toEqual({ x: spot.x, z: spot.z });
+      expect(resolveWalkable(spot.x, spot.z)).toEqual({ x: spot.x, z: spot.z });
       expect(spot.z - GATBAWI_SEAT_SIZE.z / 2).toBeGreaterThan(STEPS.maxZ);
       expect(spot.z + GATBAWI_SEAT_SIZE.z / 2).toBeLessThanOrEqual(PLAZA.maxZ);
     }
@@ -93,16 +90,20 @@ describe("gatbawi seats", () => {
 describe("dharma seats", () => {
   it("lays fifty 방석 in two blocks of five rows with an aisle down the middle", () => {
     expect(DHARMA_SEATS.map((spot) => spot.id)).toEqual(Array.from({ length: 50 }, (_, id) => id));
-    expect(DHARMA_SEATS[0]).toMatchObject({ id: 0, x: -6.65, z: -2.6, row: 0, column: 0 });
-    expect(DHARMA_SEATS[4]).toMatchObject({ id: 4, x: -1.45 });
-    expect(DHARMA_SEATS[5]).toMatchObject({ id: 5, x: 1.45 });
-    expect(DHARMA_SEATS[49]).toMatchObject({ id: 49, x: 6.65, z: 2.4, row: 4, column: 9 });
-    expect(DHARMA_SEATS.some((spot) => Math.abs(spot.x) < 1)).toBe(false);
+    expect(DHARMA_SEATS[0]).toMatchObject({ id: 0, x: -25.65, z: -2.6, row: 0, column: 0 });
+    expect(DHARMA_SEATS[4]).toMatchObject({ id: 4, x: -20.45 });
+    expect(DHARMA_SEATS[5]).toMatchObject({ id: 5, x: -17.55 });
+    expect(DHARMA_SEATS[49]).toMatchObject({ id: 49, x: -12.35, z: 2.4, row: 4, column: 9 });
+    expect(DHARMA_SEATS.some((spot) => Math.abs(spot.x - DHARMA_ORIGIN.x) < 1)).toBe(false);
   });
 
   it("keeps the 방석 apart and inside the room", () => {
     for (const spot of DHARMA_SEATS) {
-      expect(resolveWalkable("dharma", spot.x, spot.z)).toEqual({ x: spot.x, z: spot.z });
+      expect(resolveWalkable(spot.x, spot.z)).toEqual({ x: spot.x, z: spot.z });
+      expect(spot.x).toBeGreaterThan(DHARMA_BOUNDS.minX);
+      expect(spot.x).toBeLessThan(DHARMA_BOUNDS.maxX);
+      expect(spot.z).toBeGreaterThan(DHARMA_BOUNDS.minZ);
+      expect(spot.z).toBeLessThan(DHARMA_BOUNDS.maxZ);
     }
     for (const a of DHARMA_SEATS) {
       for (const b of DHARMA_SEATS) {
@@ -151,26 +152,18 @@ describe("seats", () => {
   });
 });
 
-describe("walking", () => {
-  it("spawns each zone's visitors on walkable ground clear of every seat row's front", () => {
-    for (const zone of ZONES) {
-      const spawn = ZONE_SPAWN[zone];
-      for (const x of [spawn.x - spawn.spread / 2, spawn.x + spawn.spread / 2]) {
-        expect(resolveWalkable(zone, x, spawn.z)).toEqual({ x, z: spawn.z });
-      }
+describe("arrival", () => {
+  it("brings everyone in at the back of the plaza, on walkable ground", () => {
+    expect(ARRIVAL).toMatchObject({ x: 0, z: 14 });
+    for (const x of [ARRIVAL.x - ARRIVAL.spread / 2, ARRIVAL.x + ARRIVAL.spread / 2]) {
+      expect(resolveWalkable(x, ARRIVAL.z)).toEqual({ x, z: ARRIVAL.z });
     }
-    expect(ZONE_SPAWN.gatbawi).toMatchObject({ x: 0, z: 14 });
-    expect(ZONE_SPAWN.dharma).toMatchObject({ x: 0, z: 7.4 });
   });
 
-  it("clamps points to each zone's bounds", () => {
-    expect(resolveWalkable("gatbawi", 100, 100)).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.maxZ });
-    expect(resolveWalkable("gatbawi", -100, -100)).toEqual({ x: WORLD_BOUNDS.minX, z: WORLD_BOUNDS.minZ });
-    expect(resolveWalkable("dharma", 100, 100)).toEqual({ x: DHARMA_BOUNDS.maxX, z: DHARMA_BOUNDS.maxZ });
-    expect(resolveWalkable("dharma", -100, -100)).toEqual({ x: DHARMA_BOUNDS.minX, z: DHARMA_BOUNDS.minZ });
-    expect(resolveWalkable("gatbawi", 1, 2)).toEqual({ x: 1, z: 2 });
-    expect(ZONE_BOUNDS.gatbawi).toBe(WORLD_BOUNDS);
-    expect(ZONE_BOUNDS.dharma).toBe(DHARMA_BOUNDS);
+  it("stands the 법당 west of the plaza with its front wall at the near end of its floor", () => {
+    expect(DHARMA_BOUNDS.maxX).toBeLessThan(WORLD_BOUNDS.minX);
+    expect(DHARMA_BOUNDS.maxZ).toBeLessThan(WORLD_BOUNDS.maxZ);
+    expect(DHARMA_ORIGIN).toEqual({ x: -19, z: 0 });
   });
 });
 

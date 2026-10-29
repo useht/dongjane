@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ARRIVAL,
   BOW_MS,
+  DHARMA_SEATS,
   EMOTE_COOLDOWN_MS,
   GATBAWI_SEATS,
   JUMP_COOLDOWN_MS,
@@ -9,13 +11,13 @@ import {
   type TempleState,
   WORLD_BOUNDS,
   ZONES,
-  ZONE_SPAWN,
+  zoneAt,
 } from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
 const T0 = 1_800_000_000_000;
 const SEAT = GATBAWI_SEATS[47]!;
-const SPAWN = ZONE_SPAWN.gatbawi;
+const SPAWN = ARRIVAL;
 
 function open(hue: unknown = 120): { session: SoloSession; onState: ReturnType<typeof vi.fn<(state: TempleState) => void>> } {
   const onState = vi.fn<(state: TempleState) => void>();
@@ -49,7 +51,7 @@ describe("SoloSession", () => {
     expect(monk.mode).toBe("stand");
     expect(Math.abs(monk.x - SPAWN.x)).toBeLessThanOrEqual(SPAWN.spread);
     expect(monk.z).toBe(SPAWN.z);
-    expect(monk.zone).toBe("gatbawi");
+    expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
     expect(session.sessionId).toBe("solo");
     void session.leave();
   });
@@ -58,7 +60,7 @@ describe("SoloSession", () => {
     const { session } = open();
     const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
-    for (const zone of ZONES) expect(npcs.filter((npc) => npc.zone === zone)).toHaveLength(NPC_PER_ZONE);
+    for (const zone of ZONES) expect(npcs.filter((npc) => zoneAt(npc.x, npc.z) === zone)).toHaveLength(NPC_PER_ZONE);
     for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });
@@ -112,6 +114,20 @@ describe("SoloSession", () => {
     expect(self(session).mode).toBe("stand");
     expect(self(session).seatId).toBe(-1);
     expect(session.state.seats.get(`gatbawi:${SEAT.id}`)?.occupantId).toBe("");
+    void session.leave();
+  });
+
+  it("walks on foot through the 법당's doorway to a 방석 and kneels there", () => {
+    const { session } = open();
+    const seat = DHARMA_SEATS[4]!;
+    session.sit("dharma", seat.id);
+    expect(session.state.seats.get(`dharma:${seat.id}`)?.occupantId).toBe("solo");
+    expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");
+    vi.advanceTimersByTime(30_000);
+    expect(self(session).mode).toBe("kneel");
+    expect(self(session).x).toBeCloseTo(seat.x, 1);
+    expect(self(session).z).toBeCloseTo(seat.z, 1);
+    expect(zoneAt(self(session).x, self(session).z)).toBe("dharma");
     void session.leave();
   });
 

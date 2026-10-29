@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   STICK_DEADZONE,
   STICK_RADIUS_PX,
-  TAP_MAX_MOVE_PX,
-  TAP_MAX_MS,
-  TapDetector,
   axesFromJoystick,
   axesFromKeys,
   combineAxes,
@@ -101,44 +98,5 @@ describe("isEditable", () => {
     expect(isEditable({ tagName: "TEXTAREA" } as unknown as EventTarget)).toBe(true);
     expect(isEditable({ tagName: "BUTTON" } as unknown as EventTarget)).toBe(false);
     expect(isEditable(null)).toBe(false);
-  });
-});
-
-describe("TapDetector", () => {
-  it("calls a short, still press a tap and reports where it ended", () => {
-    const taps = new TapDetector();
-    taps.begin(1, 100, 200, 1000);
-    expect(taps.end(1, 103, 204, 1000 + TAP_MAX_MS)).toEqual({ x: 103, y: 204 });
-  });
-
-  it("does not call a long press or a drag a tap", () => {
-    const taps = new TapDetector();
-    taps.begin(1, 100, 200, 1000);
-    expect(taps.end(1, 100, 200, 1001 + TAP_MAX_MS)).toBeNull();
-    taps.begin(2, 100, 200, 5000);
-    expect(taps.end(2, 100 + TAP_MAX_MOVE_PX + 1, 200, 5050)).toBeNull();
-  });
-
-  it("ignores a release it never saw pressed", () => {
-    expect(new TapDetector().end(7, 0, 0, 10)).toBeNull();
-  });
-
-  it("never ends a pinch in a tap, and is ready for the next press once every finger is up", () => {
-    const taps = new TapDetector();
-    taps.begin(1, 10, 10, 0);
-    taps.begin(2, 40, 10, 20);
-    expect(taps.end(2, 40, 10, 60)).toBeNull();
-    expect(taps.end(1, 10, 10, 80)).toBeNull();
-    taps.begin(3, 10, 10, 1000);
-    expect(taps.end(3, 10, 10, 1050)).toEqual({ x: 10, y: 10 });
-  });
-
-  it("forgets a press that was cancelled", () => {
-    const taps = new TapDetector();
-    taps.begin(1, 10, 10, 0);
-    taps.cancel(1);
-    expect(taps.end(1, 10, 10, 10)).toBeNull();
-    taps.begin(2, 10, 10, 20);
-    expect(taps.end(2, 10, 10, 30)).toEqual({ x: 10, y: 10 });
   });
 });

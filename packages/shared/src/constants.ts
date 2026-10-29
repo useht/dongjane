@@ -1,5 +1,5 @@
 export const ROOM_NAME = "world";
-// One world holds a hundred visitors: fifty seats in each of its two zones.
+// One world holds a hundred visitors, who walk freely between its two zones; each zone has fifty seats.
 export const ZONE_CAPACITY = 50;
 export const WORLD_CAPACITY = 100;
 export const WORLD_SPARE_AT = 90;
@@ -11,7 +11,6 @@ export const WALK_SPEED = 2.4;
 export const BOW_MS = 2400;
 export const BOW_COOLDOWN_MS = 600;
 export const BOW_MAX_TIMES = 3;
-export const ZONE_COOLDOWN_MS = 2000;
 export const EMOTE_COOLDOWN_MS = 1500;
 export const JUMP_COOLDOWN_MS = 700;
 export const JUMP_MS = 600;

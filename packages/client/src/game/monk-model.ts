@@ -4,6 +4,7 @@ import {
   Group,
   InstancedBufferAttribute,
   InstancedMesh,
+  Matrix4,
   MeshLambertMaterial,
   Object3D,
   Vector3,
@@ -32,6 +33,7 @@ const ROBE_PARTS: ReadonlySet<MonkPart> = new Set(["skirt", "torso", "sleeveUppe
 const HEAD_TOP_OFFSET = 0.44;
 const EMOTE_ANCHOR_Y = 0.52;
 const HOP_HEIGHT = 0.35;
+const NOT_DRAWN = new Matrix4().makeScale(0, 0, 0);
 
 interface Binding {
   part: MonkPart;
@@ -49,6 +51,8 @@ export class MonkAvatar {
   mode = "stand";
   modeSince = 0;
   slot = -1;
+  // A monk in another part of the world than the camera's is still animated but not drawn.
+  hidden = false;
 
   private readonly hips = new Object3D();
   private readonly skirtNode = new Object3D();
@@ -266,7 +270,7 @@ export class MonkPool {
     for (const avatar of this.avatars) {
       for (const { part, copy, node } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
-        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, node.matrixWorld);
+        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, avatar.hidden ? NOT_DRAWN : node.matrixWorld);
       }
     }
     for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;

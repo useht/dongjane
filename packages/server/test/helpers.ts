@@ -2,9 +2,6 @@ import { Client, type Room } from "@colyseus/sdk";
 import {
   type JoinOptions,
   type WorldInfo,
-  type Zone,
-  type ZoneFullMessage,
-  MSG,
   type WorldListResponse,
   type SeatResponse,
   WORLDS_PATH,
@@ -44,7 +41,6 @@ const FILL_BATCH = 25;
 export class TestRig {
   readonly client: Client;
   readonly rooms: WorldClientRoom[] = [];
-  readonly refusals = new WeakMap<WorldClientRoom, Zone[]>();
 
   constructor(readonly port: number) {
     this.client = new Client(`ws://127.0.0.1:${port}`);
@@ -74,9 +70,6 @@ export class TestRig {
   async join(seat: SeatResponse, options: JoinOptions = {}): Promise<WorldClientRoom> {
     const room = await this.client.joinById<TempleState>(seat.roomId, options, TempleState);
     room.reconnection.minUptime = 0;
-    const refused: Zone[] = [];
-    room.onMessage(MSG.zoneFull, (message: ZoneFullMessage) => refused.push(message.zone));
-    this.refusals.set(room, refused);
     this.rooms.push(room);
     await waitFor(() => room.state.monks.has(room.sessionId), "own monk in state");
     return room;

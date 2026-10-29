@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
-import { DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, ZONE_SPAWN } from "@dongjane/shared";
-import { CameraRig, DEFAULT_VIEW, configureCamera, lensFor, maxDistanceInside, projectToCanvas, projectUnclipped, regionFor, viewFor } from "../src/game/camera-rig.ts";
+import { ARRIVAL, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM } from "@dongjane/shared";
+import { CameraRig, DEFAULT_VIEW, DHARMA_CAMERA_BOUNDS, configureCamera, lensFor, maxDistanceInside, projectToCanvas, projectUnclipped, regionFor, viewFor } from "../src/game/camera-rig.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
+import { DHARMA } from "../src/game/dharma-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
 
@@ -65,6 +66,43 @@ describe("CameraRig", () => {
     for (let i = 0; i < 50; i += 1) rig.zoom(2);
     expect(rig.distance).toBeLessThanOrEqual(outdoors.limits.maxDistance);
     expect(outdoors.limits.maxDistance).toBeGreaterThan(dharma.limits.maxDistance);
+  });
+
+  it("slides to another box over the blend time instead of jumping, easing the distance into the new range", () => {
+    const rig = make();
+    rig.reduceMotion = false;
+    rig.distance = 16;
+    const dharma = regionFor("dharma");
+    rig.setRegion(dharma.bounds, dharma.limits, 0.5);
+    rig.follow(DHARMA_BOUNDS.maxX - 5, 2, 1, true);
+    rig.update(0.1);
+    expect(rig.distance).toBeLessThan(16);
+    expect(rig.distance).toBeGreaterThan(dharma.limits.maxDistance);
+    for (let i = 0; i < 10; i += 1) rig.update(0.1);
+    expect(rig.distance).toBe(dharma.limits.maxDistance);
+    const { x, y, z } = rig.camera.position;
+    expect(x).toBeGreaterThanOrEqual(dharma.bounds.minX);
+    expect(x).toBeLessThanOrEqual(dharma.bounds.maxX);
+    expect(y).toBeLessThanOrEqual(dharma.bounds.maxY);
+    expect(z).toBeLessThanOrEqual(dharma.bounds.maxZ);
+  });
+
+  it("changes box at once when motion is reduced", () => {
+    const rig = make();
+    rig.reduceMotion = true;
+    rig.distance = 16;
+    const dharma = regionFor("dharma");
+    rig.setRegion(dharma.bounds, dharma.limits, 0.5);
+    expect(rig.distance).toBe(dharma.limits.maxDistance);
+  });
+
+  it("keeps the room's box inside the room's walls, around the walkable floor", () => {
+    expect(DHARMA_CAMERA_BOUNDS.minX).toBeGreaterThan(DHARMA_ORIGIN.x - DHARMA.halfWidth);
+    expect(DHARMA_CAMERA_BOUNDS.maxX).toBeLessThan(DHARMA_ORIGIN.x + DHARMA.halfWidth);
+    expect(DHARMA_CAMERA_BOUNDS.maxZ).toBeLessThan(DHARMA_ORIGIN.z + DHARMA.frontZ);
+    expect(DHARMA_CAMERA_BOUNDS.minX).toBeLessThanOrEqual(DHARMA_BOUNDS.minX);
+    expect(DHARMA_CAMERA_BOUNDS.maxX).toBeGreaterThanOrEqual(DHARMA_BOUNDS.maxX);
+    expect(regionFor("dharma").bounds).toBe(DHARMA_CAMERA_BOUNDS);
   });
 
   it("points forward toward Gatbawi at yaw 0 and rotates with orbit", () => {
@@ -205,7 +243,7 @@ const SCREENS: ReadonlyArray<readonly [string, number, number, number, number]> 
 
 describe("default framing", () => {
   const halfMat = { x: GATBAWI_SEAT_SIZE.x / 2, z: GATBAWI_SEAT_SIZE.z / 2 };
-  const spawn = ZONE_SPAWN.gatbawi;
+  const spawn = ARRIVAL;
 
   const frame = (width: number, height: number): CameraRig => {
     const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS);

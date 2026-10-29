@@ -1,11 +1,11 @@
-import { type SkyState, type WorldInfo, type Zone, otherZone, seatLabel, worldName } from "@dongjane/shared";
+import { type SkyState, type WorldInfo, seatLabel, worldName } from "@dongjane/shared";
 import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
 import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, iconButton } from "./dom.ts";
 import { EmotePicker } from "./emote-picker.ts";
-import { type ChantStatus, describeSky, modeLabel, zoneDoorLabel, zoneName } from "./format.ts";
+import { type ChantStatus, describeSky, modeLabel, zoneName } from "./format.ts";
 import { icon } from "./icons.ts";
 import { Phone } from "./phone.ts";
 import { QuestPanel } from "./quest.ts";
@@ -28,7 +28,6 @@ export interface SelfStatus {
 
 export interface HudHandlers {
   onSwitchWorld(world: number): void;
-  onSwitchZone(): void;
   onOpenWorlds(): void;
   onBow(): void;
   onStand(): void;
@@ -50,8 +49,6 @@ export class Hud {
   private readonly worldButton = h("button", "world-button");
   private readonly worldLabel = h("span", "world-label", "월드");
   private readonly worldCount = h("span", "world-count", "");
-  private readonly zoneButton = h("button", "zone-button");
-  private readonly zoneLabel = h("span", "zone-label");
   private readonly clock: ClockWidget;
   private readonly phone: Phone;
   private readonly quests: QuestPanel;
@@ -91,10 +88,6 @@ export class Hud {
       if (this.worldSheet.isOpen) handlers.onOpenWorlds();
     });
 
-    this.zoneButton.type = "button";
-    this.zoneButton.append(icon("door"), this.zoneLabel);
-    this.zoneButton.addEventListener("click", () => handlers.onSwitchZone());
-    this.setZone("gatbawi");
     this.phone = new Phone(
       host,
       { onInvite: () => handlers.onInvite(), onToggleSound: () => handlers.onToggleSound() },
@@ -102,8 +95,7 @@ export class Hud {
     );
     this.clock = new ClockWidget(() => this.phone.toggle());
     this.quests = new QuestPanel(host);
-    const places = h("div", "world-pair", this.worldButton, this.zoneButton);
-    const top = h("div", "topbar", h("div", "topbar-start", h("div", "world-stack", places, this.quests.button)), this.clock.button);
+    const top = h("div", "topbar", h("div", "topbar-start", h("div", "world-stack", this.worldButton, this.quests.button)), this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
@@ -157,14 +149,6 @@ export class Hud {
     const here = worlds.find((info) => info.world === current);
     this.worldCount.textContent = here ? `${here.clients}/${here.capacity}` : "";
     this.renderWorlds();
-  }
-
-  // The door button always leads to the other zone.
-  setZone(zone: Zone): void {
-    const label = zoneDoorLabel(otherZone(zone));
-    this.zoneLabel.textContent = label.text;
-    this.zoneButton.setAttribute("aria-label", label.aria);
-    this.zoneButton.title = label.aria;
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {

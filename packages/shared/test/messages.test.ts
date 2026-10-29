@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMOTE_COUNT, isValidEmote, parseBow, parseEmote, parseMove, parseRelocate, parseSit, parseZone, parseZoneFull } from "../src/index.ts";
+import { EMOTE_COUNT, isValidEmote, parseBow, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -35,16 +35,6 @@ describe("message parsers", () => {
     expect(parseSit({ seatId: 3 })).toBeNull();
     expect(parseSit({ zone: "gatbawi" })).toBeNull();
     expect(parseSit(undefined)).toBeNull();
-  });
-
-  it("accepts only a known zone for a zone change or a full-zone notice", () => {
-    expect(parseZone({ zone: "dharma" })).toEqual({ zone: "dharma" });
-    expect(parseZone({ zone: "gatbawi", extra: 1 })).toEqual({ zone: "gatbawi" });
-    expect(parseZone({ zone: "" })).toBeNull();
-    expect(parseZone({ zone: 1 })).toBeNull();
-    expect(parseZone(null)).toBeNull();
-    expect(parseZoneFull({ zone: "dharma" })).toEqual({ zone: "dharma" });
-    expect(parseZoneFull({})).toBeNull();
   });
 
   it("accepts only 1, 2 or 3 bows", () => {

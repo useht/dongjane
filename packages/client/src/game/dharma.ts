@@ -31,7 +31,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { SEAT_COUNT, SEAT_YAW, ZONE_SEATS } from "@dongjane/shared";
+import { DHARMA_ORIGIN, SEAT_COUNT, SEAT_YAW, ZONE_SEATS } from "@dongjane/shared";
 import type { ModelMeshes } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { ALTAR, CANDLE_SPOTS, FLAME_HEIGHT, hangingLanterns } from "./dharma-layout.ts";
@@ -112,12 +112,11 @@ function centredGlow(source: Mesh): { geometry: BufferGeometry; centre: Vector3 
   return { geometry, centre };
 }
 
-// The 법당's inside: the room, the Buddha on his altar, fifty floor seats, the door back to the plaza. It owns its own lights
-// and never looks at the sky, so the weather and the hour outside change nothing in here.
+// The 법당's inside: the room, the Buddha on his altar, fifty floor seats. It is modelled around its own origin and its group
+// stands at DHARMA_ORIGIN in the world. It owns its own lights and never looks at the sky, so the weather and the hour
+// outside change nothing in here.
 export class DharmaScene {
   readonly group = new Group();
-  // The lattice door in the front wall, which a tap opens back onto the plaza.
-  readonly door: Mesh;
 
   private readonly environment: Texture;
   private readonly candleLight: PointLight;
@@ -140,6 +139,7 @@ export class DharmaScene {
   constructor(renderer: WebGLRenderer, quality: DharmaQuality, meshes: ModelMeshes<"dharma">, lantern: Mesh) {
     const { scene: palette } = THEME;
     this.group.name = "dharma";
+    this.group.position.set(DHARMA_ORIGIN.x, 0, DHARMA_ORIGIN.z);
     this.environment = buildEnvironment(renderer);
 
     this.group.add(new HemisphereLight(palette.dharmaHemiSky, palette.dharmaHemiGround, 1.35));
@@ -172,7 +172,6 @@ export class DharmaScene {
     this.add(meshes.floor, lit()).receiveShadow = quality.shadows;
     this.add(meshes.paper, vertexGlowMaterial(palette.paperGlow, PAPER_GLOW));
     this.add(meshes.mural, vertexGlowMaterial(palette.muralGlow, MURAL_GLOW));
-    this.door = this.add(meshes.door, lit());
 
     const gold = new MeshStandardMaterial({
       vertexColors: true,
@@ -254,7 +253,7 @@ export class DharmaScene {
     seats.name = "seats";
     const m = new Matrix4();
     for (const spot of ZONE_SEATS.dharma) {
-      m.makeRotationY(SEAT_YAW).setPosition(spot.x, 0, spot.z);
+      m.makeRotationY(SEAT_YAW).setPosition(spot.x - DHARMA_ORIGIN.x, 0, spot.z - DHARMA_ORIGIN.z);
       seats.setMatrixAt(spot.id, m);
     }
     this.group.add(seats);

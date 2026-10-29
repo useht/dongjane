@@ -1,10 +1,10 @@
 import { BOW_COOLDOWN_MS, BOW_MAX_TIMES, BOW_MS, WALK_SPEED } from "./constants.ts";
-import { ZONE_BOUNDS, ZONE_SEATS, type SeatSpot, type Zone, isZone, resolveWalkable } from "./layout.ts";
+import { ZONE_SEATS, type SeatSpot, type Zone } from "./layout.ts";
 import type { Persona } from "./persona.ts";
+import { HOME_AREAS, clampToHome } from "./walk.ts";
 
 export interface NpcBody {
   readonly id: string;
-  readonly zone: string;
   readonly mode: string;
   readonly x: number;
   readonly z: number;
@@ -27,6 +27,8 @@ export interface NpcVisitor {
 }
 
 export interface NpcWorld {
+  // the zone the monk lives in; it never walks out of it
+  zone: Zone;
   now: number;
   random: () => number;
   chantEndsAt: number | null;
@@ -112,8 +114,7 @@ export function disturbNpc(brain: NpcBrain, now: number, random: () => number): 
 }
 
 export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
-  const zone = monk.zone;
-  if (!isZone(zone)) return;
+  const zone = world.zone;
   if (monk.seatId < 0) {
     brain.seat = null;
   } else if (brain.seat?.seatId !== monk.seatId) {
@@ -282,13 +283,13 @@ function directionFrom(visitor: NpcVisitor, monk: NpcBody, random: () => number)
 function stepAway(monk: NpcBody, zone: Zone, visitor: NpcVisitor, random: () => number): Point {
   const away = directionFrom(visitor, monk, random);
   const reach = span(random, AWAY_M);
-  return resolveWalkable(zone, monk.x + away.x * reach, monk.z + away.z * reach);
+  return clampToHome(zone, monk.x + away.x * reach, monk.z + away.z * reach);
 }
 
 function approach(monk: NpcBody, zone: Zone, visitor: NpcVisitor, random: () => number): Point {
   const side = directionFrom(visitor, monk, random);
   const gap = span(random, APPROACH_GAP_M);
-  return resolveWalkable(zone, visitor.x + side.x * gap, visitor.z + side.z * gap);
+  return clampToHome(zone, visitor.x + side.x * gap, visitor.z + side.z * gap);
 }
 
 // "In front" is the half of the zone's rows nearest the Buddha, whichever zone the walker is in.
@@ -304,8 +305,8 @@ function pickSeat(zone: Zone, persona: Persona, world: NpcWorld): SeatSpot | und
 
 function pickStrollTarget(monk: NpcBody, zone: Zone, random: () => number): Point {
   if (random() < FAR_STROLL_CHANCE) {
-    const bounds = ZONE_BOUNDS[zone];
-    return resolveWalkable(
+    const bounds = HOME_AREAS[zone];
+    return clampToHome(
       zone,
       bounds.minX + random() * (bounds.maxX - bounds.minX),
       bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
@@ -315,9 +316,9 @@ function pickStrollTarget(monk: NpcBody, zone: Zone, random: () => number): Poin
   const reach = span(random, STROLL_REACH_M);
   const dx = Math.cos(angle) * reach;
   const dz = Math.sin(angle) * reach;
-  const ahead = resolveWalkable(zone, monk.x + dx, monk.z + dz);
+  const ahead = clampToHome(zone, monk.x + dx, monk.z + dz);
   if (Math.hypot(ahead.x - monk.x, ahead.z - monk.z) >= reach / 2) return ahead;
-  return resolveWalkable(zone, monk.x - dx, monk.z - dz);
+  return clampToHome(zone, monk.x - dx, monk.z - dz);
 }
 
 function rollBows(brain: NpcBrain, random: () => number): number {

@@ -1,4 +1,4 @@
-import { WALK_SPEED, type Zone, lerpAngle, resolveWalkable } from "@dongjane/shared";
+import { WALK_SPEED, lerpAngle, slideWalkable } from "@dongjane/shared";
 
 export interface Snapshot {
   t: number;
@@ -39,8 +39,6 @@ const JUMP_SLACK = 0.03;
 export class SnapshotBuffer {
   private readonly items: Snapshot[] = [];
 
-  constructor(private readonly zone: Zone = "gatbawi") {}
-
   get length(): number {
     return this.items.length;
   }
@@ -75,7 +73,7 @@ export class SnapshotBuffer {
       return true;
     }
     if (renderTime >= last.t) {
-      extrapolate(last, renderTime - last.t, out, this.zone);
+      extrapolate(last, renderTime - last.t, out);
       this.trim(renderTime);
       return true;
     }
@@ -101,13 +99,13 @@ export class SnapshotBuffer {
   }
 }
 
-function extrapolate(last: Snapshot, overshootMs: number, out: Sample, zone: Zone): void {
+function extrapolate(last: Snapshot, overshootMs: number, out: Sample): void {
   out.x = last.x;
   out.z = last.z;
   out.yaw = last.yaw;
   if (!last.walking) return;
   const reach = (WALK_SPEED * Math.min(overshootMs, EXTRAPOLATION_MAX_MS)) / 1000;
-  const point = resolveWalkable(zone, last.x - Math.sin(last.yaw) * reach, last.z - Math.cos(last.yaw) * reach);
+  const point = slideWalkable(last, -Math.sin(last.yaw) * reach, -Math.cos(last.yaw) * reach);
   out.x = point.x;
   out.z = point.z;
 }
@@ -186,16 +184,12 @@ export class ServerClock {
 
 // One remote monk: snapshots in server time, plus a decaying offset that glides over any correction, however large, instead of snapping.
 export class RemoteTrack {
-  readonly buffer: SnapshotBuffer;
+  readonly buffer = new SnapshotBuffer();
   private offsetX = 0;
   private offsetZ = 0;
   private rawX = 0;
   private rawZ = 0;
   private primed = false;
-
-  constructor(zone: Zone = "gatbawi") {
-    this.buffer = new SnapshotBuffer(zone);
-  }
 
   push(t: number, x: number, z: number, yaw: number, walking: boolean): void {
     this.buffer.push(t, x, z, yaw, walking);

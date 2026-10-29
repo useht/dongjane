@@ -7,12 +7,12 @@ import {
   ZONE_SEATS,
   type Zone,
   isZone,
-  otherZone,
   parseWorldParam,
   seatLabel,
   skyAt,
   visitorTitle,
   worldName,
+  zoneAt,
 } from "@dongjane/shared";
 import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
@@ -25,7 +25,6 @@ import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
-import { ZoneTransition, zoneCooldownLeft } from "./game/zone-transition.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { ReturnCountdown } from "./net/return-countdown.ts";
@@ -44,7 +43,7 @@ import {
 } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
-import { ZONE_COOLDOWN_NOTE, ZONE_LOADING_NOTE, ZONE_LOAD_FAILED_NOTE, describeChant, seatName, zoneFullNote, zoneName } from "./ui/format.ts";
+import { describeChant, seatName } from "./ui/format.ts";
 import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
@@ -54,7 +53,6 @@ import { SettingsPanel } from "./ui/settings.ts";
 import { SoundChip } from "./ui/sound-chip.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
-import { ZoneFade } from "./ui/zone-fade.ts";
 
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
@@ -67,6 +65,7 @@ const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 const INDOOR_PREFETCH_DELAY_MS = 2500;
+const INDOOR_PREFETCH_IDLE_TIMEOUT_MS = 4000;
 
 interface SelfSnapshot {
   x: number;
@@ -96,8 +95,6 @@ export class App {
   private readonly stage: StageScreen;
   private readonly soundChip: SoundChip;
   private readonly sutra: SutraPlayer;
-  private readonly zoneFade: ZoneFade;
-  private readonly transition: ZoneTransition;
   private readonly visitorTitles: VisitorTitles;
   private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
@@ -112,11 +109,9 @@ export class App {
   private currentWorld = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
+  // The part of the world the camera is in, which the seat hints, the sounds and the greetings belong to.
   private zone: Zone = "gatbawi";
-  private lastZoneRequestAt: number | null = null;
-  private zoneRequesting = false;
-  private zoneProblem = false;
-  private seatOwners = new Map<number, string>();
+  private seatOwners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
   private nextJumpAt = 0;
@@ -151,7 +146,7 @@ export class App {
           if (this.stage.mounted) this.stage.place(this.world.screenQuad());
         },
         onStick: (stick) => this.joystick.set(stick),
-        onDoorTap: (zone) => void this.requestZone(zone),
+        onZone: (zone) => this.setZone(zone),
       },
       assets,
     );
@@ -191,7 +186,6 @@ export class App {
       this.ui,
       {
         onSwitchWorld: (world) => void this.enter(world),
-        onSwitchZone: () => void this.requestZone(otherZone(this.zone)),
         onOpenWorlds: () => void this.refreshWorlds(),
         onBow: () => this.bow(),
         onStand: () => this.stand(),
@@ -214,18 +208,6 @@ export class App {
     this.hudFrame = new HudFrame(this.ui);
     new InstallBanner(this.ui, () => this.fitCameraToHud());
     this.overlay = new Overlay(this.ui);
-    this.zoneFade = new ZoneFade(this.canvas.parentElement ?? this.ui, () => this.settings.reduceMotion);
-    this.transition = new ZoneTransition({
-      cover: () => this.zoneFade.cover(),
-      reveal: () => this.zoneFade.reveal(),
-      prepare: (zone) => (zone === "dharma" ? this.world.ensureDharma() : Promise.resolve(true)),
-      apply: (zone) => {
-        this.applyZone(zone);
-        const session = this.session;
-        if (session) this.handleState(session.state);
-      },
-      fail: (zone) => this.showZoneProblem(zone),
-    });
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
         if (this.self && this.self.seatId >= 0) this.bow();
@@ -262,7 +244,6 @@ export class App {
     const token = ++this.joinToken;
     this.lost = false;
     this.inSolo = false;
-    this.endZoneChange();
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
 
@@ -272,7 +253,7 @@ export class App {
     this.self = null;
     this.hud.setSelf(null);
     this.prediction.cancel();
-    this.seatOwners.clear();
+    this.clearSeatOwners();
     this.hud.setLink("online");
     this.overlay.loading("월드로 들어가는 중이에요", "잠시만 기다려 주세요");
 
@@ -299,7 +280,7 @@ export class App {
           this.base,
           seat.roomId,
           seat.world,
-          { hue: profile.hue, zone: this.zone },
+          { hue: profile.hue },
           {
             onState: (state) => {
               if (token === this.joinToken) this.handleState(state);
@@ -311,9 +292,6 @@ export class App {
               if (token !== this.joinToken) return;
               this.hud.toast(`월드가 합쳐져서 ${worldName(world)}로 옮겨 드려요`);
               void this.enter(world);
-            },
-            onZoneFull: (zone) => {
-              if (token === this.joinToken) this.hud.toast(zoneFullNote(zone, otherZone(zone)));
             },
           },
         );
@@ -363,7 +341,6 @@ export class App {
     this.returnHeld = false;
     const token = ++this.joinToken;
     this.lost = false;
-    this.endZoneChange();
     await this.leaveCurrent();
     if (token !== this.joinToken) return;
     this.inSolo = true;
@@ -375,8 +352,7 @@ export class App {
     this.self = null;
     this.hud.setSelf(null);
     this.prediction.cancel();
-    this.seatOwners.clear();
-    this.applyZone("gatbawi");
+    this.clearSeatOwners();
 
     const session = new SoloSession(profile.hue, {
       onState: (state) => {
@@ -428,50 +404,38 @@ export class App {
     const now = performance.now();
     const selfId = session.sessionId;
 
-    const mine = state.monks.get(selfId);
-    if (mine && isZone(mine.zone) && mine.zone !== this.zone) {
-      if (!this.zoneProblem && !this.transition.busy) void this.transition.run(mine.zone);
-      // The server already has the visitor in the other zone; nothing here fits them until the swap has happened.
-      return;
-    }
-    const zone = this.zone;
-
     const views: MonkView[] = [];
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
     const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
     const visitorIds = new Set<string>();
     state.monks.forEach((monk) => {
-      const here = monk.zone === zone;
-      if (here) {
-        views.push({
-          id: monk.id,
-          hue: monk.hue,
-          x: monk.x,
-          z: monk.z,
-          yaw: monk.yaw,
-          mode: monk.mode,
-          zone,
-          seatId: monk.seatId,
-          npc: monk.npc,
-          bowCount: monk.bowCount,
-          emote: monk.emote,
-          emoteSeq: monk.emoteSeq,
-          jumpSeq: monk.jumpSeq,
-        });
-      }
+      views.push({
+        id: monk.id,
+        hue: monk.hue,
+        x: monk.x,
+        z: monk.z,
+        yaw: monk.yaw,
+        mode: monk.mode,
+        seatId: monk.seatId,
+        npc: monk.npc,
+        bowCount: monk.bowCount,
+        emote: monk.emote,
+        emoteSeq: monk.emoteSeq,
+        jumpSeq: monk.jumpSeq,
+      });
       // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
       if (monk.npc) return;
-      if (isZone(monk.zone)) counts[monk.zone] += 1;
-      if (here) {
-        visitorIds.add(monk.id);
-        watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
-      }
+      // Where a monk is decides which zone they count in: the 법당 is whoever stands inside its door.
+      const monkZone = zoneAt(monk.x, monk.z);
+      counts[monkZone] += 1;
+      visitorIds.add(monk.id);
+      watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
         slot: monk.slot,
         mode: monk.mode,
-        zone: monk.zone,
+        zone: monkZone,
         seatId: monk.seatId,
         bowCount: monk.bowCount,
         isSelf: monk.id === selfId,
@@ -481,25 +445,25 @@ export class App {
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
         this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId });
         this.creditBows(monk.bowCount);
-        for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
+        for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone: monkZone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
     });
     this.hud.setQuests(this.quests.view(state.serverTime));
     this.lastViews = views;
     this.visitorTitles.retain(visitorIds);
 
-    const owners = new Map<number, string>();
-    const occupied = new Set<number>();
+    const owners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
+    const occupied: Record<Zone, Set<number>> = { gatbawi: new Set(), dharma: new Set() };
     state.seats.forEach((seat) => {
-      if (seat.zone !== zone || seat.occupantId === "") return;
-      occupied.add(seat.id);
-      if (!state.monks.get(seat.occupantId)?.npc) owners.set(seat.id, seat.occupantId);
+      if (!isZone(seat.zone) || seat.occupantId === "") return;
+      occupied[seat.zone].add(seat.id);
+      if (!state.monks.get(seat.occupantId)?.npc) owners[seat.zone].set(seat.id, seat.occupantId);
     });
     this.seatOwners = owners;
 
     this.world.setSelfPrediction(this.prediction.display());
     this.world.applyMonks(views, now, state.serverTime);
-    this.world.setOccupancy(occupied);
+    for (const zone of ZONES) this.world.setOccupancy(zone, occupied[zone]);
 
     rows.sort((a, b) => Number(b.isSelf) - Number(a.isSelf) || a.slot - b.slot);
     this.hud.setVisitors(rows);
@@ -532,79 +496,25 @@ export class App {
     this.hud.setWorlds(this.worlds, this.currentWorld);
   }
 
-  // Which zone the visitor is in follows the server's state. Everything that was drawn or predicted for the old zone is dropped.
-  private applyZone(zone: Zone): void {
-    if (!this.world.setZone(zone)) return;
+  // The camera went in at the 법당's door or out of it: the seat hints, the label and the sounds follow it.
+  private setZone(zone: Zone): void {
+    if (zone === this.zone) return;
     this.zone = zone;
-    this.prediction.cancel();
-    this.prediction.zone = zone;
     this.seatHints.hideAll();
-    this.hud.setZone(zone);
     this.syncZoneSound();
   }
 
-  // A tap on a door or the door button: ask the server to move the visitor, once the other zone is ready to be shown.
-  private async requestZone(target: Zone): Promise<void> {
-    const session = this.session;
-    if (!session || target === this.zone || this.transition.busy || this.zoneRequesting || this.zoneProblem) return;
-    if (zoneCooldownLeft(performance.now(), this.lastZoneRequestAt) > 0) {
-      this.hud.toast(ZONE_COOLDOWN_NOTE);
-      return;
-    }
-    this.zoneRequesting = true;
-    try {
-      if (target === "dharma" && !this.world.indoorReady) {
-        this.hud.toast(ZONE_LOADING_NOTE);
-        if (!(await this.world.ensureDharma())) {
-          this.hud.toast(ZONE_LOAD_FAILED_NOTE);
-          return;
-        }
-      }
-      if (session !== this.session || target === this.zone) return;
-      this.lastZoneRequestAt = performance.now();
-      if (session instanceof SoloSession) {
-        const result = session.changeZone(target);
-        if (result === "full") this.hud.toast(zoneFullNote(target, otherZone(target)));
-      } else {
-        session.changeZone(target);
-      }
-    } finally {
-      this.zoneRequesting = false;
-    }
+  private clearSeatOwners(): void {
+    this.seatOwners = { gatbawi: new Map(), dharma: new Map() };
   }
 
-  // The 법당 inside could not be fetched although the server already put the visitor there.
-  private showZoneProblem(zone: Zone): void {
-    this.zoneProblem = true;
-    this.overlay.problem(`${zoneName(zone)}을 열지 못했어요`, "네트워크를 확인한 뒤 다시 시도해 주세요.", [
-      {
-        label: "다시 시도",
-        run: () => {
-          this.zoneProblem = false;
-          this.overlay.hide();
-        },
-      },
-      {
-        label: `${zoneName(otherZone(zone))}에 있기`,
-        run: () => {
-          this.zoneProblem = false;
-          this.overlay.hide();
-          this.session?.changeZone(otherZone(zone));
-        },
-      },
-    ]);
-  }
-
-  private endZoneChange(): void {
-    this.transition.cancel();
-    this.zoneProblem = false;
-    this.zoneRequesting = false;
-  }
-
-  // The 법당 is a big file, so it is fetched while the visitor settles in, not before they can see anything.
+  // The 법당's inside is a big file, so it is fetched once the browser is idle after the visitor has settled in, not before they
+  // can see anything. A visitor who saves data gets it when they walk up to the door instead.
   private prefetchIndoors(): void {
     if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
-    window.setTimeout(() => void this.world.ensureDharma(), INDOOR_PREFETCH_DELAY_MS);
+    const load = (): void => void this.world.ensureDharma();
+    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(load, { timeout: INDOOR_PREFETCH_IDLE_TIMEOUT_MS });
+    else window.setTimeout(load, INDOOR_PREFETCH_DELAY_MS);
   }
 
   // What belongs to where the visitor stands: the concert video and the wind outdoors, the sutra in the 법당.
@@ -622,7 +532,6 @@ export class App {
     this.hud.setLink(link);
     if (link !== "lost") return;
     this.lost = true;
-    this.endZoneChange();
     this.session = null;
     this.syncZoneSound();
     this.prediction.cancel();
@@ -741,8 +650,8 @@ export class App {
       bellCount: () => this.audio.bellCount,
       stage: () => ({ status: this.stage.status, mounted: this.stage.mounted, audible: this.videoAudible }),
       sutraPlaying: () => this.sutra.playing,
-      zone: () => ({ zone: this.zone, busy: this.transition.busy, indoorReady: this.world.indoorReady }),
-      goZone: (zone: Zone) => this.requestZone(zone),
+      zone: () => this.zone,
+      sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
       serverNow: () => this.world.serverNowAt(performance.now()),
     };
   }
@@ -835,7 +744,7 @@ export class App {
 
     const session = this.session;
     const displayed = this.world.selfPosition;
-    if (!session || !this.self || !displayed || this.transition.busy) return;
+    if (!session || !this.self || !displayed) return;
     const axes = combineAxes(this.keyboard.axes(), this.joystick.axes());
     const moving = axes.forward !== 0 || axes.right !== 0;
     const dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
@@ -851,7 +760,7 @@ export class App {
       return;
     }
     for (const spot of ZONE_SEATS[this.zone]) {
-      const reachable = !this.seatOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+      const reachable = !this.seatOwners[this.zone].has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
       if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
         this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
       } else {
