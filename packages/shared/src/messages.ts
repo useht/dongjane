@@ -13,6 +13,7 @@ export const MSG = {
 export interface MoveMessage {
   x: number;
   z: number;
+  seq?: number;
 }
 export interface SitMessage {
   cushionId: number;
@@ -44,9 +45,13 @@ function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-export function parseMove(payload: unknown): MoveMessage | null {
+const MAX_MOVE_SEQ = 0xffffffff;
+
+export function parseMove(payload: unknown): (MoveMessage & { seq: number }) | null {
   if (!isRecord(payload) || !finite(payload.x) || !finite(payload.z)) return null;
-  return { x: payload.x, z: payload.z };
+  const seq = payload.seq;
+  const valid = typeof seq === "number" && Number.isInteger(seq) && seq >= 0 && seq <= MAX_MOVE_SEQ;
+  return { x: payload.x, z: payload.z, seq: valid ? seq : 0 };
 }
 
 export function parseSit(payload: unknown): SitMessage | null {

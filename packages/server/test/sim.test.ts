@@ -93,6 +93,49 @@ describe("join and movement", () => {
     expect(h.sim.move("ghost", 0, 0)).toBe(false);
     expect(h.monk("a").mode).toBe("stand");
   });
+
+  it("acks the highest move seq it has seen, never going backwards", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").ackSeq).toBe(0);
+    h.sim.move("a", 0, 3, 5);
+    expect(h.monk("a").ackSeq).toBe(5);
+    h.sim.move("a", 0, 2, 3);
+    expect(h.monk("a").ackSeq).toBe(5);
+    h.sim.move("a", 0, 1, 9);
+    expect(h.monk("a").ackSeq).toBe(9);
+    h.sim.move("a", 0, 1);
+    expect(h.monk("a").ackSeq).toBe(9);
+  });
+
+  it("advances the ack even when the move itself is ignored", () => {
+    h.sim.join("a", 0);
+    const { x, z } = h.monk("a");
+    expect(h.sim.move("a", Number.NaN, 0, 4)).toBe(false);
+    expect(h.monk("a").ackSeq).toBe(4);
+    expect(h.sim.move("a", 0, Number.POSITIVE_INFINITY, 6)).toBe(false);
+    expect(h.monk("a").ackSeq).toBe(6);
+    expect(h.monk("a").mode).toBe("stand");
+    expect([h.monk("a").x, h.monk("a").z]).toEqual([x, z]);
+    expect(h.sim.move("ghost", 0, 0, 8)).toBe(false);
+  });
+
+  it("acks a move that only snaps the monk onto where it already stands", () => {
+    h.sim.join("a", 0);
+    const { x, z } = h.monk("a");
+    expect(h.sim.move("a", x, z, 2)).toBe(true);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").ackSeq).toBe(2);
+  });
+
+  it("acks a move together with the walk it starts, in the same state", () => {
+    h.sim.join("a", 0);
+    h.sim.move("a", h.monk("a").x, h.monk("a").z - 2, 11);
+    expect(h.monk("a").ackSeq).toBe(11);
+    expect(h.monk("a").mode).toBe("walk");
+    h.advance(2000);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.monk("a").ackSeq).toBe(11);
+  });
 });
 
 describe("server clock", () => {

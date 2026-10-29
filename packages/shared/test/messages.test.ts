@@ -3,7 +3,7 @@ import { parseBow, parseMove, parseRelocate, parseSit } from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
-    expect(parseMove({ x: 1.5, z: -2 })).toEqual({ x: 1.5, z: -2 });
+    expect(parseMove({ x: 1.5, z: -2 })).toEqual({ x: 1.5, z: -2, seq: 0 });
     expect(parseMove({ x: Number.NaN, z: 0 })).toBeNull();
     expect(parseMove({ x: 0, z: Number.POSITIVE_INFINITY })).toBeNull();
     expect(parseMove({ x: "1", z: 0 })).toBeNull();
@@ -11,6 +11,16 @@ describe("message parsers", () => {
     expect(parseMove(null)).toBeNull();
     expect(parseMove([1, 2])).toBeNull();
     expect(parseMove(7)).toBeNull();
+  });
+
+  it("keeps a move seq only when it is a non-negative 32-bit integer, otherwise reads it as 0", () => {
+    expect(parseMove({ x: 1, z: 2, seq: 7 })).toEqual({ x: 1, z: 2, seq: 7 });
+    expect(parseMove({ x: 1, z: 2, seq: 0 })).toEqual({ x: 1, z: 2, seq: 0 });
+    expect(parseMove({ x: 1, z: 2, seq: 0xffffffff })).toEqual({ x: 1, z: 2, seq: 0xffffffff });
+    for (const seq of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 0x100000000, "3", null, [4]]) {
+      expect(parseMove({ x: 1, z: 2, seq })).toEqual({ x: 1, z: 2, seq: 0 });
+    }
+    expect(parseMove({ x: Number.NaN, z: 2, seq: 3 })).toBeNull();
   });
 
   it("accepts only integer cushion ids 0..7", () => {

@@ -2,6 +2,7 @@ import { WALK_SPEED, resolveWalkable, yawFromDirection } from "@dongjane/shared"
 
 export const KEY_MOVE_INTERVAL_MS = 100;
 export const KEY_MOVE_REACH = 1.6;
+export const MAX_FRAME_DT_S = 0.1;
 
 const ARRIVED_DISTANCE = 0.15;
 const TURN_RESEND_COS = Math.cos(0.35);
@@ -12,8 +13,13 @@ export interface Point {
   z: number;
 }
 
+export interface MoveTarget extends Point {
+  seq: number;
+}
+
 export interface ServerSelf extends Point {
   mode: string;
+  ackSeq: number;
 }
 
 export interface SelfDisplay extends Point {
@@ -33,6 +39,8 @@ export class SelfPrediction {
   private walking = false;
   private lastSentAt = 0;
   private sentDir: Point | null = null;
+  private seq = 0;
+  private releaseSeq = 0;
 
   get active(): boolean {
     return this.phase !== "idle";
@@ -42,8 +50,8 @@ export class SelfPrediction {
     return this.phase === "idle" ? null : { x: this.x, z: this.z, yaw: this.yaw, walking: this.walking };
   }
 
-  // Advances the predicted point by one frame; returns a move target when one should be sent to the server.
-  frame(dtSeconds: number, nowMs: number, dir: Point | null, displayed: Point): Point | null {
+  // Advances the predicted point by one frame (long frames are capped at MAX_FRAME_DT_S); returns a numbered move target when one should be sent.
+  frame(dtSeconds: number, nowMs: number, dir: Point | null, displayed: Point): MoveTarget | null {
     const length = dir ? Math.hypot(dir.x, dir.z) : 0;
     if (!dir || length < 1e-6) return this.phase === "held" ? this.release() : null;
 
@@ -56,7 +64,7 @@ export class SelfPrediction {
     if (this.phase !== "held") this.sentDir = null;
     this.phase = "held";
 
-    const step = WALK_SPEED * dtSeconds;
+    const step = WALK_SPEED * Math.min(MAX_FRAME_DT_S, Math.max(0, dtSeconds));
     const next = resolveWalkable(this.x + ux * step, this.z + uz * step);
     this.walking = Math.hypot(next.x - this.x, next.z - this.z) > MOVED_EPSILON;
     this.x = next.x;
@@ -68,12 +76,14 @@ export class SelfPrediction {
     if (!turned && nowMs - this.lastSentAt < KEY_MOVE_INTERVAL_MS) return null;
     this.sentDir = { x: ux, z: uz };
     this.lastSentAt = nowMs;
-    return resolveWalkable(this.x + ux * KEY_MOVE_REACH, this.z + uz * KEY_MOVE_REACH);
+    const point = resolveWalkable(this.x + ux * KEY_MOVE_REACH, this.z + uz * KEY_MOVE_REACH);
+    this.seq += 1;
+    return { x: point.x, z: point.z, seq: this.seq };
   }
 
-  // Held keys ignore the server entirely; after release the display waits at the released point until the server confirms the stop there.
+  // Held keys ignore the server entirely; after release the display waits at the released point until the server acks the release and stands there.
   reconcile(server: ServerSelf): void {
-    if (this.phase !== "settling") return;
+    if (this.phase !== "settling" || server.ackSeq < this.releaseSeq) return;
     if (server.mode !== "walk" && Math.hypot(server.x - this.x, server.z - this.z) <= ARRIVED_DISTANCE) {
       this.phase = "idle";
     }
@@ -85,10 +95,12 @@ export class SelfPrediction {
     this.sentDir = null;
   }
 
-  private release(): Point {
+  private release(): MoveTarget {
     this.phase = "settling";
     this.walking = false;
     this.sentDir = null;
-    return { x: this.x, z: this.z };
+    this.seq += 1;
+    this.releaseSeq = this.seq;
+    return { x: this.x, z: this.z, seq: this.seq };
   }
 }

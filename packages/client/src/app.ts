@@ -21,7 +21,6 @@ import { SettingsSheet } from "./ui/settings.ts";
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
 const CHANT_TICK_MS = 250;
-const PREDICTION_MAX_DT = 0.25;
 const HALL_POLL_MS = 10_000;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
@@ -259,7 +258,7 @@ export class App {
       });
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
-        this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode });
+        this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
         this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
       }
     });
@@ -450,7 +449,7 @@ export class App {
   private frame(dt: number, nowMs: number): void {
     const elapsed = this.lastFrameMs > 0 ? (nowMs - this.lastFrameMs) / 1000 : dt;
     this.lastFrameMs = nowMs;
-    this.driveMovement(dt, Math.min(PREDICTION_MAX_DT, Math.max(0, elapsed)), nowMs);
+    this.driveMovement(dt, Math.max(0, elapsed), nowMs);
     if (nowMs >= this.nextChantTick) {
       this.nextChantTick = nowMs + CHANT_TICK_MS;
       this.tickChant();
@@ -469,7 +468,7 @@ export class App {
     const dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
     const target = this.prediction.frame(realDt, nowMs, dir, displayed);
     this.world.setSelfPrediction(this.prediction.display());
-    if (target) session.move(target.x, target.z);
+    if (target) session.move(target.x, target.z, target.seq);
   }
 
   private updateSeatHints(): void {
