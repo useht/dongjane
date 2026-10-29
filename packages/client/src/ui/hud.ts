@@ -19,7 +19,6 @@ export interface VisitorRow {
 export interface SelfStatus {
   mode: string;
   cushionId: number;
-  bowCount: number;
 }
 
 export interface HudHandlers {
@@ -52,8 +51,6 @@ export class Hud {
   private readonly linkAction = button("", "link-action hidden", () => this.linkRun?.());
   private linkRun: (() => void) | null = null;
   private readonly toasts = h("div", "toasts");
-  private readonly statusLine = h("p", "status-line");
-  private readonly bowTally = h("span", "bow-tally");
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
@@ -96,12 +93,7 @@ export class Hud {
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
-    const bottom = h(
-      "div",
-      "bottombar",
-      h("div", "status-stack", h("div", "status", this.statusLine, this.bowTally)),
-      h("div", "bottom-actions", emoteButton, this.bowActions),
-    );
+    const bottom = h("div", "bottombar", h("div", "bottom-actions", emoteButton, this.bowActions));
 
     this.hallInput.type = "text";
     this.hallInput.inputMode = "numeric";
@@ -136,7 +128,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1, bowCount: 0 });
+    this.setSelf({ mode: "stand", cushionId: -1 });
   }
 
   closeSheets(): boolean {
@@ -170,7 +162,7 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}|${self.bowCount}`;
+    const key = `${self.mode}|${self.cushionId}`;
     if (key === this.lastSelf) return;
     this.lastSelf = key;
     const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
@@ -178,14 +170,6 @@ export class Hud {
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
     this.bowActions.classList.toggle("seated", seated);
-    this.bowTally.textContent = self.bowCount > 0 ? `절 ${self.bowCount}번` : "";
-    this.statusLine.textContent = seated
-      ? bowing
-        ? "절하는 중이에요"
-        : "방석에 앉았어요. 절을 해 보세요"
-      : self.cushionId >= 0
-        ? "방석으로 가는 중이에요"
-        : "방석 가까이 가서 앉기 버튼을 눌러 보세요";
   }
 
   setChant(status: ChantStatus | null): void {
