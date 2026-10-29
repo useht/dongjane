@@ -1,20 +1,24 @@
 import {
   ACESFilmicToneMapping,
+  Box3,
   Color,
   DoubleSide,
   Fog,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
+  Raycaster,
   RingGeometry,
   Scene,
+  Vector2,
   WebGLRenderer,
 } from "three";
-import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle } from "@dongjane/shared";
+import { NPC_PER_ZONE, SEAT_COUNT, type SkyState, ZONE_CAPACITY, ZONE_SPAWN, type Zone, lerpAngle, otherZone } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
 import { CameraRig, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
+import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
@@ -39,6 +43,8 @@ export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
   onRendered(): void;
   onStick(stick: StickState | null): void;
+  // The visitor tapped a door; this is the zone it leads to.
+  onDoorTap(zone: Zone): void;
 }
 
 export interface WorldStats {
@@ -62,6 +68,8 @@ interface Entry {
 
 // One zone is drawn at a time, so the pool holds a zone full of visitors and its computer-driven monks.
 const MAX_MONKS = ZONE_CAPACITY + NPC_PER_ZONE;
+// A door is easy to hit: the tap may land this far (metres) outside its frame.
+const DOOR_TAP_PAD = 0.4;
 
 export class World {
   readonly scene = new Scene();
@@ -75,6 +83,13 @@ export class World {
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
   private readonly landscape: Landscape;
+  private dharma: DharmaScene | null = null;
+  private dharmaLoading: Promise<boolean> | null = null;
+  private disposed = false;
+  private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
+  private readonly raycaster = new Raycaster();
+  private readonly pointer = new Vector2();
+  private readonly doorBoxes = new Map<Mesh, Box3>();
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
@@ -148,6 +163,10 @@ export class World {
       },
       onZoom: (factor) => this.rig.zoom(factor),
       onStick: (stick) => this.callbacks.onStick(stick),
+      onTap: (x, y) => {
+        const zone = this.pickDoor(x, y);
+        if (zone) this.callbacks.onDoorTap(zone);
+      },
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -173,16 +192,48 @@ export class World {
     return this.zone;
   }
 
+  get indoorReady(): boolean {
+    return this.dharma !== null;
+  }
+
+  // The 법당's inside is fetched only when someone is about to need it. Resolves false when it could not be had; asking again retries.
+  ensureDharma(): Promise<boolean> {
+    if (this.dharma) return Promise.resolve(true);
+    if (this.dharmaLoading) return this.dharmaLoading;
+    const loading = this.assets
+      .loadDharma()
+      .then((meshes) => {
+        if (this.disposed) return false;
+        const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.venue.lantern);
+        scene.group.visible = this.zone === "dharma";
+        this.scene.add(scene.group);
+        this.dharma = scene;
+        return true;
+      })
+      .catch(() => false);
+    this.dharmaLoading = loading;
+    void loading.then((ok) => {
+      if (!ok && this.dharmaLoading === loading) this.dharmaLoading = null;
+    });
+    return loading;
+  }
+
   // Only the monks of the zone the visitor is in are drawn, so changing zone drops them all and the next state brings the new ones.
-  setZone(zone: Zone): void {
-    if (zone === this.zone) return;
+  // False when the zone's scene has not arrived yet, in which case nothing changed.
+  setZone(zone: Zone): boolean {
+    if (zone === this.zone) return true;
+    if (zone === "dharma" && !this.dharma) return false;
+    this.setOccupancy(new Set());
     this.zone = zone;
+    this.landscape.setActive(zone === "gatbawi");
+    if (this.dharma) this.dharma.group.visible = zone === "dharma";
     for (const id of [...this.entries.keys()]) this.dropEntry(id);
     this.selfPrediction = null;
     const region = regionFor(zone);
     this.rig.setRegion(region.bounds, region.limits);
     this.resetCamera();
     this.rig.follow(ZONE_SPAWN[zone].x, ZONE_SPAWN[zone].z, 0, true);
+    return true;
   }
 
   setReduceMotion(value: boolean): void {
@@ -270,7 +321,27 @@ export class World {
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
-    for (let id = 0; id < SEAT_COUNT; id += 1) this.landscape.setOccupied(id, occupied.has(id));
+    for (let id = 0; id < SEAT_COUNT; id += 1) {
+      if (this.zone === "dharma") this.dharma?.setOccupied(id, occupied.has(id));
+      else this.landscape.setOccupied(id, occupied.has(id));
+    }
+  }
+
+  // The zone a tap at these screen coordinates leads to, when it hit this zone's door.
+  pickDoor(clientX: number, clientY: number): Zone | null {
+    const door = this.zone === "dharma" ? this.dharma?.door : this.landscape.templeDoor;
+    if (!door) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    this.pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    let box = this.doorBoxes.get(door);
+    if (!box) {
+      door.geometry.computeBoundingBox();
+      box = new Box3().copy(door.geometry.boundingBox as Box3).applyMatrix4(door.matrixWorld).expandByScalar(DOOR_TAP_PAD);
+      this.doorBoxes.set(door, box);
+    }
+    return this.raycaster.ray.intersectsBox(box) ? otherZone(this.zone) : null;
   }
 
   clear(): void {
@@ -321,11 +392,13 @@ export class World {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.stop();
     this.input.dispose();
     this.resizeObserver.disconnect();
     this.clear();
     this.pool.dispose();
+    this.dharma?.dispose();
     this.landscape.dispose();
     this.assets.dispose();
     this.selfRing.geometry.dispose();
@@ -341,6 +414,13 @@ export class World {
   }
 
   private applyAtmosphere(): void {
+    if (this.zone === "dharma") {
+      this.background.copy(this.indoorColor);
+      this.fog.color.copy(this.indoorColor);
+      this.fog.near = DHARMA_FOG.near;
+      this.fog.far = DHARMA_FOG.far;
+      return;
+    }
     const look = this.landscape.look;
     this.background.setHex(packRgb(look.fogColor));
     this.fog.color.setHex(packRgb(look.fogColor));
@@ -402,7 +482,8 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
+    if (this.zone === "dharma") this.dharma?.update(this.time, this.camera, this.reduceMotion);
+    else this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
     this.applyAtmosphere();
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered();

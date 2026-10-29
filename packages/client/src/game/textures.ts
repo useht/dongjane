@@ -42,6 +42,21 @@ export function discGlowTexture(): CanvasTexture {
   return toTexture(canvas);
 }
 
+// A candle flame and the dust in its light: a white-hot core inside a soft amber falloff, drawn additively.
+export function flameGlowTexture(): CanvasTexture {
+  const [canvas, ctx] = makeCanvas(64, 64);
+  const material = THEME.material;
+  const g = ctx.createRadialGradient(32, 38, 1, 32, 36, 30);
+  g.addColorStop(0, withAlpha(material.flameCore, 1));
+  g.addColorStop(0.18, withAlpha(material.flameCore, 0.95));
+  g.addColorStop(0.4, withAlpha(material.flameMid, 0.55));
+  g.addColorStop(0.7, withAlpha(material.flameEdge, 0.16));
+  g.addColorStop(1, withAlpha(material.flameEdge, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return toTexture(canvas);
+}
+
 export function flakeTexture(): CanvasTexture {
   const [canvas, ctx] = makeCanvas(32, 32);
   const scene = THEME.scene;

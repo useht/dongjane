@@ -1,7 +1,8 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
-import { BUDGET, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
+import { DHARMA_BOUNDS, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
+import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR } from "../src/game/dharma-layout.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
@@ -433,9 +434,84 @@ describe("venue.glb", () => {
   });
 });
 
+describe("dharma.glb", () => {
+  const glb = loadGlb(new URL("dharma.glb", MODELS));
+  const nodes = expectContract(glb, DHARMA_MESHES);
+  const mesh = byName(nodes);
+  const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
+
+  it("stays inside its size budget, counting every seat the game lays out", () => {
+    const prototypes: readonly string[] = DHARMA_PROTOTYPES;
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? DHARMA_SEATS.length : 1), 0);
+    expect(triangles).toBeLessThanOrEqual(BUDGET.dharma.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.dharma.bytes);
+  });
+
+  it("builds the room the layout describes, with the walkable floor inside its walls", () => {
+    const floor = mesh("floor").positions;
+    near(floor.min[0], -DHARMA.halfWidth);
+    near(floor.max[0], DHARMA.halfWidth);
+    near(floor.min[2], DHARMA.backZ);
+    near(floor.max[2], DHARMA.frontZ);
+    expect(DHARMA_BOUNDS.minX).toBeGreaterThan(-DHARMA.halfWidth);
+    expect(DHARMA_BOUNDS.maxX).toBeLessThan(DHARMA.halfWidth);
+    expect(DHARMA_BOUNDS.minZ).toBeGreaterThan(DHARMA.backZ);
+    expect(DHARMA_BOUNDS.maxZ).toBeLessThan(DHARMA.frontZ);
+    near(mesh("ceiling").positions.max[1], DHARMA.ceilingHeight);
+    near(mesh("structure").positions.max[1], DHARMA.ceilingHeight);
+    expect(mesh("ceiling").positions.min[1], "the ceiling starts above the walls' foot").toBeGreaterThan(DHARMA.wallHeight - 1);
+  });
+
+  it("seats the Buddha on the altar, its lotus resting on the altar's top and inside its footprint", () => {
+    const lotus = mesh("lotus").positions;
+    near(lotus.min[1], ALTAR.topY);
+    expect(lotus.min[0]).toBeGreaterThanOrEqual(-ALTAR.halfWidth);
+    expect(lotus.max[0]).toBeLessThanOrEqual(ALTAR.halfWidth);
+    expect(lotus.min[2]).toBeGreaterThanOrEqual(ALTAR.minZ - 0.05);
+    expect(lotus.max[2]).toBeLessThanOrEqual(ALTAR.maxZ + 0.05);
+    const buddha = mesh("buddha").positions;
+    near((buddha.min[0] + buddha.max[0]) / 2, BUDDHA_AT.x);
+    expect(buddha.min[1]).toBeGreaterThanOrEqual(BUDDHA_AT.y - 0.1);
+    expect(DHARMA_BOUNDS.minZ, "visitors stop short of the altar").toBeGreaterThan(ALTAR.maxZ);
+  });
+
+  it("keeps the seats clear of the altar and inside the room, each facing the Buddha", () => {
+    for (const spot of DHARMA_SEATS) {
+      expect(spot.z - DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeGreaterThan(ALTAR.maxZ);
+      expect(spot.z + DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeLessThanOrEqual(DHARMA_BOUNDS.maxZ);
+      expect(Math.abs(spot.x) + DHARMA_SEAT_SIZE.x / 2, `seat ${spot.id}`).toBeLessThanOrEqual(DHARMA_BOUNDS.maxX);
+    }
+  });
+
+  it("closes the doorway in the front wall with a lattice door at least as wide and tall as the opening", () => {
+    const { min, max } = mesh("door").positions;
+    near(max[2], DHARMA.frontZ);
+    expect(min[0]).toBeLessThanOrEqual(-DHARMA_DOOR.halfWidth);
+    expect(max[0]).toBeGreaterThanOrEqual(DHARMA_DOOR.halfWidth);
+    near((min[0] + max[0]) / 2, 0);
+    expect(max[1]).toBeGreaterThanOrEqual(DHARMA_DOOR.height);
+    expect(min[1]).toBeLessThanOrEqual(TOLERANCE);
+  });
+
+  it("authors one seat at the origin, as wide as the layout makes room for", () => {
+    const { min, max } = mesh("seat").positions;
+    near((min[0] + max[0]) / 2, 0);
+    near((min[2] + max[2]) / 2, 0);
+    near(max[0] - min[0], DHARMA_SEAT_SIZE.x);
+    near(max[2] - min[2], DHARMA_SEAT_SIZE.z);
+    expect(min[1]).toBeGreaterThanOrEqual(-0.01);
+    expect(max[1]).toBeLessThanOrEqual(0.25);
+  });
+
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, { structure: "dancheongBlue", door: "pillarRed", mural: "muralInk", seat: "seatStitch" });
+  });
+});
+
 describe("the model set", () => {
-  // The glbs the game loads before its first frame; any lazy one has a budget of its own.
+  // The glbs the game loads before its first frame; dharma.glb is fetched after it and has a budget of its own.
   const EAGER = ["gatbawi.glb", "monk.glb", "venue.glb", "world.glb"];
+  const LAZY = ["dharma.glb"];
 
   it("fits the total byte budget, counted in the files' actual sizes", () => {
     const total = EAGER.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, 0);
@@ -443,6 +519,6 @@ describe("the model set", () => {
   });
 
   it("has no glb the game does not load", () => {
-    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual(EAGER);
+    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual([...EAGER, ...LAZY].sort());
   });
 });

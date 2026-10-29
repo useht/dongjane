@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeSky, formatClockTime, formatSpan, describeChant, modeLabel, weatherIconName } from "../src/ui/format.ts";
+import { describeSky, formatClockTime, formatSpan, describeChant, modeLabel, weatherIconName, zoneDoorLabel } from "../src/ui/format.ts";
 import { resolveServerHttpBase, toWebSocketBase } from "../src/config.ts";
 
 describe("modeLabel", () => {
@@ -126,5 +126,12 @@ describe("server endpoint resolution", () => {
   it("derives a websocket base", () => {
     expect(toWebSocketBase("https://a.b")).toBe("wss://a.b");
     expect(toWebSocketBase("http://a.b:2567")).toBe("ws://a.b:2567");
+  });
+});
+
+describe("zoneDoorLabel", () => {
+  it("names where the door leads, in words a screen reader can say", () => {
+    expect(zoneDoorLabel("dharma")).toEqual({ text: "법당", aria: "법당으로 들어가기" });
+    expect(zoneDoorLabel("gatbawi")).toEqual({ text: "갓바위", aria: "갓바위로 나가기" });
   });
 });

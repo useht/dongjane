@@ -14,6 +14,7 @@ export interface QualityProfile {
   precipitation: number;
   anisotropy: number;
   lanterns: number;
+  dust: number;
   videoWidth: number;
   videoHeight: number;
   weak: boolean;
@@ -32,6 +33,7 @@ export function detectQuality(env: QualityEnv): QualityProfile {
     precipitation: weak ? 420 : 900,
     anisotropy: Math.max(1, Math.min(env.maxAnisotropy, weak ? 2 : 8)),
     lanterns: weak ? 90 : 180,
+    dust: weak ? 40 : 90,
     videoWidth: weak ? 640 : 960,
     videoHeight: weak ? 360 : 540,
     weak,

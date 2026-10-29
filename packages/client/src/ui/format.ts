@@ -31,6 +31,17 @@ export function zoneFullNote(full: Zone, other: Zone): string {
   return `${subject} 가득 차서 ${ZONE_NAMES[other]}에 있어요`;
 }
 
+// The topbar's door button names where it leads, not where the visitor is.
+export function zoneDoorLabel(target: Zone): { text: string; aria: string } {
+  return target === "dharma"
+    ? { text: ZONE_NAMES.dharma, aria: `${ZONE_NAMES.dharma}으로 들어가기` }
+    : { text: ZONE_NAMES.gatbawi, aria: `${ZONE_NAMES.gatbawi}로 나가기` };
+}
+
+export const ZONE_COOLDOWN_NOTE = "잠시 뒤에 다시 옮길 수 있어요";
+export const ZONE_LOADING_NOTE = "법당 문을 여는 중이에요";
+export const ZONE_LOAD_FAILED_NOTE = "법당을 열지 못했어요. 잠시 뒤 다시 눌러 주세요";
+
 export function modeLabel(mode: string, seatId: number, zone: string): string {
   switch (mode as MonkMode) {
     case "walk":

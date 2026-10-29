@@ -38,6 +38,7 @@ import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32, stagePosterTexture } from "./textures.ts";
 import { lanternSpots, screenUv } from "./venue-layout.ts";
+import { vertexGlowMaterial } from "./vertex-glow.ts";
 
 export interface LandscapeQuality {
   shadows: boolean;
@@ -129,6 +130,8 @@ export type ScreenMode = "poster" | "video";
 export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
+  // The 법당's door in the temple's front, which a tap opens.
+  readonly templeDoor: Mesh;
 
   private readonly environment: Texture;
   private readonly hemisphere: HemisphereLight;
@@ -235,7 +238,7 @@ export class Landscape {
     this.add(world.pine, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
     this.add(world.maple, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
     this.add(world.temple, new MeshLambertMaterial({ vertexColors: true }), { cast: true, receive: true });
-    this.add(world.templeDoor, new MeshLambertMaterial({ vertexColors: true }), { receive: true });
+    this.templeDoor = this.add(world.templeDoor, new MeshLambertMaterial({ vertexColors: true }), { receive: true });
 
     this.mats = this.buildMats(world.mat, anisotropy);
     this.group.add(this.mats);
@@ -365,11 +368,7 @@ export class Landscape {
 
   // Each lantern's colour multiplies both the light it takes and the light it gives, so the paper glows in its own tint.
   private lanternSurface(): MeshLambertMaterial {
-    const material = new MeshLambertMaterial({ vertexColors: true, emissive: THEME.material.paper, emissiveIntensity: LANTERN_GLOW.day });
-    material.onBeforeCompile = (shader): void => {
-      shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n  totalEmissiveRadiance *= vColor.rgb;");
-    };
-    material.customProgramCacheKey = (): string => "lantern";
+    const material = vertexGlowMaterial(THEME.material.paper, LANTERN_GLOW.day);
     this.materials.push(material);
     return material;
   }
@@ -461,6 +460,12 @@ export class Landscape {
 
   get look(): SkyLook {
     return this.current;
+  }
+
+  // Indoors nothing outside is drawn or advanced; coming back, the sky is already at the hour it should show.
+  setActive(active: boolean): void {
+    this.group.visible = active;
+    if (active) this.current = cloneLook(this.target);
   }
 
   // The first look snaps so the world never opens on the wrong hour; later ones ease in.

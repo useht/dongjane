@@ -1,10 +1,10 @@
-import { type SkyState, type WorldInfo, seatLabel, worldName } from "@dongjane/shared";
+import { type SkyState, type WorldInfo, type Zone, otherZone, seatLabel, worldName } from "@dongjane/shared";
 import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
 import { ClockWidget } from "./clock.ts";
 import { button, h, iconButton } from "./dom.ts";
 import { icon } from "./icons.ts";
-import { type ChantStatus, modeLabel, zoneName } from "./format.ts";
+import { type ChantStatus, modeLabel, zoneDoorLabel, zoneName } from "./format.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface VisitorRow {
@@ -24,6 +24,7 @@ export interface SelfStatus {
 
 export interface HudHandlers {
   onSwitchWorld(world: number): void;
+  onSwitchZone(): void;
   onOpenWorlds(): void;
   onBow(): void;
   onStand(): void;
@@ -44,6 +45,8 @@ export class Hud {
   private readonly worldButton = h("button", "world-button");
   private readonly worldLabel = h("span", "world-label", "월드");
   private readonly worldCount = h("span", "world-count", "");
+  private readonly zoneButton = h("button", "zone-button");
+  private readonly zoneLabel = h("span", "zone-label");
   private readonly clock: ClockWidget;
   private readonly chantPill = h("div", "chant-pill hidden");
   private readonly linkBanner = h("div", "link-banner hidden");
@@ -84,7 +87,11 @@ export class Hud {
       onToggleSound: () => handlers.onToggleSound(),
       onOpenSettings: () => handlers.onOpenSettings(),
     });
-    const top = h("div", "topbar", this.worldButton, this.clock.button);
+    this.zoneButton.type = "button";
+    this.zoneButton.append(icon("door"), this.zoneLabel);
+    this.zoneButton.addEventListener("click", () => handlers.onSwitchZone());
+    this.setZone("gatbawi");
+    const top = h("div", "topbar", this.worldButton, this.zoneButton, this.clock.button);
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
@@ -138,6 +145,14 @@ export class Hud {
     const here = worlds.find((info) => info.world === current);
     this.worldCount.textContent = here ? `${here.clients}/${here.capacity}` : "";
     this.renderWorlds();
+  }
+
+  // The door button always leads to the other zone.
+  setZone(zone: Zone): void {
+    const label = zoneDoorLabel(otherZone(zone));
+    this.zoneLabel.textContent = label.text;
+    this.zoneButton.setAttribute("aria-label", label.aria);
+    this.zoneButton.title = label.aria;
   }
 
   setVisitors(rows: readonly VisitorRow[]): void {

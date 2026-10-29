@@ -116,6 +116,22 @@ textarea {
   display: none !important;
 }
 
+.zone-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: var(--wood);
+  opacity: 0;
+  pointer-events: none;
+  transition-property: opacity;
+  transition-timing-function: ease-in-out;
+}
+
+.zone-fade.covered {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .hud-probe {
   position: absolute;
   left: 0;
@@ -174,6 +190,7 @@ button:disabled {
 }
 
 .world-button,
+.zone-button,
 .clock-button,
 .icon-button {
   min-height: 44px;
@@ -185,6 +202,17 @@ button:disabled {
 }
 
 .world-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 14px 0 10px;
+  border-radius: 22px;
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.zone-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -213,6 +241,7 @@ button:disabled {
 
 .icon-button:active,
 .world-button:active,
+.zone-button:active,
 .clock-button:active {
   background: color-mix(in srgb, var(--gold-pale) 12%, var(--panel));
 }
@@ -919,6 +948,14 @@ noscript {
 
 @media (max-width: 380px) {
   .world-count {
+    display: none;
+  }
+
+  .zone-button {
+    padding: 0 10px;
+  }
+
+  .zone-label {
     display: none;
   }
 

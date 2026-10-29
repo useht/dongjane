@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
+import { DHARMA_MESHES, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
 const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
+const EAGER_KEYS = ["gatbawi", "monk", "venue", "world"];
 const textured: readonly string[] = TEXTURED;
 
 function group(names: readonly string[], withMap = true): Group {
@@ -79,13 +80,13 @@ describe("textureOf and normalOf", () => {
 
 describe("loadGameAssets", () => {
   it("serves one glb per model", () => {
-    expect(Object.keys(MODELS).sort()).toEqual(["gatbawi", "monk", "venue", "world"]);
+    expect(Object.keys(MODELS).sort()).toEqual(["dharma", ...EAGER_KEYS]);
     for (const url of Object.values(MODELS)) expect(url).toMatch(/\.glb$/);
   });
 
   it("parses the shipped glb files into the meshes the game asks for", async () => {
     const assets = await loadGameAssets(diskLoader());
-    for (const key of Object.keys(NAMES) as ModelKey[]) {
+    for (const key of Object.keys(NAMES) as (keyof typeof NAMES)[]) {
       const meshes: Record<string, Mesh> = assets.models[key];
       expect(Object.keys(meshes).sort(), key).toEqual([...NAMES[key]].sort());
       for (const [name, mesh] of Object.entries(meshes)) {
@@ -95,6 +96,52 @@ describe("loadGameAssets", () => {
         if (textured.includes(name)) expect(textureOf(mesh)).toBeInstanceOf(Texture);
       }
     }
+  });
+
+  it("fetches only the eager glb files at start; the 법당 waits until it is asked for", async () => {
+    const disk = diskLoader();
+    const asked: string[] = [];
+    const watched: ModelLoader = {
+      loadAsync: (url) => {
+        asked.push(url);
+        return disk.loadAsync(url);
+      },
+    };
+    const assets = await loadGameAssets(watched);
+    expect(asked.sort()).toEqual(EAGER_KEYS.map((key) => MODELS[key as ModelKey]).sort());
+    expect(Object.keys(assets.models).sort()).toEqual(EAGER_KEYS);
+    const first = assets.loadDharma();
+    expect(assets.loadDharma()).toBe(first);
+    const meshes: Record<string, Mesh> = await first;
+    expect(asked.filter((url) => url === MODELS.dharma)).toHaveLength(1);
+    expect(Object.keys(meshes).sort()).toEqual([...DHARMA_MESHES].sort());
+    for (const [name, mesh] of Object.entries(meshes)) {
+      expect(Object.keys(mesh.geometry.attributes), `dharma.${name}`).toEqual(expect.arrayContaining(["position", "color"]));
+    }
+    assets.dispose();
+  });
+
+  it("lets the 법당 be asked for again after a failed fetch", async () => {
+    const disk = diskLoader();
+    let failures = 1;
+    const flaky: ModelLoader = {
+      loadAsync: (url) => {
+        if (url === MODELS.dharma && failures > 0) {
+          failures -= 1;
+          return Promise.reject(new Error("offline"));
+        }
+        return disk.loadAsync(url);
+      },
+    };
+    const assets = await loadGameAssets(flaky);
+    const failure = await assets.loadDharma().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect((failure as Error).message).toBe("dharma.glb: could not be loaded");
+    const meshes: Record<string, Mesh> = await assets.loadDharma();
+    expect(Object.keys(meshes).sort()).toEqual([...DHARMA_MESHES].sort());
+    assets.dispose();
   });
 
   it("gives every photographed surface but the flat woven mat a normal map, and the painted ones none", async () => {
@@ -115,6 +162,7 @@ describe("loadGameAssets", () => {
 
   it("releases every geometry, material and texture it owns exactly once", async () => {
     const assets = await loadGameAssets(diskLoader());
+    const dharma: Record<string, Mesh> = await assets.loadDharma();
     const geometries = new Map<BufferGeometry, number>();
     const textures = new Map<Texture, number>();
     const owned = new Set<Material>();
@@ -124,7 +172,7 @@ describe("loadGameAssets", () => {
       counts.set(item, 0);
       item.addEventListener("dispose", () => counts.set(item, (counts.get(item) ?? 0) + 1));
     };
-    for (const meshes of Object.values(assets.models) as Array<Record<string, Mesh>>) {
+    for (const meshes of [...(Object.values(assets.models) as Array<Record<string, Mesh>>), dharma]) {
       for (const mesh of Object.values(meshes)) {
         watch(mesh.geometry, geometries);
         for (const material of materialsOf(mesh)) {
@@ -136,7 +184,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length);
+    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
     expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
     expect([...geometries.values()].every((times) => times === 1)).toBe(true);
     expect([...textures.values()].every((times) => times === 1)).toBe(true);

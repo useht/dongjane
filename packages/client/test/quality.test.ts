@@ -13,6 +13,7 @@ describe("detectQuality", () => {
     expect(q.leaves).toBeGreaterThan(0);
     expect(q.precipitation).toBeGreaterThan(0);
     expect(q.lanterns).toBe(180);
+    expect(q.dust).toBe(90);
     expect([q.videoWidth, q.videoHeight]).toEqual([960, 540]);
   });
 
@@ -26,6 +27,8 @@ describe("detectQuality", () => {
     expect(q.leaves).toBeLessThan(strong.leaves);
     expect(q.precipitation).toBeLessThan(strong.precipitation);
     expect(q.lanterns).toBe(strong.lanterns / 2);
+    expect(q.dust).toBeLessThan(strong.dust);
+    expect(q.dust).toBeGreaterThan(0);
     expect([q.videoWidth, q.videoHeight]).toEqual([640, 360]);
     expect(q.leaves).toBeGreaterThan(0);
     expect(q.precipitation).toBeGreaterThan(0);
