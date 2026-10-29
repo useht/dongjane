@@ -8,10 +8,12 @@ import {
   PerspectiveCamera,
   RingGeometry,
   Scene,
+  Vector3,
   WebGLRenderer,
 } from "three";
 import { type SkyState, lerpAngle, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./camera-rig.ts";
+import { EmoteTracker } from "./emote-tracker.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import type { MonkAssets } from "./monk-assets.ts";
@@ -29,11 +31,15 @@ export interface MonkView {
   yaw: number;
   mode: string;
   cushionId: number;
+  npc: boolean;
+  bowCount: number;
+  emote: number;
+  emoteSeq: number;
 }
 
 export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
-  onRendered(): void;
+  onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
 }
 
@@ -63,6 +69,7 @@ export class World {
   readonly camera = new PerspectiveCamera(50, 1, 0.1, 80);
   readonly rig: CameraRig;
   readonly quality: QualityProfile;
+  readonly emotes = new EmoteTracker();
   selfId: string | null = null;
 
   private readonly renderer: WebGLRenderer;
@@ -72,6 +79,7 @@ export class World {
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
+  private readonly anchor = new Vector3();
   private readonly clock = new ServerClock();
   private selfPrediction: SelfDisplay | null = null;
   private readonly input: PointerInput;
@@ -145,6 +153,18 @@ export class World {
   get selfPosition(): { x: number; z: number } | null {
     const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
     return entry ? { x: entry.x, z: entry.z } : null;
+  }
+
+  displayedPosition(id: string, out: { x: number; z: number }): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    out.x = entry.x;
+    out.z = entry.z;
+    return true;
+  }
+
+  headTopOf(id: string): number | null {
+    return this.entries.get(id)?.avatar.headTopY() ?? null;
   }
 
   get currentStats(): WorldStats {
@@ -229,6 +249,7 @@ export class World {
       entry.targetX = view.x;
       entry.targetZ = view.z;
       entry.targetYaw = view.yaw;
+      this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
@@ -271,6 +292,13 @@ export class World {
     return projectToCanvas(this.camera, x, y, z, this.canvas.clientWidth, this.canvas.clientHeight, out);
   }
 
+  projectEmoteAnchor(monkId: string, out: { x: number; y: number }): boolean {
+    const entry = this.entries.get(monkId);
+    if (!entry) return false;
+    entry.avatar.emoteAnchor(this.anchor);
+    return this.projectToScreen(this.anchor.x, this.anchor.y, this.anchor.z, out);
+  }
+
   dispose(): void {
     this.stop();
     this.input.dispose();
@@ -288,6 +316,7 @@ export class World {
     this.pool.remove(entry.avatar);
     entry.avatar.dispose();
     this.entries.delete(id);
+    this.emotes.forget(id);
   }
 
   private applyAtmosphere(): void {
@@ -355,7 +384,7 @@ export class World {
     this.hall.update(this.time, dt, this.camera, this.reduceMotion);
     this.applyAtmosphere();
     this.renderer.render(this.scene, this.camera);
-    this.callbacks.onRendered();
+    this.callbacks.onRendered(nowMs);
 
     const info = this.renderer.info.render;
     this.fpsAccumulator += dt;

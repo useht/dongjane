@@ -1,4 +1,4 @@
-import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute } from "three";
+import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Vector3 } from "three";
 import { BOW_MS } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
 import type { MonkAssets } from "./monk-assets.ts";
@@ -52,6 +52,8 @@ const KNEEL_SKIRT_GROW = rig.kneelSkirtGrow;
 const KNEEL_SKIRT_SCALE_Y = rig.kneelSkirtScaleY;
 const KNEEL_SKIRT_LIFT = rig.kneelSkirtLift;
 const CUSHION_TOP = rig.cushionTop;
+const HEAD_TOP_OFFSET = rig.crownY;
+const EMOTE_ANCHOR_Y = rig.crownY + 0.04;
 
 interface Binding {
   part: PartName;
@@ -81,6 +83,7 @@ export class MonkAvatar {
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
     this.id = id;
@@ -192,6 +195,15 @@ export class MonkAvatar {
     }
 
     this.root.updateMatrixWorld(true);
+  }
+
+  headTopY(): number {
+    return this.headNode.getWorldPosition(this.headPoint).y + HEAD_TOP_OFFSET;
+  }
+
+  // The world point just above the crown, following the head through kneel and bow.
+  emoteAnchor(out: Vector3): Vector3 {
+    return this.headNode.localToWorld(out.set(0, EMOTE_ANCHOR_Y, 0));
   }
 
   dispose(): void {

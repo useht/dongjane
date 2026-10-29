@@ -103,6 +103,10 @@ export class HallSession {
     this.send(MSG.bow, { times });
   }
 
+  emote(id: number): void {
+    this.send(MSG.emote, { id });
+  }
+
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
