@@ -20,15 +20,19 @@ export class QuestTracker {
   private quests: Quest[] = [];
   private counts: Record<string, number> = {};
   private baseline: { sessionId: string; bowCount: number } | null = null;
+  private seatedAt: number | null = null;
 
   observe(sessionId: string, monk: { bowCount: number; cushionId: number }, state: QuestClock): Quest[] {
     this.sync(state.serverTime);
     const baseline = this.baseline;
     this.baseline = { sessionId, bowCount: monk.bowCount };
+    if (baseline?.sessionId !== sessionId) this.seatedAt = null;
+    if (monk.cushionId >= 0) this.seatedAt = monk.cushionId;
     if (!baseline || baseline.sessionId !== sessionId || monk.bowCount <= baseline.bowCount) return [];
 
     const bows = monk.bowCount - baseline.bowCount;
-    const bow = { cushionId: monk.cushionId, duringChant: chantPhase(state.chant, state.serverTime) === "active" };
+    const cushionId = monk.cushionId >= 0 ? monk.cushionId : (this.seatedAt ?? -1);
+    const bow = { cushionId, duringChant: chantPhase(state.chant, state.serverTime) === "active" };
     const completed: Quest[] = [];
     let changed = false;
     for (const quest of this.quests) {

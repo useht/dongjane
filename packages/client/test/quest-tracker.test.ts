@@ -64,6 +64,21 @@ describe("QuestTracker", () => {
     expect(counts(tracker)).toEqual([0, 1, 0]);
   });
 
+  it("credits a bow to the cushion it was made on when the snapshot already shows the monk standing", () => {
+    const tracker = new QuestTracker();
+    tracker.observe("me", bows(4, SEAT), at(NOON));
+    tracker.observe("me", bows(5, -1), at(NOON + 50));
+    expect(counts(tracker)).toEqual([1, 1, 0]);
+  });
+
+  it("does not carry the last seat over to a new session", () => {
+    const tracker = new QuestTracker();
+    tracker.observe("old", bows(0, SEAT), at(NOON));
+    tracker.observe("new", bows(0, -1), at(NOON + 50));
+    tracker.observe("new", bows(1, -1), at(NOON + 100));
+    expect(counts(tracker)).toEqual([0, 1, 0]);
+  });
+
   it("counts toward the chant quest only while the chant is active", () => {
     const tracker = new QuestTracker();
     tracker.observe("me", bows(0), at(NOON));
