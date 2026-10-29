@@ -15,7 +15,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await rig.closeAll();
-  await sleep(50);
+  await eventually(() => rig.halls(), (halls) => halls.length === 0, "every hall closed", RECONNECT_SECONDS * 1000 + 3000);
 });
 
 afterAll(async () => {
@@ -24,6 +24,23 @@ afterAll(async () => {
 });
 
 describe("reconnection window", () => {
+  it("keeps a hall open while its only visitor is reconnecting", async () => {
+    const a = await rig.enter(1);
+    const sessionId = a.sessionId;
+    let reconnected = false;
+    a.onReconnect(() => {
+      reconnected = true;
+    });
+    a.connection.close(CloseCode.MAY_TRY_RECONNECT);
+
+    await sleep(400);
+    expect((await rig.hall(1)).clients).toBe(1);
+
+    await waitFor(() => reconnected, "client reconnects", 5000);
+    expect(a.sessionId).toBe(sessionId);
+    expect((await rig.hall(1)).clients).toBe(1);
+  }, 20_000);
+
   it("keeps the seat and identity when the socket drops and comes back in time", async () => {
     const a = await rig.enter(1, { name: "돌아옴" });
     const b = await rig.enter(1);
@@ -47,8 +64,8 @@ describe("reconnection window", () => {
   }, 20_000);
 
   it("keeps the monk visible to others during the window, then removes it and frees the cushion", async () => {
-    const a = await rig.enter(2);
-    const b = await rig.enter(2);
+    const a = await rig.enter(1);
+    const b = await rig.enter(1);
     a.send("sit", { cushionId: 1 });
     await waitFor(() => b.state.cushions.get("1")?.occupantId === a.sessionId, "A claims");
     const sessionId = a.sessionId;
@@ -61,7 +78,7 @@ describe("reconnection window", () => {
 
     await waitFor(() => !b.state.monks.has(sessionId), "dropped monk removed", RECONNECT_SECONDS * 1000 + 2500, 50);
     expect(b.state.cushions.get("1")?.occupantId).toBe("");
-    const hall = await eventually(() => rig.hall(2), (info) => info.clients === 1, "client count back to 1");
+    const hall = await eventually(() => rig.hall(1), (info) => info.clients === 1, "client count back to 1");
     expect(hall.full).toBe(false);
   }, 20_000);
 });
