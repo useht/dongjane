@@ -28,6 +28,8 @@ export interface MonkView {
   yaw: number;
   mode: string;
   cushionId: number;
+  npc: boolean;
+  bowCount: number;
 }
 
 export interface WorldCallbacks {
@@ -143,6 +145,14 @@ export class World {
   get selfPosition(): { x: number; z: number } | null {
     const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
     return entry ? { x: entry.x, z: entry.z } : null;
+  }
+
+  displayedPosition(id: string, out: { x: number; z: number }): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    out.x = entry.x;
+    out.z = entry.z;
+    return true;
   }
 
   get currentStats(): WorldStats {

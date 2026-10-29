@@ -418,7 +418,8 @@ button:disabled {
   height: 20px;
 }
 
-.seat-hints {
+.seat-hints,
+.visitor-titles {
   position: absolute;
   inset: 0;
   overflow: hidden;
@@ -447,6 +448,26 @@ button:disabled {
 
 .seat-hint:active {
   background: rgba(70, 44, 24, 0.9);
+}
+
+.visitor-title {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 224, 160, 0.5);
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  will-change: transform;
 }
 
 .joystick {

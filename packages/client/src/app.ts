@@ -7,6 +7,7 @@ import {
   parseHallParam,
   seatLabel,
   skyAt,
+  visitorTitle,
 } from "@dongjane/shared";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
@@ -28,9 +29,12 @@ import { Joystick } from "./ui/joystick.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsSheet } from "./ui/settings.ts";
+import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
+const TITLE_REACH = SEAT_HINT_REACH;
+const TITLE_HEIGHT = 1.35;
 const CHANT_TICK_MS = 250;
 const SKY_TICK_MS = 1000;
 const HALL_POLL_MS = 10_000;
@@ -62,7 +66,10 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly visitorTitles: VisitorTitles;
   private readonly hintPoint = { x: 0, y: 0 };
+  private readonly titleSelf = { x: 0, z: 0 };
+  private readonly titleOther = { x: 0, z: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
   private session: HallSession | SoloSession | null = null;
@@ -93,7 +100,10 @@ export class App {
     this.joystick = new Joystick(this.ui);
     this.world = new World(this.canvas, {
       onFrame: (dt, now) => this.frame(dt, now),
-      onRendered: () => this.updateSeatHints(),
+      onRendered: () => {
+        this.updateSeatHints();
+        this.updateVisitorTitles();
+      },
       onStick: (stick) => this.joystick.set(stick),
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
@@ -116,6 +126,7 @@ export class App {
       this.prediction.cancel();
       this.session?.sit(id);
     });
+    this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
@@ -305,6 +316,7 @@ export class App {
     const views: MonkView[] = [];
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
+    const visitorIds = new Set<string>();
     state.monks.forEach((monk) => {
       views.push({
         id: monk.id,
@@ -314,8 +326,11 @@ export class App {
         yaw: monk.yaw,
         mode: monk.mode,
         cushionId: monk.cushionId,
+        npc: monk.npc,
+        bowCount: monk.bowCount,
       });
       if (monk.npc) return;
+      visitorIds.add(monk.id);
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
       rows.push({
         id: monk.id,
@@ -332,6 +347,7 @@ export class App {
       }
     });
     this.lastViews = views;
+    this.visitorTitles.retain(visitorIds);
 
     const occupied = new Set<number>();
     state.cushions.forEach((cushion) => {
@@ -575,6 +591,27 @@ export class App {
       } else {
         this.seatHints.hide(spot.id);
       }
+    }
+  }
+
+  private updateVisitorTitles(): void {
+    const selfId = this.world.selfId;
+    if (!this.session || !selfId || !this.world.displayedPosition(selfId, this.titleSelf)) {
+      this.visitorTitles.hideAll();
+      return;
+    }
+    for (const view of this.lastViews) {
+      if (view.npc || view.id === selfId) continue;
+      const title = visitorTitle(view.bowCount);
+      let shown = false;
+      if (title !== null && this.world.displayedPosition(view.id, this.titleOther)) {
+        const { x, z } = this.titleOther;
+        if (Math.hypot(x - this.titleSelf.x, z - this.titleSelf.z) <= TITLE_REACH && this.world.projectToScreen(x, TITLE_HEIGHT, z, this.hintPoint)) {
+          this.visitorTitles.place(view.id, title, this.hintPoint.x, this.hintPoint.y);
+          shown = true;
+        }
+      }
+      if (!shown) this.visitorTitles.hide(view.id);
     }
   }
 
