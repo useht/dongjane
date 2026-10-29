@@ -13,6 +13,7 @@ export interface QualityProfile {
   leaves: number;
   precipitation: number;
   anisotropy: number;
+  lanterns: number;
   weak: boolean;
 }
 
@@ -28,6 +29,7 @@ export function detectQuality(env: QualityEnv): QualityProfile {
     leaves: weak ? 40 : 90,
     precipitation: weak ? 420 : 900,
     anisotropy: Math.max(1, Math.min(env.maxAnisotropy, weak ? 2 : 8)),
+    lanterns: weak ? 90 : 180,
     weak,
   };
 }

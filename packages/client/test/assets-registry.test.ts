@@ -2,10 +2,10 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES } from "../src/assets/contract.ts";
+import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES } as const;
+const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
 const textured: readonly string[] = TEXTURED;
 
 function group(names: readonly string[], withMap = true): Group {
@@ -79,7 +79,7 @@ describe("textureOf and normalOf", () => {
 
 describe("loadGameAssets", () => {
   it("serves one glb per model", () => {
-    expect(Object.keys(MODELS).sort()).toEqual(["gatbawi", "monk", "world"]);
+    expect(Object.keys(MODELS).sort()).toEqual(["gatbawi", "monk", "venue", "world"]);
     for (const url of Object.values(MODELS)) expect(url).toMatch(/\.glb$/);
   });
 
@@ -136,7 +136,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length);
+    expect(geometries.size).toBe(MONK_PARTS.length + GATBAWI_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length);
     expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
     expect([...geometries.values()].every((times) => times === 1)).toBe(true);
     expect([...textures.values()].every((times) => times === 1)).toBe(true);

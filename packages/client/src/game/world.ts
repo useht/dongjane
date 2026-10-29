@@ -116,7 +116,7 @@ export class World {
     this.scene.background = this.background;
     this.scene.fog = this.fog;
 
-    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi);
+    this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.venue);
     this.scene.add(this.landscape.group);
     this.pool = new MonkPool(this.scene, assets.models.monk, MAX_MONKS);
 

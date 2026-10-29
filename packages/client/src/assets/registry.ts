@@ -1,15 +1,16 @@
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES } from "./contract.ts";
+import { GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
 import gatbawiUrl from "./models/gatbawi.glb?url";
 import monkUrl from "./models/monk.glb?url";
+import venueUrl from "./models/venue.glb?url";
 import worldUrl from "./models/world.glb?url";
 
-export const MODELS = { monk: monkUrl, gatbawi: gatbawiUrl, world: worldUrl } as const;
+export const MODELS = { monk: monkUrl, gatbawi: gatbawiUrl, world: worldUrl, venue: venueUrl } as const;
 
 export type ModelKey = keyof typeof MODELS;
 
-const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES } as const;
+const NAMES = { monk: MONK_PARTS, gatbawi: GATBAWI_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES } as const;
 
 // The glTF materials are placeholders: the game builds its own and only borrows the textures.
 export type ModelMeshes<K extends ModelKey> = { readonly [Name in (typeof NAMES)[K][number]]: Mesh };
@@ -83,11 +84,11 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
     });
     return collectMeshes(scene, key);
   };
-  const [monk, gatbawi, world] = await Promise.all([load("monk"), load("gatbawi"), load("world")]);
+  const [monk, gatbawi, world, venue] = await Promise.all([load("monk"), load("gatbawi"), load("world"), load("venue")]);
   return {
-    models: { monk, gatbawi, world },
+    models: { monk, gatbawi, world, venue },
     dispose(): void {
-      for (const meshes of [monk, gatbawi, world]) disposeMeshes(meshes);
+      for (const meshes of [monk, gatbawi, world, venue]) disposeMeshes(meshes);
     },
   };
 }

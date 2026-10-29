@@ -1,8 +1,9 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
-import { BUDGET, GATBAWI_MESHES, MONK_PARTS, TEXTURED, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
+import { BUDGET, GATBAWI_MESHES, MONK_PARTS, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES, type MonkPart } from "../src/assets/contract.ts";
 import { MONK_RIG, PART_COPIES } from "../src/game/monk-rig.ts";
+import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, positions, rootNodes } from "./glb.ts";
 
@@ -290,6 +291,45 @@ describe("world.glb", () => {
     }
   });
 
+  it("stands the temple inside its footprint with the door in the wall that faces the plaza", () => {
+    const temple = mesh("temple").positions;
+    // The eaves reach a little past the footprint and the base is sunk a hand into the ground.
+    const within = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.25);
+    within(temple.min[0], TEMPLE.minX);
+    within(temple.max[0], TEMPLE.maxX);
+    within(temple.min[2], TEMPLE.minZ);
+    within(temple.max[2], TEMPLE.maxZ);
+    expect(temple.min[1]).toBeGreaterThanOrEqual(-0.15);
+    expect(temple.min[1]).toBeLessThanOrEqual(0);
+    expect(temple.max[1]).toBeGreaterThan(TEMPLE.baseHeight + TEMPLE.columnHeight + TEMPLE.rise - 0.5);
+    expect(temple.max[0]).toBeLessThan(WORLD_BOUNDS.minX);
+    const door = mesh("templeDoor").positions;
+    near(door.max[0], TEMPLE_DOOR_X);
+    near((door.min[2] + door.max[2]) / 2, TEMPLE.doorZ);
+    expect(door.max[2] - door.min[2]).toBeGreaterThanOrEqual(TEMPLE.doorWidth);
+    expect(door.max[1] - door.min[1]).toBeGreaterThanOrEqual(TEMPLE.doorHeight);
+  });
+
+  it("holds the ground level under the stage and the temple", () => {
+    const { values, count } = positions(glb, "ground");
+    const cos = Math.cos(STAGE_YAW);
+    const sin = Math.sin(STAGE_YAW);
+    let checked = 0;
+    for (let i = 0; i < count; i += 1) {
+      const x = values[i * 3] as number;
+      const y = values[i * 3 + 1] as number;
+      const z = values[i * 3 + 2] as number;
+      const across = Math.abs((x - STAGE.x) * cos - (z - STAGE.z) * sin);
+      const along = Math.abs((x - STAGE.x) * sin + (z - STAGE.z) * cos);
+      const onStage = across <= STAGE.width / 2 + PADS.stageMargin && along <= STAGE.depth / 2 + PADS.stageMargin;
+      const onTemple = x >= TEMPLE.minX - PADS.templeMargin && x <= TEMPLE.maxX + PADS.templeMargin && z >= TEMPLE.minZ - PADS.templeMargin && z <= TEMPLE.maxZ + PADS.templeMargin;
+      if (!onStage && !onTemple) continue;
+      checked += 1;
+      expect(Math.abs(y), `ground vertex ${i} at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeLessThanOrEqual(0.01);
+    }
+    expect(checked).toBeGreaterThan(40);
+  });
+
   it("authors one mat prototype at the origin, the size the mats are laid out for", () => {
     for (const name of WORLD_PROTOTYPES) {
       const { min, max } = mesh(name).positions;
@@ -321,18 +361,88 @@ describe("world.glb", () => {
     expectCeiling(glb, "steps", "paving");
     expectCeiling(glb, "rocks", "granite");
     expectCeiling(glb, "mat", "straw");
+    expectCeiling(glb, "temple", "wallPlaster");
+  });
+});
+
+describe("venue.glb", () => {
+  const glb = loadGlb(new URL("venue.glb", MODELS));
+  const nodes = expectContract(glb, VENUE_MESHES);
+  const mesh = byName(nodes);
+  const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
+
+  it("stays inside its size budget, counting every lantern the game hangs", () => {
+    const prototypes: readonly string[] = VENUE_PROTOTYPES;
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? lanternSpots().length : 1), 0);
+    expect(triangles).toBeLessThanOrEqual(BUDGET.venue.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.venue.bytes);
+  });
+
+  it("puts the deck where the layout says, turned toward the mats and clear of the walkable area", () => {
+    const { min, max } = mesh("stage").positions;
+    expect(min[1]).toBeGreaterThanOrEqual(-0.01);
+    near(max[1], STAGE.height + 1.9);
+    for (const u of [-1, 1]) {
+      for (const v of [-1, 1]) {
+        const corner = stageToWorld((u * STAGE.width) / 2, (v * STAGE.depth) / 2);
+        expect(corner.x).toBeGreaterThanOrEqual(min[0] - 0.05);
+        expect(corner.x).toBeLessThanOrEqual(max[0] + 0.05);
+        expect(corner.z).toBeGreaterThanOrEqual(min[2] - 0.05);
+        expect(corner.z).toBeLessThanOrEqual(max[2] + 0.05);
+      }
+    }
+    expect(max[2]).toBeLessThan(WORLD_BOUNDS.minZ);
+  });
+
+  it("draws the screen as one quad on the corners the game projects the video onto", () => {
+    const { values, count } = positions(glb, "screen");
+    expect(count).toBe(4);
+    const wanted = screenCorners();
+    for (const corner of wanted) {
+      const gaps = Array.from({ length: count }, (_, i) => Math.hypot((values[i * 3] as number) - corner.x, (values[i * 3 + 1] as number) - corner.y, (values[i * 3 + 2] as number) - corner.z));
+      expect(Math.min(...gaps)).toBeLessThanOrEqual(TOLERANCE);
+    }
+    near(Math.hypot(wanted[1].x - wanted[0].x, wanted[1].z - wanted[0].z), SCREEN.width);
+    near(wanted[3].y - wanted[0].y, SCREEN.height);
+  });
+
+  it("raises one pole at every place the layout names, as tall as the canopy", () => {
+    const { values, count } = positions(glb, "poles");
+    for (const [x, z] of CANOPY.poles) {
+      let found = false;
+      for (let i = 0; i < count && !found; i += 1) {
+        found = Math.abs((values[i * 3] as number) - x) <= 0.12 && Math.abs((values[i * 3 + 2] as number) - z) <= 0.12 && (values[i * 3 + 1] as number) >= CANOPY.height - 0.1;
+      }
+      expect(found, `a pole top at ${x}, ${z}`).toBe(true);
+    }
+  });
+
+  it("authors one lantern with its hook at the origin, hanging below it", () => {
+    for (const name of VENUE_PROTOTYPES) {
+      const { min, max } = mesh(name).positions;
+      near((min[0] + max[0]) / 2, 0);
+      near((min[2] + max[2]) / 2, 0);
+      expect(max[1], name).toBeLessThanOrEqual(0.01);
+      expect(min[1], name).toBeGreaterThanOrEqual(-0.5);
+      expect(max[0] - min[0], name).toBeLessThanOrEqual(0.5);
+    }
+  });
+
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, { stage: "woodMid", truss: "steelDark", poles: "sash", screen: "screenBezel", lantern: "paper" });
   });
 });
 
 describe("the model set", () => {
-  it("fits the total byte budget", () => {
-    const total = readdirSync(MODELS)
-      .filter((file) => file.endsWith(".glb"))
-      .reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, 0);
+  // The glbs the game loads before its first frame; any lazy one has a budget of its own.
+  const EAGER = ["gatbawi.glb", "monk.glb", "venue.glb", "world.glb"];
+
+  it("fits the total byte budget, counted in the files' actual sizes", () => {
+    const total = EAGER.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, 0);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
   });
 
   it("has no glb the game does not load", () => {
-    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual(["gatbawi.glb", "monk.glb", "world.glb"]);
+    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual(EAGER);
   });
 });

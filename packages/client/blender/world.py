@@ -1,4 +1,4 @@
-"""world.glb: the plaza and its autumn mountainside, and the mat prototype.
+"""world.glb: the plaza and its autumn mountainside, the temple's outside and its door, and the mat prototype.
 
 Everything is drawn in the game's own coordinates (Y up, +Z toward the viewer) through a Part whose
 frame is GAME. The plaza (flat paving the monks kneel on), the granite steps and platform, the
@@ -14,6 +14,7 @@ import os
 from mathutils import Vector
 
 import common
+import temple
 from common import GAME, Part, at, fbm, from_game, hash01, mix, rgb, scaled, smoothstep, spun, to_game
 
 SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
@@ -36,7 +37,7 @@ OUTCROP = (
     (-0.8, -12.8, 4.6, (4.0, 3.6, 2.8), 4.0, 18),
     (-4.6, -13.0, 3.4, (4.0, 3.4, 2.6), 5.0, 16),
     (-11.5, -7.5, 0.5, (3.0, 2.2, 2.4), 6.0, 22),
-    (17.8, -8.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
+    (19.4, -8.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
 )
 BOULDERS = (
     (-10.2, -1.6, 0.2, (1.3, 0.9, 1.1), 8.0, 18),
@@ -64,6 +65,11 @@ class Plan:
         self.statue_z = layout["GATBAWI_Z"]
         self.mat = layout["GATBAWI_SEAT_SIZE"]
         self.mat_top = inputs["monk"]["MAT_TOP"]
+        venue = inputs["venue"]
+        self.stage = venue["STAGE"]
+        self.stage_yaw = venue["STAGE_YAW"]
+        self.temple = venue["TEMPLE"]
+        self.pads = venue["PADS"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         self.left, self.right = self.plaza["minX"], self.plaza["maxX"]
         self.front = self.plaza["maxZ"] + PLAZA_MARGIN
@@ -84,7 +90,21 @@ class Plan:
         rolling = 0.8 * smoothstep(1.5, 10.0, d) * (0.5 + 0.5 * fbm(x * 0.13, 0.0, z * 0.13, 3.0))
         ridge = 14.0 * smoothstep(24.0, 60.0, d) * (0.55 + 0.45 * fbm(x * 0.06, 0.0, z * 0.06, 9.0))
         slope = 1.5 * smoothstep(0.0, 3.0, behind) + 0.35 * max(0.0, behind - 3.0)
-        return rolling + ridge + slope
+        return (rolling + ridge + slope) * self.level(x, z)
+
+    def level(self, x, z):
+        """0 on the stage's and the temple's footprints and a margin round them, easing to 1 over `blend` metres."""
+        stage, temple_box, pads = self.stage, self.temple, self.pads
+        cos, sin = math.cos(self.stage_yaw), math.sin(self.stage_yaw)
+        dx, dz = x - stage["x"], z - stage["z"]
+        across = abs(dx * cos - dz * sin) - (stage["width"] / 2 + pads["stageMargin"])
+        along = abs(dx * sin + dz * cos) - (stage["depth"] / 2 + pads["stageMargin"])
+        from_stage = math.hypot(max(across, 0.0), max(along, 0.0)) + min(max(across, along), 0.0)
+        margin = pads["templeMargin"]
+        across = abs(x - (temple_box["minX"] + temple_box["maxX"]) / 2) - ((temple_box["maxX"] - temple_box["minX"]) / 2 + margin)
+        along = abs(z - (temple_box["minZ"] + temple_box["maxZ"]) / 2) - ((temple_box["maxZ"] - temple_box["minZ"]) / 2 + margin)
+        from_temple = math.hypot(max(across, 0.0), max(along, 0.0)) + min(max(across, along), 0.0)
+        return smoothstep(0.0, pads["blend"], min(from_stage, from_temple))
 
 
 def axis_lines(low, high, step, limit):
@@ -98,6 +118,15 @@ def axis_lines(low, high, step, limit):
         below.append(lo)
         above.append(hi)
     return list(reversed(below)) + lines + above
+
+
+def refine(lines, low, high, step):
+    """Replaces the grid lines between the lines nearest `low` and `high` by evenly spaced ones about `step` apart."""
+    start = max(v for v in lines if v <= low)
+    end = min(v for v in lines if v >= high)
+    count = max(1, math.ceil((end - start) / step))
+    kept = [v for v in lines if v < start or v > end]
+    return sorted(kept + [start + (end - start) * i / count for i in range(count + 1)])
 
 
 def ground(plan):
@@ -117,6 +146,10 @@ def ground(plan):
 
     columns = axis_lines(plan.left, plan.right, 0.65, GROUND_LIMIT)
     rows = axis_lines(plan.plaza["minZ"], plan.front, 0.65, GROUND_LIMIT)
+    # Finer lines where the terrain is levelled, so the pads meet the hillside without a coarse fold.
+    columns = refine(columns, plan.right, plan.stage["x"] + 11.0, 1.2)
+    rows = refine(rows, plan.stage["z"] - 10.0, plan.plaza["minZ"], 1.2)
+    columns = refine(columns, plan.temple["minX"] - 5.0, plan.left, 1.2)
     part.heightfield(columns, rows, plan.terrain, tone)
     part.project_uv(GROUND_TILE)
     return part
@@ -314,6 +347,8 @@ def build(inputs, out_dir):
         "rocks": rocks(plan).build(stone),
         "pine": pines(plan).build(foliage),
         "maple": maples(plan).build(foliage),
+        "temple": temple.building(plan).build(foliage),
+        "templeDoor": temple.door(plan).build(foliage),
     }
     common.bake_vertex_occlusion(list(objects.values()), distance=1.4, samples=48, floor=0.5)
     objects["mat"] = mat(plan).build(common.textured_material("mat", os.path.join(SOURCES, "tatami_mat_diff.jpg")), crease=False)

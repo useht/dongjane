@@ -12,6 +12,7 @@ describe("detectQuality", () => {
     expect(q.anisotropy).toBe(8);
     expect(q.leaves).toBeGreaterThan(0);
     expect(q.precipitation).toBeGreaterThan(0);
+    expect(q.lanterns).toBe(180);
   });
 
   it("lowers the cost on weak phones", () => {
@@ -23,6 +24,7 @@ describe("detectQuality", () => {
     const strong = detectQuality(desktop);
     expect(q.leaves).toBeLessThan(strong.leaves);
     expect(q.precipitation).toBeLessThan(strong.precipitation);
+    expect(q.lanterns).toBe(strong.lanterns / 2);
     expect(q.leaves).toBeGreaterThan(0);
     expect(q.precipitation).toBeGreaterThan(0);
   });

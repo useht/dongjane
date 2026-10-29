@@ -36,6 +36,7 @@ import { MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGE
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32 } from "./textures.ts";
+import { lanternSpots } from "./venue-layout.ts";
 
 export interface LandscapeQuality {
   shadows: boolean;
@@ -43,6 +44,7 @@ export interface LandscapeQuality {
   leaves: number;
   precipitation: number;
   anisotropy: number;
+  lanterns: number;
 }
 
 interface Shadows {
@@ -60,6 +62,9 @@ const SUN_DISTANCE = 58;
 
 // The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted.
 const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35 } as const;
+
+// The paper lanterns glow a little by day and fully at night.
+const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;
 
 const LEAF_AREA = { minX: -10, spanX: 26, minZ: -2, spanZ: 17, top: 8, floor: 0.05 } as const;
 const LEAF_FALL_PER_SECOND = 0.05;
@@ -133,6 +138,7 @@ export class Landscape {
   private readonly leaves: Points;
   private readonly leafSeeds: Float32Array;
   private readonly mats: InstancedMesh;
+  private readonly lanternMaterial: MeshLambertMaterial;
   private readonly envMaterials: MeshStandardMaterial[] = [];
   private readonly materials: Material[] = [];
   private readonly textures: Texture[] = [];
@@ -146,7 +152,13 @@ export class Landscape {
   private skyKnown = false;
   private cloudTurn = 0;
 
-  constructor(renderer: WebGLRenderer, quality: LandscapeQuality, world: ModelMeshes<"world">, gatbawi: ModelMeshes<"gatbawi">) {
+  constructor(
+    renderer: WebGLRenderer,
+    quality: LandscapeQuality,
+    world: ModelMeshes<"world">,
+    gatbawi: ModelMeshes<"gatbawi">,
+    venue: ModelMeshes<"venue">,
+  ) {
     const { scene: palette, material: tokens } = THEME;
     this.group.name = "landscape";
     this.environment = buildEnvironment(renderer);
@@ -215,9 +227,21 @@ export class Landscape {
     this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
     this.add(world.pine, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
     this.add(world.maple, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
+    this.add(world.temple, new MeshLambertMaterial({ vertexColors: true }), { cast: true, receive: true });
+    this.add(world.templeDoor, new MeshLambertMaterial({ vertexColors: true }), { receive: true });
 
     this.mats = this.buildMats(world.mat, anisotropy);
     this.group.add(this.mats);
+
+    const stage = new Group();
+    stage.name = "venue";
+    this.add(venue.stage, new MeshLambertMaterial({ vertexColors: true }), { cast: true, receive: true }, stage);
+    this.add(venue.truss, new MeshLambertMaterial({ vertexColors: true }), { cast: true }, stage);
+    this.add(venue.poles, new MeshLambertMaterial({ vertexColors: true }), { cast: true }, stage);
+    this.add(venue.screen, new MeshBasicMaterial({ color: tokens.screenBezel, fog: false }), {}, stage);
+    this.lanternMaterial = this.lanternSurface();
+    stage.add(this.buildLanterns(venue.lantern, quality.lanterns, [palette.lanternPink, palette.lanternWhite, palette.lanternYellow, palette.lanternOrange, palette.lanternGreen, palette.lanternViolet]));
+    this.group.add(stage);
 
     const flake = this.texture(flakeTexture());
     this.precipitation = new Precipitation(quality.precipitation, flake);
@@ -304,6 +328,35 @@ export class Landscape {
       mats.setMatrixAt(spot.id, m);
     }
     return mats;
+  }
+
+  // Each lantern's colour multiplies both the light it takes and the light it gives, so the paper glows in its own tint.
+  private lanternSurface(): MeshLambertMaterial {
+    const material = new MeshLambertMaterial({ vertexColors: true, emissive: THEME.material.paper, emissiveIntensity: LANTERN_GLOW.day });
+    material.onBeforeCompile = (shader): void => {
+      shader.fragmentShader = shader.fragmentShader.replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\n  totalEmissiveRadiance *= vColor.rgb;");
+    };
+    material.customProgramCacheKey = (): string => "lantern";
+    this.materials.push(material);
+    return material;
+  }
+
+  // Every lantern the device can afford, spread evenly over the strings.
+  private buildLanterns(source: Mesh, limit: number, tones: readonly string[]): InstancedMesh {
+    const all = lanternSpots();
+    const step = Math.max(1, Math.ceil(all.length / limit));
+    const spots = all.filter((_, index) => index % step === 0);
+    const lanterns = new InstancedMesh(source.geometry, this.lanternMaterial, spots.length);
+    const m = new Matrix4();
+    const color = new Color();
+    spots.forEach((spot, index) => {
+      m.makeRotationY(spot.yaw).scale(new Vector3(spot.scale, spot.scale, spot.scale)).setPosition(spot.x, spot.y, spot.z);
+      lanterns.setMatrixAt(index, m);
+      lanterns.setColorAt(index, color.set(tones[Math.min(tones.length - 1, Math.floor(spot.tone * tones.length))] as string));
+    });
+    lanterns.name = "lanterns";
+    lanterns.frustumCulled = false;
+    return lanterns;
   }
 
   private buildStars(hex: string): Points {
@@ -419,6 +472,8 @@ export class Landscape {
     const stars = this.stars.material as PointsMaterial;
     stars.opacity = look.nightSky;
     this.stars.visible = look.nightSky > SKY_VISIBLE;
+
+    this.lanternMaterial.emissiveIntensity = LANTERN_GLOW.day + (LANTERN_GLOW.night - LANTERN_GLOW.day) * look.nightSky;
 
     this.sunSprite.material.opacity = look.sunGlow;
     this.sunSprite.material.color.setHex(packRgb(look.sunColor));
