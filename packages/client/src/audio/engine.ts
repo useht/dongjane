@@ -192,7 +192,7 @@ export class AudioEngine {
     this.effects.gain.cancelScheduledValues(now);
     this.effects.gain.setTargetAtTime(this.sound ? this.effectVolume : 0, now, 0.05);
     this.ambience.gain.cancelScheduledValues(now);
-    this.ambience.gain.setTargetAtTime(this.ambientVolume, now, 0.05);
+    this.ambience.gain.setTargetAtTime(this.sound ? this.ambientVolume : 0, now, 0.05);
     if (this.windGain) {
       this.windGain.gain.cancelScheduledValues(now);
       this.windGain.gain.setTargetAtTime(this.wind ? 0.55 : 0, now, 0.4);
