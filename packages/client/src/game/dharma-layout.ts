@@ -1,4 +1,4 @@
-// Plain numbers about the 법당 inside: the room, the altar, the candles, the door and the lanterns.
+// Plain numbers about the 법당 inside: the room, the altar, the candles, the doorway and the lanterns.
 // Pure data and arithmetic: the Blender build reads it through scripts/asset-inputs.ts and the runtime
 // and its tests read the same file, so the model and the game cannot drift apart.
 // Metres, the game's frame: Y up, +Z toward the viewer. The room has its own origin at the middle of the floor.
@@ -21,8 +21,14 @@ export const ALTAR = { halfWidth: 4, minZ: -7.9, maxZ: -5.3, topY: 1 } as const;
 // origin stands that far above the altar's top and the lotus rests on it.
 export const BUDDHA_AT = { x: 0, y: ALTAR.topY + 0.45, z: -6.6 } as const;
 
-// The closed lattice door in the front wall, which a tap opens back onto the plaza.
+// The doorway in the front wall: always open, it is where visitors walk in from the court.
 export const DHARMA_DOOR = { halfWidth: 1.6, height: 3.4 } as const;
+
+// The 법당's outside, drawn into world.glb round this room in the same frame: plaster walls `wall` thick just outside
+// the room's own surfaces, columns on their outer face, a granite plinth `plinth` wide round the walls that runs out to
+// `porchZ` in front, the beams at `beamTop`, and a gable roof whose ridge runs along x, whose eaves reach `eave` past the
+// columns and whose ridge stands `rise` above the eaves.
+export const DHARMA_SHELL = { wall: 0.4, plinth: 0.82, porchZ: 9.9, baseHeight: 0.14, beamTop: 6.9, eave: 1.6, rise: 4.2 } as const;
 
 // Candlesticks along the altar's front edge: x and z of each.
 export const CANDLE_SPOTS: readonly (readonly [number, number])[] = [

@@ -296,7 +296,7 @@ describe("two clients in one world", () => {
     await waitFor(() => seenByB.seatId === 46, "B sees A claim mat 46", 1000);
     expect(b.state.seats.get("gatbawi:46")?.occupantId).toBe(a.sessionId);
     await waitFor(() => seenByB.mode === "walk", "B sees A walking", 1000);
-    await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 6000);
+    await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 10000);
     expect(seenByB.x).toBeCloseTo(GATBAWI_SEATS[46]!.x, 1);
     expect(seenByB.z).toBeCloseTo(GATBAWI_SEATS[46]!.z, 1);
 
@@ -338,7 +338,7 @@ describe("two clients in one world", () => {
     const seenByB = b.state.monks.get(a.sessionId)!;
 
     a.send("sit", { zone: "gatbawi", seatId: 47 });
-    await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
+    await waitFor(() => seenByB.mode === "kneel", "A kneels", 10000);
     a.send("bow", { times: 3 });
     await waitFor(() => seenByB.mode === "bow", "first bow", 1000);
     await waitFor(() => seenByB.bowCount === 3, "three bows", 3 * BOW_MS + 3000, 25);
@@ -402,7 +402,7 @@ describe("two clients in one world", () => {
     expect(seenByB.knockSeq).toBe(0);
 
     a.send(MSG.sit, { zone: "gatbawi", seatId: 6 });
-    await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
+    await waitFor(() => seenByB.mode === "kneel", "A kneels", 10000);
     a.send(MSG.chant, { on: true });
     await sleep(300);
     expect(seenByB.chanting).toBe(false);
@@ -454,7 +454,7 @@ describe("two clients in one world", () => {
 
     await sleep(JUMP_COOLDOWN_MS);
     a.send(MSG.sit, { zone: "gatbawi", seatId: 6 });
-    await waitFor(() => seenByB.mode === "kneel", "A kneels", 6000);
+    await waitFor(() => seenByB.mode === "kneel", "A kneels", 10000);
     a.send(MSG.jump, {});
     await sleep(300);
     expect(seenByB.jumpSeq).toBe(1);

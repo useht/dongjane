@@ -1,10 +1,11 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Scene, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, DHARMA_ORIGIN, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
-import { CameraRig, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
+import { CameraRig, DHARMA_KEEP_OUT, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
+import { DHARMA } from "./dharma-layout.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
@@ -65,7 +66,8 @@ interface Entry {
 
 // Every monk of the world is in the scene, so the pool holds a world full of visitors and every zone's computer-driven monks.
 const MAX_MONKS = WORLD_CAPACITY + ZONES.length * NPC_PER_ZONE;
-// How long the camera takes to slide between the open ground's box and the room's box when the monk crosses the doorway.
+// How long the camera takes to slide between the open ground's box and the room's box when the monk crosses the doorway,
+// and the light to change from the sun's to the room's.
 const REGION_BLEND_SECONDS = 0.5;
 
 export class World {
@@ -80,6 +82,8 @@ export class World {
 
   // Where the camera is: the 법당 once the followed monk is inside its door, the open ground otherwise.
   private area: Zone = "gatbawi";
+  // How far the light has gone over from the open ground's to the room's, 0 to 1, moving toward the area at a steady pace.
+  private indoor = 0;
   private readonly occupied: Record<Zone, ReadonlySet<number>> = { gatbawi: new Set(), dharma: new Set() };
   private readonly renderer: WebGLRenderer;
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
@@ -146,7 +150,7 @@ export class World {
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
-    this.rig = new CameraRig(this.camera, region.bounds, region.limits);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits, [DHARMA_KEEP_OUT]);
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
     this.input = new PointerInput(canvas, {
@@ -204,7 +208,7 @@ export class World {
       .then((meshes) => {
         if (this.disposed) return false;
         const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.venue.lantern);
-        scene.group.visible = this.area === "dharma";
+        scene.setPresence(this.indoorShare());
         this.scene.add(scene.group);
         this.dharma = scene;
         this.applyOccupancy("dharma");
@@ -233,8 +237,6 @@ export class World {
   private setArea(zone: Zone): void {
     if (zone === this.area) return;
     this.area = zone;
-    this.landscape.setActive(zone === "gatbawi");
-    if (this.dharma) this.dharma.group.visible = zone === "dharma";
     const region = regionFor(zone);
     this.rig.setRegion(region.bounds, region.limits, REGION_BLEND_SECONDS);
     this.callbacks.onZone(zone);
@@ -370,6 +372,7 @@ export class World {
     this.clock.reset();
     for (const zone of ZONES) this.setOccupancy(zone, new Set());
     this.setArea("gatbawi");
+    this.indoor = 0;
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
   }
 
@@ -443,19 +446,30 @@ export class World {
     this.jumps.forget(id);
   }
 
-  private applyAtmosphere(): void {
-    if (this.area === "dharma") {
-      this.background.copy(this.indoorColor);
-      this.fog.color.copy(this.indoorColor);
-      this.fog.near = DHARMA_FOG.near;
-      this.fog.far = DHARMA_FOG.far;
-      return;
-    }
+  private indoorShare(): number {
+    return this.indoor * this.indoor * (3 - 2 * this.indoor);
+  }
+
+  // The camera is in the room itself, not just following someone who is: only then are the front wall and the roof in the way.
+  private cameraInRoom(): boolean {
+    const { x, y, z } = this.camera.position;
+    return (
+      Math.abs(x - DHARMA_ORIGIN.x) < DHARMA.halfWidth &&
+      z > DHARMA_ORIGIN.z + DHARMA.backZ &&
+      z < DHARMA_ORIGIN.z + DHARMA.frontZ &&
+      y < DHARMA.ceilingHeight
+    );
+  }
+
+  // The air, the lights and the colour behind the world go over from the open ground's to the room's as the share rises.
+  private applyAtmosphere(share: number): void {
     const look = this.landscape.look;
-    this.background.setHex(packRgb(look.fogColor));
-    this.fog.color.setHex(packRgb(look.fogColor));
-    this.fog.near = look.fogNear;
-    this.fog.far = look.fogFar;
+    this.background.setHex(packRgb(look.fogColor)).lerp(this.indoorColor, share);
+    this.fog.color.copy(this.background);
+    this.fog.near = look.fogNear + (DHARMA_FOG.near - look.fogNear) * share;
+    this.fog.far = look.fogFar + (DHARMA_FOG.far - look.fogFar) * share;
+    this.landscape.setIndoor(share);
+    this.dharma?.setPresence(share);
   }
 
   private resize(): void {
@@ -513,9 +527,13 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    if (this.area === "dharma") this.dharma?.update(this.time, this.camera, this.reduceMotion);
-    else this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
-    this.applyAtmosphere();
+    const wanted = this.area === "dharma" ? 1 : 0;
+    const step = this.reduceMotion ? 1 : dt / REGION_BLEND_SECONDS;
+    this.indoor = wanted > this.indoor ? Math.min(wanted, this.indoor + step) : Math.max(wanted, this.indoor - step);
+    this.landscape.setCutaway(this.area === "dharma" && !this.cameraInRoom());
+    this.applyAtmosphere(this.indoorShare());
+    this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
+    this.dharma?.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered(nowMs);
 

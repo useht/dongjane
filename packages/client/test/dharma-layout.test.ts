@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DHARMA_BOUNDS, DHARMA_SEATS, DHARMA_SEAT_SIZE, ZONE_CAPACITY } from "@dongjane/shared";
-import { ALTAR, BUDDHA_AT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, FLAME_HEIGHT, FRONT_PILLARS_X, SIDE_PILLARS_Z, hangingLanterns } from "../src/game/dharma-layout.ts";
+import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, DOORWAY_AREA, WORLD_BOUNDS, ZONE_CAPACITY } from "@dongjane/shared";
+import { ALTAR, BUDDHA_AT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FLAME_HEIGHT, FRONT_PILLARS_X, SIDE_PILLARS_Z, hangingLanterns } from "../src/game/dharma-layout.ts";
 
 describe("the room", () => {
   it("holds the altar against the back wall with the Buddha in the middle of it", () => {
@@ -68,5 +68,27 @@ describe("hangingLanterns", () => {
       expect(lantern.scale).toBeGreaterThan(1);
       expect(lantern.scale).toBeLessThan(1.3);
     }
+  });
+});
+
+describe("the outside", () => {
+  it("runs the porch out to the court the visitors walk along, and the doorway across to it", () => {
+    expect(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ).toBe(COURT_AREA.minZ);
+    expect(DHARMA_ORIGIN.z + DHARMA.frontZ).toBeLessThan(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ);
+    expect(DOORWAY_AREA.maxZ).toBe(COURT_AREA.minZ);
+    expect(DOORWAY_AREA.minZ).toBe(DHARMA_BOUNDS.maxZ);
+  });
+
+  it("opens the walkers' doorway inside the doorway of the wall, with room for the body on both sides", () => {
+    expect(DOORWAY_AREA.maxX - DHARMA_ORIGIN.x).toBeLessThan(DHARMA_DOOR.halfWidth);
+    expect(DHARMA_ORIGIN.x - DOORWAY_AREA.minX).toBeLessThan(DHARMA_DOOR.halfWidth);
+  });
+
+  it("stands the plinth clear of the plaza and the roof high over its edge", () => {
+    expect(DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth).toBeLessThan(WORLD_BOUNDS.minX);
+    const eaveEdge = DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.eave;
+    expect(eaveEdge - WORLD_BOUNDS.minX).toBeLessThan(0.5);
+    expect(DHARMA_SHELL.beamTop).toBeGreaterThanOrEqual(DHARMA.wallHeight);
+    expect(DHARMA_SHELL.beamTop).toBeGreaterThan(3);
   });
 });

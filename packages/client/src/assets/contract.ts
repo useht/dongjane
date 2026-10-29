@@ -7,7 +7,9 @@
 
 export const GATBAWI_MESHES = ["figure", "hatStone", "pedestal", "offerings"] as const;
 
-export const WORLD_MESHES = ["ground", "steps", "rocks", "pine", "maple", "temple", "templeDoor", "mat"] as const;
+// The 법당 stands in the world as four shells: the plinth that stays, the side and back walls, the front wall (which the game
+// hides when the camera looks in from the court) and the roof (hidden with it).
+export const WORLD_MESHES = ["ground", "steps", "rocks", "pine", "maple", "dharmaBase", "dharmaWalls", "dharmaFront", "dharmaRoof", "mat"] as const;
 
 // Authored at the origin; the runtime instances them at the mat spots.
 export const WORLD_PROTOTYPES = ["mat"] as const;
@@ -18,8 +20,8 @@ export const VENUE_MESHES = ["stage", "screen", "truss", "poles", "lantern"] as 
 // Authored at the origin, hook at the top; the runtime hangs them from the strings.
 export const VENUE_PROTOTYPES = ["lantern"] as const;
 
-// The temple's inside, loaded after the first frame: the room, the door that leads back out, the Buddha and one seat to instance.
-export const DHARMA_MESHES = ["floor", "structure", "ceiling", "paper", "door", "mural", "buddha", "lotus", "halo", "glow", "seat"] as const;
+// The 법당's inside, loaded after the first frame: the room, the Buddha and one seat to instance.
+export const DHARMA_MESHES = ["floor", "structure", "ceiling", "paper", "mural", "buddha", "lotus", "halo", "glow", "seat"] as const;
 
 // Authored at the origin; the runtime instances them at the seat spots.
 export const DHARMA_PROTOTYPES = ["seat"] as const;
@@ -29,7 +31,7 @@ export const TEXTURED = ["figure", "hatStone", "pedestal", "ground", "steps", "r
 
 export const BUDGET = {
   gatbawi: { bytes: 1_200_000, tris: 30_000 },
-  world: { bytes: 1_600_000, tris: 46_000 },
+  world: { bytes: 2_000_000, tris: 46_000 },
   venue: { bytes: 450_000, tris: 25_000 },
   dharma: { bytes: 1_500_000, tris: 45_000 },
   // The sum of the actual file sizes of every glb loaded before the first frame (gatbawi, world,

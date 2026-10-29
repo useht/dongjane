@@ -1,5 +1,4 @@
-// Plain numbers about the open-air concert stage, the lantern canopy over the plaza and the temple's
-// outside. Pure data and arithmetic: the Blender build reads it through scripts/asset-inputs.ts, and
+// Plain numbers about the open-air concert stage and the lantern canopy over the plaza. Pure data and arithmetic: the Blender build reads it through scripts/asset-inputs.ts, and
 // the runtime and its tests read the same file, so the models and the game cannot drift apart.
 // Metres, the game's frame: Y up, +Z toward the viewer.
 
@@ -131,24 +130,6 @@ export function lanternSpots(): readonly LanternSpot[] {
   return spots;
 }
 
-// The temple's outside, in the west. The eaves reach the footprint's edge; the walls stand `eave` metres inside it.
-export const TEMPLE = {
-  minX: -16.5,
-  maxX: -8.5,
-  minZ: 2,
-  maxZ: 12,
-  eave: 1.3,
-  baseHeight: 0.45,
-  columnHeight: 3.35,
-  rise: 2.2,
-  doorZ: 7,
-  doorWidth: 3.2,
-  doorHeight: 2.85,
-} as const;
-
-// The wall that holds the door, facing the plaza.
-export const TEMPLE_DOOR_X = TEMPLE.maxX - TEMPLE.eave;
-
-// Terrain that is held level so the stage and the temple stand on flat ground: `margin` metres past each
+// Terrain that is held level so the stage and the 법당 stand on flat ground: `margin` metres past each
 // footprint it is level, then it eases back into the hillside over `blend` metres.
-export const PADS = { stageMargin: 1.8, templeMargin: 1.2, blend: 3.5 } as const;
+export const PADS = { stageMargin: 1.8, dharmaMargin: 1.2, blend: 3.5 } as const;

@@ -52,6 +52,8 @@ const WINDOW_LIGHT_TARGET = [0, 0, -2] as const;
 const SHADOW_HALF_EXTENT = 14;
 const CANDLE_LIGHT_AT = [0, ALTAR.topY + 0.95, ALTAR.maxZ + 0.35] as const;
 const CANDLE_LIGHT = { intensity: 9, distance: 11, decay: 2 } as const;
+const HEMISPHERE_LIGHT = 1.35;
+const WINDOW_LIGHT = 1.7;
 const LANTERN_GLOW = 0.9;
 const PAPER_GLOW = 0.55;
 const MURAL_GLOW = 0.5;
@@ -114,11 +116,14 @@ function centredGlow(source: Mesh): { geometry: BufferGeometry; centre: Vector3 
 
 // The 법당's inside: the room, the Buddha on his altar, fifty floor seats. It is modelled around its own origin and its group
 // stands at DHARMA_ORIGIN in the world. It owns its own lights and never looks at the sky, so the weather and the hour
-// outside change nothing in here.
+// outside change nothing in here. The lights stay in the scene all the time (adding or removing one would recompile every
+// material); `setPresence` turns them up as the camera comes in and down as it goes out.
 export class DharmaScene {
   readonly group = new Group();
 
   private readonly environment: Texture;
+  private readonly hemisphere: HemisphereLight;
+  private readonly windowLight: DirectionalLight;
   private readonly candleLight: PointLight;
   private readonly flames: InstancedMesh;
   private readonly seats: InstancedMesh;
@@ -135,6 +140,7 @@ export class DharmaScene {
   private readonly tmpQuat = new Quaternion();
   private readonly tmpScale = new Vector3();
   private readonly tmpPos = new Vector3();
+  private presence = 0;
 
   constructor(renderer: WebGLRenderer, quality: DharmaQuality, meshes: ModelMeshes<"dharma">, lantern: Mesh) {
     const { scene: palette } = THEME;
@@ -142,9 +148,11 @@ export class DharmaScene {
     this.group.position.set(DHARMA_ORIGIN.x, 0, DHARMA_ORIGIN.z);
     this.environment = buildEnvironment(renderer);
 
-    this.group.add(new HemisphereLight(palette.dharmaHemiSky, palette.dharmaHemiGround, 1.35));
+    this.hemisphere = new HemisphereLight(palette.dharmaHemiSky, palette.dharmaHemiGround, 0);
+    this.group.add(this.hemisphere);
 
-    const window = new DirectionalLight(palette.dharmaWindow, 1.7);
+    const window = new DirectionalLight(palette.dharmaWindow, 0);
+    this.windowLight = window;
     window.position.set(...WINDOW_LIGHT_AT);
     window.target.position.set(...WINDOW_LIGHT_TARGET);
     window.castShadow = quality.shadows;
@@ -162,7 +170,7 @@ export class DharmaScene {
     }
     this.group.add(window, window.target);
 
-    this.candleLight = new PointLight(palette.candle, CANDLE_LIGHT.intensity, CANDLE_LIGHT.distance, CANDLE_LIGHT.decay);
+    this.candleLight = new PointLight(palette.candle, 0, CANDLE_LIGHT.distance, CANDLE_LIGHT.decay);
     this.candleLight.position.set(...CANDLE_LIGHT_AT);
     this.group.add(this.candleLight);
 
@@ -301,6 +309,13 @@ export class DharmaScene {
     if (this.seats.instanceColor) this.seats.instanceColor.needsUpdate = true;
   }
 
+  // 0 when the camera is outside and the room is dark, 1 when it is inside and the room is lit.
+  setPresence(share: number): void {
+    this.presence = share;
+    this.hemisphere.intensity = HEMISPHERE_LIGHT * share;
+    this.windowLight.intensity = WINDOW_LIGHT * share;
+  }
+
   update(time: number, camera: Camera | null, reduceMotion: boolean): void {
     const flicker = reduceMotion ? 0.35 : 1;
     const base = this.tmpPos;
@@ -316,7 +331,7 @@ export class DharmaScene {
     }
     this.flames.instanceMatrix.needsUpdate = true;
 
-    this.candleLight.intensity = CANDLE_LIGHT.intensity * (0.93 + flicker * (0.07 * Math.sin(time * 7.3) + 0.04 * Math.sin(time * 13.1 + 1)));
+    this.candleLight.intensity = this.presence * CANDLE_LIGHT.intensity * (0.93 + flicker * (0.07 * Math.sin(time * 7.3) + 0.04 * Math.sin(time * 13.1 + 1)));
     this.glowMesh.scale.setScalar(1 + (reduceMotion ? 0 : 0.015 * Math.sin(time * 0.9)));
 
     const count = this.dustSeeds.length / 4;

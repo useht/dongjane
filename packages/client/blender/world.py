@@ -1,11 +1,13 @@
-"""world.glb: the plaza and its autumn mountainside, the temple's outside and its door, and the mat prototype.
+"""world.glb: the plaza and its autumn mountainside, the 법당's outside (four shells), and the mat prototype.
 
 Everything is drawn in the game's own coordinates (Y up, +Z toward the viewer) through a Part whose
-frame is GAME. The plaza (flat paving the monks kneel on), the granite steps and platform, the
-rocks, the pines and the maples are placed from the layout in the inputs; only the dressing of the
-hillside (where the far trees and boulders go) is chosen here. The mat is built last, at the origin,
-so the baked occlusion never sees it. The hillside keeps clear of the plaza, of the camera's box
-(x -8.2..14, z -2.6..30), of the stage on the north-east side and of the temple on the west side.
+frame is GAME. The plaza (flat paving the monks kneel on), the court in front of the 법당, the granite
+steps and platform, the rocks, the pines and the maples are placed from the layout in the inputs; only
+the dressing of the hillside (where the far trees and boulders go) is chosen here. The 법당's walls and
+roof come from shell.py, standing on level ground that is sunk a little under the room so the room's
+floor, which is its own mesh, has nothing to fight with. The mat is built last, at the origin, so the
+baked occlusion never sees it. The hillside keeps clear of the plaza, the court, the camera's box
+(x -31..14, z -2.6..30), the stage on the north-east side and the 법당 on the west side.
 """
 
 import math
@@ -14,7 +16,7 @@ import os
 from mathutils import Vector
 
 import common
-import temple
+import shell
 from common import GAME, Part, at, fbm, from_game, hash01, mix, rgb, scaled, smoothstep, spun, to_game
 
 SOURCES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sources")
@@ -27,29 +29,32 @@ PLATFORM_BACK = 0.7  # the platform reaches this far behind the statue's pedesta
 STEP_HALF = 2.6
 STEP_RISE = 0.3
 GROUND_LIMIT = 64.0
+PIT_MARGIN = 0.5  # the ground is sunk this far past the room's walls, under the plinth
+PIT_DROP = 0.12  # and this deep, so the room's floor never shares a height with it
+PIT_EDGE = 0.05  # the wall of the pit is this wide: steep, but not a vertical fold
 
 # (x, z, height above ground, radii, seed, segments); the outcrop stands behind Gatbawi and leaves
-# the north-east corner (x 4..16, z -13..-5) free for the stage
+# the north-east corner (x 4..16, z -13..-5) free for the stage and the 법당's footprint (x -30..-8, z -11..10)
 OUTCROP = (
     (-0.8, -11.0, 2.4, (4.8, 4.6, 3.6), 1.0, 18),
-    (-5.6, -9.6, 1.2, (3.4, 3.0, 2.8), 2.0, 16),
-    (-9.6, -11.4, 1.4, (3.6, 3.4, 3.0), 3.0, 16),
+    (-4.2, -9.6, 1.2, (3.0, 3.0, 2.8), 2.0, 16),
     (-0.8, -12.8, 4.6, (4.0, 3.6, 2.8), 4.0, 18),
     (-4.6, -13.0, 3.4, (4.0, 3.4, 2.6), 5.0, 16),
-    (-11.5, -7.5, 0.5, (3.0, 2.2, 2.4), 6.0, 22),
+    (-14.2, -16.5, 1.4, (3.8, 3.2, 3.0), 3.0, 16),
+    (-26.5, -17.0, 0.8, (3.6, 2.6, 2.8), 6.0, 22),
     (19.4, -8.5, 0.5, (3.2, 2.4, 2.4), 7.0, 22),
 )
 BOULDERS = (
-    (-10.2, -1.6, 0.2, (1.3, 0.9, 1.1), 8.0, 18),
     (15.8, 1.2, 0.2, (1.5, 1.1, 1.2), 9.0, 18),
-    (-10.0, 15.4, 0.15, (1.1, 0.8, 1.0), 10.0, 16),
     (15.6, 11.8, 0.15, (1.0, 0.7, 0.9), 11.0, 16),
-    (-9.6, -4.4, 0.2, (1.2, 1.0, 1.3), 12.0, 16),
+    (-31.8, 8.4, 0.2, (1.2, 0.9, 1.1), 8.0, 18),
+    (-32.6, -3.6, 0.2, (1.2, 1.0, 1.3), 12.0, 16),
+    (-33.2, 17.6, 0.15, (1.1, 0.8, 1.0), 10.0, 16),
 )
-# (x, z, height); every tree stands outside the plaza, the camera's box, the stage and the temple
-NEAR_PINES = ((-12.4, -4.2, 8.2), (18.0, -3.4, 9.0), (-20.0, 4.0, 7.0), (18.4, 9.0, 7.6), (-13.0, -9.4, 8.8), (-19.6, 14.6, 7.8))
+# (x, z, height); every tree stands outside the plaza, the court, the camera's box, the stage and the 법당
+NEAR_PINES = ((-12.6, -14.6, 8.8), (18.0, -3.4, 9.0), (-33.4, 2.0, 7.0), (18.4, 9.0, 7.6), (-22.0, -15.2, 9.0), (-33.0, 14.2, 7.8))
 # (x, z, size, colour index into the maple palette)
-NEAR_MAPLES = ((-13.4, -1.0, 1.15, 0), (19.4, 3.0, 1.2, 1), (-12.6, 16.8, 1.0, 2), (19.6, 14.4, 1.1, 0), (-22.0, 9.0, 1.0, 1))
+NEAR_MAPLES = ((-33.6, -7.0, 1.15, 0), (19.4, 3.0, 1.2, 1), (-32.6, 20.0, 1.0, 2), (19.6, 14.4, 1.1, 0), (-30.0, -13.0, 1.0, 1))
 FAR_PINES = 11
 FAR_MAPLES = 9
 
@@ -68,21 +73,51 @@ class Plan:
         venue = inputs["venue"]
         self.stage = venue["STAGE"]
         self.stage_yaw = venue["STAGE_YAW"]
-        self.temple = venue["TEMPLE"]
         self.pads = venue["PADS"]
+        dharma = inputs["dharma"]
+        self.room = dharma["DHARMA"]
+        self.shell = dharma["DHARMA_SHELL"]
+        self.door = dharma["DHARMA_DOOR"]
+        self.origin = layout["DHARMA_ORIGIN"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         self.left, self.right = self.plaza["minX"], self.plaza["maxX"]
         self.front = self.plaza["maxZ"] + PLAZA_MARGIN
         self.back = self.platform["minZ"] - PLATFORM_BACK
+        ox, oz, reach = self.origin["x"], self.origin["z"], self.shell["plinth"]
+        # The granite footprint of the 법당, and the paved court between it and the plaza that runs along its front.
+        self.temple = {
+            "minX": ox - self.room["halfWidth"] - reach,
+            "maxX": ox + self.room["halfWidth"] + reach,
+            "minZ": oz + self.room["backZ"] - reach,
+            "maxZ": oz + self.shell["porchZ"],
+        }
+        self.court = (self.temple["minX"], self.left, self.temple["maxZ"], self.front)
+        self.pit = (
+            ox - self.room["halfWidth"] - PIT_MARGIN,
+            ox + self.room["halfWidth"] + PIT_MARGIN,
+            oz + self.room["backZ"] - PIT_MARGIN,
+            oz + self.room["frontZ"] + PIT_MARGIN,
+        )
 
-    def outside(self, x, z):
-        """How far (x, z) is from the paved plaza, negative inside it."""
-        dx = max(self.left - x, x - self.right)
-        dz = max(self.plaza["minZ"] - z, z - self.front)
+    @staticmethod
+    def gap(box, x, z):
+        """How far (x, z) is from the rectangle (minX, maxX, minZ, maxZ), negative inside it."""
+        dx = max(box[0] - x, x - box[1])
+        dz = max(box[2] - z, z - box[3])
         inside = max(dx, dz)
         if inside < 0.0:
             return inside
         return math.hypot(max(dx, 0.0), max(dz, 0.0))
+
+    def outside(self, x, z):
+        """How far (x, z) is from the paving (the plaza and the court), negative inside it."""
+        plaza = (self.left, self.right, self.plaza["minZ"], self.front)
+        return min(self.gap(plaza, x, z), self.gap(self.court, x, z))
+
+    def pit_depth(self, x, z):
+        """How deep (x, z) is sunk: PIT_DROP under the 법당, nothing outside the pit's steep wall."""
+        x0, x1, z0, z1 = self.pit
+        return PIT_DROP * smoothstep(0.0, PIT_EDGE, min(x - x0, x1 - x, z - z0, z1 - z))
 
     def terrain(self, x, z):
         d = max(self.outside(x, z), 0.0)
@@ -90,17 +125,17 @@ class Plan:
         rolling = 0.8 * smoothstep(1.5, 10.0, d) * (0.5 + 0.5 * fbm(x * 0.13, 0.0, z * 0.13, 3.0))
         ridge = 14.0 * smoothstep(24.0, 60.0, d) * (0.55 + 0.45 * fbm(x * 0.06, 0.0, z * 0.06, 9.0))
         slope = 1.5 * smoothstep(0.0, 3.0, behind) + 0.35 * max(0.0, behind - 3.0)
-        return (rolling + ridge + slope) * self.level(x, z)
+        return (rolling + ridge + slope) * self.level(x, z) - self.pit_depth(x, z)
 
     def level(self, x, z):
-        """0 on the stage's and the temple's footprints and a margin round them, easing to 1 over `blend` metres."""
+        """0 on the stage's and the 법당's footprints and a margin round them, easing to 1 over `blend` metres."""
         stage, temple_box, pads = self.stage, self.temple, self.pads
         cos, sin = math.cos(self.stage_yaw), math.sin(self.stage_yaw)
         dx, dz = x - stage["x"], z - stage["z"]
         across = abs(dx * cos - dz * sin) - (stage["width"] / 2 + pads["stageMargin"])
         along = abs(dx * sin + dz * cos) - (stage["depth"] / 2 + pads["stageMargin"])
         from_stage = math.hypot(max(across, 0.0), max(along, 0.0)) + min(max(across, along), 0.0)
-        margin = pads["templeMargin"]
+        margin = pads["dharmaMargin"]
         across = abs(x - (temple_box["minX"] + temple_box["maxX"]) / 2) - ((temple_box["maxX"] - temple_box["minX"]) / 2 + margin)
         along = abs(z - (temple_box["minZ"] + temple_box["maxZ"]) / 2) - ((temple_box["maxZ"] - temple_box["minZ"]) / 2 + margin)
         from_temple = math.hypot(max(across, 0.0), max(along, 0.0)) + min(max(across, along), 0.0)
@@ -129,6 +164,12 @@ def refine(lines, low, high, step):
     return sorted(kept + [start + (end - start) * i / count for i in range(count + 1)])
 
 
+def pin(lines, edge, inward):
+    """Puts grid lines on `edge` and `inward` (a step of PIT_EDGE toward the pit), clearing the lines near them."""
+    kept = [v for v in lines if abs(v - edge) > 0.3]
+    return sorted(kept + [edge, edge + inward * PIT_EDGE])
+
+
 def ground(plan):
     part = Part("ground", frame=GAME)
     c = plan.c
@@ -150,6 +191,10 @@ def ground(plan):
     columns = refine(columns, plan.right, plan.stage["x"] + 11.0, 1.2)
     rows = refine(rows, plan.stage["z"] - 10.0, plan.plaza["minZ"], 1.2)
     columns = refine(columns, plan.temple["minX"] - 5.0, plan.left, 1.2)
+    rows = refine(rows, plan.temple["minZ"] - 5.0, plan.plaza["minZ"], 1.2)
+    x0, x1, z0, z1 = plan.pit
+    columns = pin(pin(columns, x0, 1.0), x1, -1.0)
+    rows = pin(pin(rows, z0, 1.0), z1, -1.0)
     part.heightfield(columns, rows, plan.terrain, tone)
     part.project_uv(GROUND_TILE)
     return part
@@ -170,7 +215,7 @@ def stone_tone(plan, seed):
 
 
 def steps(plan):
-    """The granite platform Gatbawi sits on, four steps up to it from the plaza, and a low kerb round the paving."""
+    """The granite platform Gatbawi sits on, four steps up to it from the plaza, and a low kerb along its east side and its front."""
     part = Part("steps", frame=GAME)
     c = plan.c
     top = plan.platform["topY"]
@@ -197,14 +242,14 @@ def steps(plan):
             rough(faces, 2.0 + 3 * k + b)
     kerb = (0.3, 0.14)
     length = (plan.front - plan.plaza["minZ"]) / 8
-    for edge, inward in ((plan.left, 1.0), (plan.right, -1.0)):
-        for i in range(8):
-            z = plan.plaza["minZ"] + length * (i + 0.5)
-            rough(part.box((edge + inward * 0.05, kerb[1] / 2 - 0.01, z), (kerb[0], kerb[1], length - 0.04), tone(20.0 + i), skip=("-y",)), 20.0 + i)
-    count = 16
-    run = (plan.right - plan.left) / count
+    for i in range(8):
+        z = plan.plaza["minZ"] + length * (i + 0.5)
+        rough(part.box((plan.right - 0.05, kerb[1] / 2 - 0.01, z), (kerb[0], kerb[1], length - 0.04), tone(20.0 + i), skip=("-y",)), 20.0 + i)
+    west = plan.court[0]
+    count = round((plan.right - west) / 1.37)
+    run = (plan.right - west) / count
     for i in range(count):
-        x = plan.left + run * (i + 0.5)
+        x = west + run * (i + 0.5)
         rough(part.box((x, kerb[1] / 2 - 0.01, plan.front - 0.05), (run - 0.04, kerb[1], kerb[0]), tone(30.0 + i), skip=("-y",)), 30.0 + i)
     part.project_uv(STONE_TILE)
     return part
@@ -283,14 +328,14 @@ def maple(part, plan, x, z, size, palette, seed, crowns=4):
 
 def scatter(count, seed, plan):
     """Spots on the hillside for the far trees: swung from the west over the north to the east, and pushed
-    outward until they clear the box the plaza, the stage, the temple and the camera occupy."""
+    outward until they clear the box the plaza, the court, the stage, the 법당 and the camera occupy."""
     spots = []
     for i in range(count):
         angle = -2.4 + 4.8 * (i + 0.7 * hash01(i, 0.0, 0.0, seed)) / count
         radius = 26.0 + 22.0 * hash01(i, 1.0, 0.0, seed)
         for _ in range(8):
             x, z = radius * math.sin(angle) * 1.15, 4.0 - radius * math.cos(angle)
-            if not (-30.0 < x < 30.0 and -22.0 < z < 38.0):
+            if not (-38.0 < x < 30.0 and -24.0 < z < 38.0):
                 break
             radius += 6.0
         spots.append((x, z, hash01(i, 2.0, 0.0, seed)))
@@ -347,9 +392,9 @@ def build(inputs, out_dir):
         "rocks": rocks(plan).build(stone),
         "pine": pines(plan).build(foliage),
         "maple": maples(plan).build(foliage),
-        "temple": temple.building(plan).build(foliage),
-        "templeDoor": temple.door(plan).build(foliage),
     }
+    for part in shell.build(plan).values():
+        objects[part.name] = part.build(foliage)
     common.bake_vertex_occlusion(list(objects.values()), distance=1.4, samples=48, floor=0.5)
     objects["mat"] = mat(plan).build(common.textured_material("mat", os.path.join(SOURCES, "tatami_mat_diff.jpg")), crease=False)
     names = inputs["names"]["WORLD_MESHES"]

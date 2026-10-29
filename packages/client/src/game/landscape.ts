@@ -130,8 +130,9 @@ export type ScreenMode = "poster" | "video";
 export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
-  // The 법당's door in the temple's front, which a tap opens.
-  readonly templeDoor: Mesh;
+  // The 법당's front wall and roof: the parts that stand between the camera and the people inside.
+  readonly dharmaFront: Mesh;
+  readonly dharmaRoof: Mesh;
 
   private readonly environment: Texture;
   private readonly hemisphere: HemisphereLight;
@@ -161,6 +162,7 @@ export class Landscape {
   private current: SkyLook = cloneLook(DAY_LOOK);
   private skyKnown = false;
   private cloudTurn = 0;
+  private indoor = 0;
 
   constructor(
     renderer: WebGLRenderer,
@@ -237,8 +239,11 @@ export class Landscape {
     this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
     this.add(world.pine, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
     this.add(world.maple, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
-    this.add(world.temple, new MeshLambertMaterial({ vertexColors: true }), { cast: true, receive: true });
-    this.templeDoor = this.add(world.templeDoor, new MeshLambertMaterial({ vertexColors: true }), { receive: true });
+    // The 법당 stands outside the sun's shadow box, which is cut round the plaza, so its walls take no shadows and give none.
+    this.add(world.dharmaBase, new MeshLambertMaterial({ vertexColors: true }));
+    this.add(world.dharmaWalls, new MeshLambertMaterial({ vertexColors: true }));
+    this.dharmaFront = this.add(world.dharmaFront, new MeshLambertMaterial({ vertexColors: true }));
+    this.dharmaRoof = this.add(world.dharmaRoof, new MeshLambertMaterial({ vertexColors: true }));
 
     this.mats = this.buildMats(world.mat, anisotropy);
     this.group.add(this.mats);
@@ -462,10 +467,16 @@ export class Landscape {
     return this.current;
   }
 
-  // Indoors nothing outside is drawn or advanced; coming back, the sky is already at the hour it should show.
-  setActive(active: boolean): void {
-    this.group.visible = active;
-    if (active) this.current = cloneLook(this.target);
+  // How much of the camera's world is the 법당's inside, 0 to 1: the sun, the sky's light, the weather and the leaves give way
+  // to the room's own lights, which the room itself turns up by the same amount.
+  setIndoor(share: number): void {
+    this.indoor = share;
+  }
+
+  // The front wall and the roof are hidden while the camera looks into the room from outside it.
+  setCutaway(cut: boolean): void {
+    this.dharmaFront.visible = !cut;
+    this.dharmaRoof.visible = !cut;
   }
 
   // The first look snaps so the world never opens on the wrong hour; later ones ease in.
@@ -480,20 +491,22 @@ export class Landscape {
     if (dt > 0) easeLook(this.current, this.target, 1 - Math.exp(-dt / SKY_EASE_SECONDS));
     const look = this.current;
     this.applyLook(look);
-    this.precipitation.update(dt, reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1, look.rain, look.snow, packRgb(look.precipTint));
+    const open = 1 - this.indoor;
+    this.precipitation.update(dt, reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1, look.rain * open, look.snow * open, packRgb(look.precipTint));
 
     if (camera) this.sky.position.copy(camera.position);
     if (!reduceMotion) this.cloudTurn += dt * CLOUD_TURN_PER_SECOND;
     this.clouds.rotation.y = this.cloudTurn;
 
-    this.driftLeaves(reduceMotion ? 0 : time);
+    if (this.leaves.visible) this.driftLeaves(reduceMotion ? 0 : time);
   }
 
   private applyLook(look: SkyLook): void {
-    this.hemisphere.intensity = look.hemisphereIntensity;
+    const open = 1 - this.indoor;
+    this.hemisphere.intensity = look.hemisphereIntensity * open;
     this.hemisphere.color.setHex(packRgb(look.hemisphereSky));
     this.hemisphere.groundColor.setHex(packRgb(look.hemisphereGround));
-    this.sun.intensity = look.sunIntensity;
+    this.sun.intensity = look.sunIntensity * open;
     this.sun.color.setHex(packRgb(look.sunColor));
     for (const material of this.envMaterials) material.envMapIntensity = look.envIntensity;
 
@@ -521,9 +534,9 @@ export class Landscape {
 
     const leaves = this.leaves.material as PointsMaterial;
     const fallout = Math.max(look.rain, look.snow);
-    leaves.size = LEAF_SIZE * (1 - fallout);
+    leaves.size = LEAF_SIZE * (1 - fallout) * open;
     leaves.color.setScalar(1 - 0.7 * look.nightSky);
-    this.leaves.visible = fallout < 0.98;
+    this.leaves.visible = fallout < 0.98 && open > 0.02;
   }
 
   private driftLeaves(drift: number): void {

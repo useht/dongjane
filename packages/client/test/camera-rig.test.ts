@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Vector3 } from "three";
 import { ARRIVAL, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM } from "@dongjane/shared";
-import { CameraRig, DEFAULT_VIEW, DHARMA_CAMERA_BOUNDS, configureCamera, lensFor, maxDistanceInside, projectToCanvas, projectUnclipped, regionFor, viewFor } from "../src/game/camera-rig.ts";
+import { CameraRig, DEFAULT_VIEW, DHARMA_CAMERA_BOUNDS, DHARMA_KEEP_OUT, configureCamera, distanceBefore, lensFor, maxDistanceInside, projectToCanvas, projectUnclipped, regionFor, viewFor } from "../src/game/camera-rig.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
-import { DHARMA } from "../src/game/dharma-layout.ts";
+import { DHARMA, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
 
@@ -23,6 +23,62 @@ describe("maxDistanceInside", () => {
 
   it("never returns a negative distance", () => {
     expect(maxDistanceInside({ x: 0, y: 1, z: 8 }, { x: 0, y: 0, z: 1 }, box, 6)).toBe(0);
+  });
+});
+
+describe("distanceBefore", () => {
+  const solid = { minX: -2, maxX: 2, minY: 0, maxY: 4, minZ: -2, maxZ: 2 };
+
+  it("returns the distance at which the ray first enters the box", () => {
+    expect(distanceBefore({ x: 0, y: 1, z: 6 }, { x: 0, y: 0, z: -1 }, solid, 9)).toBeCloseTo(4, 6);
+    expect(distanceBefore({ x: -5, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }, solid, 9)).toBeCloseTo(3, 6);
+  });
+
+  it("returns the wanted distance when the ray stops short of the box, misses it or points away", () => {
+    expect(distanceBefore({ x: 0, y: 1, z: 6 }, { x: 0, y: 0, z: -1 }, solid, 3)).toBe(3);
+    expect(distanceBefore({ x: 5, y: 1, z: 6 }, { x: 0, y: 0, z: -1 }, solid, 9)).toBe(9);
+    expect(distanceBefore({ x: 0, y: 1, z: 6 }, { x: 0, y: 0, z: 1 }, solid, 9)).toBe(9);
+  });
+
+  it("does not hold back an origin that is already inside the box", () => {
+    expect(distanceBefore({ x: 0, y: 1, z: 1 }, { x: 0, y: 0, z: 1 }, solid, 9)).toBe(9);
+  });
+});
+
+describe("the 법당's keep-out box", () => {
+  it("is the footprint of the shell, from its plinth at the back to the porch's edge at the court", () => {
+    expect(DHARMA_KEEP_OUT.minX).toBeCloseTo(DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth, 6);
+    expect(DHARMA_KEEP_OUT.maxX).toBeCloseTo(DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth, 6);
+    expect(DHARMA_KEEP_OUT.minZ).toBeCloseTo(DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth, 6);
+    expect(DHARMA_KEEP_OUT.maxZ).toBe(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ);
+    expect(DHARMA_KEEP_OUT.maxY).toBeGreaterThan(DHARMA_SHELL.beamTop + DHARMA_SHELL.rise);
+  });
+
+  it("stops a camera that swings round behind someone on the court from going through the front wall", () => {
+    const behind = (keepOut: readonly (typeof DHARMA_KEEP_OUT)[]): CameraRig => {
+      const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS, undefined, keepOut);
+      rig.reduceMotion = true;
+      rig.yaw = Math.PI;
+      rig.pitch = 0.3;
+      rig.distance = 12;
+      rig.follow(DHARMA_ORIGIN.x, DHARMA_KEEP_OUT.maxZ + 2, 1, true);
+      rig.update(0.016);
+      return rig;
+    };
+    expect(behind([]).camera.position.z, "without the box the camera passes into the wall").toBeLessThan(DHARMA_KEEP_OUT.maxZ);
+    const { x, y, z } = behind([DHARMA_KEEP_OUT]).camera.position;
+    expect(z).toBeGreaterThanOrEqual(DHARMA_KEEP_OUT.maxZ);
+    expect(x).toBeCloseTo(DHARMA_ORIGIN.x, 1);
+    expect(y).toBeGreaterThan(0);
+  });
+
+  it("leaves a camera that follows someone inside the room to the room's own box", () => {
+    const rig = new CameraRig(new PerspectiveCamera(), DHARMA_CAMERA_BOUNDS, regionFor("dharma").limits, [DHARMA_KEEP_OUT]);
+    rig.reduceMotion = true;
+    rig.follow(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z, 1, true);
+    rig.update(0.016);
+    const { x, z } = rig.camera.position;
+    expect(Math.hypot(x - DHARMA_ORIGIN.x, z - DHARMA_ORIGIN.z)).toBeGreaterThan(regionFor("dharma").limits.minDistance * 0.5);
   });
 });
 

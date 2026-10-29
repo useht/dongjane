@@ -1,9 +1,9 @@
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import { BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
-import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR } from "../src/game/dharma-layout.ts";
-import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
+import { ALTAR, BUDDHA_AT, DHARMA, DHARMA_DOOR, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
+import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, loadGlb, positions, rootNodes } from "./glb.ts";
 
@@ -188,7 +188,9 @@ describe("world.glb", () => {
 
   it("is level under the plaza and rolls on into hills far away", () => {
     const { min, max } = mesh("ground").positions;
-    near(min[1], 0);
+    // The only ground below the paving is the pit the 법당 stands in.
+    expect(min[1]).toBeGreaterThanOrEqual(-0.13);
+    expect(min[1]).toBeLessThanOrEqual(-0.1);
     expect(max[1]).toBeGreaterThan(10);
     for (const edge of [min[0], min[2], -max[0], -max[2]]) expect(edge).toBeLessThan(-60);
   });
@@ -206,6 +208,12 @@ describe("world.glb", () => {
   });
 
   it("keeps trees and boulders out of the area players walk in", () => {
+    const footprint = {
+      minX: DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth,
+      maxX: DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth,
+      minZ: DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth,
+      maxZ: COURT_AREA.minZ,
+    };
     for (const name of ["pine", "maple", "rocks"]) {
       const { values, count } = positions(glb, name);
       let inside = 0;
@@ -213,49 +221,109 @@ describe("world.glb", () => {
         const x = values[i * 3] as number;
         const y = values[i * 3 + 1] as number;
         const z = values[i * 3 + 2] as number;
-        if (y > 0.3 && x >= WORLD_BOUNDS.minX && x <= WORLD_BOUNDS.maxX && z >= WORLD_BOUNDS.minZ && z <= WORLD_BOUNDS.maxZ) inside += 1;
+        if (y <= 0.3) continue;
+        for (const area of [WORLD_BOUNDS, COURT_AREA, footprint]) {
+          if (x >= area.minX && x <= area.maxX && z >= area.minZ && z <= area.maxZ) inside += 1;
+        }
       }
-      expect(inside, `${name} vertices above the paving inside the walkable area`).toBe(0);
+      expect(inside, `${name} vertices above the paving inside the walkable area, the court or the 법당's footprint`).toBe(0);
     }
   });
 
-  it("stands the temple inside its footprint with the door in the wall that faces the plaza", () => {
-    const temple = mesh("temple").positions;
-    // The eaves reach a little past the footprint and the base is sunk a hand into the ground.
-    const within = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.25);
-    within(temple.min[0], TEMPLE.minX);
-    within(temple.max[0], TEMPLE.maxX);
-    within(temple.min[2], TEMPLE.minZ);
-    within(temple.max[2], TEMPLE.maxZ);
-    expect(temple.min[1]).toBeGreaterThanOrEqual(-0.15);
-    expect(temple.min[1]).toBeLessThanOrEqual(0);
-    expect(temple.max[1]).toBeGreaterThan(TEMPLE.baseHeight + TEMPLE.columnHeight + TEMPLE.rise - 0.5);
-    expect(temple.max[0]).toBeLessThan(WORLD_BOUNDS.minX);
-    const door = mesh("templeDoor").positions;
-    near(door.max[0], TEMPLE_DOOR_X);
-    near((door.min[2] + door.max[2]) / 2, TEMPLE.doorZ);
-    expect(door.max[2] - door.min[2]).toBeGreaterThanOrEqual(TEMPLE.doorWidth);
-    expect(door.max[1] - door.min[1]).toBeGreaterThanOrEqual(TEMPLE.doorHeight);
+  it("stands the 법당's shell round its room, the porch running out to the court and the roof high over the walkers", () => {
+    const base = mesh("dharmaBase").positions;
+    const walls = mesh("dharmaWalls").positions;
+    const front = mesh("dharmaFront").positions;
+    const roof = mesh("dharmaRoof").positions;
+    const { halfWidth, backZ, frontZ } = DHARMA;
+    near(base.min[0], DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.plinth);
+    near(base.max[0], DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.plinth);
+    near(base.min[2], DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.plinth);
+    near(base.max[2], COURT_AREA.minZ);
+    near(base.min[1], -0.1);
+    expect(base.max[1]).toBeGreaterThanOrEqual(DHARMA_SHELL.baseHeight);
+    near(walls.min[1], DHARMA_SHELL.baseHeight);
+    expect(front.min[2]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.z + frontZ - 0.05);
+    expect(front.max[2]).toBeLessThanOrEqual(COURT_AREA.minZ + 1);
+    near(roof.min[1], DHARMA_SHELL.beamTop);
+    expect(roof.max[1]).toBeGreaterThan(DHARMA_SHELL.beamTop + DHARMA_SHELL.rise);
+    expect(roof.min[0]).toBeLessThanOrEqual(DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.eave);
+    expect(roof.max[0]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.eave);
+    expect(roof.min[2]).toBeLessThanOrEqual(DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.eave);
+    expect(roof.max[2]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.z + frontZ + DHARMA_SHELL.eave);
+    for (const part of [base, walls, front]) expect(part.max[0], "solid parts stay off the plaza").toBeLessThan(WORLD_BOUNDS.minX);
   });
 
-  it("holds the ground level under the stage and the temple", () => {
+  it("leaves the doorway open: nothing of the shell stands in it, with a jamb on either side", () => {
+    const edge = DHARMA_DOOR.halfWidth;
+    const frontFace = DHARMA_ORIGIN.z + DHARMA.frontZ - 0.05;
+    for (const name of ["dharmaWalls", "dharmaFront"]) {
+      const { values, count } = positions(glb, name);
+      let left = 0;
+      let right = 0;
+      for (let i = 0; i < count; i += 1) {
+        const across = (values[i * 3] as number) - DHARMA_ORIGIN.x;
+        const y = values[i * 3 + 1] as number;
+        const z = values[i * 3 + 2] as number;
+        if (z < frontFace || z > DHARMA_SHELL.porchZ) continue;
+        if (Math.abs(across) < edge - 0.02 && y > DHARMA_SHELL.baseHeight + 0.05 && y < DHARMA_DOOR.height - 0.02) {
+          throw new Error(`${name} vertex ${i} stands in the doorway at ${across.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`);
+        }
+        if (Math.abs(across + edge) <= 0.02) left += 1;
+        if (Math.abs(across - edge) <= 0.02) right += 1;
+      }
+      if (name === "dharmaFront") {
+        expect(left, "left jamb").toBeGreaterThan(0);
+        expect(right, "right jamb").toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("holds the ground level under the stage and round the 법당, sunk a hand below its floor and level across the court", () => {
     const { values, count } = positions(glb, "ground");
     const cos = Math.cos(STAGE_YAW);
     const sin = Math.sin(STAGE_YAW);
-    let checked = 0;
+    const { halfWidth, backZ, frontZ } = DHARMA;
+    const footprint = {
+      minX: DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.plinth,
+      maxX: DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.plinth,
+      minZ: DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.plinth,
+      maxZ: COURT_AREA.minZ,
+    };
+    let onStageChecked = 0;
+    let underRoom = 0;
+    let underCourt = 0;
     for (let i = 0; i < count; i += 1) {
       const x = values[i * 3] as number;
       const y = values[i * 3 + 1] as number;
       const z = values[i * 3 + 2] as number;
+      const where = `ground vertex ${i} at ${x.toFixed(1)}, ${z.toFixed(1)}`;
       const across = Math.abs((x - STAGE.x) * cos - (z - STAGE.z) * sin);
       const along = Math.abs((x - STAGE.x) * sin + (z - STAGE.z) * cos);
-      const onStage = across <= STAGE.width / 2 + PADS.stageMargin && along <= STAGE.depth / 2 + PADS.stageMargin;
-      const onTemple = x >= TEMPLE.minX - PADS.templeMargin && x <= TEMPLE.maxX + PADS.templeMargin && z >= TEMPLE.minZ - PADS.templeMargin && z <= TEMPLE.maxZ + PADS.templeMargin;
-      if (!onStage && !onTemple) continue;
-      checked += 1;
-      expect(Math.abs(y), `ground vertex ${i} at ${x.toFixed(1)}, ${z.toFixed(1)}`).toBeLessThanOrEqual(0.01);
+      if (across <= STAGE.width / 2 + PADS.stageMargin && along <= STAGE.depth / 2 + PADS.stageMargin) {
+        onStageChecked += 1;
+        expect(Math.abs(y), where).toBeLessThanOrEqual(0.01);
+      }
+      const nearTemple = x >= footprint.minX - PADS.dharmaMargin && x <= footprint.maxX + PADS.dharmaMargin && z >= footprint.minZ - PADS.dharmaMargin && z <= footprint.maxZ + PADS.dharmaMargin;
+      if (nearTemple) {
+        expect(y, `${where} never rises through the plinth`).toBeLessThanOrEqual(0.01);
+        expect(y, `${where} is sunk no deeper than a hand`).toBeGreaterThanOrEqual(-0.13);
+        const outsidePlinth = x < footprint.minX - 0.01 || x > footprint.maxX + 0.01 || z < footprint.minZ - 0.01 || z > footprint.maxZ + 0.01;
+        if (outsidePlinth) expect(Math.abs(y), `${where} is level beyond the plinth`).toBeLessThanOrEqual(0.01);
+      }
+      const underFloor = Math.abs(x - DHARMA_ORIGIN.x) <= halfWidth - 0.1 && z >= DHARMA_ORIGIN.z + backZ + 0.1 && z <= DHARMA_ORIGIN.z + frontZ - 0.1;
+      if (underFloor) {
+        underRoom += 1;
+        expect(y, `${where} lies under the floor`).toBeLessThanOrEqual(-0.1);
+      }
+      if (x >= COURT_AREA.minX && x <= COURT_AREA.maxX && z >= COURT_AREA.minZ && z <= COURT_AREA.maxZ) {
+        underCourt += 1;
+        expect(Math.abs(y), `${where} in the court`).toBeLessThanOrEqual(0.01);
+      }
     }
-    expect(checked).toBeGreaterThan(40);
+    expect(onStageChecked).toBeGreaterThan(40);
+    expect(underRoom).toBeGreaterThan(40);
+    expect(underCourt).toBeGreaterThan(40);
   });
 
   it("authors one mat prototype at the origin, the size the mats are laid out for", () => {
@@ -285,11 +353,11 @@ describe("world.glb", () => {
   });
 
   it("paints vertices in linear light, never as sRGB", () => {
-    expectLinearColors(glb, nodes, { pine: "pine", maple: "maple", ground: "moss", mat: "strawBorder" });
+    expectLinearColors(glb, nodes, { pine: "pine", maple: "maple", ground: "moss", mat: "strawBorder", dharmaWalls: "wallPlaster", dharmaFront: "wallPlaster", dharmaRoof: "tileGray" });
     expectCeiling(glb, "steps", "paving");
     expectCeiling(glb, "rocks", "granite");
     expectCeiling(glb, "mat", "straw");
-    expectCeiling(glb, "temple", "wallPlaster");
+    expectCeiling(glb, "dharmaBase", "granite");
   });
 });
 
@@ -414,14 +482,18 @@ describe("dharma.glb", () => {
     }
   });
 
-  it("closes the doorway in the front wall with a lattice door at least as wide and tall as the opening", () => {
-    const { min, max } = mesh("door").positions;
-    near(max[2], DHARMA.frontZ);
-    expect(min[0]).toBeLessThanOrEqual(-DHARMA_DOOR.halfWidth);
-    expect(max[0]).toBeGreaterThanOrEqual(DHARMA_DOOR.halfWidth);
-    near((min[0] + max[0]) / 2, 0);
-    expect(max[1]).toBeGreaterThanOrEqual(DHARMA_DOOR.height);
-    expect(min[1]).toBeLessThanOrEqual(TOLERANCE);
+  it("has no door in the front wall: the doorway is open and nothing of the room stands in it", () => {
+    const edge = DHARMA_DOOR.halfWidth;
+    for (const name of ["structure", "paper", "ceiling"]) {
+      const { values, count } = positions(glb, name);
+      for (let i = 0; i < count; i += 1) {
+        const x = values[i * 3] as number;
+        const y = values[i * 3 + 1] as number;
+        const z = values[i * 3 + 2] as number;
+        const inDoorway = Math.abs(x) < edge - 0.02 && y > 0.05 && y < DHARMA_DOOR.height - 0.02 && z > DHARMA.frontZ - 0.1;
+        expect(inDoorway, `${name} vertex ${i} at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`).toBe(false);
+      }
+    }
   });
 
   it("authors one seat at the origin, as wide as the layout makes room for", () => {
@@ -435,7 +507,7 @@ describe("dharma.glb", () => {
   });
 
   it("paints vertices in linear light, never as sRGB", () => {
-    expectLinearColors(glb, nodes, { structure: "dancheongBlue", door: "pillarRed", mural: "muralInk", seat: "seatStitch" });
+    expectLinearColors(glb, nodes, { structure: "dancheongBlue", mural: "muralInk", seat: "seatStitch" });
   });
 });
 

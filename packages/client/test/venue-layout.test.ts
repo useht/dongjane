@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { PLAZA, WORLD_BOUNDS } from "@dongjane/shared";
-import { CANOPY, SCREEN, STAGE, STAGE_YAW, TEMPLE, TEMPLE_DOOR_X, lanternSpots, screenCorners, screenUv, stageToWorld, stringPoint } from "../src/game/venue-layout.ts";
+import { WORLD_BOUNDS } from "@dongjane/shared";
+import { CANOPY, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, screenUv, stageToWorld, stringPoint } from "../src/game/venue-layout.ts";
 
 describe("the stage", () => {
   it("turns its front toward the middle of the mats", () => {
@@ -86,16 +86,5 @@ describe("the lantern canopy", () => {
     }
     const tones = new Set(spots.map((spot) => Math.floor(spot.tone * 6)));
     expect(tones.size).toBe(6);
-  });
-});
-
-describe("the temple", () => {
-  it("stands beside the plaza, its door wall facing it", () => {
-    expect(TEMPLE.maxX).toBeLessThanOrEqual(PLAZA.minX + 0.2);
-    expect(TEMPLE_DOOR_X).toBe(TEMPLE.maxX - TEMPLE.eave);
-    expect(TEMPLE.doorZ - TEMPLE.doorWidth / 2).toBeGreaterThan(TEMPLE.minZ);
-    expect(TEMPLE.doorZ + TEMPLE.doorWidth / 2).toBeLessThan(TEMPLE.maxZ);
-    expect(TEMPLE.doorZ).toBeGreaterThanOrEqual(PLAZA.minZ);
-    expect(TEMPLE.doorZ).toBeLessThanOrEqual(PLAZA.maxZ);
   });
 });

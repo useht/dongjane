@@ -1,4 +1,4 @@
-"""dharma.glb: the temple's inside, its Buddha, the lattice door back to the plaza and one seat to instance.
+"""dharma.glb: the 법당's inside, its Buddha and one seat to instance. The front wall has an open doorway.
 
 Everything is drawn in the game's own coordinates through Parts whose frame is GAME. A wall's fittings
 are drawn in the wall's own frame (x along the wall, y up, z into the room) inside `part.placed(...)`.
@@ -98,7 +98,11 @@ def wall_surfaces(part, plan):
 
     panel((-plan.half, 0.0, plan.back), (0.0, h, 0.0), (0.0, 0.0, length))
     panel((plan.half, 0.0, plan.back), (0.0, 0.0, length), (0.0, h, 0.0))
-    panel((-plan.half, 0.0, plan.front), (0.0, h, 0.0), (width, 0.0, 0.0))
+    # The front wall stands round the doorway, which has no door in it: visitors walk in from the court.
+    opening, high = plan.door["halfWidth"], plan.door["height"]
+    panel((-plan.half, 0.0, plan.front), (0.0, h, 0.0), (plan.half - opening, 0.0, 0.0))
+    panel((opening, 0.0, plan.front), (0.0, h, 0.0), (plan.half - opening, 0.0, 0.0))
+    panel((-opening, high, plan.front), (0.0, h - high, 0.0), (2.0 * opening, 0.0, 0.0))
     panel((-plan.half, 0.0, plan.back), (width, 0.0, 0.0), (0.0, h, 0.0))
 
 
@@ -312,48 +316,6 @@ def floor(plan):
     part.grid((-runner / 2, 0.012, z1), (runner, 0.0, 0.0), (0.0, 0.0, z0 - z1), 1, 8, c["lacquerDeep"])
     for edge in (-runner / 2, runner / 2 - 0.09):
         part.grid((edge, 0.014, z1), (0.09, 0.0, 0.0), (0.0, 0.0, z0 - z1), 1, 1, c["gilt"])
-    return part
-
-
-def door(plan):
-    """Four leaves of flower-lattice, red frames and cream paper in the front wall, drawn in that wall's frame."""
-    c = plan.c
-    part = Part("door", frame=GAME)
-    half, high = plan.door["halfWidth"], plan.door["height"]
-    leaf = 2 * half / 4
-    stile, rail = 0.08, 0.12
-    panel_top = 0.85
-    lattice_low, lattice_high = panel_top, high - rail
-    columns, rows = 3, 9
-    with part.placed(at(0.0, 0.0, plan.front) @ turned(math.pi)):
-        quad(part, (0.0, high / 2, 0.02), 2 * half, high, scaled(c["woodDark"], 0.5))
-        jamb = 0.14
-        for x in (-half - jamb / 2, half + jamb / 2):
-            part.box((x, high / 2, 0.08), (jamb, high, 0.16), c["woodDark"], skip=hidden("+z", "+x", "-x"))
-        part.box((0.0, high + 0.07, 0.08), (2 * half + 2 * jamb, 0.14, 0.16), c["woodDark"], skip=hidden("+z", "-y"))
-        for i in range(4):
-            x0 = -half + leaf * i
-            xc = x0 + leaf / 2
-            width = leaf - 0.012
-            for x in (x0 + stile / 2 + 0.006, x0 + leaf - stile / 2 - 0.006):
-                part.box((x, high / 2, 0.075), (stile, high, 0.07), c["pillarRed"], skip=hidden("+z", "+x", "-x"))
-            for y0, y1 in ((0.0, rail), (panel_top - rail, panel_top), (lattice_high, high)):
-                part.box((xc, (y0 + y1) / 2, 0.075), (width - 2 * stile, y1 - y0, 0.07), c["pillarRed"], skip=hidden("+z", "+y", "-y"))
-            quad(part, (xc, panel_top / 2, 0.112), width - 2 * stile, panel_top - 2 * rail, scaled(c["woodMid"], 0.9))
-            quad(part, (xc, (lattice_low + lattice_high) / 2, 0.05), width - 2 * stile, lattice_high - lattice_low, c["paper"])
-            for k in range(columns + 1):
-                quad(part, (x0 + stile + (leaf - 2 * stile) * k / columns, (lattice_low + lattice_high) / 2, 0.06), 0.022, lattice_high - lattice_low, c["woodMid"])
-            for m in range(rows + 1):
-                quad(part, (xc, lattice_low + (lattice_high - lattice_low) * m / rows, 0.064), leaf - 2 * stile, 0.022, c["woodMid"])
-            for k in range(columns + 1):
-                for m in range(rows + 1):
-                    cx = x0 + stile + (leaf - 2 * stile) * k / columns
-                    cy = lattice_low + (lattice_high - lattice_low) * m / rows
-                    bloom = c["dancheongRed"] if (k + m) % 2 == 0 else c["dancheongBlue"]
-                    part.radial((cx, cy, 0.072), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.085, 1, 8, bloom, smooth=False)
-                    part.radial((cx, cy, 0.076), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.035, 1, 6, c["gilt"], smooth=False)
-        for x in (-0.08, 0.08):
-            part.box((x, 1.45, 0.16), (0.05, 0.2, 0.05), c["brass"])
     return part
 
 
@@ -678,7 +640,6 @@ def build(inputs, out_dir):
     common.bake_vertex_occlusion([objects["buddha"], objects["lotus"], objects["halo"]], distance=0.35, samples=64, floor=0.5)
     objects["glow"] = glow(plan).build(solid, crease=False)
     objects["paper"] = paper(plan).build(solid, crease=False)
-    objects["door"] = door(plan).build(solid)
     objects["mural"] = mural(plan).build(solid, crease=False)
     objects["seat"] = seat(plan).build(solid, crease=False)
 

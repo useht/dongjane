@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
 import { DHARMA_ORIGIN, type Zone } from "@dongjane/shared";
+import { DHARMA, DHARMA_SHELL } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
 export interface Box {
@@ -31,6 +32,35 @@ export function maxDistanceInside(
   return Math.max(0, limit);
 }
 
+// Distance along `dir` (a unit vector) from `origin` to where it first enters `box`, or `want` when it does not get there
+// within `want`. An origin that is already inside the box has no entry, so it is not held back.
+export function distanceBefore(
+  origin: { x: number; y: number; z: number },
+  dir: { x: number; y: number; z: number },
+  box: Box,
+  want: number,
+): number {
+  let enter = 0;
+  let exit = Infinity;
+  const axes: Array<[number, number, number, number]> = [
+    [origin.x, dir.x, box.minX, box.maxX],
+    [origin.y, dir.y, box.minY, box.maxY],
+    [origin.z, dir.z, box.minZ, box.maxZ],
+  ];
+  for (const [o, d, lo, hi] of axes) {
+    if (Math.abs(d) < 1e-9) {
+      if (o < lo || o > hi) return want;
+      continue;
+    }
+    const near = (lo - o) / d;
+    const far = (hi - o) / d;
+    enter = Math.max(enter, Math.min(near, far));
+    exit = Math.min(exit, Math.max(near, far));
+  }
+  if (enter <= 0 || enter > exit) return want;
+  return Math.min(want, enter);
+}
+
 export interface RigLimits {
   minDistance: number;
   maxDistance: number;
@@ -50,6 +80,19 @@ export const DHARMA_CAMERA_BOUNDS: Box = {
   minZ: DHARMA_ORIGIN.z - 5,
   maxZ: DHARMA_ORIGIN.z + 8.8,
 };
+
+// The 법당's solid outside, up to the finials on its ridge: a camera that follows someone along its front may not swing into it.
+export const DHARMA_KEEP_OUT: Box = {
+  minX: DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth,
+  maxX: DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth,
+  minY: -1,
+  maxY: 13,
+  minZ: DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth,
+  maxZ: DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ,
+};
+
+// How far short of a keep-out box the camera stops.
+const KEEP_OUT_MARGIN = 0.4;
 
 export interface View {
   yaw: number;
@@ -164,6 +207,7 @@ export class CameraRig {
     readonly camera: PerspectiveCamera,
     bounds: Box,
     private limits: RigLimits = GATBAWI_LIMITS,
+    private readonly keepOut: readonly Box[] = [],
   ) {
     this.bounds = { ...bounds };
     this.blendFrom = { ...bounds };
@@ -232,7 +276,11 @@ export class CameraRig {
     const yaw = this.yaw + sway;
     const pitch = this.pitch + bob;
     this.dir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
-    const reach = maxDistanceInside(this.focus, this.dir, this.bounds, this.distance);
+    let reach = maxDistanceInside(this.focus, this.dir, this.bounds, this.distance);
+    for (const box of this.keepOut) {
+      const entry = distanceBefore(this.focus, this.dir, box, reach);
+      if (entry < reach) reach = Math.max(0, entry - KEEP_OUT_MARGIN);
+    }
     const used = Math.max(Math.min(this.distance, reach), Math.min(this.distance, this.limits.minDistance * 0.7));
     this.camera.position.copy(this.focus).addScaledVector(this.dir, used);
     this.camera.position.x = Math.min(this.bounds.maxX, Math.max(this.bounds.minX, this.camera.position.x));
