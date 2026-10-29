@@ -434,8 +434,8 @@ describe("hardening", () => {
       "clamped to the walkable corner",
       8000,
     );
-    expect(monk.x).toBeLessThanOrEqual(WORLD_BOUNDS.maxX);
-    expect(monk.z).toBeGreaterThanOrEqual(WORLD_BOUNDS.minZ);
+    expect(monk.x).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxX));
+    expect(monk.z).toBeGreaterThanOrEqual(Math.fround(WORLD_BOUNDS.minZ));
   }, 15_000);
 
   it("keeps serving a client after a message flood passes the rate window", async () => {

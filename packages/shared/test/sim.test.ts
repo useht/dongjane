@@ -1,17 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  BOW_COOLDOWN_MS,
-  BOW_MS,
-  CHANT_EVERY_MS,
-  CHANT_MS,
-  MAT_COUNT,
-  MAT_SPOTS,
-  SPAWN_POINT,
-  TICK_MS,
-  WALK_SPEED,
-  WORLD_BOUNDS,
-  WORLD_CAPACITY,
-} from "@dongjane/shared";
+import { BOW_COOLDOWN_MS, BOW_MS, CHANT_EVERY_MS, CHANT_MS, TICK_MS, WALK_SPEED, WORLD_CAPACITY } from "../src/constants.ts";
+import { MAT_COUNT, MAT_SPOTS, SPAWN_POINT, WORLD_BOUNDS } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
 
 const T0 = 1_800_000_000_000;

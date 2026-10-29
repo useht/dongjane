@@ -203,6 +203,16 @@ export class Hud {
     }
   }
 
+  setSolo(): void {
+    this.worlds = [];
+    this.currentWorld = 0;
+    this.worldLabel.textContent = "혼자 있는 월드";
+    this.worldCount.textContent = "";
+    this.renderWorlds();
+    this.linkBanner.textContent = "서버에 연결되지 않아 혼자 쉬고 있어요";
+    this.linkBanner.classList.remove("hidden");
+  }
+
   setSoundOn(on: boolean): void {
     this.soundOn = on;
     const name: IconName = on ? "soundOn" : "soundOff";

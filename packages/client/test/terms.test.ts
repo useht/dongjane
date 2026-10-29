@@ -36,7 +36,7 @@ describe("terms", () => {
 
   it("finds the sources it is meant to guard", () => {
     expect(files).toContain("client/src/app.ts");
-    expect(files).toContain("server/src/sim.ts");
+    expect(files).toContain("shared/src/sim.ts");
     expect(files).toContain("shared/src/layout.ts");
     expect(files).toContain("client/index.html");
     expect(files.length).toBeGreaterThan(60);

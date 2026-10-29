@@ -1,3 +1,4 @@
+import { chantAt, chantEndsAt } from "./chant.ts";
 import {
   ARRIVE_DISTANCE,
   BOW_COOLDOWN_MS,
@@ -5,19 +6,11 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
-  MAT_SPOTS,
-  Mat,
   WORLD_CAPACITY,
-  Monk,
-  SPAWN_POINT,
-  TempleState,
   WALK_SPEED,
-  chantAt,
-  chantEndsAt,
-  matSpot,
-  resolveWalkable,
-  yawFromDirection,
-} from "@dongjane/shared";
+} from "./constants.ts";
+import { MAT_SPOTS, SPAWN_POINT, matSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
+import { Mat, Monk, TempleState } from "./schema.ts";
 
 interface Target {
   x: number;

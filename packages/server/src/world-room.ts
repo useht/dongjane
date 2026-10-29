@@ -6,6 +6,7 @@ import {
   MSG,
   RECONNECT_SECONDS,
   TICK_MS,
+  TempleSim,
   type RelocateMessage,
   type TempleState,
   worldName,
@@ -17,7 +18,6 @@ import {
   randomHue,
 } from "@dongjane/shared";
 import { type DirectoryRoom, type WorldDirectory, RELOCATION_GRACE_MS } from "./world-directory.ts";
-import { TempleSim } from "./sim.ts";
 
 export interface WorldCreateOptions {
   world: number;
