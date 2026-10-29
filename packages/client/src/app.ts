@@ -14,6 +14,7 @@ import { serverHttpBase } from "./config.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
+import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -53,6 +54,7 @@ export class App {
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
   private readonly chantBell = new ChantBellScheduler();
+  private readonly quests = new QuestTracker();
   private readonly canvas: HTMLCanvasElement;
   private readonly ui: HTMLElement;
   private readonly world: World;
@@ -338,8 +340,10 @@ export class App {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
         this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId });
+        for (const quest of this.quests.observe(selfId, monk, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
     });
+    this.hud.setQuests(this.quests.view(state.serverTime));
     this.lastViews = views;
 
     const occupied = new Set<number>();
