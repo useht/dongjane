@@ -49,7 +49,7 @@ describe("CameraRig", () => {
     for (let i = 0; i < 50; i += 1) rig.zoom(0.5);
     expect(rig.distance).toBeGreaterThanOrEqual(2.6);
     for (let i = 0; i < 50; i += 1) rig.zoom(2);
-    expect(rig.distance).toBeLessThanOrEqual(9);
+    expect(rig.distance).toBeLessThanOrEqual(7);
   });
 
   it("points forward toward the buddha at yaw 0 and rotates with orbit", () => {
