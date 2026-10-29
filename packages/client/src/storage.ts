@@ -11,9 +11,15 @@ export interface Settings {
   reduceMotion: boolean;
 }
 
+export interface QuestProgress {
+  day: number;
+  counts: Record<string, number>;
+}
+
 const PROFILE_KEY = "dongjane:profile";
 const SETTINGS_KEY = "dongjane:settings";
 const COLLECTION_KEY = "dongjane:collection";
+const QUESTS_KEY = "dongjane:quests";
 
 function readJson(key: string): unknown {
   try {
@@ -81,4 +87,20 @@ export function loadBows(): number {
 
 export function saveBows(bows: number): void {
   writeJson(COLLECTION_KEY, { bows });
+}
+
+export function loadQuestProgress(): QuestProgress | null {
+  const data = readJson(QUESTS_KEY);
+  if (typeof data !== "object" || data === null) return null;
+  const { day, counts } = data as Record<string, unknown>;
+  if (typeof day !== "number" || !Number.isInteger(day) || typeof counts !== "object" || counts === null) return null;
+  const clean: Record<string, number> = {};
+  for (const [id, value] of Object.entries(counts)) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) clean[id] = Math.floor(value);
+  }
+  return { day, counts: clean };
+}
+
+export function saveQuestProgress(progress: QuestProgress): void {
+  writeJson(QUESTS_KEY, progress);
 }

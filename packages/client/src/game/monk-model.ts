@@ -9,6 +9,7 @@ import {
   Object3D,
   SphereGeometry,
   TorusGeometry,
+  Vector3,
   BoxGeometry,
   DynamicDrawUsage,
   InstancedBufferAttribute,
@@ -57,6 +58,7 @@ const SHOULDER_Y = 0.33;
 const UPPER_ARM = 0.18;
 const FORE_ARM = 0.16;
 const CUSHION_TOP = 0.13;
+const EMOTE_ANCHOR_Y = 0.45;
 
 function buildPartGeometries(): Record<PartName, BufferGeometry> {
   const head = new GeometryBuilder()
@@ -250,6 +252,11 @@ export class MonkAvatar {
     }
 
     this.root.updateMatrixWorld(true);
+  }
+
+  // The world point just above the crown, following the head through kneel and bow.
+  emoteAnchor(out: Vector3): Vector3 {
+    return this.headNode.localToWorld(out.set(0, EMOTE_ANCHOR_Y, 0));
   }
 
   dispose(): void {

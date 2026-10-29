@@ -6,12 +6,15 @@ import {
   BOW_MS,
   CHANT_EVERY_MS,
   CHANT_MS,
+  EMOTE_COOLDOWN_MS,
   HALL_CAPACITY,
   WALK_SPEED,
 } from "./constants.ts";
+import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
 import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS, cushionSpot, resolveWalkable, yawFromDirection } from "./layout.ts";
-import { type NpcActions, type NpcBrain, createNpcBrain, thinkNpc } from "./npc.ts";
+import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, thinkNpc } from "./npc.ts";
+import { type Persona, generatePersona } from "./persona.ts";
 import { Cushion, Monk, TempleState } from "./schema.ts";
 
 interface Target {
@@ -26,6 +29,7 @@ interface Runtime {
   bowsLeft: number;
   nextBowAt: number;
   lastBowEndedAt: number;
+  nextEmoteAt: number;
   brain: NpcBrain | null;
 }
 
@@ -35,6 +39,7 @@ export interface SimOptions {
   chantEveryMs?: number;
   chantMs?: number;
   npcCount?: number;
+  personas?: readonly Persona[];
 }
 
 export class TempleSim {
@@ -64,13 +69,17 @@ export class TempleSim {
     }
     this.updateChant();
 
-    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`);
+    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`, options.personas?.[n - 1]);
   }
 
   get humanCount(): number {
     let count = 0;
     for (const monk of this.state.monks.values()) if (!monk.npc) count += 1;
     return count;
+  }
+
+  personaOf(id: string): Persona | undefined {
+    return this.runtimes.get(id)?.brain?.persona;
   }
 
   join(id: string, hue: number): Monk {
@@ -90,7 +99,15 @@ export class TempleSim {
       bowCount: 0,
     });
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, { target: null, bowEndsAt: 0, bowsLeft: 0, nextBowAt: 0, lastBowEndedAt: 0, brain: null });
+    this.runtimes.set(id, {
+      target: null,
+      bowEndsAt: 0,
+      bowsLeft: 0,
+      nextBowAt: 0,
+      lastBowEndedAt: 0,
+      nextEmoteAt: 0,
+      brain: null,
+    });
     return monk;
   }
 
@@ -154,6 +171,20 @@ export class TempleSim {
     return true;
   }
 
+  emote(id: string, index: number): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || !isValidEmote(index)) return false;
+
+    const now = this.clock();
+    if (now < runtime.nextEmoteAt) return false;
+
+    monk.emote = index;
+    monk.emoteSeq += 1;
+    runtime.nextEmoteAt = now + EMOTE_COOLDOWN_MS;
+    return true;
+  }
+
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
@@ -193,7 +224,15 @@ export class TempleSim {
     return Math.max(50, chantEndsAt(next) - now + 20);
   }
 
-  private spawnNpc(id: string): void {
+  private visitors(): NpcVisitor[] {
+    const visitors: NpcVisitor[] = [];
+    for (const monk of this.state.monks.values()) {
+      if (!monk.npc) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
+    }
+    return visitors;
+  }
+
+  private spawnNpc(id: string, persona: Persona | undefined): void {
     const random = this.random;
     const spot = resolveWalkable(
       WALK_BOUNDS.minX + random() * (WALK_BOUNDS.maxX - WALK_BOUNDS.minX),
@@ -218,7 +257,8 @@ export class TempleSim {
       bowsLeft: 0,
       nextBowAt: 0,
       lastBowEndedAt: 0,
-      brain: createNpcBrain(random, this.clock()),
+      nextEmoteAt: 0,
+      brain: createNpcBrain(persona ?? generatePersona(random), random, this.clock()),
     });
   }
 
@@ -232,6 +272,7 @@ export class TempleSim {
         now,
         random: this.random,
         chantEndsAt: chanting ? chantEndsAt(chant) : null,
+        visitors: this.visitors(),
         isFree: (cushionId) => this.state.cushions.get(String(cushionId))?.occupantId === "",
       },
       this.npcActions,

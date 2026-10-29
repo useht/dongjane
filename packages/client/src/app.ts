@@ -15,6 +15,7 @@ import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { combineAxes, floorDirection, KeyboardInput } from "./game/input.ts";
 import { SelfPrediction } from "./game/prediction.ts";
+import { QuestTracker } from "./game/quest-tracker.ts";
 import { type MonkView, World } from "./game/world.ts";
 import { fetchHalls, requestSeat } from "./net/halls.ts";
 import { RetryCancelled } from "./net/retry.ts";
@@ -36,6 +37,7 @@ import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { describeChant } from "./ui/format.ts";
 import { Joystick } from "./ui/joystick.ts";
+import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
 import { SettingsPanel } from "./ui/settings.ts";
@@ -63,6 +65,7 @@ export class App {
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
   private readonly chantBell = new ChantBellScheduler();
+  private readonly quests = new QuestTracker();
   private readonly canvas: HTMLCanvasElement;
   private readonly ui: HTMLElement;
   private readonly world: World;
@@ -73,6 +76,7 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
   private settings: Settings = loadSettings();
   private profile: Profile | null = loadProfile();
@@ -106,10 +110,14 @@ export class App {
     this.joystick = new Joystick(this.ui);
     this.world = new World(this.canvas, {
       onFrame: (dt, now) => this.frame(dt, now),
-      onRendered: () => this.updateSeatHints(),
+      onRendered: (nowMs) => {
+        this.updateSeatHints();
+        this.emoteBubbles.update(nowMs);
+      },
       onStick: (stick) => this.joystick.set(stick),
     });
     this.world.setReduceMotion(this.settings.reduceMotion);
+    this.emoteBubbles = new EmoteBubbles(this.ui, this.world.emotes, (id, out) => this.world.projectEmoteAnchor(id, out));
 
     this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -121,6 +129,7 @@ export class App {
         onOpenHalls: () => void this.refreshHalls(),
         onBow: () => this.bow(),
         onStand: () => this.stand(),
+        onEmote: (emote) => this.session?.emote(emote),
         onInvite: () => void this.copyInvite(),
         onToggleSound: () => this.updateSettings({ ...this.settings, sound: !this.settings.sound }),
         onCancelReturn: () => this.holdReturn(),
@@ -333,6 +342,8 @@ export class App {
         yaw: monk.yaw,
         mode: monk.mode,
         cushionId: monk.cushionId,
+        emote: monk.emote,
+        emoteSeq: monk.emoteSeq,
       });
       if (monk.npc) return;
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
@@ -347,10 +358,12 @@ export class App {
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, cushionId: monk.cushionId };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId, bowCount: monk.bowCount });
+        this.hud.setSelf({ mode: monk.mode, cushionId: monk.cushionId });
         this.creditBows(monk.bowCount);
+        for (const quest of this.quests.observe(selfId, monk, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
     });
+    this.hud.setQuests(this.quests.view(state.serverTime));
     this.lastViews = views;
 
     const occupied = new Set<number>();
