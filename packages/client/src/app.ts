@@ -34,7 +34,7 @@ import { VisitorTitles } from "./ui/visitor-titles.ts";
 const SEAT_HINT_REACH = 2.2;
 const SEAT_HINT_HEIGHT = 0.6;
 const TITLE_REACH = SEAT_HINT_REACH;
-const TITLE_HEIGHT = 1.35;
+const TITLE_GAP = 0.1;
 const CHANT_TICK_MS = 250;
 const SKY_TICK_MS = 1000;
 const HALL_POLL_MS = 10_000;
@@ -606,7 +606,8 @@ export class App {
       let shown = false;
       if (title !== null && this.world.displayedPosition(view.id, this.titleOther)) {
         const { x, z } = this.titleOther;
-        if (Math.hypot(x - this.titleSelf.x, z - this.titleSelf.z) <= TITLE_REACH && this.world.projectToScreen(x, TITLE_HEIGHT, z, this.hintPoint)) {
+        const headTop = Math.hypot(x - this.titleSelf.x, z - this.titleSelf.z) <= TITLE_REACH ? this.world.headTopOf(view.id) : null;
+        if (headTop !== null && this.world.projectToScreen(x, headTop + TITLE_GAP, z, this.hintPoint)) {
           this.visitorTitles.place(view.id, title, this.hintPoint.x, this.hintPoint.y);
           shown = true;
         }

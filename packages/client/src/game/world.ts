@@ -155,6 +155,10 @@ export class World {
     return true;
   }
 
+  headTopOf(id: string): number | null {
+    return this.entries.get(id)?.avatar.headTopY() ?? null;
+  }
+
   get currentStats(): WorldStats {
     return this.stats;
   }
