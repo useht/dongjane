@@ -910,7 +910,7 @@ export class App {
     const now = Date.now();
     this.chantBell.observe(chant, now);
     if (this.chantBell.shouldRing(chant, now)) {
-      this.audio.bell();
+      this.audio.bell(this.sutra.mix);
       this.hud.toast(`${chant.label}이 시작됐어요`);
     }
     const status = describeChant(chant, now);
