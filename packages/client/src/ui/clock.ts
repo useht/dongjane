@@ -18,13 +18,10 @@ function toolRow(lead: IconName | HTMLElement, title: Node, sub: Node, trail: No
   return node;
 }
 
-// The top-right time and weather pill; its sheet is the single door to visitors, invite, sound and settings.
+// The top-right clock button opens the sheet that shows time and weather and holds visitors, invite, sound and settings.
 export class ClockWidget {
   readonly button = h("button", "clock-button");
   private readonly sheet: Sheet;
-  private readonly weatherIcon = h("span", "clock-icon");
-  private readonly time = h("span", "clock-time");
-  private readonly label = h("span", "clock-label");
   private readonly heroIcon = h("span", "clock-hero-icon");
   private readonly heroTime = h("strong", "clock-hero-time");
   private readonly heroNote = h("p", "clock-hero-note");
@@ -38,7 +35,8 @@ export class ClockWidget {
   constructor(host: HTMLElement, handlers: ClockHandlers) {
     this.button.type = "button";
     this.button.setAttribute("aria-haspopup", "dialog");
-    this.button.append(this.weatherIcon, h("span", "clock-text", this.time, this.label));
+    this.button.title = "시간과 날씨";
+    this.button.append(icon("clock"));
     this.button.addEventListener("click", () => this.sheet.toggle());
 
     this.sheet = new Sheet(host, "시간과 날씨");
@@ -69,14 +67,11 @@ export class ClockWidget {
     const key = `${view.time}|${view.weather}|${view.note}|${view.icon}`;
     if (key === this.lastSky) return;
     this.lastSky = key;
-    this.time.textContent = view.time;
-    this.label.textContent = view.weather;
     this.heroTime.textContent = view.time;
     this.heroNote.textContent = view.note;
     this.button.setAttribute("aria-label", `시간과 날씨, ${view.time}, ${view.weather}`);
     if (view.icon !== this.lastIcon) {
       this.lastIcon = view.icon;
-      swapIcon(this.weatherIcon, view.icon);
       swapIcon(this.heroIcon, view.icon);
     }
   }
