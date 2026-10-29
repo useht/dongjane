@@ -174,6 +174,17 @@ describe("cushions", () => {
     expect(h.monk("b").cushionId).toBe(-1);
   });
 
+  it("keeps a seated monk where they are when the cushion they ask for is taken", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    expect(h.sim.sit("a", 1)).toBe(false);
+    expect(h.cushion(0).occupantId).toBe("a");
+    expect(h.cushion(1).occupantId).toBe("b");
+    expect(h.monk("a").cushionId).toBe(0);
+    expect(h.monk("a").mode).toBe("kneel");
+    expect(h.monk("b").cushionId).toBe(1);
+  });
+
   it("rejects invalid cushion ids", () => {
     h.sim.join("a", 0);
     expect(h.sim.sit("a", 8)).toBe(false);

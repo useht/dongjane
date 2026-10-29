@@ -68,7 +68,7 @@ export class App {
   private currentHall = 0;
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
-  private cushionOwners = new Map<number, string>();
+  private occupiedCushions = new Set<number>();
   private readonly prediction = new SelfPrediction();
   private lastFrameMs = 0;
   private nextChantTick = 0;
@@ -147,7 +147,7 @@ export class App {
     this.bowWatch.reset();
     this.self = null;
     this.prediction.cancel();
-    this.cushionOwners.clear();
+    this.occupiedCushions.clear();
     this.hud.setLink("online");
     this.overlay.loading("법당으로 들어가는 중이에요", "잠시만 기다려 주세요");
 
@@ -242,7 +242,7 @@ export class App {
     this.bowWatch.reset();
     this.self = null;
     this.prediction.cancel();
-    this.cushionOwners.clear();
+    this.occupiedCushions.clear();
 
     const session = new SoloSession(profile.hue, {
       onState: (state) => {
@@ -321,14 +321,11 @@ export class App {
     });
     this.lastViews = views;
 
-    const owners = new Map<number, string>();
     const occupied = new Set<number>();
     state.cushions.forEach((cushion) => {
-      if (cushion.occupantId === "") return;
-      occupied.add(cushion.id);
-      if (!state.monks.get(cushion.occupantId)?.npc) owners.set(cushion.id, cushion.occupantId);
+      if (cushion.occupantId !== "") occupied.add(cushion.id);
     });
-    this.cushionOwners = owners;
+    this.occupiedCushions = occupied;
 
     this.world.setSelfPrediction(this.prediction.display());
     this.world.applyMonks(views, now, state.serverTime);
@@ -545,7 +542,7 @@ export class App {
       return;
     }
     for (const spot of CUSHION_SPOTS) {
-      const reachable = !this.cushionOwners.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
+      const reachable = !this.occupiedCushions.has(spot.id) && Math.hypot(spot.x - self.x, spot.z - self.z) <= SEAT_HINT_REACH;
       if (reachable && this.world.projectToScreen(spot.x, SEAT_HINT_HEIGHT, spot.z, this.hintPoint)) {
         this.seatHints.place(spot.id, this.hintPoint.x, this.hintPoint.y);
       } else {
