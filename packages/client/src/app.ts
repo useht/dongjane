@@ -211,7 +211,7 @@ export class App {
 
     this.overlay.hide();
     if (fellBackFrom !== null) {
-      this.hud.toast(`${hallName(fellBackFrom)}에 들어갈 수 없어서 ${hallName(hall)}으로 모셨어요`);
+      this.hud.toast(`${hallName(fellBackFrom)}은 없거나 비어 있거나 가득 차서 ${hallName(hall)}으로 모셨어요`);
     }
     this.handleState(session.state);
   }
