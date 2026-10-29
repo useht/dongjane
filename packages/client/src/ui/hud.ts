@@ -39,7 +39,6 @@ export interface HudHandlers {
   onChant(on: boolean): void;
   onEquip(item: number): void;
   onInvite(): void;
-  onToggleSound(): void;
   onCancelReturn(): void;
   onReturnNow(): void;
 }
@@ -101,11 +100,7 @@ export class Hud {
       if (this.hallSheet.isOpen) handlers.onOpenHalls();
     });
 
-    this.phone = new Phone(
-      host,
-      { onInvite: () => handlers.onInvite(), onToggleSound: () => handlers.onToggleSound() },
-      { visitors: this.visitorList, settings },
-    );
+    this.phone = new Phone(host, { onInvite: () => handlers.onInvite() }, { visitors: this.visitorList, settings });
     this.clock = new ClockWidget(() => this.phone.toggle());
     this.quests = new QuestPanel(host);
     const top = h("div", "topbar", h("div", "topbar-start", h("div", "hall-stack", this.hallButton, this.quests.button)), this.clock.button);
@@ -301,10 +296,6 @@ export class Hud {
     } else {
       this.showLink("서버에 연결되지 않아 혼자 쉬고 있어요. 연결되면 법당으로 다시 모셔요");
     }
-  }
-
-  setSoundOn(on: boolean): void {
-    this.phone.setSoundOn(on);
   }
 
   setReduceMotion(on: boolean): void {

@@ -29,22 +29,17 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private effects: GainNode | null = null;
   private ambience: GainNode | null = null;
-  private windGain: GainNode | null = null;
   private ambientVolume = 0.7;
   private effectVolume = 0.7;
-  private sound = true;
-  private wind = true;
   bellCount = 0;
 
   get unlocked(): boolean {
     return this.ctx !== null && this.ctx.state === "running";
   }
 
-  configure(ambientVolume: number, effectVolume: number, sound: boolean, wind: boolean): void {
+  configure(ambientVolume: number, effectVolume: number): void {
     this.ambientVolume = Math.min(1, Math.max(0, ambientVolume));
     this.effectVolume = Math.min(1, Math.max(0, effectVolume));
-    this.sound = sound;
-    this.wind = wind;
     this.applyLevels();
   }
 
@@ -69,7 +64,7 @@ export class AudioEngine {
 
   bell(strikes: number = BELL_STRIKES): void {
     const ctx = this.ctx;
-    if (!ctx || !this.effects || !this.sound) return;
+    if (!ctx || !this.effects) return;
     this.bellCount += 1;
     const start = ctx.currentTime + 0.05;
     for (let i = 0; i < strikes; i += 1) this.strike(start + i * BELL_GAP_SECONDS, 1 - i * 0.12);
@@ -78,7 +73,7 @@ export class AudioEngine {
   knock(volume = 1): void {
     const ctx = this.ctx;
     const level = Math.min(1, Math.max(0, volume));
-    if (!ctx || !this.effects || !this.sound || level <= 0) return;
+    if (!ctx || !this.effects || level <= 0) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const envelope = ctx.createGain();
@@ -98,7 +93,6 @@ export class AudioEngine {
     this.ctx = null;
     this.effects = null;
     this.ambience = null;
-    this.windGain = null;
     if (ctx) void ctx.close().catch(() => undefined);
   }
 
@@ -164,9 +158,10 @@ export class AudioEngine {
     sweepDepth.gain.value = 140;
     sweep.connect(sweepDepth).connect(band.frequency);
 
-    this.windGain = ctx.createGain();
-    this.windGain.gain.value = 0;
-    source.connect(low).connect(band).connect(swell).connect(this.windGain).connect(ambience);
+    const windGain = ctx.createGain();
+    windGain.gain.value = 0;
+    windGain.gain.setTargetAtTime(0.55, ctx.currentTime, 0.4);
+    source.connect(low).connect(band).connect(swell).connect(windGain).connect(ambience);
     source.start();
     lfo.start();
     sweep.start();
@@ -191,12 +186,8 @@ export class AudioEngine {
     if (!ctx || !this.effects || !this.ambience) return;
     const now = ctx.currentTime;
     this.effects.gain.cancelScheduledValues(now);
-    this.effects.gain.setTargetAtTime(this.sound ? this.effectVolume : 0, now, 0.05);
+    this.effects.gain.setTargetAtTime(this.effectVolume, now, 0.05);
     this.ambience.gain.cancelScheduledValues(now);
-    this.ambience.gain.setTargetAtTime(this.sound ? this.ambientVolume : 0, now, 0.05);
-    if (this.windGain) {
-      this.windGain.gain.cancelScheduledValues(now);
-      this.windGain.gain.setTargetAtTime(this.wind ? 0.55 : 0, now, 0.4);
-    }
+    this.ambience.gain.setTargetAtTime(this.ambientVolume, now, 0.05);
   }
 }
