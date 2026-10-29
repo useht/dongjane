@@ -17,7 +17,8 @@ import {
 } from "three";
 import { HALL_FRONT_Z, HALL_HALF_WIDTH, lerpAngle, resolveWalkable, SPAWN_POINT } from "@dongjane/shared";
 import { CameraRig, DEFAULT_VIEW, configureCamera } from "./camera-rig.ts";
-import { HALL_BOUNDS, Hall } from "./hall.ts";
+import { Hall } from "./hall.ts";
+import { HALL_BOUNDS } from "./hall-layout.ts";
 import { PointerInput } from "./input.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";

@@ -42,6 +42,7 @@ import {
 import { BUDDHA_Z, CUSHION_SPOTS, HALL_FRONT_Z, HALL_HALF_WIDTH } from "@dongjane/shared";
 import { buildBuddha, type BuddhaPieces } from "./buddha.ts";
 import { GeometryBuilder, type Placement } from "./geometry.ts";
+import { ALTAR_TOP, BACK_Z, CANDLE_SPOTS, HEIGHT, WALL_X } from "./hall-layout.ts";
 import {
   backdropTexture,
   beamGlowTexture,
@@ -59,18 +60,6 @@ export interface HallQuality {
   anisotropy: number;
 }
 
-export const HALL_BOUNDS = {
-  minX: -HALL_HALF_WIDTH + 0.7,
-  maxX: HALL_HALF_WIDTH - 0.7,
-  minZ: -6.6,
-  maxZ: HALL_FRONT_Z - 0.4,
-  maxY: 5.4,
-  minY: 0.5,
-} as const;
-
-const WALL_X = HALL_HALF_WIDTH;
-const BACK_Z = -7.5;
-const HEIGHT = 6;
 const PLASTER = 0xeadcb9;
 const WOOD_DARK = 0x4a2d1a;
 const WOOD_MID = 0x6b4326;
@@ -78,15 +67,6 @@ const LACQUER = 0x9a2f20;
 const GOLD = 0xd9ad48;
 const GOLD_ACCENT = [0xd9ad48, 0x2f7d6b, 0xe6b43c, 0xc43d2d];
 
-const CANDLE_SPOTS: ReadonlyArray<readonly [number, number]> = [
-  [-3.1, BUDDHA_Z + 0.8],
-  [-2.4, BUDDHA_Z + 0.8],
-  [-1.7, BUDDHA_Z + 0.8],
-  [1.7, BUDDHA_Z + 0.8],
-  [2.4, BUDDHA_Z + 0.8],
-  [3.1, BUDDHA_Z + 0.8],
-];
-const ALTAR_TOP = 0.62;
 const SUN_POSITION = new Vector3(14, 8, -2);
 const SUN_TARGET = new Vector3(0, 0.3, 1.5);
 

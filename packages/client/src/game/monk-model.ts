@@ -18,54 +18,34 @@ import {
   InstancedBufferAttribute,
 } from "three";
 import { BOW_MS } from "@dongjane/shared";
+import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
 import { GeometryBuilder } from "./geometry.ts";
+import {
+  CUSHION_TOP,
+  FOOT_X,
+  FOOT_Y,
+  FORE_ARM,
+  HIP_KNEEL,
+  HIP_STAND,
+  NAME_HEIGHT,
+  NECK_Y,
+  PART_COPIES,
+  SHOULDER_X,
+  SHOULDER_Y,
+  SKIRT_DROP,
+  TORSO_HEIGHT,
+  UPPER_ARM,
+} from "./monk-rig.ts";
 import { fitPlate } from "./nameplate-fit.ts";
 import { PoseBlend, approach, bowDepth } from "./pose.ts";
 import { nameTexture } from "./textures.ts";
 
-export const PART_NAMES = [
-  "head",
-  "face",
-  "skirt",
-  "torso",
-  "trim",
-  "sleeveUpper",
-  "sleeveLower",
-  "hand",
-  "foot",
-] as const;
-export type PartName = (typeof PART_NAMES)[number];
-
-const PART_COPIES: Record<PartName, number> = {
-  head: 1,
-  face: 1,
-  skirt: 1,
-  torso: 1,
-  trim: 1,
-  sleeveUpper: 2,
-  sleeveLower: 2,
-  hand: 2,
-  foot: 2,
-};
-
-const ROBE_PARTS: ReadonlySet<PartName> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
+const ROBE_PARTS: ReadonlySet<MonkPart> = new Set(["skirt", "torso", "sleeveUpper", "sleeveLower"]);
 
 const SKIN = 0xf3cba2;
 const WHITE = 0xffffff;
 
-const HIP_STAND = 0.4;
-const HIP_KNEEL = 0.2;
-const SKIRT_DROP = 0.36;
-const TORSO_HEIGHT = 0.38;
-const NECK_Y = TORSO_HEIGHT;
-const SHOULDER_X = 0.165;
-const SHOULDER_Y = 0.33;
-const UPPER_ARM = 0.18;
-const FORE_ARM = 0.16;
-const CUSHION_TOP = 0.13;
-const NAME_HEIGHT = 1.5;
-
-function buildPartGeometries(): Record<PartName, BufferGeometry> {
+function buildPartGeometries(): Record<MonkPart, BufferGeometry> {
   const head = new GeometryBuilder()
     .add(new SphereGeometry(0.19, 22, 16), SKIN, { y: 0.22 })
     .add(new SphereGeometry(0.052, 10, 8), SKIN, { x: -0.186, y: 0.22, sx: 0.55, sy: 1.15 })
@@ -118,12 +98,12 @@ function buildPartGeometries(): Record<PartName, BufferGeometry> {
 }
 
 interface Binding {
-  part: PartName;
+  part: MonkPart;
   copy: number;
   node: Object3D;
 }
 
-let sharedGeometries: Record<PartName, BufferGeometry> | null = null;
+let sharedGeometries: Record<MonkPart, BufferGeometry> | null = null;
 
 export class MonkAvatar {
   readonly id: string;
@@ -174,10 +154,10 @@ export class MonkAvatar {
       hand.position.y = -FORE_ARM;
       shoulder.add(elbow);
       elbow.add(hand);
-      (this.feet[side] as Object3D).position.set(sign * 0.085, 0.045, 0);
+      (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
 
-    const bind = (part: PartName, node: Object3D, copy = 0): void => {
+    const bind = (part: MonkPart, node: Object3D, copy = 0): void => {
       this.bindings.push({ part, copy, node });
     };
     bind("head", this.headNode);
@@ -266,7 +246,7 @@ export class MonkAvatar {
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
       foot.position.z = stride * 0.2 + 0.2 * kneel;
-      foot.position.y = 0.045 + lift * 0.07;
+      foot.position.y = FOOT_Y + lift * 0.07;
       foot.rotation.x = kneel * 0.5;
     }
 
@@ -312,7 +292,7 @@ function robeColor(hue: number, into: Color): Color {
 export class MonkPool {
   readonly group = new Group();
   readonly capacity: number;
-  private readonly meshes = new Map<PartName, InstancedMesh>();
+  private readonly meshes = new Map<MonkPart, InstancedMesh>();
   private readonly avatars: MonkAvatar[] = [];
   private readonly robe = new Color();
   private readonly white = new Color(1, 1, 1);
@@ -322,7 +302,7 @@ export class MonkPool {
     host.add(this.group);
     sharedGeometries ??= buildPartGeometries();
     const material = new MeshLambertMaterial({ vertexColors: true });
-    for (const part of PART_NAMES) {
+    for (const part of MONK_PARTS) {
       const size = capacity * PART_COPIES[part];
       const mesh = new InstancedMesh(sharedGeometries[part], material, size);
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);

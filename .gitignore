@@ -3,3 +3,5 @@ dist
 dev-dist
 *.log
 .DS_Store
+packages/client/blender/.inputs.json
+__pycache__
