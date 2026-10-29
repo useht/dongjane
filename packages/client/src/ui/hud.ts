@@ -54,7 +54,6 @@ export class Hud {
   readonly root = h("div", "hud");
   private readonly worldButton = h("button", "world-button");
   private readonly worldLabel = h("span", "world-label", "월드");
-  private readonly worldCount = h("span", "world-count", "");
   private readonly clock: ClockWidget;
   private readonly phone: Phone;
   private readonly quests: QuestPanel;
@@ -95,7 +94,7 @@ export class Hud {
     settings: HTMLElement,
   ) {
     this.worldButton.type = "button";
-    this.worldButton.append(icon("world"), this.worldLabel, this.worldCount);
+    this.worldButton.append(icon("world"), this.worldLabel);
     this.worldButton.setAttribute("aria-label", "월드 바꾸기");
     this.worldButton.addEventListener("click", () => {
       this.worldSheet.toggle();
@@ -187,8 +186,6 @@ export class Hud {
     this.worlds = worlds;
     this.currentWorld = current;
     this.worldLabel.textContent = worldName(current);
-    const here = worlds.find((info) => info.world === current);
-    this.worldCount.textContent = here ? `${here.clients}/${here.capacity}` : "";
     this.renderWorlds();
   }
 
@@ -289,7 +286,6 @@ export class Hud {
     this.worlds = [];
     this.currentWorld = 0;
     this.worldLabel.textContent = "혼자 있는 월드";
-    this.worldCount.textContent = "";
     this.renderWorlds();
     if (status.kind === "countdown") {
       this.showLink(`${status.seconds}초 뒤 월드로 옮겨 드려요`, { label: "이동 취소", run: () => this.handlers.onCancelReturn() });
