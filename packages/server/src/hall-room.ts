@@ -14,6 +14,7 @@ import {
   isValidHall,
   normalizeHue,
   parseBow,
+  parseEmote,
   parseMove,
   parseSit,
   randomHue,
@@ -98,6 +99,11 @@ export class HallRoom extends Room<{ state: TempleState; metadata: HallMetadata 
       if (!this.allow(client)) return;
       const message = parseBow(payload);
       if (message) this.sim.bow(client.sessionId, message.times);
+    });
+    this.onMessage(MSG.emote, (client, payload) => {
+      if (!this.allow(client)) return;
+      const message = parseEmote(payload);
+      if (message) this.sim.emote(client.sessionId, message.id);
     });
 
     this.hallNumber = hall;

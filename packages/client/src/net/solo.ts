@@ -53,6 +53,10 @@ export class SoloSession {
     if (!this.closed) this.sim.bow(SOLO_ID, times);
   }
 
+  emote(id: number): void {
+    if (!this.closed) this.sim.emote(SOLO_ID, id);
+  }
+
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
