@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { EMOTE_COUNT, isValidEmote, parseBow, parseChant, parseEmote, parseMove, parseRelocate, parseSit } from "../src/index.ts";
+import {
+  EMOTE_COUNT,
+  ITEM_CHANT,
+  ITEM_MOKT,
+  ITEM_NONE,
+  isValidEmote,
+  isValidItem,
+  parseBow,
+  parseChant,
+  parseEmote,
+  parseEquip,
+  parseMove,
+  parseRelocate,
+  parseSit,
+} from "../src/index.ts";
 
 describe("message parsers", () => {
   it("accepts finite move targets and rejects everything else", () => {
@@ -70,6 +84,23 @@ describe("message parsers", () => {
     expect(parseChant(undefined)).toBeNull();
     expect(parseChant([true])).toBeNull();
     expect(parseChant("on")).toBeNull();
+  });
+
+  it("accepts only the known items in an object payload", () => {
+    expect(parseEquip({ item: ITEM_NONE })).toEqual({ item: 0 });
+    expect(parseEquip({ item: ITEM_MOKT })).toEqual({ item: 1 });
+    expect(parseEquip({ item: ITEM_CHANT })).toEqual({ item: 2 });
+    expect(parseEquip({ item: 1, extra: true })).toEqual({ item: 1 });
+    for (const item of [3, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "1", true, null, undefined, [1], {}]) {
+      expect(parseEquip({ item })).toBeNull();
+    }
+    expect(parseEquip({})).toBeNull();
+    expect(parseEquip(1)).toBeNull();
+    expect(parseEquip(null)).toBeNull();
+    expect(parseEquip(undefined)).toBeNull();
+    expect(parseEquip([1])).toBeNull();
+    expect(isValidItem(2)).toBe(true);
+    expect(isValidItem(3)).toBe(false);
   });
 
   it("accepts only a positive integer hall to relocate to", () => {

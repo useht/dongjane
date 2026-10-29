@@ -1,6 +1,7 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
 import { isValidHall } from "./hall.ts";
+import { type Item, isValidItem } from "./item.ts";
 import { CUSHION_COUNT } from "./layout.ts";
 
 export const MSG = {
@@ -11,6 +12,7 @@ export const MSG = {
   emote: "emote",
   knock: "knock",
   chant: "chant",
+  equip: "equip",
   relocate: "relocate",
 } as const;
 
@@ -33,6 +35,9 @@ export type KnockMessage = Record<string, never>;
 export interface ChantMessage {
   on: boolean;
 }
+export interface EquipMessage {
+  item: Item;
+}
 export interface ClientToServerMessages {
   move: MoveMessage;
   sit: SitMessage;
@@ -41,6 +46,7 @@ export interface ClientToServerMessages {
   emote: EmoteMessage;
   knock: KnockMessage;
   chant: ChantMessage;
+  equip: EquipMessage;
 }
 
 export interface RelocateMessage {
@@ -90,6 +96,11 @@ export function parseEmote(payload: unknown): EmoteMessage | null {
 export function parseChant(payload: unknown): ChantMessage | null {
   if (!isRecord(payload) || typeof payload.on !== "boolean") return null;
   return { on: payload.on };
+}
+
+export function parseEquip(payload: unknown): EquipMessage | null {
+  if (!isRecord(payload) || !isValidItem(payload.item)) return null;
+  return { item: payload.item };
 }
 
 export function parseRelocate(payload: unknown): RelocateMessage | null {

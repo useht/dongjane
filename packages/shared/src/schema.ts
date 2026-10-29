@@ -17,6 +17,7 @@ export const Monk = schema(
     npc: t.boolean().default(false),
     knockSeq: t.uint32().default(0),
     chanting: t.boolean().default(false),
+    item: t.uint8().default(0),
   },
   "Monk",
 );

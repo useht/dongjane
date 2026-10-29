@@ -10,6 +10,7 @@ import {
   WALK_SPEED,
 } from "../src/constants.ts";
 import { EMOTE_COUNT } from "../src/emote.ts";
+import { ITEM_CHANT, ITEM_MOKT, ITEM_NONE } from "../src/item.ts";
 import { CUSHION_SPOTS, SPAWN_POINT, WALK_BOUNDS } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
 
@@ -357,9 +358,57 @@ describe("emoticons", () => {
   });
 });
 
-describe("wooden fish", () => {
+describe("held items", () => {
+  it("starts every monk empty-handed and silent", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").item).toBe(ITEM_NONE);
+    expect(h.monk("a").knockSeq).toBe(0);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("equips only valid items", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.equip("a", ITEM_MOKT)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_MOKT);
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
+    expect(h.sim.equip("a", ITEM_NONE)).toBe(true);
+    expect(h.monk("a").item).toBe(ITEM_NONE);
+    h.sim.equip("a", ITEM_MOKT);
+    for (const bad of [3, -1, 1.5, Number.NaN, 255]) {
+      expect(h.sim.equip("a", bad)).toBe(false);
+      expect(h.monk("a").item).toBe(ITEM_MOKT);
+    }
+    expect(h.sim.equip("ghost", ITEM_MOKT)).toBe(false);
+  });
+
+  it("lets a monk equip anywhere, seated or not", () => {
+    h.sim.join("a", 0);
+    expect(h.monk("a").mode).toBe("stand");
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    h.seat("b", 1);
+    expect(h.sim.equip("b", ITEM_MOKT)).toBe(true);
+    expect(h.monk("b").item).toBe(ITEM_MOKT);
+  });
+
+  it("keeps the item per monk", () => {
+    h.seat("a", 0);
+    h.seat("b", 1);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.monk("b").item).toBe(ITEM_NONE);
+  });
+
+  it("rejects a knock without the wooden fish", () => {
+    h.seat("a", 0);
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.equip("a", ITEM_CHANT);
+    expect(h.sim.knock("a")).toBe(false);
+    expect(h.monk("a").knockSeq).toBe(0);
+  });
+
   it("rejects a knock unless the monk is kneeling on a cushion", () => {
     h.sim.join("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
     expect(h.sim.knock("a")).toBe(false);
     h.sim.sit("a", 0);
     expect(h.monk("a").mode).toBe("walk");
@@ -368,8 +417,9 @@ describe("wooden fish", () => {
     expect(h.monk("a").knockSeq).toBe(0);
   });
 
-  it("counts a knock from a seated monk without touching mode or seat", () => {
+  it("counts a knock from a seated monk holding the wooden fish without touching mode or seat", () => {
     h.seat("a", 2);
+    h.sim.equip("a", ITEM_MOKT);
     expect(h.monk("a").knockSeq).toBe(0);
     expect(h.sim.knock("a")).toBe(true);
     expect(h.monk("a").knockSeq).toBe(1);
@@ -379,6 +429,7 @@ describe("wooden fish", () => {
 
   it("rejects a second knock inside the cooldown and accepts one once it has passed", () => {
     h.seat("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
     expect(h.sim.knock("a")).toBe(true);
     h.advance(KNOCK_COOLDOWN_MS - TICK_MS);
     expect(h.sim.knock("a")).toBe(false);
@@ -391,68 +442,114 @@ describe("wooden fish", () => {
   it("keeps the knock cooldown per monk", () => {
     h.seat("a", 0);
     h.seat("b", 1);
+    h.sim.equip("a", ITEM_MOKT);
+    h.sim.equip("b", ITEM_MOKT);
     expect(h.sim.knock("a")).toBe(true);
     expect(h.sim.knock("b")).toBe(true);
     expect(h.sim.knock("a")).toBe(false);
     expect(h.monk("b").knockSeq).toBe(1);
   });
 
-  it("rejects a knock mid-bow but lets the chant be switched on and off", () => {
+  it("rejects a knock mid-bow", () => {
     h.seat("a", 0);
-    expect(h.sim.chant("a", true)).toBe(true);
+    h.sim.equip("a", ITEM_MOKT);
     expect(h.sim.bow("a", 1)).toBe(true);
-    expect(h.monk("a").mode).toBe("bow");
     expect(h.sim.knock("a")).toBe(false);
     expect(h.monk("a").knockSeq).toBe(0);
-    expect(h.monk("a").chanting).toBe(true);
-    expect(h.sim.chant("a", false)).toBe(true);
-    expect(h.monk("a").chanting).toBe(false);
     h.advance(BOW_MS + TICK_MS);
     expect(h.sim.knock("a")).toBe(true);
   });
 
-  it("starts every monk silent", () => {
+  it("starts chanting only for a seated monk holding the prayer beads", () => {
     h.sim.join("a", 0);
-    expect(h.monk("a").knockSeq).toBe(0);
-    expect(h.monk("a").chanting).toBe(false);
-  });
-
-  it("chants only while seated", () => {
-    h.sim.join("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
     expect(h.sim.chant("a", true)).toBe(false);
-    expect(h.monk("a").chanting).toBe(false);
     h.sim.sit("a", 0);
     expect(h.sim.chant("a", true)).toBe(false);
     expect(h.monk("a").chanting).toBe(false);
     h.advance(8000);
     expect(h.sim.chant("a", true)).toBe(true);
     expect(h.monk("a").chanting).toBe(true);
-    expect(h.sim.chant("a", false)).toBe(true);
-    expect(h.monk("a").chanting).toBe(false);
     expect(h.sim.chant("ghost", true)).toBe(false);
   });
 
-  it("stops chanting when the monk stands up", () => {
+  it("refuses to chant without the prayer beads", () => {
     h.seat("a", 0);
+    expect(h.sim.chant("a", true)).toBe(false);
+    h.sim.equip("a", ITEM_MOKT);
+    expect(h.sim.chant("a", true)).toBe(false);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("always lets a monk stop chanting", () => {
+    h.seat("a", 0);
+    expect(h.sim.chant("a", false)).toBe(true);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("lets the chant be switched on and off mid-bow", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.sim.bow("a", 1)).toBe(true);
+    expect(h.monk("a").mode).toBe("bow");
+    expect(h.monk("a").chanting).toBe(true);
+    expect(h.sim.chant("a", false)).toBe(true);
+    expect(h.sim.chant("a", true)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("stops chanting when the monk puts the beads down or swaps them for another item", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_NONE)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_MOKT)).toBe(true);
+    expect(h.monk("a").chanting).toBe(false);
+  });
+
+  it("keeps chanting when the monk re-equips the beads already in hand", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.chant("a", true);
+    expect(h.sim.equip("a", ITEM_CHANT)).toBe(true);
+    expect(h.monk("a").chanting).toBe(true);
+  });
+
+  it("keeps the item but stops chanting when the monk stands up", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
     h.sim.chant("a", true);
     expect(h.sim.stand("a")).toBe(true);
     expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
   });
 
-  it("stops chanting when the monk walks away", () => {
+  it("keeps the item but stops chanting when the monk walks away", () => {
     h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
     h.sim.chant("a", true);
     expect(h.sim.move("a", 0, 4)).toBe(true);
     expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
     h.advance(8000);
     expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
   });
 
-  it("stops chanting when the monk moves to another cushion", () => {
+  it("keeps the item but stops chanting when the monk moves to another cushion", () => {
     h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
     h.sim.chant("a", true);
     expect(h.sim.sit("a", 1)).toBe(true);
     expect(h.monk("a").chanting).toBe(false);
+    expect(h.monk("a").item).toBe(ITEM_CHANT);
     h.advance(8000);
     expect(h.monk("a").mode).toBe("kneel");
     expect(h.monk("a").chanting).toBe(false);
@@ -460,27 +557,41 @@ describe("wooden fish", () => {
 
   it("keeps chanting when the monk asks for the cushion it already holds", () => {
     h.seat("a", 0);
+    h.sim.equip("a", ITEM_CHANT);
     h.sim.chant("a", true);
     expect(h.sim.sit("a", 0)).toBe(true);
     expect(h.monk("a").chanting).toBe(true);
   });
 
+  it("lets a monk who kept the wooden fish knock again after sitting back down", () => {
+    h.seat("a", 0);
+    h.sim.equip("a", ITEM_MOKT);
+    h.sim.stand("a");
+    expect(h.sim.knock("a")).toBe(false);
+    h.sim.sit("a", 0);
+    h.advance(8000);
+    expect(h.sim.knock("a")).toBe(true);
+  });
+
   it("keeps chanting per monk", () => {
     h.seat("a", 0);
     h.seat("b", 1);
+    h.sim.equip("a", ITEM_CHANT);
+    h.sim.equip("b", ITEM_CHANT);
     h.sim.chant("a", true);
     expect(h.monk("b").chanting).toBe(false);
     h.sim.stand("b");
     expect(h.monk("a").chanting).toBe(true);
   });
 
-  it("never makes npc monks knock or chant", () => {
+  it("never makes npc monks hold items, knock or chant", () => {
     const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
     }
     for (const npc of [...sim.state.monks.values()].filter((monk) => monk.npc)) {
+      expect(npc.item).toBe(ITEM_NONE);
       expect(npc.knockSeq).toBe(0);
       expect(npc.chanting).toBe(false);
     }
