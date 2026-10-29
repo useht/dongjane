@@ -65,6 +65,10 @@ export class SoloSession {
     if (!this.closed) this.sim.chant(SOLO_ID, on);
   }
 
+  equip(item: number): void {
+    if (!this.closed) this.sim.equip(SOLO_ID, item);
+  }
+
   async leave(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
