@@ -9,6 +9,7 @@ export const MSG = {
   stand: "stand",
   bow: "bow",
   emote: "emote",
+  jump: "jump",
   relocate: "relocate",
 } as const;
 
@@ -33,6 +34,7 @@ export interface ClientToServerMessages {
   stand: StandMessage;
   bow: BowMessage;
   emote: EmoteMessage;
+  jump: Record<string, never>;
 }
 
 export interface RelocateMessage {

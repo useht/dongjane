@@ -16,6 +16,7 @@ import { CameraRig, DEFAULT_VIEW, configureCamera, projectToCanvas } from "./cam
 import { EmoteTracker } from "./emote-tracker.ts";
 import { HALL_BOUNDS, Hall } from "./hall.ts";
 import { PointerInput, type StickState } from "./input.ts";
+import { JumpTracker } from "./jump-tracker.ts";
 import type { MonkAssets } from "./monk-assets.ts";
 import { MonkAvatar, MonkPool } from "./monk-model.ts";
 import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts";
@@ -35,6 +36,7 @@ export interface MonkView {
   bowCount: number;
   emote: number;
   emoteSeq: number;
+  jumpSeq: number;
 }
 
 export interface WorldCallbacks {
@@ -78,6 +80,7 @@ export class World {
   private readonly hall: Hall;
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
+  private readonly jumps = new JumpTracker();
   private readonly sample: Sample = { x: 0, z: 0, yaw: 0 };
   private readonly anchor = new Vector3();
   private readonly clock = new ServerClock();
@@ -251,12 +254,19 @@ export class World {
       entry.targetYaw = view.yaw;
       this.emotes.observe(view.id, view.emoteSeq, view.emote, nowMs);
       const isSelf = view.id === this.selfId;
+      if (this.jumps.observe(view.id, view.jumpSeq) && !isSelf) entry.avatar.hop(nowMs);
       if (!isSelf) entry.track.push(serverTime, view.x, view.z, view.yaw, view.mode === "walk");
       if (!(isSelf && this.selfPrediction)) entry.avatar.setMode(view.mode, nowMs);
     }
     for (const id of [...this.entries.keys()]) {
       if (!seen.has(id)) this.dropEntry(id);
     }
+  }
+
+  // The player's own hop starts on the keypress, so the server's echo of the same jump does not hop again.
+  hopSelf(nowMs: number): void {
+    const entry = this.selfId ? this.entries.get(this.selfId) : undefined;
+    entry?.avatar.hop(nowMs);
   }
 
   setOccupancy(occupied: ReadonlySet<number>): void {
@@ -317,6 +327,7 @@ export class World {
     entry.avatar.dispose();
     this.entries.delete(id);
     this.emotes.forget(id);
+    this.jumps.forget(id);
   }
 
   private applyAtmosphere(): void {

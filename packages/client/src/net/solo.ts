@@ -49,6 +49,10 @@ export class SoloSession {
     if (!this.closed) this.sim.stand(SOLO_ID);
   }
 
+  jump(): void {
+    if (!this.closed) this.sim.jump(SOLO_ID);
+  }
+
   bow(times: BowMessage["times"]): void {
     if (!this.closed) this.sim.bow(SOLO_ID, times);
   }

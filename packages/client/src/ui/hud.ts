@@ -29,6 +29,7 @@ export interface HudHandlers {
   onOpenHalls(): void;
   onBow(): void;
   onStand(): void;
+  onJump(): void;
   onEmote(emote: number): void;
   onInvite(): void;
   onToggleSound(): void;
@@ -58,6 +59,7 @@ export class Hud {
   private readonly bowActions = h("div", "bow-actions");
   private readonly bowButton: HTMLButtonElement;
   private readonly standButton: HTMLButtonElement;
+  private readonly jumpButton: HTMLButtonElement;
   private readonly stats = h("pre", "stats hidden");
   private readonly hallSheet: Sheet;
   private readonly emotePicker: EmotePicker;
@@ -95,7 +97,8 @@ export class Hud {
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = iconButton("bow", "절하기", () => handlers.onBow(), "bow-button");
-    this.bowActions.append(this.standButton, this.bowButton);
+    this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "bow-button jump-button");
+    this.bowActions.append(this.standButton, this.bowButton, this.jumpButton);
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
@@ -129,7 +132,7 @@ export class Hud {
     host.append(this.root);
 
     this.renderHalls();
-    this.setSelf({ mode: "stand", cushionId: -1 });
+    this.setSelf(null);
     this.setSky(null);
   }
 
@@ -163,14 +166,15 @@ export class Hud {
     );
   }
 
-  setSelf(self: SelfStatus): void {
-    const key = `${self.mode}|${self.cushionId}`;
+  setSelf(self: SelfStatus | null): void {
+    const key = self ? `${self.mode}|${self.cushionId}` : "none";
     if (key === this.lastSelf) return;
     this.lastSelf = key;
-    const seated = self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
-    const bowing = self.mode === "bow";
+    const seated = !!self && self.cushionId >= 0 && (self.mode === "kneel" || self.mode === "bow");
+    const bowing = self?.mode === "bow";
     this.bowButton.classList.toggle("hidden", !seated || bowing);
     this.standButton.classList.toggle("hidden", !seated);
+    this.jumpButton.classList.toggle("hidden", !self || self.cushionId >= 0);
     this.bowActions.classList.toggle("seated", seated);
   }
 

@@ -1,8 +1,8 @@
 import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Vector3 } from "three";
-import { BOW_MS } from "@dongjane/shared";
+import { BOW_MS, JUMP_MS } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
 import type { MonkAssets } from "./monk-assets.ts";
-import { PoseBlend, approach, bowDepth } from "./pose.ts";
+import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
 export const PART_NAMES = [
   "head",
@@ -58,6 +58,7 @@ const KNEEL_SKIRT_LIFT = rig.kneelSkirtLift;
 const CUSHION_TOP = rig.cushionTop;
 const HEAD_TOP_OFFSET = rig.crownY;
 const EMOTE_ANCHOR_Y = rig.crownY + 0.04;
+const HOP_HEIGHT = 0.35;
 
 interface Binding {
   part: PartName;
@@ -88,6 +89,7 @@ export class MonkAvatar {
   private phase = 0;
   private clock = 0;
   private liftedBy = 0;
+  private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
@@ -136,6 +138,10 @@ export class MonkAvatar {
     this.modeSince = nowMs;
   }
 
+  hop(nowMs: number): void {
+    this.hopStartedAt = nowMs;
+  }
+
   place(x: number, z: number, yaw: number): void {
     this.root.position.x = x;
     this.root.position.z = z;
@@ -155,7 +161,8 @@ export class MonkAvatar {
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
 
-    this.root.position.y = this.liftedBy * kneel;
+    const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
+    this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - depth * 0.025;
     this.hips.position.z = -depth * 0.1;
