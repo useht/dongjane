@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BOW_TITLES, earnedTitles, gainedBows, nextTitle, titlesCrossed } from "../src/collection/titles.ts";
+import { BOW_TITLES, earnedTitles, gainedBows, homeTitleName, nextTitle, titlesCrossed } from "../src/collection/titles.ts";
 import { loadBows, saveBows } from "../src/storage.ts";
 
 const ids = (titles: readonly { id: string }[]): string[] => titles.map((title) => title.id);
@@ -44,6 +44,20 @@ describe("earnedTitles", () => {
 
   it("earns every title past the last threshold", () => {
     expect(earnedTitles(1_000_000)).toEqual([...BOW_TITLES]);
+  });
+});
+
+describe("homeTitleName", () => {
+  it("is null until the first title is earned", () => {
+    expect(homeTitleName(0)).toBeNull();
+  });
+
+  it("names the highest title earned so far", () => {
+    expect(homeTitleName(1)).toBe("초발심");
+    expect(homeTitleName(9)).toBe("초발심");
+    expect(homeTitleName(10)).toBe("정진하는 동자");
+    expect(homeTitleName(107)).toBe("꾸준한 동자");
+    expect(homeTitleName(1_000_000)).toBe("만배 법사");
   });
 });
 
