@@ -14,6 +14,7 @@ import {
 import { BOW_MS } from "@dongjane/shared";
 import { MONK_PARTS, type MonkPart } from "../assets/contract.ts";
 import type { ModelMeshes } from "../assets/registry.ts";
+import { THEME } from "../theme.ts";
 import {
   CUSHION_TOP,
   FOOT_X,
@@ -107,7 +108,7 @@ export class MonkAvatar {
       bind("foot", this.feet[side] as Object3D, side);
     }
 
-    const { texture, aspect } = nameTexture(name, isSelf ? "#ffd27a" : "#f4e3c0");
+    const { texture, aspect } = nameTexture(name, isSelf ? THEME.scene.nameSelf : THEME.scene.nameOther);
     this.plate = new Sprite(new SpriteMaterial({ map: texture, transparent: true, depthWrite: false, fog: false }));
     this.plate.scale.set(0.2 * aspect, 0.2, 1);
     this.plate.position.y = NAME_HEIGHT;

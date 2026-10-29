@@ -17,6 +17,7 @@ import {
 } from "three";
 import { HALL_FRONT_Z, HALL_HALF_WIDTH, lerpAngle, resolveWalkable, SPAWN_POINT } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
+import { THEME } from "../theme.ts";
 import { CameraRig, DEFAULT_VIEW, configureCamera } from "./camera-rig.ts";
 import { Hall } from "./hall.ts";
 import { HALL_BOUNDS } from "./hall-layout.ts";
@@ -117,8 +118,8 @@ export class World {
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = this.quality.shadows;
 
-    this.scene.background = new Color(0x1c120b);
-    this.scene.fog = new Fog(0x2a1a10, 16, 42);
+    this.scene.background = new Color(THEME.scene.background);
+    this.scene.fog = new Fog(THEME.scene.fog, 16, 42);
 
     this.hall = new Hall(this.renderer, this.quality, assets.models.hall, assets.models.buddha);
     this.scene.add(this.hall.group);
@@ -129,13 +130,13 @@ export class World {
 
     this.marker = new Mesh(
       new RingGeometry(0.16, 0.24, 28),
-      new MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0, depthWrite: false, side: DoubleSide, fog: false }),
+      new MeshBasicMaterial({ color: THEME.scene.marker, transparent: true, opacity: 0, depthWrite: false, side: DoubleSide, fog: false }),
     );
     this.marker.rotation.x = -Math.PI / 2;
     this.marker.position.y = 0.03;
     this.selfRing = new Mesh(
       new RingGeometry(0.36, 0.42, 32),
-      new MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.6, depthWrite: false, side: DoubleSide, fog: false }),
+      new MeshBasicMaterial({ color: THEME.scene.selfRing, transparent: true, opacity: 0.6, depthWrite: false, side: DoubleSide, fog: false }),
     );
     this.selfRing.rotation.x = -Math.PI / 2;
     this.selfRing.visible = false;
