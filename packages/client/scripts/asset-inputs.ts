@@ -13,7 +13,7 @@ import {
   WORLD_MESHES,
   WORLD_PROTOTYPES,
 } from "../src/assets/contract.ts";
-import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FRONT_PILLARS_X, LOTUS_EMBED, SIDE_PILLARS_Z, hangingLanterns } from "../src/game/dharma-layout.ts";
+import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FRONT_PILLARS_X, LOTUS_EMBED, SIDE_PILLARS_Z, WALL_OPENINGS, WINDOW_BAND, hangingLanterns } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
@@ -63,6 +63,8 @@ export function assetInputs() {
       CANDLE_SPOTS,
       SIDE_PILLARS_Z,
       FRONT_PILLARS_X,
+      WINDOW_BAND,
+      WALL_OPENINGS,
       lanterns: hangingLanterns(),
     },
     material: THEME.material,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, DOORWAY_AREA, WORLD_BOUNDS, ZONE_CAPACITY } from "@dongjane/shared";
-import { ALTAR, BUDDHA_AT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FLAME_HEIGHT, FRONT_PILLARS_X, SIDE_PILLARS_Z, hangingLanterns } from "../src/game/dharma-layout.ts";
+import { ALTAR, BUDDHA_AT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FLAME_HEIGHT, FRONT_PILLARS_X, SIDE_PILLARS_Z, WALL_OPENINGS, WINDOW_BAND, type WindowWall, hangingLanterns } from "../src/game/dharma-layout.ts";
 
 describe("the room", () => {
   it("holds the altar against the back wall with the Buddha in the middle of it", () => {
@@ -44,6 +44,78 @@ describe("the room", () => {
       expect(spot.x + DHARMA_SEAT_SIZE.x / 2).toBeLessThanOrEqual(DHARMA_BOUNDS.maxX);
       expect(spot.z).toBeGreaterThanOrEqual(DHARMA_BOUNDS.minZ);
       expect(spot.z).toBeLessThanOrEqual(DHARMA_BOUNDS.maxZ);
+    }
+  });
+});
+
+describe("the windows", () => {
+  // The fattest the room's pillars and the shell's columns get, the plaster's gap to the room's wall (GAP in blender/shell.py)
+  // and the doorway's jambs (JAMB there); the Blender build draws them, so they are spelt out here.
+  const PILLAR_RADIUS = 0.3;
+  const COLUMN_RADIUS = 0.26;
+  const GAP = 0.02;
+  const JAMB = 0.14;
+
+  const hx = DHARMA.halfWidth + GAP + DHARMA_SHELL.wall;
+  const z0 = DHARMA.backZ - GAP - DHARMA_SHELL.wall;
+  const z1 = DHARMA.frontZ + GAP + DHARMA_SHELL.wall;
+  const bay = DHARMA_DOOR.halfWidth + 0.5;
+  const pillarLine = DHARMA.halfWidth - DHARMA.inset;
+  // Where the pillars and columns stand along each wall, in the room's frame.
+  const pillars = {
+    front: [-pillarLine, ...FRONT_PILLARS_X, pillarLine],
+    side: [DHARMA.backZ + DHARMA.inset, ...SIDE_PILLARS_Z, DHARMA.frontZ - DHARMA.inset],
+  };
+  const columns = {
+    front: [-hx, -(bay + hx) / 2, -bay, bay, (bay + hx) / 2, hx],
+    side: [0, 1, 2, 3, 4].map((i) => z0 + ((z1 - z0) * i) / 4),
+  };
+  const half = { front: DHARMA.halfWidth, east: DHARMA.frontZ, west: DHARMA.frontZ };
+  const onWall = (wall: WindowWall) => WALL_OPENINGS.filter((opening) => opening.wall === wall);
+  const kind = (wall: WindowWall) => (wall === "front" ? "front" : "side");
+
+  it("sits in a band that clears the shell's floor and ends under the room's wall top", () => {
+    expect(WINDOW_BAND.low).toBeGreaterThan(DHARMA_SHELL.baseHeight + 0.5);
+    expect(WINDOW_BAND.high).toBeGreaterThan(WINDOW_BAND.low);
+    expect(WINDOW_BAND.high).toBeLessThan(DHARMA.wallHeight - 0.5);
+  });
+
+  it("puts windows in the front and side walls, the same in the east and west, and none in the back wall where the altar stands", () => {
+    expect(onWall("front").length).toBeGreaterThan(0);
+    expect(onWall("east").length).toBeGreaterThan(0);
+    expect(onWall("east")).toEqual(onWall("west").map((opening) => ({ ...opening, wall: "east" })));
+    expect(WALL_OPENINGS.map((opening) => opening.wall as string)).not.toContain("back");
+  });
+
+  it("keeps every opening inside its wall and clear of the others", () => {
+    for (const wall of ["front", "east", "west"] as const) {
+      const sorted = [...onWall(wall)].sort((a, b) => a.along - b.along);
+      for (const opening of sorted) {
+        expect(opening.width).toBeGreaterThan(0);
+        expect(Math.abs(opening.along) + opening.width / 2, `${wall} ${opening.along}`).toBeLessThan(half[wall]);
+      }
+      for (let i = 1; i < sorted.length; i += 1) {
+        const [before, after] = [sorted[i - 1], sorted[i]];
+        expect((after?.along ?? 0) - (after?.width ?? 0) / 2, `${wall} ${after?.along}`).toBeGreaterThan((before?.along ?? 0) + (before?.width ?? 0) / 2);
+      }
+    }
+  });
+
+  it("stands every opening in a bay: clear of the room's pillars and of the shell's columns", () => {
+    for (const opening of WALL_OPENINGS) {
+      const reach = opening.width / 2;
+      for (const at of pillars[kind(opening.wall)]) {
+        expect(Math.abs(at - opening.along), `${opening.wall} ${opening.along} against the pillar at ${at}`).toBeGreaterThanOrEqual(reach + PILLAR_RADIUS);
+      }
+      for (const at of columns[kind(opening.wall)]) {
+        expect(Math.abs(at - opening.along), `${opening.wall} ${opening.along} against the column at ${at}`).toBeGreaterThanOrEqual(reach + COLUMN_RADIUS);
+      }
+    }
+  });
+
+  it("keeps the front windows off the doorway and its jambs", () => {
+    for (const opening of onWall("front")) {
+      expect(Math.abs(opening.along) - opening.width / 2).toBeGreaterThan(DHARMA_DOOR.halfWidth + JAMB);
     }
   });
 });

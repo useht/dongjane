@@ -49,6 +49,35 @@ export const FLAME_HEIGHT = 0.56;
 export const SIDE_PILLARS_Z: readonly number[] = [-5.7, -2.85, 0, 2.85, 5.7];
 export const FRONT_PILLARS_X: readonly number[] = [-5.9, -2.05, 2.05, 5.9];
 
+// The windows: openings cut through the room's wall and the shell's plaster at the same places, so you see through them from
+// either side. `along` is where the middle of one stands along its wall, in the room's frame: x on the front wall, z on the east
+// and west walls. They sit in the bays between the room's pillars and clear of the shell's columns; the back wall has none,
+// because the altar, the Buddha and the mural stand against it.
+export const WINDOW_BAND = { low: 1.5, high: 4.5 } as const;
+
+export type WindowWall = "front" | "east" | "west";
+
+export interface WallOpening {
+  readonly wall: WindowWall;
+  readonly along: number;
+  readonly width: number;
+}
+
+export const WALL_OPENINGS: readonly WallOpening[] = [
+  { wall: "front", along: -7.8, width: 2.2 },
+  { wall: "front", along: -4, width: 2.2 },
+  { wall: "front", along: 4, width: 2.2 },
+  { wall: "front", along: 7.8, width: 2.2 },
+  { wall: "east", along: -7.1, width: 2 },
+  { wall: "east", along: -1.425, width: 2 },
+  { wall: "east", along: 1.425, width: 2 },
+  { wall: "east", along: 7.1, width: 2 },
+  { wall: "west", along: -7.1, width: 2 },
+  { wall: "west", along: -1.425, width: 2 },
+  { wall: "west", along: 1.425, width: 2 },
+  { wall: "west", along: 7.1, width: 2 },
+];
+
 // Lines of lanterns hang along the room from its ceiling: x of each line, and where they hang along z.
 const LANTERN_LINES_X: readonly number[] = [-8.4, -5.6, -2.8, 2.8, 5.6, 8.4];
 const LANTERN_COUNT_PER_LINE = 8;

@@ -30,7 +30,7 @@ export const VENUE_MESHES = ["stage", "screen", "truss", "poles", "lantern"] as 
 export const VENUE_PROTOTYPES = ["lantern"] as const;
 
 // The 법당's inside, loaded after the first frame: the room, the lotus, halo and glow behind the Buddha (who is buddha.glb) and one seat to instance.
-export const DHARMA_MESHES = ["floor", "structure", "ceiling", "paper", "mural", "lotus", "halo", "glow", "seat"] as const;
+export const DHARMA_MESHES = ["floor", "structure", "ceiling", "mural", "lotus", "halo", "glow", "seat"] as const;
 
 // Authored at the origin; the runtime instances them at the seat spots.
 export const DHARMA_PROTOTYPES = ["seat"] as const;
