@@ -1,4 +1,4 @@
-import { type BlockReason, PLAYER_ORIGIN, StageVideoController, type StageStatus, TAP_WINDOW_MS, embedUrl, listeningMessage, parsePlayerMessage, playerCommand } from "./stage-video.ts";
+import { type BlockReason, PLAYER_ORIGIN, type Playback, StageVideoController, type StageStatus, TAP_WINDOW_MS, embedUrl, listeningMessage, parsePlayerMessage, playerCommand } from "./stage-video.ts";
 import { type Quad, quadTransform } from "./stage-quad.ts";
 import { h } from "./dom.ts";
 
@@ -9,7 +9,7 @@ const FAR_PIXELS = 20_000;
 export interface StageScreenHooks {
   onStatus(status: StageStatus, reason?: BlockReason): void;
   onTapNeeded(needed: boolean): void;
-  onPlayNeeded(needed: boolean): void;
+  onPlayback(playback: Playback): void;
   onAudible(audible: boolean): void;
 }
 
@@ -19,7 +19,7 @@ export interface StageScreenSize {
 }
 
 // The concert video: a YouTube embed that sits behind the transparent canvas and is warped onto the 3D LED screen,
-// whose pixels the renderer leaves empty. The page never loads YouTube's script; the embed is steered by postMessage.
+// whose pixels the renderer leaves empty while this visitor's video plays. The page never loads YouTube's script; the embed is steered by postMessage.
 export class StageScreen {
   private readonly box = h("div", "stage-video");
   private readonly controller: StageVideoController;
@@ -55,7 +55,7 @@ export class StageScreen {
           if (!needed) this.closeTapWindow();
           hooks.onTapNeeded(needed);
         },
-        playNeeded: (needed) => hooks.onPlayNeeded(needed),
+        playback: (playback) => hooks.onPlayback(playback),
         audible: (audible) => hooks.onAudible(audible),
       },
       () => performance.now(),
@@ -65,6 +65,10 @@ export class StageScreen {
 
   get status(): StageStatus {
     return this.controller.status;
+  }
+
+  get playback(): Playback {
+    return this.controller.playback;
   }
 
   get mounted(): boolean {
@@ -138,8 +142,12 @@ export class StageScreen {
     this.controller.userGesture();
   }
 
-  resume(): void {
-    this.controller.resume();
+  play(): void {
+    this.controller.play();
+  }
+
+  stop(): void {
+    this.controller.stop();
   }
 
   setReduceMotion(value: boolean): void {

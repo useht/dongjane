@@ -1,22 +1,31 @@
-import { h, iconButton } from "./dom.ts";
+import { h, iconButton, swapIcon } from "./dom.ts";
+import type { IconName } from "./icons.ts";
+import type { HintAction } from "./stage-video.ts";
 
-// A play button floated over the concert screen when the video has stalled; the DOM is only touched when it appears, vanishes or moves a pixel.
+const LOOKS: Record<HintAction, { icon: IconName; label: string }> = {
+  play: { icon: "play", label: "재생" },
+  stop: { icon: "stop", label: "중지" },
+};
+
+// A play button floated over the concert screen while this visitor's video waits, and a stop button while it plays; the DOM is only touched when it appears, vanishes, changes or moves a pixel.
 export class StageHint {
   private readonly root = h("div", "seat-hints");
   private readonly node: HTMLButtonElement;
+  private action: HintAction = "play";
   private x = Number.NaN;
   private y = Number.NaN;
   private shown = false;
 
-  constructor(host: HTMLElement, onPlay: () => void) {
-    this.node = iconButton("play", "다시 재생", onPlay, "seat-hint stage-hint hidden");
+  constructor(host: HTMLElement, onAction: Record<HintAction, () => void>) {
+    this.node = iconButton(LOOKS.play.icon, LOOKS.play.label, () => onAction[this.action](), "seat-hint stage-hint hidden");
     this.root.append(this.node);
     host.append(this.root);
   }
 
-  place(x: number, y: number): void {
+  place(action: HintAction, x: number, y: number): void {
     const px = Math.round(x);
     const py = Math.round(y);
+    if (action !== this.action) this.look(action);
     if (!this.shown) {
       this.shown = true;
       this.node.classList.remove("hidden");
@@ -31,5 +40,13 @@ export class StageHint {
     if (!this.shown) return;
     this.shown = false;
     this.node.classList.add("hidden");
+  }
+
+  private look(action: HintAction): void {
+    this.action = action;
+    const { icon, label } = LOOKS[action];
+    swapIcon(this.node, icon);
+    this.node.setAttribute("aria-label", label);
+    this.node.title = label;
   }
 }

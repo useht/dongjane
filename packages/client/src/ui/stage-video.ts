@@ -7,14 +7,12 @@ export const PLAYER_CHANNEL = "dongjane-stage";
 export const READY_TIMEOUT_MS = 8000;
 export const UNMUTE_CHECK_MS = 1000;
 export const TAP_WINDOW_MS = 6000;
-// How long the video may sit unplayed, when it should be playing, before the visitor is offered a play button.
-export const PLAY_NEEDED_MS = 3000;
 // The player only plays at whole speeds, so drift is cured by jumping, and not more often than this.
 const DRIFT_SECONDS = 1;
 const RESYNC_MIN_MS = 10_000;
-const RETRY_PLAY_MS = 4000;
 // The crossfade with the sutra moves the volume every frame; the player is told at most this often.
 const VOLUME_GAP_MS = 250;
+const PAUSE_GAP_MS = 1000;
 
 // The player reports these when the video cannot be shown here at all.
 const BLOCKING_ERRORS: ReadonlySet<number> = new Set([2, 5, 100, 101, 150, 153]);
@@ -26,7 +24,7 @@ export type PlayerEvent =
 
 export function embedUrl(pageOrigin: string, videoId: string = STAGE_VIDEO_ID): string {
   const query = new URLSearchParams({
-    autoplay: "1",
+    autoplay: "0",
     mute: "1",
     loop: "1",
     playlist: videoId,
@@ -93,7 +91,23 @@ export function parsePlayerMessage(data: unknown): PlayerEvent | null {
   return null;
 }
 
-export type StageStatus = "idle" | "loading" | "playing" | "blocked";
+export type StageStatus = "idle" | "loading" | "ready" | "blocked";
+
+// What this visitor's video is doing: waiting to be played, asked to play but not yet playing, or playing.
+export type Playback = "waiting" | "starting" | "playing";
+
+export type HintAction = "play" | "stop";
+
+// The button floated over the screen: play while waiting, stop from the press of play on, and none until the player can be steered.
+export function hintAction(status: StageStatus, playback: Playback): HintAction | null {
+  if (status !== "ready") return null;
+  return playback === "waiting" ? "play" : "stop";
+}
+
+// The LED screen shows the poster unless this visitor's video is playing and motion is allowed.
+export function screenModeFor(playback: Playback, reduceMotion: boolean): "video" | "poster" {
+  return playback === "playing" && !reduceMotion ? "video" : "poster";
+}
 
 export interface BlockReason {
   readonly kind: "timeout" | "error";
@@ -104,7 +118,7 @@ export interface StageVideoOutput {
   send(func: string, args?: readonly unknown[]): void;
   status(status: StageStatus, reason?: BlockReason): void;
   tapNeeded(needed: boolean): void;
-  playNeeded(needed: boolean): void;
+  playback(playback: Playback): void;
   audible(audible: boolean): void;
 }
 
@@ -113,16 +127,19 @@ const ENDED = 0;
 const PAUSED = 2;
 
 // Decides what to tell the embedded player. It knows nothing about the DOM: time arrives through the two clocks
-// (`now` for local timeouts, `serverNow` for the shared position in the loop).
+// (`now` for local timeouts, `serverNow` for the shared position in the loop). The video waits, muted, until `play()`;
+// nothing here starts it again once it has stopped.
 export class StageVideoController {
   private current: StageStatus = "idle";
   private openedAt = 0;
   private ready = false;
+  private wanted = false;
+  private started = false;
+  private playbackNow: Playback = "waiting";
   private wantSound = false;
   private volume = 0;
   private level = 1;
   private quietSince: number | null = null;
-  private quiet = false;
   private lastVolumeAt = Number.NEGATIVE_INFINITY;
   private volumeDue = false;
   private gestured = false;
@@ -133,12 +150,10 @@ export class StageVideoController {
   private appliedKey = "";
   private unmuteAt: number | null = null;
   private tapShown = false;
-  private stalledSince: number | null = null;
-  private playNeededShown = false;
   private audibleNow = false;
   private needSeek = true;
   private lastSeekAt = Number.NEGATIVE_INFINITY;
-  private lastPlayAt = Number.NEGATIVE_INFINITY;
+  private lastPauseAt = Number.NEGATIVE_INFINITY;
 
   constructor(
     private readonly out: StageVideoOutput,
@@ -148,6 +163,10 @@ export class StageVideoController {
 
   get status(): StageStatus {
     return this.current;
+  }
+
+  get playback(): Playback {
+    return this.playbackNow;
   }
 
   open(): void {
@@ -162,23 +181,19 @@ export class StageVideoController {
   }
 
   receive(event: PlayerEvent): void {
-    if (this.current !== "loading" && this.current !== "playing") return;
+    if (this.current !== "loading" && this.current !== "ready") return;
     if (event.kind === "error") {
       if (BLOCKING_ERRORS.has(event.code)) this.block({ kind: "error", code: event.code });
       return;
     }
     this.markReady();
-    if (event.kind === "ready") {
-      this.updateStall();
-      return;
-    }
+    if (event.kind === "ready") return;
     if (event.duration !== undefined) this.duration = Math.round(event.duration * 10) / 10;
     if (event.time !== undefined) this.time = event.time;
     if (event.muted !== undefined) this.playerMuted = event.muted;
     if (event.state !== undefined) this.onState(event.state);
     this.maybeSeek();
     this.reportAudio();
-    this.updateStall();
   }
 
   tick(): void {
@@ -187,17 +202,10 @@ export class StageVideoController {
       this.block({ kind: "timeout" });
       return;
     }
-    if (this.current !== "loading" && this.current !== "playing") return;
+    if (this.current !== "loading" && this.current !== "ready") return;
     if (this.volumeDue) this.applyAudio(false);
-    if (this.ready && !this.quiet && this.quietSince !== null && now - this.quietSince >= QUIET_PAUSE_MS) {
-      this.quiet = true;
-      this.out.send("pauseVideo");
-    }
-    if (this.ready && !this.holding() && this.state !== PLAYING && now - this.lastPlayAt >= RETRY_PLAY_MS) {
-      this.out.send("playVideo");
-      this.lastPlayAt = now;
-    }
-    this.updateStall();
+    // Nobody is in earshot of the concert: a playing video is paused, and it is the visitor's to start again.
+    if (this.wanted && this.quietSince !== null && now - this.quietSince >= QUIET_PAUSE_MS) this.endPlay(true);
     // Still muted a second after asking: the browser wants a tap on the player itself. Asking again is harmless
     // and is what lets the sound out once that tap has happened.
     if (this.wantsAudible() && this.playerMuted === true && this.unmuteAt !== null && now - this.unmuteAt >= UNMUTE_CHECK_MS) {
@@ -214,17 +222,13 @@ export class StageVideoController {
   }
 
   // How much of the concert the visitor is meant to hear, 0 to 1: it is the sutra's share turned round. At 0 for long enough
-  // the video is paused, and it is moved to the right place in the loop when it is wanted again.
+  // a playing video is paused.
   setLevel(level: number): void {
     const next = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0));
     if (next === this.level) return;
     this.level = next;
-    if (next > 0) {
-      this.quietSince = null;
-      if (this.quiet) this.wake();
-    } else if (this.quietSince === null) {
-      this.quietSince = this.now();
-    }
+    if (next > 0) this.quietSince = null;
+    else if (this.quietSince === null) this.quietSince = this.now();
     this.applyAudio(false, true);
   }
 
@@ -234,16 +238,27 @@ export class StageVideoController {
     this.applyAudio(true);
   }
 
-  // The visitor asked for the video to play: a real click, so the browser lets the sound and the playing through.
-  resume(): void {
+  // The visitor asked for the video: a real click, so the browser lets the sound and the playing through.
+  play(): void {
+    if (!this.ready) return;
+    if (!this.wanted) {
+      this.wanted = true;
+      this.started = false;
+    }
+    if (this.level === 0) this.quietSince = this.now();
     this.userGesture();
-    this.wake();
-    this.stalledSince = null;
-    this.updateStall();
+    this.out.send("playVideo");
+    this.updatePlayback();
+  }
+
+  stop(): void {
+    if (this.wanted) this.endPlay(true);
   }
 
   private reset(): void {
     this.ready = false;
+    this.wanted = false;
+    this.started = false;
     this.playerMuted = null;
     this.duration = 0;
     this.time = 0;
@@ -252,38 +267,36 @@ export class StageVideoController {
     this.unmuteAt = null;
     this.needSeek = true;
     this.lastSeekAt = Number.NEGATIVE_INFINITY;
-    this.lastPlayAt = Number.NEGATIVE_INFINITY;
+    this.lastPauseAt = Number.NEGATIVE_INFINITY;
     this.lastVolumeAt = Number.NEGATIVE_INFINITY;
     this.volumeDue = false;
-    this.quiet = false;
-    this.quietSince = this.level === 0 ? this.now() : null;
-    this.stalledSince = null;
+    this.quietSince = null;
     this.setTap(false);
-    this.setPlayNeeded(false);
     this.setAudible(false);
-  }
-
-  // Paused on purpose, because nobody is in earshot.
-  private holding(): boolean {
-    return this.quiet;
-  }
-
-  private wake(): void {
-    this.quiet = false;
-    this.needSeek = true;
-    if (!this.ready) return;
-    this.out.send("playVideo");
-    this.lastPlayAt = this.now();
-    this.maybeSeek();
+    this.updatePlayback();
   }
 
   // The first word from the player, whatever it is, means it can be steered.
   private markReady(): void {
     if (this.ready) return;
     this.ready = true;
-    this.out.send("playVideo");
-    this.lastPlayAt = this.now();
-    this.applyAudio(true);
+    this.setStatus("ready");
+  }
+
+  // Back to waiting with the sound off; `pause` is false when the player has already stopped by itself.
+  private endPlay(pause: boolean): void {
+    this.wanted = false;
+    this.started = false;
+    if (pause) this.out.send("pauseVideo");
+    this.applyAudio(false);
+    this.updatePlayback();
+  }
+
+  private updatePlayback(): void {
+    const next: Playback = !this.wanted ? "waiting" : this.started ? "playing" : "starting";
+    if (next === this.playbackNow) return;
+    this.playbackNow = next;
+    this.out.playback(next);
   }
 
   private setStatus(status: StageStatus, reason?: BlockReason): void {
@@ -298,19 +311,23 @@ export class StageVideoController {
   }
 
   private onState(state: number): void {
-    const before = this.state;
     this.state = state;
     if (state === PLAYING) {
-      this.setStatus("playing");
-      return;
+      if (this.wanted) this.started = true;
+      else this.pauseStray();
+    } else if (this.started && (state === PAUSED || state === ENDED)) {
+      // A tap on the player, the browser or the end of the clip stopped it: that ends this play, and nothing restarts it.
+      this.endPlay(false);
     }
-    if (this.holding() || !this.ready) return;
-    // A tap that landed on the player pauses it, and a one-shot video ends; either way keep the concert going.
-    if (state === PAUSED || state === ENDED) {
-      this.out.send("playVideo");
-      this.lastPlayAt = this.now();
-      if (before === PLAYING && this.wantSound && this.gestured) this.applyAudio(true);
-    }
+    this.updatePlayback();
+  }
+
+  // A player that plays unasked, or has not yet heard the stop, is told to pause: not more than once a second.
+  private pauseStray(): void {
+    const now = this.now();
+    if (now - this.lastPauseAt < PAUSE_GAP_MS) return;
+    this.lastPauseAt = now;
+    this.out.send("pauseVideo");
   }
 
   private percent(): number {
@@ -318,10 +335,10 @@ export class StageVideoController {
   }
 
   private wantsAudible(): boolean {
-    return this.ready && this.wantSound && this.gestured && this.percent() > 0;
+    return this.ready && this.wanted && this.wantSound && this.gestured && this.percent() > 0;
   }
 
-  // Muted is how the video starts; sound is asked for only after a gesture (autoplay policy) and only while the setting is on.
+  // Muted is how the video waits; sound is asked for only while it plays, after a gesture (autoplay policy) and only while the setting is on.
   private applyAudio(force: boolean, throttled = false): void {
     if (!this.ready) return;
     const key = this.wantsAudible() ? `on|${this.percent()}` : "off";
@@ -366,24 +383,6 @@ export class StageVideoController {
     this.out.tapNeeded(needed);
   }
 
-  // Not playing though it should be: the auto-retries are no gesture, so the browser may be refusing them.
-  private updateStall(): void {
-    if (!this.ready || this.holding() || this.state === PLAYING) {
-      this.stalledSince = null;
-      this.setPlayNeeded(false);
-      return;
-    }
-    const now = this.now();
-    this.stalledSince ??= now;
-    this.setPlayNeeded(now - this.stalledSince >= PLAY_NEEDED_MS);
-  }
-
-  private setPlayNeeded(needed: boolean): void {
-    if (needed === this.playNeededShown) return;
-    this.playNeededShown = needed;
-    this.out.playNeeded(needed);
-  }
-
   private setAudible(audible: boolean): void {
     if (audible === this.audibleNow) return;
     this.audibleNow = audible;
@@ -392,7 +391,7 @@ export class StageVideoController {
 
   // Everyone's player is moved to the same spot of the loop; a live stream has no duration and is left alone.
   private maybeSeek(): void {
-    if (this.holding() || this.duration <= 0 || this.state !== PLAYING) return;
+    if (!this.wanted || this.duration <= 0 || this.state !== PLAYING) return;
     const now = this.now();
     const target = loopPosition(this.serverNow(), this.duration);
     const off = Math.abs(this.time - target);

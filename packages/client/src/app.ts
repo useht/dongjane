@@ -68,6 +68,7 @@ import { SoundChip } from "./ui/sound-chip.ts";
 import { StageHint } from "./ui/stage-hint.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
 import type { Quad } from "./ui/stage-quad.ts";
+import { hintAction, screenModeFor } from "./ui/stage-video.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
@@ -144,7 +145,6 @@ export class App {
   private lost = false;
   private videoAudible = false;
   private stageToasted = false;
-  private playNeeded = false;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
   private returnHeld = false;
@@ -201,9 +201,7 @@ export class App {
           this.syncZoneSound();
         },
         onTapNeeded: (needed) => this.soundChip.show(needed),
-        onPlayNeeded: (needed) => {
-          this.playNeeded = needed;
-        },
+        onPlayback: () => this.syncZoneSound(),
         onAudible: (audible) => {
           this.videoAudible = audible;
           this.syncZoneSound();
@@ -245,7 +243,7 @@ export class App {
       this.stage.openTapWindow();
     });
     this.seatHints = new SeatHints(this.ui, (id) => this.sitAt(id));
-    this.stageHint = new StageHint(this.ui, () => this.stage.resume());
+    this.stageHint = new StageHint(this.ui, { play: () => this.stage.play(), stop: () => this.stage.stop() });
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
     new InstallBanner(this.ui, () => this.fitCameraToHud());
@@ -560,14 +558,14 @@ export class App {
     this.seatOwners = { gatbawi: new Map(), dharma: new Map() };
   }
 
-  // The concert video and the sutra both run for as long as the visitor is in the world; where they stand (see tickMix) only
-  // decides which of the two is heard. The wind belongs to the open air.
+  // The concert video waits (poster on the screen) in a live world until the visitor plays it, and the sutra runs for as long as
+  // they are in the world; where they stand (see tickMix) only decides which of the two is heard. The wind belongs to the open air.
   private syncZoneSound(): void {
     const outdoors = this.zone === "gatbawi";
     const live = this.session !== null && !this.inSolo;
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();
-    this.world.setScreenMode(this.stage.mounted && !this.settings.reduceMotion ? "video" : "poster");
+    this.world.setScreenMode(screenModeFor(this.stage.playback, this.settings.reduceMotion));
     this.sutra.setActive(this.session !== null);
     this.audio.setWindAllowed(outdoors && !this.videoAudible);
   }
@@ -777,8 +775,7 @@ export class App {
       sessionId: () => this.session?.sessionId ?? null,
       worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
-      stage: () => ({ status: this.stage.status, mounted: this.stage.mounted, audible: this.videoAudible }),
-      sutraPlaying: () => this.sutra.playing,
+      stage: () => ({ status: this.stage.status, playback: this.stage.playback, mounted: this.stage.mounted, audible: this.videoAudible }),      sutraPlaying: () => this.sutra.playing,
       sutraMix: () => this.sutra.mix,
       zone: () => this.zone,
       sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
@@ -921,14 +918,15 @@ export class App {
   }
 
   private updateStageHint(quad: Quad | null): void {
-    const at = this.session !== null && this.playNeeded && quad ? this.world.selfPosition : null;
-    if (!quad || !at || Math.hypot(at.x - STAGE.x, at.z - STAGE.z) > STAGE_HINT_REACH) {
+    const action = hintAction(this.stage.status, this.stage.playback);
+    const at = this.session !== null && action && quad ? this.world.selfPosition : null;
+    if (!quad || !action || !at || Math.hypot(at.x - STAGE.x, at.z - STAGE.z) > STAGE_HINT_REACH) {
       this.stageHint.hide();
       return;
     }
     const left = quad[3];
     const right = quad[2];
-    this.stageHint.place((left.x + right.x) / 2, (left.y + right.y) / 2);
+    this.stageHint.place(action, (left.x + right.x) / 2, (left.y + right.y) / 2);
   }
 
   private updateVisitorTitles(): void {
