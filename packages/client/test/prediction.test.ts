@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVE_DISTANCE, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, WALK_SPEED, WORLD_BOUNDS, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
+import { ARRIVE_DISTANCE, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, SHORE, WALK_SPEED, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
 import {
   KEY_MOVE_INTERVAL_MS,
   KEY_MOVE_REACH,
@@ -74,7 +74,7 @@ describe("SelfPrediction movement", () => {
 
   it("clamps to the walkable area exactly like resolveWalkable and stops reporting walking at the wall", () => {
     const prediction = new SelfPrediction();
-    const nearWall = WORLD_BOUNDS.maxX - 0.01;
+    const nearWall = SHORE.maxX - 0.01;
     const first = prediction.frame(FRAME, 0, { x: 1, z: 0 }, { x: nearWall, z: 0 });
     expect(must(first).x).toBe(resolveWalkable(nearWall + WALK_SPEED * FRAME + KEY_MOVE_REACH, 0).x);
     hold(prediction, 30, { x: 1, z: 0 }, { x: nearWall, z: 0 }, FRAME_MS);
@@ -99,9 +99,9 @@ describe("SelfPrediction movement", () => {
 
   it("slides along a wall while the other axis is free", () => {
     const prediction = new SelfPrediction();
-    hold(prediction, 30, { x: Math.SQRT1_2, z: Math.SQRT1_2 }, { x: WORLD_BOUNDS.maxX - 0.1, z: 2 });
+    hold(prediction, 30, { x: Math.SQRT1_2, z: Math.SQRT1_2 }, { x: SHORE.maxX - 0.1, z: 2 });
     const shown = must(prediction.display());
-    expect(shown.x).toBe(WORLD_BOUNDS.maxX);
+    expect(shown.x).toBe(SHORE.maxX);
     expect(shown.z).toBeGreaterThan(2.5);
     expect(shown.walking).toBe(true);
   });
@@ -597,11 +597,11 @@ describe("SelfPrediction taps", () => {
     const { frames, moves } = runLink(
       { oneWayMs: rtt / 2, jitterMs: 0, seed: 1 },
       1550 + rtt + 3000,
-      { x: WORLD_BOUNDS.maxX - 3, z: 3 },
+      { x: SHORE.maxX - 3, z: 3 },
       (t) => (t < 1500 ? { x: 1, z: 0 } : t < 1550 ? { x: 0, z: -1 } : null),
     );
     const release = moves[moves.length - 1] as MoveTarget;
-    expect(release.x).toBe(WORLD_BOUNDS.maxX);
+    expect(release.x).toBe(SHORE.maxX);
     expect(release.z).toBeLessThan(3);
     expect(release.z).toBeGreaterThan(3 - 0.15);
 

@@ -78,7 +78,7 @@ export const THEME = {
     bobberRed: "#d8382a",
     sand: "#ecdcae",
     sandWet: "#b8a074",
-    seaShallow: "#86d6cc",
+    seaShoal: "#86d6cc",
     seaDeep: "#2b7fa8",
   },
   material: {

@@ -24,7 +24,7 @@ const SAND_FADE = 1.5;
 const WET_REACH = 2.2;
 // Water this deep (metres) hides the floor under it.
 const OPAQUE_DEPTH = 0.9;
-const SHALLOW_ALPHA = 0.35;
+const SHOAL_ALPHA = 0.35;
 const DEEP_ALPHA = 0.96;
 const DEEP_COLOR_DEPTH = 1.8;
 export const SEA_TILE = 8;
@@ -168,8 +168,8 @@ export function buildSand(): BufferGeometry {
 // beyond. Seen from above, a weak device gets it opaque and with fewer lines.
 export function buildSea(weak: boolean): BufferGeometry {
   const { minX, maxX, minZ, maxZ } = SEA_AREA;
-  const { seaShallow, seaDeep } = THEME.scene;
-  const shallow = new Color(seaShallow);
+  const { seaShoal, seaDeep } = THEME.scene;
+  const shoal = new Color(seaShoal);
   const deep = new Color(seaDeep);
   const tone = new Color();
   const lines = weak ? 10 : 20;
@@ -180,8 +180,8 @@ export function buildSea(weak: boolean): BufferGeometry {
   for (let i = 0; i <= lines; i += 1) {
     const x = minX + (maxX - minX) * (i / lines) ** 2;
     const depth = seaDepth(x);
-    tone.copy(shallow).lerp(deep, smoothstep(0, DEEP_COLOR_DEPTH, depth));
-    const alpha = weak ? 1 : SHALLOW_ALPHA + (DEEP_ALPHA - SHALLOW_ALPHA) * smoothstep(0, OPAQUE_DEPTH, depth);
+    tone.copy(shoal).lerp(deep, smoothstep(0, DEEP_COLOR_DEPTH, depth));
+    const alpha = weak ? 1 : SHOAL_ALPHA + (DEEP_ALPHA - SHOAL_ALPHA) * smoothstep(0, OPAQUE_DEPTH, depth);
     for (const z of [minZ, maxZ]) {
       positions.push(x, WATER_Y, z);
       if (weak) colors.push(tone.r, tone.g, tone.b);
