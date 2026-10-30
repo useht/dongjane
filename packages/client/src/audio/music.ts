@@ -98,7 +98,7 @@ export class SyncedLoop {
     this.seconds = options.seconds ?? SUTRA_SECONDS;
     this.now = options.now ?? (() => performance.now());
     this.createAudio = options.createAudio ?? ((source) => new Audio(source));
-    engine.onUnlock(() => this.wake());
+    engine.onUnlock(() => this.prime());
   }
 
   get playing(): boolean {
@@ -109,21 +109,16 @@ export class SyncedLoop {
     return this.mixNow;
   }
 
-  // Called from inside a gesture: the element is created and started right there, because some browsers only let a
-  // page start an element it has started once from a tap. What it should be doing from then on is settled by `update`.
+  // Called from inside a gesture so the browser allows the first play; once primed, `update` settles what it should do.
   prime(): void {
-    if (this.primed) return;
+    if (this.primed) {
+      this.update();
+      return;
+    }
     const audio = this.ensure();
     if (!audio) return;
     this.primed = true;
     void this.start(audio);
-  }
-
-  // Each time the context runs again, a loop that should be playing is started: a play that came before the context was
-  // running, or one halted by an interruption, would otherwise stay silent until the visitor changed place.
-  private wake(): void {
-    this.prime();
-    this.update();
   }
 
   setActive(active: boolean): void {

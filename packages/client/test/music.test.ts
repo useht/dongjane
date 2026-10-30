@@ -407,6 +407,40 @@ describe("SyncedLoop", () => {
     expect(t.audio.play).toHaveBeenCalledTimes(2);
   });
 
+  it("starts again on a later gesture after the browser or a halt has paused it", async () => {
+    const t = start();
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    t.engine.unlocked = false;
+    t.loop.tick();
+    expect(t.audio.paused).toBe(true);
+    t.engine.unlocked = true;
+    t.loop.prime();
+    await flush();
+    expect(t.audio.paused).toBe(false);
+    expect(t.audio.play).toHaveBeenCalledTimes(2);
+    t.audio.paused = true;
+    t.loop.prime();
+    await flush();
+    expect(t.audio.paused).toBe(false);
+    expect(t.audio.play).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not start on a later gesture when the loop is not wanted", async () => {
+    const t = start();
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    t.loop.setActive(false);
+    t.loop.prime();
+    await flush();
+    expect(t.audio.paused).toBe(true);
+    expect(t.audio.play).toHaveBeenCalledTimes(1);
+  });
+
   it("does not keep knocking when the browser refuses to play", async () => {
     const t = start(true);
     t.loop.setActive(true);

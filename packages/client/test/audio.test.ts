@@ -241,6 +241,46 @@ describe("knock sound", () => {
   });
 });
 
+describe("audio context recovery", () => {
+  beforeEach(() => {
+    nodes = [];
+    decode = async () => decoded;
+    serve({ ok: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const contextIn = (initial: string) => {
+    const resume = vi.fn(() => Promise.resolve());
+    class Starting extends FakeAudioContext {
+      override state = initial;
+      override resume = resume;
+    }
+    vi.stubGlobal("AudioContext", Starting);
+    return resume;
+  };
+
+  it.each(["suspended", "interrupted"])("resumes a context that is %s on the next unlock", (state) => {
+    const resume = contextIn(state);
+    const engine = new AudioEngine();
+    engine.unlock();
+    expect(resume).toHaveBeenCalledTimes(1);
+    engine.unlock();
+    expect(resume).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a running context alone", () => {
+    const resume = contextIn("running");
+    const engine = new AudioEngine();
+    engine.unlock();
+    engine.unlock();
+    expect(engine.unlocked).toBe(true);
+    expect(resume).not.toHaveBeenCalled();
+  });
+});
+
 describe("temple bell", () => {
   beforeEach(() => {
     nodes = [];
