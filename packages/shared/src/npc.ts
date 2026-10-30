@@ -1,5 +1,5 @@
 import { BOW_COOLDOWN_MS, BOW_MAX_TIMES, BOW_MS, WALK_SPEED } from "./constants.ts";
-import { ZONE_SEATS, type SeatSpot, type Zone } from "./layout.ts";
+import { SEAT_DEPTH, ZONE_SEATS, type SeatSpot, type Zone } from "./layout.ts";
 import type { Persona } from "./persona.ts";
 import { randomWalkable, resolveNearby, resolveWalkable } from "./walk.ts";
 
@@ -295,9 +295,10 @@ function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Poi
 function pickSeat(persona: Persona, world: NpcWorld): SeatSpot | undefined {
   const spots = ZONE_SEATS[world.zone];
   const free = spots.filter((spot) => world.isFree(spot.id));
-  const rows = spots.map((spot) => spot.z);
-  const middle = (Math.min(...rows) + Math.max(...rows)) / 2;
-  const front = world.random() < persona.frontRow ? free.filter((spot) => spot.z <= middle) : free;
+  const depth = SEAT_DEPTH[world.zone];
+  const depths = spots.map(depth);
+  const middle = (Math.min(...depths) + Math.max(...depths)) / 2;
+  const front = world.random() < persona.frontRow ? free.filter((spot) => depth(spot) <= middle) : free;
   const pool = front.length > 0 ? front : free;
   return pool[Math.floor(world.random() * pool.length)];
 }

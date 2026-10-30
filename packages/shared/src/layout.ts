@@ -130,7 +130,7 @@ export function pickSeat(zone: Zone, taken: (id: number) => boolean): SeatSpot |
 
 // How far back a seat is from what the zone faces, and how far it is to the side of the middle line: Gatbawi's rows run
 // along z and its middle is x = 0; the room's rows run along x (the altar is on its -x side) and its aisle is z = DHARMA_ORIGIN.z.
-const SEAT_DEPTH: Readonly<Record<Zone, (spot: SeatSpot) => number>> = { gatbawi: (spot) => spot.z, dharma: (spot) => spot.x };
+export const SEAT_DEPTH: Readonly<Record<Zone, (spot: SeatSpot) => number>> = { gatbawi: (spot) => spot.z, dharma: (spot) => spot.x };
 const SEAT_OFFSET: Readonly<Record<Zone, (spot: SeatSpot) => number>> = {
   gatbawi: (spot) => Math.abs(spot.x),
   dharma: (spot) => Math.abs(spot.z - DHARMA_ORIGIN.z),

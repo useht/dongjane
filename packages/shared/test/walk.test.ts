@@ -142,20 +142,21 @@ describe("resolveWalkable", () => {
 
 describe("resolveNearby", () => {
   it("clamps to the ground the walker stands on, even when another area is nearer behind a wall", () => {
+    const wallZ = DHARMA_ORIGIN.z + 5;
     const onPlaza = { x: WORLD_BOUNDS.minX + 1, z: 0 };
-    const target = { x: (WORLD_BOUNDS.minX + DHARMA_BOUNDS.maxX) / 2 - 1, z: 0 };
+    const target = { x: DHARMA_BOUNDS.maxX + 0.1, z: wallZ };
     expect(resolveWalkable(target.x, target.z).x).toBe(DHARMA_BOUNDS.maxX);
-    expect(resolveNearby(target.x, target.z, onPlaza)).toEqual({ x: WORLD_BOUNDS.minX, z: 0 });
+    expect(resolveNearby(target.x, target.z, onPlaza)).toEqual({ x: WORLD_BOUNDS.minX, z: wallZ });
 
     const inRoom = { x: DHARMA_BOUNDS.maxX - 1, z: 0 };
-    const beyond = { x: (WORLD_BOUNDS.minX + DHARMA_BOUNDS.maxX) / 2 + 1, z: 0 };
-    expect(resolveWalkable(beyond.x, beyond.z).x).toBe(WORLD_BOUNDS.minX);
-    expect(resolveNearby(beyond.x, beyond.z, inRoom)).toEqual({ x: DHARMA_BOUNDS.maxX, z: 0 });
+    const beyond = { x: COURT_AREA.minX - 0.1, z: wallZ };
+    expect(resolveWalkable(beyond.x, beyond.z).x).toBe(COURT_AREA.minX);
+    expect(resolveNearby(beyond.x, beyond.z, inRoom)).toEqual({ x: DHARMA_BOUNDS.maxX, z: wallZ });
   });
 
   it("leaves a walkable point alone and keeps a walker in a corner where they are", () => {
     expect(resolveNearby(1, 2, { x: 0, z: 0 })).toEqual({ x: 1, z: 2 });
-    const corner = { x: WORLD_BOUNDS.minX, z: WORLD_BOUNDS.minZ };
+    const corner = { x: COURT_AREA.minX, z: WORLD_BOUNDS.minZ };
     expect(resolveNearby(corner.x - 3, corner.z, corner)).toEqual(corner);
   });
 
