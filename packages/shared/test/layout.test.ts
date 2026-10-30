@@ -21,6 +21,7 @@ import {
   ZONES,
   ZONE_CAPACITY,
   ZONE_SEATS,
+  canCastAt,
   dharmaToWorld,
   isZone,
   lerpAngle,
@@ -242,6 +243,15 @@ describe("shore", () => {
   it("lets a fisher reach the water from a short way up the sand", () => {
     expect(FISHING_REACH).toBeGreaterThan(0);
     expect(SEA_LINE_X - FISHING_REACH).toBeGreaterThan(SHORE.minX);
+  });
+
+  it("lets a line be cast only from the last stretch of sand, inside the shore's depth", () => {
+    expect(canCastAt(SEA_LINE_X, 6)).toBe(true);
+    expect(canCastAt(SEA_LINE_X - FISHING_REACH, 6)).toBe(true);
+    expect(canCastAt(SEA_LINE_X - FISHING_REACH - 0.01, 6)).toBe(false);
+    expect(canCastAt(0, 6)).toBe(false);
+    expect(canCastAt(SEA_LINE_X, SHORE.minZ - 0.1)).toBe(false);
+    expect(canCastAt(SEA_LINE_X, SHORE.maxZ + 0.1)).toBe(false);
   });
 
   it("leaves the plaza where it was", () => {

@@ -34,6 +34,10 @@ export const SEA_LINE_X = 18.5;
 export const FISHING_REACH = 1.6;
 export const SHORE: Bounds = { minX: WORLD_BOUNDS.maxX, maxX: SEA_LINE_X, minZ: WORLD_BOUNDS.minZ, maxZ: WORLD_BOUNDS.maxZ };
 
+export function canCastAt(x: number, z: number): boolean {
+  return x >= SEA_LINE_X - FISHING_REACH && z >= SHORE.minZ && z <= SHORE.maxZ;
+}
+
 // The 법당 stands west of the plaza, its door facing the plaza and Gatbawi (+x). Its room is modelled around its own
 // origin, the middle of its floor, with the door in the +z wall and the altar against the -z wall (the "room frame": the
 // models, dharma-layout.ts and the Blender scripts all speak it). The world turns that frame a quarter turn

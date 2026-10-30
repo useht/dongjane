@@ -21,12 +21,11 @@ import { NO_FISH, pickFish } from "./fish.ts";
 import { ITEM_CHANT, ITEM_MOKT, ITEM_ROD, isValidItem } from "./item.ts";
 import {
   ARRIVAL,
-  FISHING_REACH,
   SEAT_YAWS,
-  SEA_LINE_X,
   ZONES,
   ZONE_SEATS,
   type Zone,
+  canCastAt,
   seatKey,
   seatSpot,
   yawFromDirection,
@@ -279,7 +278,7 @@ export class TempleSim {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
     if (!monk || !runtime || monk.item !== ITEM_ROD || monk.seatId >= 0 || monk.mode === "fish") return false;
-    if (monk.x < SEA_LINE_X - FISHING_REACH) return false;
+    if (!canCastAt(monk.x, monk.z)) return false;
 
     this.releaseSeat(monk);
     monk.mode = "fish";
