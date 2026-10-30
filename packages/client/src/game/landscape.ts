@@ -20,6 +20,7 @@ import {
   NoBlending,
   PMREMGenerator,
   PlaneGeometry,
+  PointLight,
   Points,
   PointsMaterial,
   Scene,
@@ -38,7 +39,7 @@ import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POS
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import { cloudTexture, discGlowTexture, flakeTexture, foamTexture, leafTexture, mulberry32, seaTexture, stagePosterTexture } from "./textures.ts";
-import { lanternSpots, screenUv } from "./venue-layout.ts";
+import { CANOPY, lanternSpots, screenUv } from "./venue-layout.ts";
 import type { FloorSurfaces } from "./floor-pick.ts";
 import { WATER_Y, buildSand, buildSea, carveGround, withoutEastHillside } from "./shore.ts";
 import { vertexGlowMaterial } from "./vertex-glow.ts";
@@ -72,6 +73,16 @@ const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
 
 // The paper lanterns glow a little by day and fully at night.
 const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;
+
+// At night a warm light hangs `drop` metres under the canopy in each of these bays (corner poles, by index), so the plaza, the stage
+// and the statue take the lanterns' light. The count is fixed: a light that comes or goes recompiles every material.
+const LANTERN_LIGHT = { intensity: 24, distance: 17, decay: 2, drop: 1 } as const;
+const LANTERN_BAYS = [
+  [0, 1, 5, 4],
+  [1, 2, 6, 5],
+  [2, 3, 7, 6],
+  [4, 5, 9, 8],
+] as const;
 
 const LEAF_AREA = { minX: -10, spanX: 22, minZ: -2, spanZ: 17, top: 8, floor: 0.05 } as const;
 const LEAF_FALL_PER_SECOND = 0.05;
@@ -170,6 +181,7 @@ export class Landscape {
   private readonly leafSeeds: Float32Array;
   private readonly mats: InstancedMesh;
   private readonly lanternMaterial: MeshLambertMaterial;
+  private readonly lanternLights: readonly PointLight[];
   private readonly screen: Mesh;
   private readonly screenPoster: MeshBasicMaterial;
   private readonly screenHole: MeshBasicMaterial;
@@ -297,6 +309,14 @@ export class Landscape {
     this.lanternMaterial = this.lanternSurface();
     stage.add(this.buildLanterns(venue.lantern, quality.lanterns, [palette.lanternPink, palette.lanternWhite, palette.lanternYellow, palette.lanternOrange, palette.lanternGreen, palette.lanternViolet]));
     this.group.add(stage);
+
+    this.lanternLights = LANTERN_BAYS.map((bay) => {
+      const middle = (axis: 0 | 1): number => bay.reduce<number>((sum, pole) => sum + CANOPY.poles[pole][axis], 0) / bay.length;
+      const light = new PointLight(palette.envLamp, 0, LANTERN_LIGHT.distance, LANTERN_LIGHT.decay);
+      light.position.set(middle(0), CANOPY.height - LANTERN_LIGHT.drop, middle(1));
+      this.group.add(light);
+      return light;
+    });
 
     // The ground, the steps, the 법당's plinth and the sand are floor; the sea is not, and the front wall and the roof only count
     // while they are drawn.
@@ -643,6 +663,7 @@ export class Landscape {
     this.stars.visible = look.nightSky > SKY_VISIBLE;
 
     this.lanternMaterial.emissiveIntensity = LANTERN_GLOW.day + (LANTERN_GLOW.night - LANTERN_GLOW.day) * look.nightSky;
+    for (const light of this.lanternLights) light.intensity = LANTERN_LIGHT.intensity * look.nightSky * open;
 
     this.sunSprite.material.opacity = look.sunGlow;
     this.sunSprite.material.color.setHex(packRgb(look.sunColor));
