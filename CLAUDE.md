@@ -38,7 +38,7 @@ Only the server creates rooms, through `matchMaker`. `WorldRoom.onCreate` reject
 
 - Editing a Blender script, a layout constant that `asset-inputs.ts` reads, or the theme makes `pnpm test` fail until `pnpm assets` is run. That needs Blender 5.2, found via `BLENDER_BIN` or the Windows default path. The regenerated `.glb` files and `stamp.json` are committed, so commit them together.
 - Client tests run in the `node` environment, with no DOM. UI and rendering changes are not covered by tests. Check them in a browser with `pnpm dev`.
-- Capacities are constants in `shared/src/constants.ts`: 100 visitors per world (`WORLD_CAPACITY`), 50 seats per zone (`ZONE_CAPACITY`), and 3 computer-driven monks per zone that do not count toward capacity.
+- Capacities are constants in `shared/src/constants.ts`: 100 visitors per world (`WORLD_CAPACITY`), 50 seats per zone (`ZONE_CAPACITY`), and 50 computer-driven monks per world (`NPC_COUNT`) that do not count toward capacity. They start in the 법당 and wander the whole world.
 - The chant schedule (every 30 minutes for 3 minutes, KST) is computed in `shared/src/chant.ts`, from the server's clock. Change it there.
 - `.gitattributes` keeps `*.py` as LF. The stamp normalises CRLF before hashing, so Windows checkouts hash the same.
 - `nixpacks.toml` upgrades corepack before `pnpm i --frozen-lockfile`, because the default corepack cannot launch pnpm 11+.
