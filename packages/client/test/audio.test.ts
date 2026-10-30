@@ -62,10 +62,12 @@ describe("bell recipe", () => {
 
 class FakeParam {
   value = 0;
+  readonly ramps: number[] = [];
   setValueAtTime(): this {
     return this;
   }
-  linearRampToValueAtTime(): this {
+  linearRampToValueAtTime(value: number): this {
+    this.ramps.push(value);
     return this;
   }
   exponentialRampToValueAtTime(): this {
@@ -236,5 +238,55 @@ describe("knock sound", () => {
     }).not.toThrow();
     await settle();
     expect(fetched).not.toHaveBeenCalled();
+  });
+});
+
+describe("temple bell", () => {
+  beforeEach(() => {
+    nodes = [];
+    decode = async () => decoded;
+    vi.stubGlobal("AudioContext", FakeAudioContext);
+    serve({ ok: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const unlocked = async () => {
+    const engine = new AudioEngine();
+    engine.unlock();
+    await settle();
+    return engine;
+  };
+
+  // The first bell partial that was started after `from` is the fundamental of the first strike.
+  const firstPeak = (from: number) => {
+    const partial = nodes.slice(from).find((node) => node.kind === "oscillator" && node.target?.kind === "gain");
+    return partial?.target?.gain.ramps[0];
+  };
+
+  it("strikes at full strength by default", async () => {
+    const engine = await unlocked();
+    const before = nodes.length;
+    engine.bell();
+    expect(nodes.length).toBeGreaterThan(before);
+    expect(engine.bellCount).toBe(1);
+    expect(firstPeak(before)).toBeCloseTo(0.22);
+  });
+
+  it("is scaled by the volume", async () => {
+    const engine = await unlocked();
+    const before = nodes.length;
+    engine.bell(0.5);
+    expect(firstPeak(before)).toBeCloseTo(0.11);
+  });
+
+  it("schedules no strike at volume 0, but still counts the ring", async () => {
+    const engine = await unlocked();
+    const before = nodes.length;
+    engine.bell(0);
+    expect(nodes.length).toBe(before);
+    expect(engine.bellCount).toBe(1);
   });
 });

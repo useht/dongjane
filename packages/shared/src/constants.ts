@@ -21,7 +21,7 @@ export const CHANT_MS = 3 * 60 * 1000;
 
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
-export const RECONNECT_SECONDS = 20;
+export const RECONNECT_SECONDS = 180;
 export const MESSAGE_RATE_PER_SECOND = 20;
 export const ARRIVE_DISTANCE = 0.04;
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../src/audio/music.ts";
 import {
   PLAYER_ORIGIN,
+  PLAY_NEEDED_MS,
   READY_TIMEOUT_MS,
   STAGE_VIDEO_ID,
   StageVideoController,
@@ -24,12 +25,14 @@ function rig(serverMs = 1_000_000) {
   const sent: Sent[] = [];
   const statuses: Array<{ status: StageStatus; code?: number }> = [];
   const taps: boolean[] = [];
+  const plays: boolean[] = [];
   const audible: boolean[] = [];
   const controller = new StageVideoController(
     {
       send: (func, args = []) => sent.push({ func, args }),
       status: (status, reason) => statuses.push({ status, code: reason?.code }),
       tapNeeded: (needed) => taps.push(needed),
+      playNeeded: (needed) => plays.push(needed),
       audible: (value) => audible.push(value),
     },
     () => clock,
@@ -40,6 +43,7 @@ function rig(serverMs = 1_000_000) {
     sent,
     statuses,
     taps,
+    plays,
     audible,
     advance(ms: number) {
       clock += ms;
@@ -297,30 +301,28 @@ describe("StageVideoController playback", () => {
     expect(t.funcs()).toEqual(["playVideo"]);
   });
 
-  it("pauses while the tab is hidden and resumes when it is back", () => {
+  it("keeps playing with nothing sent for as long as someone is in earshot", () => {
     const t = rig();
     t.controller.open();
     t.controller.receive({ kind: "ready" });
     t.controller.receive(info({ state: 1, duration: 100, time: 0 }));
     t.clear();
-    t.controller.setHidden(true);
-    expect(t.funcs()).toEqual(["pauseVideo"]);
-    t.controller.receive(info({ state: 2 }));
-    expect(t.funcs()).toEqual(["pauseVideo"]);
     t.advance(60_000);
     t.controller.tick();
-    expect(t.funcs()).toEqual(["pauseVideo"]);
-    t.clear();
-    t.controller.setHidden(false);
-    expect(t.funcs()).toContain("playVideo");
+    expect(t.funcs()).toEqual([]);
   });
 
-  it("sends nothing about the tab before the player is ready", () => {
+  it("starts a player the browser paused in a background tab again, and never pauses it itself", () => {
     const t = rig();
     t.controller.open();
-    t.controller.setHidden(true);
-    t.controller.setHidden(false);
-    expect(t.sent).toEqual([]);
+    t.controller.receive({ kind: "ready" });
+    t.controller.receive(info({ state: 1, duration: 100, time: 0 }));
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    t.advance(60_000);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["playVideo", "playVideo"]);
+    expect(t.funcs()).not.toContain("pauseVideo");
   });
 });
 
@@ -490,5 +492,168 @@ describe("StageVideoController level", () => {
     t.advance(QUIET_PAUSE_MS);
     t.controller.tick();
     expect(t.funcs()).toEqual(["pauseVideo"]);
+  });
+});
+
+describe("StageVideoController play prompt", () => {
+  const playing = (t: ReturnType<typeof rig>) => {
+    t.controller.open();
+    t.controller.receive({ kind: "ready" });
+    t.controller.receive(info({ state: 1, duration: 100, time: loopPosition(1_000_000, 100), muted: true }));
+  };
+
+  const stall = (t: ReturnType<typeof rig>) => {
+    playing(t);
+    t.controller.receive(info({ state: 2 }));
+  };
+
+  it("asks for a play button only after the video has sat unplayed for a few seconds", () => {
+    const t = rig();
+    stall(t);
+    t.advance(PLAY_NEEDED_MS - 1);
+    t.controller.tick();
+    expect(t.plays).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true]);
+    t.advance(10_000);
+    t.controller.tick();
+    expect(t.plays).toEqual([true]);
+  });
+
+  it("counts from the moment the player was ready when it never starts", () => {
+    const t = rig();
+    t.controller.open();
+    t.controller.receive({ kind: "ready" });
+    t.advance(PLAY_NEEDED_MS - 1);
+    t.controller.tick();
+    expect(t.plays).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true]);
+  });
+
+  it("does not flash for a player that is not ready yet", () => {
+    const t = rig();
+    t.controller.open();
+    t.advance(READY_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.plays).toEqual([]);
+  });
+
+  it("does not flash for a short pause that the retry cures", () => {
+    const t = rig();
+    stall(t);
+    t.advance(PLAY_NEEDED_MS - 1);
+    t.controller.tick();
+    t.controller.receive(info({ state: 1 }));
+    t.advance(PLAY_NEEDED_MS);
+    t.controller.tick();
+    expect(t.plays).toEqual([]);
+  });
+
+  it("takes the button back as soon as the player reports playing", () => {
+    const t = rig();
+    stall(t);
+    t.advance(PLAY_NEEDED_MS);
+    t.controller.tick();
+    t.controller.receive(info({ state: 1 }));
+    expect(t.plays).toEqual([true, false]);
+  });
+
+  it("starts a new wait when it stalls again", () => {
+    const t = rig();
+    stall(t);
+    t.advance(PLAY_NEEDED_MS);
+    t.controller.tick();
+    t.controller.receive(info({ state: 1 }));
+    t.controller.receive(info({ state: 2 }));
+    t.advance(PLAY_NEEDED_MS - 1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true, false]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true, false, true]);
+  });
+
+  it("never asks while the video is paused for nobody being in earshot", () => {
+    const t = rig();
+    playing(t);
+    t.controller.setLevel(0);
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    t.controller.receive(info({ state: 2 }));
+    t.advance(PLAY_NEEDED_MS * 10);
+    t.controller.tick();
+    expect(t.plays).toEqual([]);
+  });
+
+  it("takes the button back when the quiet pause begins", () => {
+    const t = rig();
+    stall(t);
+    t.controller.setLevel(0);
+    t.advance(PLAY_NEEDED_MS);
+    t.controller.tick();
+    expect(t.plays).toEqual([true]);
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    expect(t.plays).toEqual([true, false]);
+  });
+
+  it("resume plays at once, with the sound a tap allows, and hides the button until another wait passes", () => {
+    const t = rig();
+    playing(t);
+    t.controller.setSound(true, 0.5);
+    t.controller.receive(info({ state: 2 }));
+    t.advance(PLAY_NEEDED_MS);
+    t.controller.tick();
+    t.clear();
+    t.controller.resume();
+    expect(t.sent).toEqual([
+      { func: "setVolume", args: [50] },
+      { func: "unMute", args: [] },
+      { func: "playVideo", args: [] },
+    ]);
+    expect(t.plays).toEqual([true, false]);
+    t.advance(PLAY_NEEDED_MS - 1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true, false]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.plays).toEqual([true, false, true]);
+  });
+
+  it("resume wakes a video paused for want of listeners", () => {
+    const t = rig();
+    playing(t);
+    t.controller.setLevel(0);
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    t.controller.receive(info({ state: 2 }));
+    t.clear();
+    t.controller.resume();
+    expect(t.funcs()).toContain("playVideo");
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    expect(t.funcs()).toContain("playVideo");
+  });
+
+  it("takes the button back when the stage is closed or blocked", () => {
+    const closed = rig();
+    stall(closed);
+    closed.advance(PLAY_NEEDED_MS);
+    closed.controller.tick();
+    closed.controller.close();
+    expect(closed.plays).toEqual([true, false]);
+
+    const blocked = rig();
+    stall(blocked);
+    blocked.advance(PLAY_NEEDED_MS);
+    blocked.controller.tick();
+    blocked.controller.receive({ kind: "error", code: 150 });
+    expect(blocked.plays).toEqual([true, false]);
+    blocked.advance(PLAY_NEEDED_MS * 2);
+    blocked.controller.tick();
+    expect(blocked.plays).toEqual([true, false]);
   });
 });

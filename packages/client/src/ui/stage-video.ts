@@ -7,6 +7,8 @@ export const PLAYER_CHANNEL = "dongjane-stage";
 export const READY_TIMEOUT_MS = 8000;
 export const UNMUTE_CHECK_MS = 1000;
 export const TAP_WINDOW_MS = 6000;
+// How long the video may sit unplayed, when it should be playing, before the visitor is offered a play button.
+export const PLAY_NEEDED_MS = 3000;
 // The player only plays at whole speeds, so drift is cured by jumping, and not more often than this.
 const DRIFT_SECONDS = 1;
 const RESYNC_MIN_MS = 10_000;
@@ -102,6 +104,7 @@ export interface StageVideoOutput {
   send(func: string, args?: readonly unknown[]): void;
   status(status: StageStatus, reason?: BlockReason): void;
   tapNeeded(needed: boolean): void;
+  playNeeded(needed: boolean): void;
   audible(audible: boolean): void;
 }
 
@@ -123,7 +126,6 @@ export class StageVideoController {
   private lastVolumeAt = Number.NEGATIVE_INFINITY;
   private volumeDue = false;
   private gestured = false;
-  private hidden = false;
   private playerMuted: boolean | null = null;
   private duration = 0;
   private time = 0;
@@ -131,6 +133,8 @@ export class StageVideoController {
   private appliedKey = "";
   private unmuteAt: number | null = null;
   private tapShown = false;
+  private stalledSince: number | null = null;
+  private playNeededShown = false;
   private audibleNow = false;
   private needSeek = true;
   private lastSeekAt = Number.NEGATIVE_INFINITY;
@@ -164,13 +168,17 @@ export class StageVideoController {
       return;
     }
     this.markReady();
-    if (event.kind === "ready") return;
+    if (event.kind === "ready") {
+      this.updateStall();
+      return;
+    }
     if (event.duration !== undefined) this.duration = Math.round(event.duration * 10) / 10;
     if (event.time !== undefined) this.time = event.time;
     if (event.muted !== undefined) this.playerMuted = event.muted;
     if (event.state !== undefined) this.onState(event.state);
     this.maybeSeek();
     this.reportAudio();
+    this.updateStall();
   }
 
   tick(): void {
@@ -189,6 +197,7 @@ export class StageVideoController {
       this.out.send("playVideo");
       this.lastPlayAt = now;
     }
+    this.updateStall();
     // Still muted a second after asking: the browser wants a tap on the player itself. Asking again is harmless
     // and is what lets the sound out once that tap has happened.
     if (this.wantsAudible() && this.playerMuted === true && this.unmuteAt !== null && now - this.unmuteAt >= UNMUTE_CHECK_MS) {
@@ -225,18 +234,12 @@ export class StageVideoController {
     this.applyAudio(true);
   }
 
-  setHidden(hidden: boolean): void {
-    if (hidden === this.hidden) return;
-    this.hidden = hidden;
-    if (!this.ready) return;
-    if (hidden) {
-      this.out.send("pauseVideo");
-    } else if (!this.quiet) {
-      this.needSeek = true;
-      this.out.send("playVideo");
-      this.lastPlayAt = this.now();
-      this.maybeSeek();
-    }
+  // The visitor asked for the video to play: a real click, so the browser lets the sound and the playing through.
+  resume(): void {
+    this.userGesture();
+    this.wake();
+    this.stalledSince = null;
+    this.updateStall();
   }
 
   private reset(): void {
@@ -254,19 +257,21 @@ export class StageVideoController {
     this.volumeDue = false;
     this.quiet = false;
     this.quietSince = this.level === 0 ? this.now() : null;
+    this.stalledSince = null;
     this.setTap(false);
+    this.setPlayNeeded(false);
     this.setAudible(false);
   }
 
-  // Paused on purpose, by the tab being hidden or by nobody being in earshot.
+  // Paused on purpose, because nobody is in earshot.
   private holding(): boolean {
-    return this.hidden || this.quiet;
+    return this.quiet;
   }
 
   private wake(): void {
     this.quiet = false;
     this.needSeek = true;
-    if (!this.ready || this.hidden) return;
+    if (!this.ready) return;
     this.out.send("playVideo");
     this.lastPlayAt = this.now();
     this.maybeSeek();
@@ -359,6 +364,24 @@ export class StageVideoController {
     if (needed === this.tapShown) return;
     this.tapShown = needed;
     this.out.tapNeeded(needed);
+  }
+
+  // Not playing though it should be: the auto-retries are no gesture, so the browser may be refusing them.
+  private updateStall(): void {
+    if (!this.ready || this.holding() || this.state === PLAYING) {
+      this.stalledSince = null;
+      this.setPlayNeeded(false);
+      return;
+    }
+    const now = this.now();
+    this.stalledSince ??= now;
+    this.setPlayNeeded(now - this.stalledSince >= PLAY_NEEDED_MS);
+  }
+
+  private setPlayNeeded(needed: boolean): void {
+    if (needed === this.playNeededShown) return;
+    this.playNeededShown = needed;
+    this.out.playNeeded(needed);
   }
 
   private setAudible(audible: boolean): void {
