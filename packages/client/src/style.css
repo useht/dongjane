@@ -1465,6 +1465,24 @@ button:disabled {
   margin-top: 8px;
 }
 
+.touch-intro {
+  touch-action: none;
+}
+
+.touch-intro-steps {
+  margin: 4px 0 0;
+  padding-left: 1.4em;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  word-break: keep-all;
+}
+
+.touch-intro-steps li + li {
+  margin-top: 6px;
+}
+
 .overlay-lamp {
   width: 44px;
   height: 44px;
