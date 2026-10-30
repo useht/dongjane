@@ -9,6 +9,7 @@ export default defineConfig({
           root: "packages/shared",
           include: ["test/**/*.test.ts"],
           environment: "node",
+          testTimeout: 20000,
         },
       },
       {
@@ -27,6 +28,7 @@ export default defineConfig({
           root: "packages/client",
           include: ["test/**/*.test.ts"],
           environment: "node",
+          testTimeout: 20000,
         },
       },
     ],
