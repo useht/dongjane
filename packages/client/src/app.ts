@@ -69,6 +69,7 @@ import { StageHint } from "./ui/stage-hint.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
 import type { Quad } from "./ui/stage-quad.ts";
 import { hintAction, screenModeFor } from "./ui/stage-video.ts";
+import { TouchIntro } from "./ui/touch-intro.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
@@ -107,6 +108,7 @@ export class App {
   private readonly hud: Hud;
   private readonly hudFrame: HudFrame;
   private readonly overlay: Overlay;
+  private readonly touchIntro: TouchIntro;
   private readonly settingsPanel: SettingsPanel;
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
@@ -246,6 +248,7 @@ export class App {
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
     new InstallBanner(this.ui, () => this.fitCameraToHud());
+    this.touchIntro = new TouchIntro(this.ui);
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
@@ -407,6 +410,7 @@ export class App {
     this.world.seedServerTime(Date.now(), performance.now());
     this.hud.setSolo({ kind: "idle" });
     this.overlay.hide();
+    this.touchIntro.show();
     this.handleState(session.state);
   }
 
@@ -424,6 +428,7 @@ export class App {
     window.history.replaceState(null, "", url);
 
     this.overlay.hide();
+    this.touchIntro.show();
     if (fellBackFrom !== null) {
       this.hud.toast(`${worldName(fellBackFrom)}는 없거나 비어 있거나 가득 차서 ${worldName(world)}로 모셨어요`);
     }
