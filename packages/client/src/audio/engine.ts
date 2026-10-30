@@ -92,7 +92,7 @@ export class AudioEngine {
       this.ctx.addEventListener("statechange", () => this.announce());
     }
     this.loadMoktSample();
-    if (this.ctx.state === "suspended") void this.ctx.resume().catch(() => undefined);
+    if (this.ctx.state !== "running") void this.ctx.resume().catch(() => undefined);
     this.announce();
   }
 
