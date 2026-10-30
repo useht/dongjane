@@ -278,6 +278,7 @@ describe("seats", () => {
     expect(h.sim.sit("a", "dharma", 3)).toBe(true);
     expect(h.mat(3).occupantId).toBe("");
     expect(h.mat(3, "dharma").occupantId).toBe("a");
+    expect(h.monk("a").seatId).toBe(3);
     expect(h.monk("a").mode).toBe("walk");
     h.advance(40_000);
     expect(h.monk("a").mode).toBe("kneel");

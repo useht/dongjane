@@ -162,6 +162,7 @@ export class World {
 
     const region = regionFor(this.area);
     this.rig = new CameraRig(this.camera, region.bounds, region.limits, DHARMA_KEEP_OUTS);
+    this.resetCamera();
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
     this.input = new PointerInput(canvas, {
@@ -447,7 +448,7 @@ export class World {
     this.fog.near = look.fogNear + (DHARMA_FOG.near - look.fogNear) * share;
     this.fog.far = look.fogFar + (DHARMA_FOG.far - look.fogFar) * share;
     this.landscape.setIndoor(share);
-    this.dharma?.setPresence(share);
+    this.dharma.setPresence(share);
   }
 
   private resize(): void {

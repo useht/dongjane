@@ -738,14 +738,14 @@ describe("dharma.glb", () => {
 });
 
 describe("the model set", () => {
-  // Every glb is loaded before the first frame; dharma.glb, the 법당's inside, has a byte budget of its own beside the total.
+  // Every glb is loaded before the first frame, dharma.glb (the 법당's inside) too; it also has a byte budget of its own.
   const OUTDOOR = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
   const INDOOR = ["dharma.glb"];
   // main.ts loads the Korean monk beside the models above, before the first frame: it counts too, though main's own script builds it.
   const MONK = new URL("../assets/monk/monk.glb", import.meta.url);
 
   it("fits the total byte budget, counted in the files' actual sizes and with the monk", () => {
-    const total = OUTDOOR.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
+    const total = [...OUTDOOR, ...INDOOR].reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
   });
 

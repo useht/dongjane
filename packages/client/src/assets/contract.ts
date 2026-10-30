@@ -29,7 +29,7 @@ export const VENUE_MESHES = ["stage", "screen", "truss", "poles", "lantern"] as 
 // Authored at the origin, hook at the top; the runtime hangs them from the strings.
 export const VENUE_PROTOTYPES = ["lantern"] as const;
 
-// The 법당's inside, loaded after the first frame: the room, the lotus, halo and glow behind the Buddha (who is buddha.glb) and one seat to instance.
+// The 법당's inside, loaded with the others before the first frame: the room, the lotus, halo and glow behind the Buddha (who is buddha.glb) and one seat to instance.
 export const DHARMA_MESHES = ["floor", "structure", "ceiling", "mural", "lotus", "halo", "glow", "seat"] as const;
 
 // Authored at the origin; the runtime instances them at the seat spots.
@@ -50,7 +50,6 @@ export const BUDGET = {
   dharma: { bytes: 1_000_000, tris: 45_000 },
   // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
   monk: { bytes: 95_000 },
-  // The sum of the actual file sizes of the outdoor glbs (gatbawi, buddha, world, venue) and the monk;
-  // the 법당's inside (dharma) is held to its own budget instead.
-  totalBytes: 3_000_000,
+  // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame.
+  totalBytes: 4_000_000,
 } as const;

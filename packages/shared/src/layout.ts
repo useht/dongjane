@@ -12,8 +12,8 @@ export function isZone(value: unknown): value is Zone {
   return value === "gatbawi" || value === "dharma";
 }
 
-// Gatbawi sits on a granite platform at the far end (-z); the plaza where the visitors kneel runs
-// toward +z. Visitors stay on the plaza, so the stone steps and the platform are never walked on.
+// Gatbawi sits on a granite platform at the far end (-z); the plaza where the visitors kneel runs toward +z. Visitors start in
+// the 법당 and walk out to the plaza, never up the stone steps or onto the platform.
 export const GATBAWI_Z = -6;
 export const PLATFORM = { minZ: -6.5, maxZ: -4.4, topY: 1.2 } as const;
 export const STEPS = { minZ: -4.4, maxZ: -2.2 } as const;
