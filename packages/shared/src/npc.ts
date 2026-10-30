@@ -27,13 +27,13 @@ export interface NpcVisitor {
 }
 
 export interface NpcWorld {
-  // the zone the monk stands in right now; it sees visitors and takes seats there only
+  // the zone the monk stands in right now; it sees visitors there and mostly sits there
   zone: Zone;
   now: number;
   random: () => number;
   chantEndsAt: number | null;
   visitors: readonly NpcVisitor[];
-  isFree(seatId: number): boolean;
+  isFree(zone: Zone, seatId: number): boolean;
 }
 
 interface Point {
@@ -71,7 +71,7 @@ const EVICTED_MS: Range = [1000, 2500];
 const PAUSE_MS: Range = [1500, 5000];
 const STROLL_REACH_M: Range = [1.5, 3.5];
 const SETTLE_MS: Range = [1000, 3000];
-const SIT_MS: Range = [12_000, 40_000];
+const SIT_MS: Range = [5 * 60_000, 15 * 60_000];
 const LINGER_MS: Range = [0, 6000];
 const AFTER_STAND_MS: Range = [1000, 3000];
 const GREET_DELAY_MS: Range = [500, 1500];
@@ -83,7 +83,11 @@ const NEAR_M = 3;
 const MIN_RETREAT_M = 0.5;
 const APPROACH_FACTOR = 0.5;
 const FAR_STROLL_CHANCE = 0.15;
-const CHANT_SIT_BOOST = 0.5;
+// A standing monk sits almost every time it thinks; a stroll is the rare exception.
+const SIT_CHANCE = 0.9;
+const CHANT_SIT_BOOST = 0.1;
+// Roaming happens between seats: now and then a monk walks to a seat in the other zone to pray there.
+const OTHER_ZONE_SEAT_CHANCE = 0.5;
 const WALK_RECHECK_MS = 300;
 const BOW_RECHECK_MS = 400;
 const SOCIAL_RECHECK_MS = 1000;
@@ -243,11 +247,11 @@ function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions:
   }
 
   const chanting = world.chantEndsAt !== null;
-  const sitChance = 0.04 + 0.12 * (1 - persona.restless) + 0.05 * persona.devotion + (chanting ? CHANT_SIT_BOOST : 0);
+  const sitChance = SIT_CHANCE + 0.06 * (1 - persona.restless) + 0.03 * persona.devotion + (chanting ? CHANT_SIT_BOOST : 0);
   if (random() < sitChance) {
-    const spot = pickSeat(persona, world);
-    if (spot && actions.sit(monk.id, world.zone, spot.id)) {
-      brain.nextThinkAt = now + travelMs(monk, spot.x, spot.z) + ARRIVE_SLACK_MS;
+    const pick = pickSeat(persona, world);
+    if (pick && actions.sit(monk.id, pick.zone, pick.spot.id)) {
+      brain.nextThinkAt = now + travelMs(monk, pick.spot.x, pick.spot.z) + ARRIVE_SLACK_MS;
       return;
     }
   }
@@ -291,11 +295,22 @@ function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Poi
   return resolveWalkable(visitor.x + side.x * gap, visitor.z + side.z * gap, monk);
 }
 
-// "In front" is the half of the zone's rows nearest the Buddha, whichever zone the walker is in.
-function pickSeat(persona: Persona, world: NpcWorld): SeatSpot | undefined {
-  const spots = ZONE_SEATS[world.zone];
-  const free = spots.filter((spot) => world.isFree(spot.id));
-  const depth = SEAT_DEPTH[world.zone];
+function pickSeat(persona: Persona, world: NpcWorld): { zone: Zone; spot: SeatSpot } | undefined {
+  const here = world.zone;
+  const there: Zone = here === "dharma" ? "gatbawi" : "dharma";
+  const order = world.random() < OTHER_ZONE_SEAT_CHANCE * persona.restless ? [there, here] : [here, there];
+  for (const zone of order) {
+    const spot = pickSpotIn(zone, persona, world);
+    if (spot) return { zone, spot };
+  }
+  return undefined;
+}
+
+// "In front" is the half of the zone's rows nearest the Buddha.
+function pickSpotIn(zone: Zone, persona: Persona, world: NpcWorld): SeatSpot | undefined {
+  const spots = ZONE_SEATS[zone];
+  const free = spots.filter((spot) => world.isFree(zone, spot.id));
+  const depth = SEAT_DEPTH[zone];
   const depths = spots.map(depth);
   const middle = (Math.min(...depths) + Math.max(...depths)) / 2;
   const front = world.random() < persona.frontRow ? free.filter((spot) => depth(spot) <= middle) : free;

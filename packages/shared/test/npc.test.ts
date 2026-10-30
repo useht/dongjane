@@ -10,6 +10,8 @@ const CHANT_START = 1_800_000_000_000;
 const QUIET_START = CHANT_START + 5 * 60_000;
 const NPC_TOTAL = NPC_COUNT;
 const PLAZA_SPOT = { x: 0, z: 8 };
+// Twenty minutes from QUIET_START: long enough for every prayer to end, and over before the next chant begins.
+const PRAYER_RUN_MS = 20 * 60_000;
 
 // A computer-driven monk is in the zone its feet are in, and it roams the whole world.
 const zoneOf = (monk: { x: number; z: number }): Zone => zoneAt(monk.x, monk.z);
@@ -65,33 +67,43 @@ class World {
 
   seatProblems(): string[] {
     const problems: string[] = [];
-    const owners = new Set<string>();
+    const held = new Map<string, number[]>();
     for (const seat of this.sim.state.seats.values()) {
       if (seat.occupantId === "") continue;
-      if (owners.has(seat.occupantId)) problems.push(`${seat.occupantId} holds two seats`);
-      owners.add(seat.occupantId);
+      held.set(seat.occupantId, [...(held.get(seat.occupantId) ?? []), seat.id]);
       const owner = this.sim.state.monks.get(seat.occupantId);
       if (owner?.seatId !== seat.id) {
         problems.push(`seat ${seat.zone}:${seat.id} points at ${seat.occupantId} who sits elsewhere`);
       }
     }
+    for (const [id, seats] of held) if (seats.length > 1) problems.push(`${id} holds two seats`);
     for (const monk of this.sim.state.monks.values()) {
       if (monk.seatId < 0) continue;
-      const held = [...this.sim.state.seats.values()].filter((seat) => seat.occupantId === monk.id);
-      if (held.length !== 1 || held[0]?.id !== monk.seatId) {
-        problems.push(`${monk.id} claims seat ${monk.seatId} it does not hold`);
-      }
+      const seats = held.get(monk.id) ?? [];
+      if (seats.length !== 1 || seats[0] !== monk.seatId) problems.push(`${monk.id} claims seat ${monk.seatId} it does not hold`);
     }
     return problems;
   }
+}
 
-  seatedTicks(ms: number): number {
-    let total = 0;
-    this.run(ms, () => {
-      for (const npc of this.npcs()) if (npc.seatId >= 0 && (npc.mode === "kneel" || npc.mode === "bow")) total += 1;
-    });
-    return total;
-  }
+// How an npc's time divides between walking, standing about and praying (kneeling or bowing on a mat).
+interface Shares {
+  walk: number;
+  stand: number;
+  seated: number;
+}
+
+function sharesOver(world: World, ms: number): Shares {
+  const ticks = { walk: 0, stand: 0, seated: 0 };
+  world.run(ms, () => {
+    for (const npc of world.npcs()) {
+      if (npc.mode === "walk") ticks.walk += 1;
+      else if (npc.mode === "stand") ticks.stand += 1;
+      else ticks.seated += 1;
+    }
+  });
+  const total = ticks.walk + ticks.stand + ticks.seated;
+  return { walk: ticks.walk / total, stand: ticks.stand / total, seated: ticks.seated / total };
 }
 
 function snapshot(world: World): string {
@@ -157,37 +169,57 @@ describe("npc spawning", () => {
 });
 
 describe("npc behaviour", () => {
-  it("lets every npc sit, bow and stand up on its own, finishing each bow plan first", () => {
+  it("lets every npc sit, bow and stand up on its own after minutes of prayer, finishing each bow plan first", () => {
     const world = new World(7);
-    const seen = { walked: 0, sat: 0, bowed: 0, stoodUp: 0, bowsPerSeating: new Set<number>() };
+    const walked = new Set<string>();
+    const sat = new Set<string>();
+    const bowed = new Set<string>();
+    const firstStoodUp = new Map<string, number>();
+    const bowsPerSeating = new Set<number>();
     const before = new Map(world.npcs().map((npc) => [npc.id, { mode: npc.mode, bowsAtSeating: 0 }]));
     const problems: string[] = [];
+    let ticks = 0;
 
-    world.run(8 * 60_000, () => {
-      problems.push(...world.seatProblems());
+    world.run(PRAYER_RUN_MS, () => {
+      ticks += 1;
+      if (ticks % 20 === 0) problems.push(...world.seatProblems());
       for (const npc of world.npcs()) {
         const last = before.get(npc.id)!;
-        if (npc.mode === "walk" && last.mode !== "walk") seen.walked += 1;
+        if (npc.mode === "walk") walked.add(npc.id);
         if (npc.mode === "kneel" && last.mode !== "kneel" && last.mode !== "bow") {
-          seen.sat += 1;
+          sat.add(npc.id);
           last.bowsAtSeating = npc.bowCount;
         }
-        if (npc.mode === "bow" && last.mode !== "bow") seen.bowed += 1;
+        if (npc.mode === "bow") bowed.add(npc.id);
         if (npc.mode === "stand" && (last.mode === "kneel" || last.mode === "bow")) {
-          seen.stoodUp += 1;
-          seen.bowsPerSeating.add(npc.bowCount - last.bowsAtSeating);
+          if (!firstStoodUp.has(npc.id)) firstStoodUp.set(npc.id, world.now - QUIET_START);
+          bowsPerSeating.add(npc.bowCount - last.bowsAtSeating);
         }
         last.mode = npc.mode;
       }
     });
 
     expect(problems).toEqual([]);
-    expect(seen.walked).toBeGreaterThan(NPC_TOTAL);
-    expect(seen.sat).toBeGreaterThan(NPC_TOTAL);
-    expect(seen.bowed).toBeGreaterThan(0);
-    expect(seen.stoodUp).toBeGreaterThan(NPC_TOTAL);
-    expect([...seen.bowsPerSeating].every((count) => [0, 1, 3].includes(count))).toBe(true);
+    expect(walked.size).toBe(NPC_TOTAL);
+    expect(sat.size).toBe(NPC_TOTAL);
+    expect(bowed.size).toBeGreaterThan(0);
+    expect(firstStoodUp.size).toBe(NPC_TOTAL);
+    expect([...bowsPerSeating].every((count) => [0, 1, 3].includes(count))).toBe(true);
     expect(world.sim.humanCount).toBe(0);
+
+    // Every monk prays for at least five minutes, and for its own length of time.
+    const times = [...firstStoodUp.values()];
+    expect(Math.min(...times)).toBeGreaterThan(5 * 60_000);
+    expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(3 * 60_000);
+    expect(new Set(times.map((time) => Math.round(time / 1000))).size).toBeGreaterThan(NPC_TOTAL / 2);
+  });
+
+  it("keeps almost every npc at prayer: walking is the rare exception, not the day's work", () => {
+    for (const seed of [1, 2, 3]) {
+      const shares = sharesOver(new World(seed), PRAYER_RUN_MS);
+      expect(shares.walk, `seed ${seed} walks`).toBeLessThanOrEqual(0.05);
+      expect(shares.seated, `seed ${seed} prays`).toBeGreaterThanOrEqual(0.9);
+    }
   });
 
   it("lets the npcs wander out of the 법당 into the plaza and back, always on walkable ground", () => {
@@ -197,7 +229,7 @@ describe("npc behaviour", () => {
     const cameBack = new Set<string>();
     const problems: string[] = [];
 
-    world.run(5 * 60_000, () => {
+    world.run(PRAYER_RUN_MS, () => {
       for (const npc of world.npcs()) {
         const zone = zoneOf(npc);
         const solid = resolveWalkable(npc.x, npc.z);
@@ -235,16 +267,33 @@ describe("npc behaviour", () => {
     expect(new Set(world.npcs().map((npc) => `${zoneOf(npc)}:${npc.x.toFixed(2)},${npc.z.toFixed(2)}`)).size).toBe(NPC_TOTAL);
   });
 
-  it("sits more while the chant is on", () => {
+  it("keeps praying through the chant: far fewer npcs stand up while it is on than in a quiet stretch", () => {
+    // Six minutes in, the first prayers begin to end. Same seed and same minute of prayer, with and without a chant.
+    const standUps = (start: number, seed: number): number => {
+      const world = new World(seed, { start });
+      world.run(6 * 60_000);
+      const last = new Map(world.npcs().map((npc) => [npc.id, npc.mode]));
+      let stood = 0;
+      world.run(CHANT_MS, () => {
+        for (const npc of world.npcs()) {
+          const before = last.get(npc.id);
+          if (npc.mode === "stand" && (before === "kneel" || before === "bow")) stood += 1;
+          last.set(npc.id, npc.mode);
+        }
+      });
+      return stood;
+    };
+    const beforeChant = CHANT_START - 6 * 60_000;
     let chant = 0;
     let quiet = 0;
     for (let seed = 1; seed <= 5; seed += 1) {
-      const during = new World(seed, { start: CHANT_START });
-      expect(during.sim.state.chant.startsAt).toBe(CHANT_START);
-      chant += during.seatedTicks(CHANT_MS - 10_000);
-      quiet += new World(seed, { start: QUIET_START }).seatedTicks(CHANT_MS - 10_000);
+      expect(new World(seed, { start: beforeChant }).sim.state.chant.startsAt).toBe(CHANT_START);
+      expect(new World(seed, { start: QUIET_START }).sim.state.chant.startsAt).toBeGreaterThan(QUIET_START + 6 * 60_000 + CHANT_MS);
+      chant += standUps(beforeChant, seed);
+      quiet += standUps(QUIET_START, seed);
     }
-    expect(chant).toBeGreaterThan(quiet * 1.2);
+    expect(quiet).toBeGreaterThan(20);
+    expect(chant).toBeLessThan(quiet * 0.6);
   });
 
   it("repeats the same day for the same seed and a different one for another", () => {
@@ -439,7 +488,8 @@ describe("npc shyness and approach", () => {
   });
 
   it("walks up to a visitor a few metres off far more often when it is sociable and not shy", () => {
-    // Each think approaches with a 50% chance at most, so the claim is a clear lead over a non-sociable monk across many seeds.
+    // A standing monk gets about one think before it walks off to a mat, and approaches with a 50% chance at most,
+    // so the claim is a clear lead over a non-sociable monk across many seeds.
     const approaches = (sociability: number): number => {
       let approached = 0;
       for (let seed = 1; seed <= 40; seed += 1) {
@@ -469,9 +519,13 @@ describe("npc front row preference", () => {
     Object.assign(npc, PLAZA_SPOT);
     const picked: number[] = [];
     let last = -1;
+    let ticks = 0;
     world.run(CHANT_MS - 10_000, () => {
       if (npc.seatId >= 0 && npc.seatId !== last && world.seatZoneOf(npc.id) === "gatbawi") picked.push(npc.seatId);
       last = npc.seatId;
+      // a prayer now lasts minutes, so rise from the mat every ten seconds to make it choose again
+      ticks += 1;
+      if (ticks % 200 === 0 && npc.mode === "kneel") world.sim.stand(npc.id);
     });
     return picked;
   };
@@ -589,12 +643,28 @@ describe("npc brain reactions", () => {
     expect(calls.bows).toEqual([3]);
   });
 
-  it("asks for a seat in the zone it stands in", () => {
-    for (const zone of ZONES) {
+  describe("a standing monk", () => {
+    const other = (zone: Zone): Zone => (zone === "dharma" ? "gatbawi" : "dharma");
+
+    // Every roll is 0.5 unless a list says otherwise, in order, from the first roll the think makes.
+    const think = (zone: Zone, options: { rolls?: number[]; chantEndsAt?: number | null; free?: (zone: Zone) => boolean } = {}) => {
+      const rolls = [...(options.rolls ?? [])];
+      const random = () => rolls.shift() ?? 0.5;
       const sits: [Zone, number][] = [];
-      const world: NpcWorld = { zone, now: 0, random: () => 0, chantEndsAt: null, visitors: [], isFree: () => true };
+      const moves: { x: number; z: number }[] = [];
+      const world: NpcWorld = {
+        zone,
+        now: 0,
+        random,
+        chantEndsAt: options.chantEndsAt ?? null,
+        visitors: [],
+        isFree: (seatZone) => options.free?.(seatZone) ?? true,
+      };
       const actions: NpcActions = {
-        move: () => true,
+        move: (_id, x, z) => {
+          moves.push({ x, z });
+          return true;
+        },
         sit: (_id, seatZone, seatId) => {
           sits.push([seatZone, seatId]);
           return true;
@@ -602,10 +672,43 @@ describe("npc brain reactions", () => {
         stand: () => true,
         bow: () => true,
       };
-      const brain = createNpcBrain(BASE, world.random, 0);
+      const brain = createNpcBrain(BASE, () => 0.5, 0);
       thinkNpc(brain, { id: "npc-1", mode: "stand", x: 0, z: 0, seatId: -1, bowCount: 0 }, world, actions);
-      expect(sits).toEqual([[zone, 0]]);
-    }
+      return { sits, moves };
+    };
+
+    it("asks for a seat in the zone it stands in", () => {
+      for (const zone of ZONES) expect(think(zone).sits.map(([seatZone]) => seatZone)).toEqual([zone]);
+    });
+
+    it("now and then asks for a seat in the other zone, and walks there to pray", () => {
+      for (const zone of ZONES) {
+        const { sits } = think(zone, { rolls: [0.1, 0.1] });
+        expect(sits.map(([seatZone]) => seatZone)).toEqual([other(zone)]);
+      }
+    });
+
+    it("takes a seat in the other zone when its own has none free", () => {
+      for (const zone of ZONES) {
+        const { sits, moves } = think(zone, { free: (seatZone) => seatZone !== zone });
+        expect(sits.map(([seatZone]) => seatZone)).toEqual([other(zone)]);
+        expect(moves).toEqual([]);
+      }
+    });
+
+    it("sits down on nearly every think and strolls only on a rare bad roll", () => {
+      // BASE sits on any roll under 0.9 + 0.06 * 0.5 + 0.03 = 0.96.
+      expect(think("gatbawi", { rolls: [0.9] }).sits).toHaveLength(1);
+      expect(think("gatbawi", { rolls: [0.95] }).sits).toHaveLength(1);
+      const stroll = think("gatbawi", { rolls: [0.99] });
+      expect(stroll.sits).toEqual([]);
+      expect(stroll.moves).toHaveLength(1);
+    });
+
+    it("sits for certain while the chant is on", () => {
+      expect(think("gatbawi", { rolls: [0.99] }).sits).toEqual([]);
+      expect(think("gatbawi", { rolls: [0.99], chantEndsAt: 180_000 }).sits).toHaveLength(1);
+    });
   });
 
   it("walks on as usual when a shy retreat would go nowhere because it is cornered", () => {
@@ -636,12 +739,14 @@ describe("npc brain reactions", () => {
     think(300_500);
     expect(calls.stands).toBe(0);
     think(400_000);
+    expect(calls.stands).toBe(0);
+    think(1_100_000);
     expect(calls.stands).toBe(1);
   });
 });
 
 describe("npc personas with visitors around", () => {
-  it("keeps one monk per seat over six minutes of bowing, sitting and wandering visitors", () => {
+  it("keeps one monk per seat over twenty minutes of bowing, sitting and wandering visitors", () => {
     const world = new World(31);
     const choice = seededRandom(77);
     const guests = ["a", "b", "c", "d"];
@@ -651,7 +756,7 @@ describe("npc personas with visitors around", () => {
     let ticks = 0;
     let npcSittings = 0;
 
-    world.run(6 * 60_000, () => {
+    world.run(PRAYER_RUN_MS, () => {
       problems.push(...world.seatProblems());
       for (const npc of world.npcs()) {
         const seated = npc.seatId >= 0;
@@ -670,6 +775,6 @@ describe("npc personas with visitors around", () => {
 
     expect(problems).toEqual([]);
     expect(world.sim.humanCount).toBe(guests.length);
-    expect(npcSittings).toBeGreaterThan(0);
+    expect(npcSittings).toBeGreaterThan(NPC_TOTAL);
   });
 });

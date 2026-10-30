@@ -358,7 +358,7 @@ export class TempleSim {
         random: this.random,
         chantEndsAt: chanting ? chantEndsAt(chant) : null,
         visitors: this.visitors(zone),
-        isFree: (seatId) => this.state.seats.get(seatKey(zone, seatId))?.occupantId === "",
+        isFree: (seatZone, seatId) => this.state.seats.get(seatKey(seatZone, seatId))?.occupantId === "",
       },
       this.npcActions,
     );
