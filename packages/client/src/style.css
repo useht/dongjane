@@ -707,7 +707,11 @@ button:disabled {
   display: grid;
   place-items: center;
   border: 0;
-  background: transparent;
+  border-radius: 50%;
+  background: color-mix(in srgb, white 16%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  backdrop-filter: blur(14px) saturate(180%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 35%, transparent), 0 8px 24px color-mix(in srgb, black 18%, transparent);
   color: var(--gold);
   pointer-events: none;
   will-change: transform;
