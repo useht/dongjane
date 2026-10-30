@@ -412,15 +412,15 @@ def scaled_about(points, x, y, sx, sy):
     return [(x + (px - x) * sx, y + (py - y) * sy) for px, py in points]
 
 
-def cloud_outline(x, y, width, height, lobes, seed, arc=5):
+def cloud_outline(x, y, width, height, lobes, seed):
     """A cloud with a flat base under a row of round lobes, running counter-clockwise from the base's left end."""
     pitch, notch = width / lobes, 0.3 * height
     points = [(x - width / 2.0, y), (x + width / 2.0, y)]
     for i in reversed(range(lobes)):
         centre = x - width / 2.0 + pitch * (i + 0.5)
         rise = height * (0.75 + 0.25 * math.sin(math.pi * (i + 0.5) / lobes)) * (0.85 + 0.3 * hash01(i, seed, 0.0))
-        for k in range(0 if i == lobes - 1 else 1, arc):
-            a = math.pi * k / (arc - 1)
+        for k in range(0 if i == lobes - 1 else 1, 5):
+            a = math.pi * k / 4
             points.append((centre + pitch / 2.0 * math.cos(a), y + notch + (rise - notch) * math.sin(a)))
     return points
 
@@ -443,8 +443,8 @@ def cloud_bank(brush, c, x, y, width, height, lobes, seed, tone, layer):
     brush.fill(scaled_about(outline, x, y + height * 0.4, 1.04, 1.07), c["muralLine"], layer)
     brush.fill(outline, tone, layer + 1)
     brush.fill(scaled_about(outline, x, y, 0.88, 0.7), pale, layer + 2)
-    brush.stroke(curl(x + width / 2.0, y, height * 0.4, 1), taper(0.07), c["muralLine"], layer + 1)
-    brush.stroke(curl(x - width / 2.0, y, height * 0.4, -1), taper(0.07), pale, layer + 1)
+    brush.stroke(curl(x + width / 2.0, y, height * 0.4, 1), taper(0.07), c["muralLine"], layer + 2)
+    brush.stroke(curl(x - width / 2.0, y, height * 0.4, -1), taper(0.07), pale, layer + 2)
 
 
 def skyline(x0, y0, x1, y1, steps, seed, jag):
@@ -610,18 +610,18 @@ def elephant(f, c):
     return 1.0
 
 
-def rider(f, c, seat, robe, scarf):
+def rider(f, c, robe, scarf):
     """A bodhisattva seated on a lotus: gold halo, crown, robe, joined hands, a flower and a streaming scarf."""
     gold, pale = c["muralLine"], scaled(c["muralHalo"], 0.85)
-    face = seat + 0.78
+    face = 0.78
     f.disc(0.05, face, 0.3, c["buddhaGold"], 15, 10)
     f.disc(0.05, face, 0.23, pale, 16, 10)
-    f.fill(ellipse(0.05, seat + 0.02, 0.33, 0.09, 8), c["petalDeep"], 16)
-    f.fill([(-0.27, seat + 0.02), (0.27, seat + 0.02), (0.15, seat + 0.58), (-0.15, seat + 0.58)], robe, 17)
-    f.stroke(flow(-0.12, seat + 0.5, -1.0, 0.5, 1.0, 0.15, 8), taper(0.09), scarf, 18)
-    f.stroke([(0.1, seat + 0.5), (0.2, seat + 0.25), (0.02, seat + 0.2)], 0.08, c["skin"], 18)
-    f.stroke([(0.02, seat + 0.22), (0.3, seat + 0.5)], 0.025, c["dancheongGreen"], 19)
-    f.fill(ellipse(0.3, seat + 0.52, 0.08, 0.08, 6), c["petal"], 19)
+    f.fill(ellipse(0.05, 0.02, 0.33, 0.09, 8), c["petalDeep"], 16)
+    f.fill([(-0.27, 0.02), (0.27, 0.02), (0.15, 0.58), (-0.15, 0.58)], robe, 17)
+    f.stroke(flow(-0.12, 0.5, -1.0, 0.5, 1.0, 0.15, 8), taper(0.09), scarf, 18)
+    f.stroke([(0.1, 0.5), (0.2, 0.25), (0.02, 0.2)], 0.08, c["skin"], 18)
+    f.stroke([(0.02, 0.22), (0.3, 0.5)], 0.025, c["dancheongGreen"], 19)
+    f.fill(ellipse(0.3, 0.52, 0.08, 0.08, 6), c["petal"], 19)
     head(f, c, 0.05, face, 0.1, 18)
     h = face + 0.08
     f.fill([(-0.11, h), (-0.09, h + 0.1), (-0.03, h + 0.05), (0.05, h + 0.13), (0.13, h + 0.05), (0.19, h + 0.1), (0.21, h)], gold, 20)
@@ -631,8 +631,8 @@ def bodhisattva(brush, c, x, y, face, lion_or_elephant):
     """Munsu on his lion or Bohyeon on his white elephant, facing the Buddha."""
     f = Figure(brush, x, y, 0.8, face)
     robe, scarf = (c["dancheongBlue"], scaled(c["muralHalo"], 0.8)) if lion_or_elephant == "lion" else (c["dancheongYellow"], c["dancheongGreen"])
-    seat = lion(f, c) if lion_or_elephant == "lion" else elephant(f, c)
-    rider(Figure(brush, x + face * 0.04, y + seat * 0.8, 0.62, face), c, 0.0, robe, scarf)
+    back = lion(f, c) if lion_or_elephant == "lion" else elephant(f, c)
+    rider(Figure(brush, x + face * 0.04, y + back * 0.8, 0.62, face), c, robe, scarf)
 
 
 def lozenges(brush, left, right, y, colors):
