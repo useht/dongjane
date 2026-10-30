@@ -7,6 +7,10 @@ export const PLAYER_CHANNEL = "dongjane-stage";
 export const READY_TIMEOUT_MS = 8000;
 export const UNMUTE_CHECK_MS = 1000;
 export const TAP_WINDOW_MS = 6000;
+// A play that has not turned into a playing video by then gives the button back as "play".
+export const START_TIMEOUT_MS = 8000;
+// How near the stage a visitor must be for the play and stop button to float over its screen.
+export const STAGE_HINT_REACH = 10;
 // The player only plays at whole speeds, so drift is cured by jumping, and not more often than this.
 const DRIFT_SECONDS = 1;
 const RESYNC_MIN_MS = 10_000;
@@ -98,9 +102,18 @@ export type Playback = "waiting" | "starting" | "playing";
 
 export type HintAction = "play" | "stop";
 
-// The button floated over the screen: play while waiting, stop from the press of play on, and none until the player can be steered.
-export function hintAction(status: StageStatus, playback: Playback): HintAction | null {
-  if (status !== "ready") return null;
+export interface HintInput {
+  live: boolean;
+  // Metres from the stage, or null when the visitor's place is not known.
+  distance: number | null;
+  status: StageStatus;
+  playback: Playback;
+}
+
+// The button floated over the screen: only in a live world, near the stage and once the player can be steered;
+// play while waiting, stop from the press of play on.
+export function hintAction({ live, distance, status, playback }: HintInput): HintAction | null {
+  if (!live || status !== "ready" || distance === null || !(distance <= STAGE_HINT_REACH)) return null;
   return playback === "waiting" ? "play" : "stop";
 }
 
@@ -135,6 +148,7 @@ export class StageVideoController {
   private ready = false;
   private wanted = false;
   private started = false;
+  private askedAt = 0;
   private playbackNow: Playback = "waiting";
   private wantSound = false;
   private volume = 0;
@@ -204,6 +218,8 @@ export class StageVideoController {
     }
     if (this.current !== "loading" && this.current !== "ready") return;
     if (this.volumeDue) this.applyAudio(false);
+    // A play that never reaches the player's PLAYING is given up, so the button reads "play" again.
+    if (this.wanted && !this.started && now - this.askedAt >= START_TIMEOUT_MS) this.endPlay(true);
     // Nobody is in earshot of the concert: a playing video is paused, and it is the visitor's to start again.
     if (this.wanted && this.quietSince !== null && now - this.quietSince >= QUIET_PAUSE_MS) this.endPlay(true);
     // Still muted a second after asking: the browser wants a tap on the player itself. Asking again is harmless
@@ -244,9 +260,12 @@ export class StageVideoController {
     if (!this.wanted) {
       this.wanted = true;
       this.started = false;
+      this.askedAt = this.now();
     }
     if (this.level === 0) this.quietSince = this.now();
     this.userGesture();
+    // Seeking first, so the first sound is already the shared place in the loop; while the length is unknown it waits for PLAYING.
+    if (this.duration > 0) this.seekToLoop();
     this.out.send("playVideo");
     this.updatePlayback();
   }
@@ -315,8 +334,12 @@ export class StageVideoController {
     if (state === PLAYING) {
       if (this.wanted) this.started = true;
       else this.pauseStray();
-    } else if (this.started && (state === PAUSED || state === ENDED)) {
-      // A tap on the player, the browser or the end of the clip stopped it: that ends this play, and nothing restarts it.
+    } else if (state === ENDED && this.wanted) {
+      // The loop may report its end at every wrap; only a stop ends the play, so it goes on from the shared place.
+      this.seekToLoop();
+      this.out.send("playVideo");
+    } else if (this.started && state === PAUSED) {
+      // A tap on the player or the browser paused it: that ends this play, and nothing restarts it.
       this.endPlay(false);
     }
     this.updatePlayback();
@@ -398,8 +421,18 @@ export class StageVideoController {
     const gap = Math.min(off, this.duration - off);
     const due = this.needSeek || (gap > DRIFT_SECONDS && now - this.lastSeekAt >= RESYNC_MIN_MS);
     if (!due) return;
+    if (gap > 0.5) {
+      this.seekToLoop();
+    } else {
+      this.needSeek = false;
+      this.lastSeekAt = now;
+    }
+  }
+
+  private seekToLoop(): void {
+    if (this.duration <= 0) return;
     this.needSeek = false;
-    this.lastSeekAt = now;
-    if (gap > 0.5) this.out.send("seekTo", [aimAhead(target, this.duration), true]);
+    this.lastSeekAt = this.now();
+    this.out.send("seekTo", [aimAhead(loopPosition(this.serverNow(), this.duration), this.duration), true]);
   }
 }

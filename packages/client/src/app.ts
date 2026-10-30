@@ -72,7 +72,6 @@ import { hintAction, screenModeFor } from "./ui/stage-video.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
 const SEAT_HINT_REACH = 2.2;
-const STAGE_HINT_REACH = 10;
 const SEAT_HINT_HEIGHT = 0.6;
 const TITLE_REACH = SEAT_HINT_REACH;
 const TITLE_GAP = 0.1;
@@ -431,8 +430,14 @@ export class App {
     this.handleState(session.state);
   }
 
+  private isLive(): boolean {
+    return this.session !== null && !this.inSolo;
+  }
+
   private async leaveCurrent(): Promise<void> {
     const old = this.session;
+    // A video playing in the world being left must not carry over to the next; the iframe stays mounted, waiting.
+    this.stage.stop();
     this.session = null;
     if (old) await old.leave();
   }
@@ -562,7 +567,7 @@ export class App {
   // they are in the world; where they stand (see tickMix) only decides which of the two is heard. The wind belongs to the open air.
   private syncZoneSound(): void {
     const outdoors = this.zone === "gatbawi";
-    const live = this.session !== null && !this.inSolo;
+    const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();
     this.world.setScreenMode(screenModeFor(this.stage.playback, this.settings.reduceMotion));
@@ -775,7 +780,8 @@ export class App {
       sessionId: () => this.session?.sessionId ?? null,
       worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
-      stage: () => ({ status: this.stage.status, playback: this.stage.playback, mounted: this.stage.mounted, audible: this.videoAudible }),      sutraPlaying: () => this.sutra.playing,
+      stage: () => ({ status: this.stage.status, playback: this.stage.playback, mounted: this.stage.mounted, audible: this.videoAudible }),
+      sutraPlaying: () => this.sutra.playing,
       sutraMix: () => this.sutra.mix,
       zone: () => this.zone,
       sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
@@ -918,9 +924,14 @@ export class App {
   }
 
   private updateStageHint(quad: Quad | null): void {
-    const action = hintAction(this.stage.status, this.stage.playback);
-    const at = this.session !== null && action && quad ? this.world.selfPosition : null;
-    if (!quad || !action || !at || Math.hypot(at.x - STAGE.x, at.z - STAGE.z) > STAGE_HINT_REACH) {
+    const at = quad ? this.world.selfPosition : null;
+    const action = hintAction({
+      live: this.isLive(),
+      distance: at ? Math.hypot(at.x - STAGE.x, at.z - STAGE.z) : null,
+      status: this.stage.status,
+      playback: this.stage.playback,
+    });
+    if (!quad || !action) {
       this.stageHint.hide();
       return;
     }

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../src/audio/music.ts";
 import {
   PLAYER_ORIGIN,
+  type HintInput,
   type Playback,
   READY_TIMEOUT_MS,
+  STAGE_HINT_REACH,
   STAGE_VIDEO_ID,
+  START_TIMEOUT_MS,
   StageVideoController,
   type StageStatus,
   UNMUTE_CHECK_MS,
@@ -126,16 +129,36 @@ describe("messages", () => {
 });
 
 describe("hintAction and screenModeFor", () => {
+  const near: HintInput = { live: true, distance: 4, status: "ready", playback: "waiting" };
+
   it("offers play while waiting and stop from the press of play on, once the player is ready", () => {
-    expect(hintAction("ready", "waiting")).toBe("play");
-    expect(hintAction("ready", "starting")).toBe("stop");
-    expect(hintAction("ready", "playing")).toBe("stop");
+    expect(hintAction(near)).toBe("play");
+    expect(hintAction({ ...near, playback: "starting" })).toBe("stop");
+    expect(hintAction({ ...near, playback: "playing" })).toBe("stop");
   });
 
   it("offers nothing before the player can be steered, or when it cannot be shown", () => {
     for (const status of ["idle", "loading", "blocked"] as const) {
-      expect(hintAction(status, "waiting")).toBeNull();
+      expect(hintAction({ ...near, status })).toBeNull();
+      expect(hintAction({ ...near, status, playback: "playing" })).toBeNull();
     }
+  });
+
+  it("offers nothing outside a live world", () => {
+    expect(hintAction({ ...near, live: false })).toBeNull();
+    expect(hintAction({ ...near, live: false, playback: "playing" })).toBeNull();
+  });
+
+  it("offers nothing beyond the reach of the stage, whatever the video is doing, but exactly at it", () => {
+    expect(hintAction({ ...near, distance: STAGE_HINT_REACH })).toBe("play");
+    expect(hintAction({ ...near, distance: STAGE_HINT_REACH + 0.01 })).toBeNull();
+    expect(hintAction({ ...near, distance: STAGE_HINT_REACH + 0.01, playback: "playing" })).toBeNull();
+    expect(hintAction({ ...near, distance: 0 })).toBe("play");
+  });
+
+  it("offers nothing when the visitor's place is not known", () => {
+    expect(hintAction({ ...near, distance: null })).toBeNull();
+    expect(hintAction({ ...near, distance: Number.NaN })).toBeNull();
   });
 
   it("shows the poster unless the video is playing, and always the poster with reduced motion", () => {
@@ -289,10 +312,11 @@ describe("StageVideoController play and stop", () => {
     expect(t.playbacks).toEqual(["starting", "playing"]);
   });
 
-  it("moves the player to the server's place in the loop once it plays", () => {
+  it("moves a player whose length it does not know yet to the server's place in the loop once it plays", () => {
     const t = rig(1_000_000);
     waiting(t);
     t.controller.play();
+    expect(t.funcs()).not.toContain("seekTo");
     t.clear();
     t.controller.receive(info({ state: 1, duration: 300, time: 0 }));
     const seek = t.sent.find((entry) => entry.func === "seekTo");
@@ -300,16 +324,42 @@ describe("StageVideoController play and stop", () => {
     expect(seek?.args[1]).toBe(true);
   });
 
+  it("seeks to the loop's place before it plays, when the length is known, so nothing from the wrong place is heard", () => {
+    const t = rig(1_000_000);
+    waiting(t);
+    t.controller.receive(info({ state: 5, duration: 300, time: 40 }));
+    t.controller.setSound(true, 0.5);
+    t.clear();
+    t.controller.play();
+    expect(t.funcs()).toEqual(["setVolume", "unMute", "seekTo", "playVideo"]);
+    const seek = t.sent.find((entry) => entry.func === "seekTo");
+    expect(seek?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_000_000, 300), 300), 6);
+    expect(seek?.args[1]).toBe(true);
+  });
+
+  it("does not seek a second time when the first report of playing still carries the old position", () => {
+    const t = rig(1_000_000);
+    waiting(t);
+    t.controller.receive(info({ state: 5, duration: 300, time: 40 }));
+    t.controller.play();
+    t.clear();
+    t.controller.receive(info({ state: 1, time: 40 }));
+    t.advance(2000);
+    t.controller.receive(info({ state: 1, time: 41 }));
+    expect(t.funcs()).toEqual([]);
+    expect(t.controller.playback).toBe("playing");
+  });
+
   it("moves to the loop's place again when it is played again after a stop", () => {
     const t = rig(1_000_000);
+    t.controller.setSound(true, 0.5);
     playing(t, { duration: 300, time: loopPosition(1_000_000, 300) });
     t.controller.stop();
     t.controller.receive(info({ state: 2, time: 40 }));
     t.advance(120_000);
     t.clear();
     t.controller.play();
-    expect(t.funcs()).toContain("playVideo");
-    t.controller.receive(info({ state: 1, time: 40 }));
+    expect(t.funcs()).toEqual(["setVolume", "unMute", "seekTo", "playVideo"]);
     const seek = t.sent.find((entry) => entry.func === "seekTo");
     expect(seek?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_120_000, 300), 300), 6);
   });
@@ -391,12 +441,98 @@ describe("StageVideoController play and stop", () => {
     expect(t.audible).toEqual([true, false]);
   });
 
-  it("ends the play when the clip ends", () => {
+  it("keeps playing when the loop reports its end: back to the loop's place, and on", () => {
+    const t = rig(1_000_000);
+    playing(t, { duration: 300, time: loopPosition(1_000_000, 300) });
+    t.advance(60_000);
+    t.clear();
+    t.controller.receive(info({ state: 0, time: 299.9 }));
+    expect(t.funcs()).toEqual(["seekTo", "playVideo"]);
+    expect(t.sent[0]?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_060_000, 300), 300), 6);
+    expect(t.controller.playback).toBe("playing");
+    t.controller.receive(info({ state: 1, time: loopPosition(1_060_000, 300) }));
+    expect(t.controller.playback).toBe("playing");
+  });
+
+  it("goes on playing at every wrap of the loop, and a stop still ends it for good", () => {
+    const t = rig(1_000_000);
+    playing(t, { duration: 300, time: loopPosition(1_000_000, 300) });
+    for (let wrap = 0; wrap < 3; wrap += 1) {
+      t.advance(300_000);
+      t.controller.receive(info({ state: 0 }));
+      t.controller.receive(info({ state: 1, time: loopPosition(1_000_000 + 300_000 * (wrap + 1), 300) }));
+    }
+    expect(t.funcs().filter((func) => func === "playVideo")).toHaveLength(4);
+    expect(t.controller.playback).toBe("playing");
+    t.controller.stop();
+    t.clear();
+    t.controller.receive(info({ state: 0 }));
+    expect(t.funcs()).toEqual([]);
+    expect(t.controller.playback).toBe("waiting");
+  });
+
+  it("plays on, without a seek, when a stream without a length ends", () => {
+    const t = rig();
+    playing(t, { duration: 0 });
+    t.clear();
+    t.controller.receive(info({ state: 0 }));
+    expect(t.funcs()).toEqual(["playVideo"]);
+    expect(t.controller.playback).toBe("playing");
+  });
+
+  it("gives up a play that never reaches playing, so the button reads play again", () => {
+    const t = rig();
+    waiting(t);
+    t.controller.setSound(true, 0.5);
+    t.controller.play();
+    t.controller.receive(info({ state: 3, duration: 100, time: 0 }));
+    t.clear();
+    t.advance(START_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("starting");
+    expect(t.funcs()).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("waiting");
+    expect(t.funcs()).toEqual(["pauseVideo", "mute"]);
+    expect(hintAction({ live: true, distance: 3, status: t.controller.status, playback: t.controller.playback })).toBe("play");
+    expect(t.playbacks).toEqual(["starting", "waiting"]);
+  });
+
+  it("does not give up a play that has reached playing, however long it goes on", () => {
     const t = rig();
     playing(t);
     t.clear();
-    t.controller.receive(info({ state: 0 }));
-    expect(t.funcs()).not.toContain("playVideo");
+    t.advance(START_TIMEOUT_MS * 5);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("playing");
+    expect(t.funcs()).toEqual([]);
+  });
+
+  it("can be played again after giving up, with a fresh window", () => {
+    const t = rig();
+    waiting(t);
+    t.controller.play();
+    t.advance(START_TIMEOUT_MS);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("waiting");
+    t.controller.play();
+    expect(t.controller.playback).toBe("starting");
+    t.advance(START_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("starting");
+  });
+
+  it("pauses a late playing report from a play that was given up", () => {
+    const t = rig();
+    waiting(t);
+    t.controller.play();
+    t.advance(START_TIMEOUT_MS);
+    t.controller.tick();
+    t.clear();
+    t.advance(1500);
+    t.controller.receive(info({ state: 1, duration: 100, time: 0 }));
+    expect(t.funcs()).toEqual(["pauseVideo"]);
     expect(t.controller.playback).toBe("waiting");
   });
 
