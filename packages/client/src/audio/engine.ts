@@ -22,6 +22,11 @@ export const MOKT_SAMPLE_URL = "/audio/mokt.mp3";
 // The recording peaks near full scale, far above the synthesized knock, so it is trimmed to sit beside the bell.
 export const MOKT_SAMPLE_GAIN = 0.5;
 
+// The surf's loudest setting, and how fast (seconds, as a time constant) it follows a walker toward or away from the water.
+export const SEA_PEAK_GAIN = 0.6;
+export const SEA_FOLLOW_SECONDS = 0.35;
+const SEA_LEVEL_STEP = 0.004;
+
 type AudioContextCtor = typeof AudioContext;
 
 function contextClass(): AudioContextCtor | undefined {
@@ -29,7 +34,7 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// The bell and the wind are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
+// The bell, the wind and the sea are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
 // recording. Other recordings, the 법당 sutra, are played by other modules into `output`, so the ambient volume covers them.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -39,6 +44,9 @@ export class AudioEngine {
   private effectVolume = 0.7;
   private windGain: GainNode | null = null;
   private windAllowed = true;
+  private seaGain: GainNode | null = null;
+  private seaWanted = 0;
+  private seaApplied = -1;
   private readonly unlockListeners = new Set<() => void>();
   private moktSample: AudioBuffer | null = null;
   private moktLoad: Promise<void> | null = null;
@@ -68,6 +76,12 @@ export class AudioEngine {
     this.applyLevels();
   }
 
+  // The surf's share of its loudest, 0 to 1, from how near the monk is to the water (see sea-level.ts). It rides on the ambience bus.
+  setSeaLevel(level: number): void {
+    this.seaWanted = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+    this.applySea();
+  }
+
   configure(ambientVolume: number, effectVolume: number): void {
     this.ambientVolume = Math.min(1, Math.max(0, ambientVolume));
     this.effectVolume = Math.min(1, Math.max(0, effectVolume));
@@ -88,6 +102,7 @@ export class AudioEngine {
       this.ambience = this.ctx.createGain();
       this.ambience.connect(this.ctx.destination);
       this.startWind();
+      this.startSea();
       this.applyLevels();
       this.ctx.addEventListener("statechange", () => this.announce());
     }
@@ -149,6 +164,8 @@ export class AudioEngine {
     this.effects = null;
     this.ambience = null;
     this.windGain = null;
+    this.seaGain = null;
+    this.seaApplied = -1;
     this.unlockListeners.clear();
     this.moktSample = null;
     this.moktLoad = null;
@@ -242,6 +259,67 @@ export class AudioEngine {
     source.start();
     lfo.start();
     sweep.start();
+  }
+
+  // Waves: a low rumble of noise whose lowpass opens and closes about every ten seconds as each wave rolls in and draws back,
+  // under a faint high hiss of foam that swells on a slightly different beat so the two never settle into a pattern.
+  private startSea(): void {
+    const ctx = this.ctx;
+    const ambience = this.ambience;
+    if (!ctx || !ambience) return;
+    const source = ctx.createBufferSource();
+    source.buffer = this.noise(8);
+    source.loop = true;
+
+    const low = ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.value = 600;
+    low.Q.value = 0.5;
+    const rumble = ctx.createGain();
+    rumble.gain.value = 0.55;
+    const wave = ctx.createOscillator();
+    wave.frequency.value = 0.1;
+    const waveDepth = ctx.createGain();
+    waveDepth.gain.value = 0.4;
+    wave.connect(waveDepth).connect(rumble.gain);
+    const open = ctx.createOscillator();
+    open.frequency.value = 0.1;
+    const openDepth = ctx.createGain();
+    openDepth.gain.value = 420;
+    open.connect(openDepth).connect(low.frequency);
+
+    const high = ctx.createBiquadFilter();
+    high.type = "highpass";
+    high.frequency.value = 2600;
+    high.Q.value = 0.5;
+    const foam = ctx.createGain();
+    foam.gain.value = 0.06;
+    const foamBeat = ctx.createOscillator();
+    foamBeat.frequency.value = 0.083;
+    const foamDepth = ctx.createGain();
+    foamDepth.gain.value = 0.05;
+    foamBeat.connect(foamDepth).connect(foam.gain);
+
+    this.seaGain = ctx.createGain();
+    this.seaGain.gain.value = this.seaWanted * SEA_PEAK_GAIN;
+    this.seaApplied = this.seaWanted;
+    source.connect(low).connect(rumble).connect(this.seaGain);
+    source.connect(high).connect(foam).connect(this.seaGain);
+    this.seaGain.connect(ambience);
+    source.start();
+    wave.start();
+    open.start();
+    foamBeat.start();
+  }
+
+  private applySea(): void {
+    const ctx = this.ctx;
+    const gain = this.seaGain;
+    if (!ctx || !gain || Math.abs(this.seaWanted - this.seaApplied) < SEA_LEVEL_STEP) return;
+    this.seaApplied = this.seaWanted;
+    const now = ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(this.seaWanted * SEA_PEAK_GAIN, now, SEA_FOLLOW_SECONDS);
   }
 
   private noise(seconds: number): AudioBuffer {
