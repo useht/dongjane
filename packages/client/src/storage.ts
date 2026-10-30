@@ -1,4 +1,4 @@
-import { randomHue } from "@dongjane/shared";
+import { type Wallet, parseWallet, randomHue } from "@dongjane/shared";
 
 export interface Profile {
   hue: number;
@@ -19,6 +19,10 @@ const PROFILE_KEY = "dongjane:profile";
 const SETTINGS_KEY = "dongjane:settings";
 const COLLECTION_KEY = "dongjane:collection";
 const QUESTS_KEY = "dongjane:quests";
+// The casino's wallet. The version is in the key and in the record, so a change to the rules can start every wallet afresh
+// instead of reading an old record as a new one.
+const CASINO_KEY = "dongjane:casino:v1";
+const CASINO_VERSION = 1;
 
 function readJson(key: string): unknown {
   try {
@@ -109,4 +113,14 @@ export function loadQuestProgress(): QuestProgress | null {
 
 export function saveQuestProgress(progress: QuestProgress): void {
   writeJson(QUESTS_KEY, progress);
+}
+
+export function loadWallet(): Wallet | null {
+  const data = readJson(CASINO_KEY);
+  if (typeof data !== "object" || data === null || (data as Record<string, unknown>).version !== CASINO_VERSION) return null;
+  return parseWallet(data);
+}
+
+export function saveWallet(wallet: Wallet): void {
+  writeJson(CASINO_KEY, { version: CASINO_VERSION, balance: wallet.balance, refillDay: wallet.refillDay });
 }
