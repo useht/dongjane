@@ -109,9 +109,7 @@ export class SyncedLoop {
     return this.mixNow;
   }
 
-  // Called from inside a gesture: the element is created and started right there, because some browsers only let a
-  // page start an element it has started once from a tap. What it should be doing from then on is settled by `update`,
-  // which a later gesture or a context that runs again also asks, so a loop the browser paused is started again.
+  // Called from inside a gesture so the browser allows the first play; once primed, `update` settles what it should do.
   prime(): void {
     if (this.primed) {
       this.update();
