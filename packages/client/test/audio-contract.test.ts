@@ -6,6 +6,12 @@ import { SUTRA_SECONDS } from "../src/audio/music.ts";
 
 const audioDir = join(dirname(fileURLToPath(import.meta.url)), "../src/assets/audio");
 const MAX_BYTES = 2.5 * 1024 * 1024;
+const CASINO_SOUND_MAX_BYTES = 300 * 1024;
+const CASINO_SOUNDS = [
+  { file: "coin.mp3", freesound: 510735, page: "https://freesound.org/people/HoseNoseSounds/sounds/510735/", author: "HoseNoseSounds" },
+  { file: "click.mp3", freesound: 538727, page: "https://freesound.org/people/AndrewEathan/sounds/538727/", author: "AndrewEathan" },
+  { file: "jackpot.mp3", freesound: 860886, page: "https://freesound.org/people/Johnmode/sounds/860886/", author: "Johnmode" },
+] as const;
 
 // MPEG-1 Layer III, the only kind the game ships.
 const BITRATES = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
@@ -52,8 +58,20 @@ function parseMp3(bytes: Buffer): Mp3 {
 }
 
 describe("audio files", () => {
-  it("ship only the Korean chant", () => {
-    expect(readdirSync(audioDir).sort()).toEqual(["sources.md", "sutra.mp3"]);
+  it("ship only the Korean chant and the three casino sounds", () => {
+    expect(readdirSync(audioDir).sort()).toEqual(["click.mp3", "coin.mp3", "jackpot.mp3", "sources.md", "sutra.mp3"]);
+  });
+
+  it("keep every casino sound under 300 KB, as a short mono MP3", () => {
+    for (const { file } of CASINO_SOUNDS) {
+      const path = join(audioDir, file);
+      expect(statSync(path).size, file).toBeLessThanOrEqual(CASINO_SOUND_MAX_BYTES);
+      const mp3 = parseMp3(readFileSync(path));
+      expect(mp3.frames, file).toBeGreaterThan(5);
+      expect([...mp3.channelModes], file).toEqual([3]);
+      expect([...mp3.sampleRates], file).toEqual([44100]);
+      expect(mp3.seconds, file).toBeLessThan(10);
+    }
   });
 
   it("keep the sutra small", () => {
@@ -79,5 +97,17 @@ describe("audio files", () => {
     expect(sources).toContain("김용배");
     expect(sources).toContain("CC BY");
     expect(sources).toContain("`ko`");
+  });
+
+  it("record every casino sound as CC0, with its page and its author", () => {
+    const sources = readFileSync(join(audioDir, "sources.md"), "utf8");
+    for (const { file, freesound, page, author } of CASINO_SOUNDS) {
+      const section = sources.split(/^#{2,3} /m).find((part) => part.startsWith(`\`${file}\``));
+      expect(section, file).toBeDefined();
+      expect(section, file).toContain("**CC0**");
+      expect(section, file).toContain(page);
+      expect(section, file).toContain(String(freesound));
+      expect(section, file).toContain(author);
+    }
   });
 });
