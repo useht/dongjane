@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
 import { DHARMA_ORIGIN, type Zone } from "@dongjane/shared";
-import { DHARMA, DHARMA_SHELL } from "./dharma-layout.ts";
+import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
 export interface Box {
@@ -71,12 +71,16 @@ export interface RigLimits {
 const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 22, minPitch: 0.16, maxPitch: 1.3 };
 const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 12, minPitch: 0.16, maxPitch: 1.3 };
 
-// Inside the 법당: the room is a lit box and the camera stays within it, a little short of its walls.
+// How far the lens keeps from anything the room draws, so the sway never brings a surface to within a few centimetres of it.
+export const CAMERA_CLEARANCE = 0.3;
+
+// Inside the 법당: the camera stays below the beam band that runs round the walls (its underside is at 5.2) and the lanterns
+// above it, and short of the side pillars (their faces are at 9.27).
 export const DHARMA_CAMERA_BOUNDS: Box = {
-  minX: DHARMA_ORIGIN.x - 9.6,
-  maxX: DHARMA_ORIGIN.x + 9.6,
+  minX: DHARMA_ORIGIN.x - 8.9,
+  maxX: DHARMA_ORIGIN.x + 8.9,
   minY: 0.5,
-  maxY: 7,
+  maxY: 4.9,
   minZ: DHARMA_ORIGIN.z - 5,
   maxZ: DHARMA_ORIGIN.z + 8.8,
 };
@@ -90,6 +94,22 @@ export const DHARMA_KEEP_OUT: Box = {
   minZ: DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth,
   maxZ: DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ,
 };
+
+// The engaged pillars on the room's front wall (0.3 m round at their fullest, standing `inset` out from the wall), widened by the
+// clearance on each side: a camera that follows someone toward them stops short instead of ending up against a shaft. The front
+// is drawn out a further 0.1 m because the keep-out margin is measured along a sight line that rises steeply.
+const PILLAR_RADIUS = 0.3;
+export const DHARMA_PILLARS_KEEP_OUT: readonly Box[] = FRONT_PILLARS_X.map((x) => ({
+  minX: DHARMA_ORIGIN.x + x - PILLAR_RADIUS - CAMERA_CLEARANCE,
+  maxX: DHARMA_ORIGIN.x + x + PILLAR_RADIUS + CAMERA_CLEARANCE,
+  minY: 0,
+  maxY: DHARMA.ceilingHeight,
+  minZ: DHARMA_ORIGIN.z + DHARMA.frontZ - DHARMA.inset - PILLAR_RADIUS - 0.1,
+  maxZ: DHARMA_ORIGIN.z + DHARMA.frontZ,
+}));
+
+// Everything a camera inside the 법당 is held back from.
+export const DHARMA_KEEP_OUTS: readonly Box[] = [DHARMA_KEEP_OUT, ...DHARMA_PILLARS_KEEP_OUT];
 
 // How far short of a keep-out box the camera stops.
 const KEEP_OUT_MARGIN = 0.4;
@@ -186,6 +206,9 @@ function smooth(t: number): number {
   return t * t * (3 - 2 * t);
 }
 
+// How far the idle camera drifts from where it is aimed, at the most: radians of yaw and of pitch.
+export const SWAY = { yaw: 0.02, pitch: 0.012 } as const;
+
 export class CameraRig {
   yaw: number = DEFAULT_VIEW.yaw;
   pitch: number = DEFAULT_VIEW.pitch;
@@ -271,8 +294,8 @@ export class CameraRig {
   update(dt: number): void {
     this.clock += dt;
     this.stepRegion(dt);
-    const sway = this.reduceMotion ? 0 : Math.sin(this.clock * 0.35) * 0.02;
-    const bob = this.reduceMotion ? 0 : Math.sin(this.clock * 0.5 + 1) * 0.012;
+    const sway = this.reduceMotion ? 0 : Math.sin(this.clock * 0.35) * SWAY.yaw;
+    const bob = this.reduceMotion ? 0 : Math.sin(this.clock * 0.5 + 1) * SWAY.pitch;
     const yaw = this.yaw + sway;
     const pitch = this.pitch + bob;
     this.dir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));

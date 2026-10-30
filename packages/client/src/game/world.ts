@@ -3,7 +3,7 @@ import { ARRIVAL, DHARMA_ORIGIN, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, typ
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
-import { CameraRig, DHARMA_KEEP_OUT, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
+import { CameraRig, DHARMA_KEEP_OUTS, configureCamera, projectToCanvas, projectUnclipped, regionFor, viewFor } from "./camera-rig.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
 import { DHARMA } from "./dharma-layout.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
@@ -155,7 +155,7 @@ export class World {
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
-    this.rig = new CameraRig(this.camera, region.bounds, region.limits, [DHARMA_KEEP_OUT]);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits, DHARMA_KEEP_OUTS);
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
     this.input = new PointerInput(canvas, {

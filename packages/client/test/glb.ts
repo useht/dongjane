@@ -188,6 +188,17 @@ function attribute(glb: Glb, nodeName: string, name: "POSITION" | "COLOR_0"): { 
   return readAccessor(glb, accessor);
 }
 
+// The corners of every triangle of a root node, as x, y, z triples three to a triangle, in the node's own frame (indexed or not).
+export function triangleCorners(glb: Glb, nodeName: string): number[] {
+  const { json } = glb;
+  const meshIndex = json.nodes?.find((node) => node.name === nodeName)?.mesh;
+  const primitive = meshIndex === undefined ? undefined : json.meshes?.[meshIndex]?.primitives[0];
+  if (primitive?.attributes.POSITION === undefined) throw new Error(`${nodeName} has no POSITION`);
+  const points = readAccessor(glb, primitive.attributes.POSITION);
+  const order = primitive.indices === undefined ? Array.from({ length: points.count }, (_, i) => i) : readAccessor(glb, primitive.indices).values;
+  return order.flatMap((vertex) => [points.values[vertex * 3] as number, points.values[vertex * 3 + 1] as number, points.values[vertex * 3 + 2] as number]);
+}
+
 export function colors(glb: Glb, nodeName: string): { count: number; size: number; values: number[] } {
   return attribute(glb, nodeName, "COLOR_0");
 }
