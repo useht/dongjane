@@ -32,23 +32,29 @@ Colours are written to the "Col" vertex-colour layer from PALETTE, and the mater
 
 Blender axes: X right, Y forward (the face looks toward +Y), Z up. glTF export maps (x, y, z) -> (x, z, -y).
 
-Proportions: the monk is 4 heads tall (4등신), the most common ratio for a cute child character and the nearest whole
-number to docs/reference/img.jpg (a full-body chibi seen from the front, 3.78 heads). H = head height without hair (crown of
-the skull to the chin); everything is laid out in H (H = 0.33, so the monk is 1.32 high):
-    standing height, skull top to sole   4.00
-    chin above the sole                  3.00
-    shoulder joint above the sole        2.55     (chin to shoulder 0.45, the reference 0.45)
-    hip above the sole                   1.75     (chin to hip 1.25)
-    fingertip above the sole, arm down   1.58     (0.17 below the hip pivot, the reference 0.15)
-    shoulder joint to fingertip          0.97     (the reference 0.96)
-    upper arm 0.35, forearm 0.31, hand 0.31       the elbow sits 36 % of the way down the arm, and the arm hangs straight
-    jacket hem above the sole            1.49     (0.26 below the hip pivot, where the reference's jacket ends at the crotch)
-    trouser cuff above the sole          0.34     (the cream sock shows below it, as the reference's sneakers do)
-    head width, ears included            0.94     (the reference's 0.93 includes the bob hair; the monk is shaved)
-The face has eyes, nose and mouth only: no blush on the cheeks.
+Proportions: the monk is 4 heads tall (4등신) with the head of a child, but the body below the chin is an adult human's, squeezed
+into 3 heads: the standard 8-head canon (chin 1, shoulder joint 1.5, elbow 3.0 = navel, wrist 4.25, fingertip 5.0 = mid-thigh,
+crotch 4, knee 6, ankle 7.5, sole 8 head units from the crown) has 7 head units below the chin, and every one of them is scaled
+by 3/7 here. H = head height without hair (crown of the skull to the chin); everything is laid out in H (H = 0.33, so the monk is
+1.32 high), listed as the height above the sole:
+    standing height, skull top           4.00
+    chin                                 3.00
+    shoulder joint                       2.79     (chin to shoulder 0.21)
+    elbow, arm hanging                   2.14     (navel level)
+    wrist                                1.61
+    fingertip                            1.29     (mid-thigh, 0.42 H below the hip pivot)
+    hip pivot                            1.71     (chin to hip 1.29: the human crotch height)
+    knee                                 0.86
+    ankle pivot                          0.21
+    upper arm 0.64, forearm 0.54, hand 0.32       arm 1.50 long, the elbow 43 % of the way from the shoulder to the fingertip
+    thigh (hip pivot to knee) 0.86, shin (knee to ankle pivot) 0.64
+    jacket hem above the sole            1.45     (0.26 below the hip pivot, a hip-length jacket)
+    trouser cuff above the sole          0.26     (just over the ankle; the cream sock and the flat foot show below it)
+    head width, ears included            0.94     (the head keeps its child size and shape)
+The head, the neck and the face are untouched by the limb proportions. The face has eyes, nose and mouth only: no blush.
 Praying swings the arms forward and yaws them inward (POSE below), and the fingertips meet just under the chin.
-(Earlier versions: 3.47 heads, which kept the old 1.145 standing height with a 0.92 H torso; and 3.18 heads from
-docs/reference/images.jpg, panel 4.)
+(Earlier versions: 4 heads with a short child's arm (fingertip 1.58, elbow 36 %) and a long leg stub (hip 1.75, shoulder 2.55);
+3.47 heads, which kept the old 1.145 standing height with a 0.92 H torso; and 3.18 heads from docs/reference/images.jpg, panel 4.)
 """
 
 import bmesh
@@ -75,17 +81,19 @@ RATIO = {  # in units of HEAD_H, measured from the reference (see the docstring)
     "head_depth": 0.916,  # 0.302 absolute
     "shoulder_breadth": 0.873,  # outer edge to outer edge, sleeves included: 0.288 absolute
     "neck": 0.076,  # chin down to the base of the neck (chibi: almost none), 0.025 absolute
-    "chin_to_shoulder": 0.45,  # chin down to the shoulder joint
-    "chin_to_hip": 1.25,  # chin down to the hip pivot (waist belt sits just above it)
-    "waist_to_sole": 1.75,  # hip pivot height when standing
-    "upper_arm": 0.35,  # shoulder joint to elbow pivot
-    "fore_arm": 0.31,  # elbow pivot to wrist pivot (the hand hangs on below it)
-    "hand": 0.31,  # wrist pivot down to the fingertip
+    "chin_to_shoulder": 0.21,  # chin down to the shoulder joint (the 8-head adult's 0.5 head units, scaled by 3/7)
+    "chin_to_hip": 1.29,  # chin down to the hip pivot (waist belt sits just above it)
+    "waist_to_sole": 1.71,  # hip pivot height when standing: the human crotch height
+    "upper_arm": 0.643,  # shoulder joint to elbow pivot (the adult's 1.5 head units)
+    "fore_arm": 0.536,  # elbow pivot to wrist pivot (1.25 units; the hand hangs on below it)
+    "hand": 0.321,  # wrist pivot down to the fingertip (0.75 units)
+    "knee": 0.855,  # knee height above the sole (the adult's 2 units): thigh 0.855, shin 0.645 plus the ankle
+    "ankle": 0.21,  # ankle pivot above the sole (0.5 units)
+    "cuff": 0.26,  # the trouser cuff above the sole, just over the ankle
 }
 STAND_H = 4.0  # standing height in head heights: 4등신
 JACKET_HEM = 0.26  # in H: the jacket hem hangs this far below the hip pivot (the reference: the jacket ends at the crotch)
 PELVIS_DEPTH = 0.57  # in H: the crotch of the trousers hangs this far below the hip pivot
-CUFF_ABOVE_ANKLE = 0.07  # the trouser cuff stops this far above the ankle pivot, so the foot shows below it
 
 RIG = {  # pivots and lengths the animation code uses
     "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
@@ -94,13 +102,14 @@ RIG = {  # pivots and lengths the animation code uses
     "pelvisDrop": round(PELVIS_DEPTH * HEAD_H, 3),  # the crotch of the trousers hangs this far below the hip pivot
     "shoulderX": 0.095,
     "shoulderDrop": 0.0,  # set below: shoulder joint below the neck base
-    "upperArm": round(RATIO["upper_arm"] * HEAD_H, 3),  # the elbow sits at 36 % of the way from the shoulder to the fingertip
+    "upperArm": round(RATIO["upper_arm"] * HEAD_H, 3),  # the elbow sits at 43 % of the way from the shoulder to the fingertip
     "foreArm": round(RATIO["fore_arm"] * HEAD_H, 3),
     "footX": 0.07,
-    "footY": 0.042,
+    "footY": round(RATIO["ankle"] * HEAD_H, 4),  # the ankle pivot above the sole; the flat sock's top reaches it
     "footForward": 0.03,  # standing: the ankle sits this far in front of the hip, the toes reach a hand further
     "footKneelZ": 0.17,  # kneeling: the foot folds sole-up behind the hip, toes peeking out behind the trousers
     "footKneelTilt": pi,
+    "legKneelLift": 0.052,  # kneeling: the leg lower end lies this far above the foot pivot, on top of the folded foot, so the trouser cuff clears the cushion
     "legTopDrop": 0.10,  # the leg's top pivot hangs this far below the hip pivot, inside the pelvis of the trousers
     "kneelPelvisGrow": 0.4,  # kneeling spreads the trousers' pelvis sideways ...
     "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the cushion
@@ -112,18 +121,26 @@ RIG = {  # pivots and lengths the animation code uses
 RIG["hipKneel"] = round(RIG["pelvisDrop"] * RIG["kneelPelvisScaleY"] + 0.007, 3)  # the kneeling crotch hangs 7 mm over the cushion
 RIG["shoulderDrop"] = round((RATIO["chin_to_shoulder"] - RATIO["neck"]) * HEAD_H, 4)
 RIG["legLength"] = round(RIG["hipStand"] - RIG["legTopDrop"] - RIG["footY"], 4)  # top pivot down to the ankle pivot, standing
+CUFF_ABOVE_ANKLE = round(RATIO["cuff"] * HEAD_H - RIG["footY"], 4)  # the trouser cuff stops this far above the ankle pivot, so the foot shows below it
 
-HAND = {"reach": round(RATIO["hand"] * HEAD_H, 3)}  # wrist pivot down to the fingertip (the reference: 0.31 h)
+HAND = {"reach": round(RATIO["hand"] * HEAD_H, 3)}  # wrist pivot down to the fingertip (an adult's 0.32 H)
+HAND_DRAWN_REACH = 0.102  # the wrist-to-fingertip reach the hand's width profile was drawn for
 
-POSE = {  # arm angles of the idle and praying poses (radians); a copy of the numbers in monk-model.ts, used by the previews
+POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; z is positive inward); a copy of the numbers in monk-model.ts, used by the previews
     "idle_x": 0.08,
-    "idle_z": 0.0,
+    "idle_z": -0.12,  # the arms hang a little away from the body, so the hands clear the baggy hips
     "idle_elbow": 0.1,
-    "pray_x": 0.90,  # the whole arm swings forward ...
-    "pray_y": 0.35,  # ... and yaws inward, so the elbow flexes toward the middle of the chest ...
-    "pray_z": 0.28,
-    "pray_elbow": 1.93,  # ... the fingertips meet just below the chin ...
-    "pray_twist": 0.94,  # ... and the forearm rolls, so the two palms face each other
+    "walk_swing": 0.5,  # the arm swings this far at full stride, opposite the same side's leg; the back swing bends the elbow half as much
+    "pray_x": 0.24,  # the upper arm hangs close to the side, a little forward ...
+    "pray_y": 0.35,  # ... and yaws inward, ...
+    "pray_z": 0.05,
+    "pray_elbow": 2.28,  # ... the elbow folds far enough to bring the fingertips just below the chin ...
+    "pray_twist": 1.15,  # ... and the forearm rolls, so the two palms face each other
+    "bow_lean": 1.32,  # the bow tips the torso forward, ...
+    "bow_head": 0.5,  # ... the head further,
+    "bow_x": 0.83,  # the upper arms hang back under the shoulders (the torso has tipped 1.32 forward), ...
+    "bow_z": 0.43,  # ... drawn in against the ribs, ...
+    "bow_elbow": 1.81,  # ... and the folded forearms bring the hands together on the seat in front of the face
 }
 
 LEG = {
@@ -512,8 +529,8 @@ TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: 
     (0.100, 0.100, 0.074, 2.5),
     (0.165, 0.100, 0.070, 2.6),
     (SHOULDER_Y - 0.012, 0.101, 0.066, 2.8),
-    (SHOULDER_Y + 0.036, 0.086, 0.060, 2.5),
-    (SHOULDER_Y + 0.082, 0.066, 0.054, 2.2),
+    (SHOULDER_Y + 0.014, 0.090, 0.062, 2.5),
+    (SHOULDER_Y + 0.030, 0.072, 0.056, 2.2),
     (TORSO_H, 0.056, 0.050, 2.0),
 ]
 
@@ -544,6 +561,12 @@ def build_torso():
     p = Part("torso")
     p.loft(torso_rings(), "jacket", cap_first=True, cap_last=True)
     return p.to_object()
+
+
+def clearance_of(tree, point):
+    """Signed distance from a closed surface's BVH tree (positive = outside)."""
+    hit, normal, _, dist = tree.find_nearest(point)
+    return dist if (point - hit).dot(normal) >= 0 else -dist
 
 
 class TorsoSurface:
@@ -600,12 +623,13 @@ def build_trousers():
     n = SEGMENTS["trousers"]
     length = RIG["legLength"]
     cuff = -length + CUFF_ABOVE_ANKLE
+    knee = -length + RATIO["knee"] * HEAD_H - RIG["footY"]  # the human knee height: the widest point of the leg
     stations = [  # z, half-width (x), half-depth (y)
         (cuff, 0.0350, 0.0360),  # the cuff hugs the sock inside
         (cuff + 0.005, 0.0385, 0.0400),
         (cuff + 0.024, 0.0480, 0.0520),  # the fabric billows out of the gather ...
         (cuff + 0.070, 0.0535, 0.0600),  # ... and hangs full to the knee
-        (-0.190, 0.0545, 0.0700),
+        (knee, 0.0545, 0.0700),
         (-0.110, 0.0535, 0.0790),
         (-0.050, 0.0525, 0.0850),  # thigh: as deep as the seat it hangs from, so legs and seat read as one garment
         (0.000, 0.0505, 0.0820),
@@ -782,7 +806,7 @@ def build_sleeve_lower():
 def build_hand():
     p = Part("hand")
     n = SEGMENTS["hand"]
-    profile = [  # z, half-width, half-depth (origin at the wrist, fingers hang down); 0.2 H wide
+    profile = [  # z, half-width, half-depth (origin at the wrist, fingers hang down), drawn for a 0.102 hand, 0.2 H wide
         (-0.070, 0.014, 0.013),
         (-0.062, 0.027, 0.021),
         (-0.046, 0.035, 0.027),
@@ -792,8 +816,9 @@ def build_hand():
         (0.021, 0.026, 0.022),
     ]
     tip = -0.074
-    stretch = -HAND["reach"] / tip  # the part below the wrist is lengthened to the reference's wrist-to-fingertip reach
-    rings = [ring_xy(0.0, 0.0, z * stretch if z < 0 else z, w, d, n) for z, w, d in profile]
+    stretch = -HAND["reach"] / tip  # the part below the wrist is lengthened to the wrist-to-fingertip reach ...
+    grow = HAND["reach"] / HAND_DRAWN_REACH  # ... and the hand grows as much sideways, so its shape stays the same
+    rings = [ring_xy(0.0, 0.0, z * stretch if z < 0 else z, w * grow, d * grow, n) for z, w, d in profile]
     p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, tip * stretch)), cap_last=True)
     return p.to_object()
 
@@ -802,22 +827,24 @@ def foot_geometry():
     """Rings and the two end poles of the sock, in the ankle frame. Toes point toward +Y; the sole is at z = -footY."""
     n = SEGMENTS["foot"]
     sole = -RIG["footY"]
-    stations = [  # y, half-width, bottom z, top z
-        (-0.054, 0.021, sole + 0.011, sole + 0.065),
-        (-0.044, 0.036, sole + 0.002, sole + 0.090),
-        (-0.017, 0.044, sole, sole + 0.092),
-        (0.017, 0.048, sole, sole + 0.074),
-        (0.054, 0.044, sole, sole + 0.054),
-        (0.088, 0.034, sole + 0.002, sole + 0.047),
-        (0.117, 0.022, sole + 0.012, sole + 0.059),
-        (0.136, 0.011, sole + 0.036, sole + 0.077),
+    flat = RIG["footY"] / 0.092  # the sock was drawn 0.092 high; it is pressed flat so its top reaches the ankle pivot, under the trouser cuff
+    stations = [  # y, half-width, bottom z, top z (above the sole)
+        (-0.054, 0.021, 0.011, 0.065),
+        (-0.044, 0.036, 0.002, 0.090),
+        (-0.017, 0.044, 0.0, 0.092),
+        (0.017, 0.048, 0.0, 0.074),
+        (0.054, 0.044, 0.0, 0.054),
+        (0.088, 0.034, 0.002, 0.047),
+        (0.117, 0.022, 0.012, 0.059),
+        (0.136, 0.011, 0.036, 0.077),
     ]
     rings = []
     for y, w, zb, zt in stations:
+        zb, zt = sole + zb * flat, sole + zt * flat
         zc, h = (zb + zt) / 2, (zt - zb) / 2
         rings.append([Vector((w * cos(2 * pi * k / n), y, zc - h * sin(2 * pi * k / n))) for k in range(n)])
     heel = Vector((0.0, -0.065, sum(v.z for v in rings[0]) / n))
-    toe = Vector((0.0, 0.144, sum(v.z for v in rings[-1]) / n + 0.007))
+    toe = Vector((0.0, 0.144, sum(v.z for v in rings[-1]) / n + 0.007 * flat))
     return rings, heel, toe
 
 
@@ -854,7 +881,7 @@ def build_leg():
         return ring_xy(0.0, 0.0, -length + above_ankle, radius, radius, n)
 
     sock = [  # the bottom end hides inside the foot's instep
-        ring(-0.004, r * 0.9),
+        ring(-0.008, r * 0.9),
         ring(0.03, r * 0.97),
         ring(0.12, r * 1.03),
         ring(cuff - 0.036, r * 1.06),
@@ -987,23 +1014,36 @@ def check_proportions(parts):
     cuff = hip - RIG["legTopDrop"] + cuff_bottom  # the trouser cuff, legs straight
     shoulder = hip + SHOULDER_Y
     upper = -min(v.co.z for v in parts["sleeveUpper"].data.vertices)  # the sleeve's lower edge sits on the elbow pivot
-    fingertip = shoulder - upper - RIG["foreArm"] + min(v.co.z for v in parts["hand"].data.vertices)  # arms hanging straight
+    hand = -min(v.co.z for v in parts["hand"].data.vertices)  # wrist pivot down to the fingertip
+    elbow = shoulder - upper
+    wrist = elbow - RIG["foreArm"]
+    fingertip = wrist - hand  # arms hanging straight
     reach = shoulder - fingertip
+    knee_vertex = max(parts["trousers"].data.vertices, key=lambda v: v.co.x)  # the trouser leg is widest at the knee
+    knee = hip - RIG["legTopDrop"] + knee_vertex.co.z
+    ankle = sole + RIG["footY"]
     measured = {
         "H (crown to chin, m)": (size, HEAD_H, 0.002),
         "standing height / H": ((hip + neck + crown - sole) / size, STAND_H, 0.05),
-        "hip / H (hip to sole)": ((hip - sole) / size, RATIO["waist_to_sole"], 0.05),
-        "chin to hip / H": ((neck + chin) / size, RATIO["chin_to_hip"], 0.03),
-        "shoulder joint / H": ((shoulder - sole) / size, STAND_H - 1 - RATIO["chin_to_shoulder"], 0.03),
-        "fingertip / H": ((fingertip - sole) / size, 1.58, 0.04),
-        "upper arm / H": (upper / size, RATIO["upper_arm"], 0.03),
-        "forearm / H": (RIG["foreArm"] / size, RATIO["fore_arm"], 0.03),
-        "shoulder to fingertip / H": (reach / size, 0.97, 0.03),
-        "elbow along the arm": (upper / reach, 0.36, 0.03),
+        "hip / H (hip to sole)": ((hip - sole) / size, RATIO["waist_to_sole"], 0.02),
+        "chin to hip / H": ((neck + chin) / size, RATIO["chin_to_hip"], 0.02),
+        "shoulder joint / H": ((shoulder - sole) / size, STAND_H - 1 - RATIO["chin_to_shoulder"], 0.02),
+        "elbow / H": ((elbow - sole) / size, 2.14, 0.02),
+        "wrist / H": ((wrist - sole) / size, 1.61, 0.02),
+        "fingertip / H": ((fingertip - sole) / size, 1.29, 0.02),
+        "upper arm / H": (upper / size, 0.64, 0.01),
+        "forearm / H": (RIG["foreArm"] / size, 0.54, 0.01),
+        "hand / H": (hand / size, 0.32, 0.01),
+        "shoulder to fingertip / H": (reach / size, 1.50, 0.02),
+        "elbow along the arm": (upper / reach, 0.43, 0.01),
+        "knee / H": ((knee - sole) / size, 0.855, 0.01),
+        "ankle pivot / H": ((ankle - sole) / size, 0.21, 0.01),
+        "thigh / H (hip to knee)": ((hip - knee) / size, 0.855, 0.02),
+        "shin / H (knee to ankle)": ((knee - ankle) / size, 0.645, 0.02),
         "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, 0.94, 0.03),
         "jacket hem above sole / H": ((hem - sole) / size, RATIO["waist_to_sole"] - JACKET_HEM, 0.03),
         "crotch above sole / H": ((crotch - sole) / size, RATIO["waist_to_sole"] - PELVIS_DEPTH, 0.03),
-        "trouser cuff above sole / H": ((cuff - sole) / size, (RIG["footY"] + CUFF_ABOVE_ANKLE) / HEAD_H, 0.03),
+        "trouser cuff above sole / H": ((cuff - sole) / size, RATIO["cuff"], 0.01),
     }
     for label, (value, want, tol) in measured.items():
         print("MEASURED %-28s %.4f (want %.4f +- %.3f)" % (label, value, want, tol))
@@ -1049,6 +1089,55 @@ def check_kneel_hands(parts):
     assert worst_neck >= -0.002, "the praying hands sink %.4f into the neck" % -worst_neck
 
 
+def world_bvh(obj, matrix):
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
+    bm.normal_update()
+    tree = BVHTree.FromBMesh(bm)
+    bm.free()
+    return tree
+
+
+def check_bow(parts):
+    """The deepest bow: nothing sinks into the seat (a cushion, or a thinner mat: the plane at the seat top is the safe bound for
+    both), the arms and hands stay clear of the head and torso, and the hands meet in front of the face without crossing."""
+    cushion = RIG["seatTop"]
+    mats = pose_matrices(1.0, cushion, bow=1.0)
+    for part, matrices in mats.items():
+        low = min((m @ v.co).z - cushion for m in matrices for v in parts[part].data.vertices)
+        print("BOW lowest %-12s %.4f above the seat" % (part, low))
+        assert low >= -0.0005, "%s sinks %.4f into the seat in the bow" % (part, -low)
+    head = world_bvh(parts["head"], mats["head"][0])
+    torso = world_bvh(parts["torso"], mats["torso"][0])
+    for part, margin in (("hand", 0.004), ("sleeveLower", 0.0), ("sleeveUpper", 0.0)):
+        near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
+        print("BOW %-12s clearance from the head %.4f" % (part, near_head))
+        assert near_head >= margin, "the bowing %s sinks %.4f into the head" % (part, margin - near_head)
+    for part in ("hand", "sleeveLower"):
+        near_torso = min(clearance_of(torso, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
+        print("BOW %-12s clearance from the torso %.4f" % (part, near_torso))
+        assert near_torso >= 0.0, "the bowing %s sinks %.4f into the torso" % (part, -near_torso)
+    cross = max(max((m @ v.co).x * (1 if side == 0 else -1) for v in parts["hand"].data.vertices) for side, m in enumerate(mats["hand"]))
+    print("BOW hands cross the middle by %.4f" % cross)
+    assert cross <= 0.012, "the bowing hands cross the middle by %.4f" % cross
+
+
+def check_standing_hands(parts):
+    """The hanging hands and cuffs stay outside the baggy hips and thighs."""
+    mats = pose_matrices(0.0, 0.0)
+    pelvis = world_bvh(parts["pelvis"], mats["pelvis"][0])
+    legs = [world_bvh(parts["trousers"], m) for m in mats["trousers"]]
+    for part, limit in (("hand", -0.002), ("sleeveLower", -0.012)):
+        worst = 1.0
+        for m in mats[part]:
+            for v in parts[part].data.vertices:
+                p = m @ v.co
+                worst = min(worst, clearance_of(pelvis, p), *(clearance_of(leg, p) for leg in legs))
+        print("STAND %-12s clearance from the hips and legs %.4f" % (part, worst))
+        assert worst >= limit, "the hanging %s sinks %.4f into the hips or legs" % (part, -worst)
+
+
 def rig_dict():
     return {
         "_source": "packages/client/assets/monk/build_monk.py",
@@ -1071,6 +1160,7 @@ def rig_dict():
         "footKneelZ": RIG["footKneelZ"],
         "footKneelY": RIG["footKneelY"],
         "footKneelTilt": round(RIG["footKneelTilt"], 5),
+        "legKneelLift": RIG["legKneelLift"],
         "legTopDrop": RIG["legTopDrop"],
         "legLength": RIG["legLength"],
         "kneelPelvisGrow": RIG["kneelPelvisGrow"],
@@ -1112,33 +1202,37 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.Translation(Vector(pos)) @ three_euler @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
-def pose_matrices(kneel, cushion, stride=0.0):
+def pose_matrices(kneel, cushion, stride=0.0, bow=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
-    stride (-1 .. 1) swings the feet like the walk cycle does, so the stretched legs can be checked."""
+    stride (-1 .. 1) swings the feet and arms like the walk cycle does, so the stretched legs can be checked; bow (0 .. 1, kneeling
+    only) tips the torso and head forward with the arms reaching out, like the bow animation at its deepest."""
     lift = cushion * kneel
-    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), 0))
+    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), -0.1 * bow))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
     pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, 0), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
-    torso = hips
-    head = torso @ tmat((0, NECK_Y, 0))
+    torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow, 0, 0))
+    head = torso @ tmat((0, NECK_Y, 0), (-POSE["bow_head"] * bow, 0, 0))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "trim": [torso]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
+        pray = kneel * (1 - bow)
+        swing = POSE["walk_swing"] * stride * sign * (1 - kneel)
         arm_x = lerp(POSE["idle_x"], POSE["pray_x"], kneel)
-        arm_y = sign * POSE["pray_y"] * kneel
-        arm_z = -sign * lerp(POSE["idle_z"], POSE["pray_z"], kneel)
+        arm_x = arm_x + (POSE["bow_x"] - arm_x) * bow + swing
+        arm_y = sign * POSE["pray_y"] * pray
+        arm_z = -sign * (POSE["idle_z"] + (POSE["pray_z"] - POSE["idle_z"]) * pray + (POSE["bow_z"] - POSE["idle_z"]) * bow * kneel)
         shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
-        elbow = shoulder @ tmat(
-            (0, -RIG["upperArm"], 0), (lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel), -sign * POSE["pray_twist"] * kneel, 0)
-        )
+        elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
+        elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * bow + max(0.0, -swing) * 0.5
+        elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (elbow_x, -sign * POSE["pray_twist"] * pray, 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
         foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel)
         foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * sign * 0.2
         foot = tmat((sign * RIG["footX"], foot_y, foot_z), (RIG["footKneelTilt"] * kneel, 0, 0))
         top_y = hips.translation.y - RIG["legTopDrop"]
-        reach_y, reach_z = foot_y - top_y, foot_z - hips.translation.z
+        reach_y, reach_z = foot_y + RIG["legKneelLift"] * kneel - top_y, foot_z - hips.translation.z
         leg = tmat(
             (sign * RIG["footX"], top_y, hips.translation.z),
             (atan2(-reach_z, -reach_y), 0, 0),
@@ -1160,9 +1254,9 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
-def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], stride=0.0):
+def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], stride=0.0, bow=0.0):
     coll = new_collection(name)
-    mats = pose_matrices(kneel, cushion, stride)
+    mats = pose_matrices(kneel, cushion, stride, bow)
     robe = {"torso", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
@@ -1235,9 +1329,10 @@ def render_previews(parts):
     standing = build_pose("preview_standing", parts, 0.0, PREVIEW_HUE)
     walking = build_pose("preview_walking", parts, 0.0, PREVIEW_HUE, stride=0.85)
     kneeling = build_pose("preview_kneeling", parts, 1.0, PREVIEW_HUE)
+    bowing = build_pose("preview_bowing", parts, 1.0, PREVIEW_HUE, bow=1.0)
     for coll in list(bpy.data.collections):
         coll.hide_render = coll.name.startswith("monk_")
-    walking.hide_render = kneeling.hide_render = True
+    walking.hide_render = kneeling.hide_render = bowing.hide_render = True
     mid = (0, 0, 0.66)
     for name, az in (("monk_front", 0), ("monk_side", 90), ("monk_back", 180), ("monk_three_quarter", 38)):
         render_view(cam, name, az, mid, 1.7)
@@ -1249,7 +1344,11 @@ def render_previews(parts):
     kmid = (0, 0, 0.66)
     for name, az in (("monk_kneel_front", 0), ("monk_kneel_three_quarter", 38), ("monk_kneel_side", 90)):
         render_view(cam, name, az, kmid, 1.7)
-    for coll in (standing, walking, kneeling):
+    kneeling.hide_render = True
+    bowing.hide_render = False
+    for name, az in (("monk_bow_front", 0), ("monk_bow_three_quarter", 38), ("monk_bow_side", 90)):
+        render_view(cam, name, az, (0, 0.3, 0.4), 1.7)
+    for coll in (standing, walking, kneeling, bowing):
         for obj in list(coll.objects):
             bpy.data.objects.remove(obj)
         bpy.data.collections.remove(coll)
@@ -1269,6 +1368,8 @@ def main():
     check_proportions(parts)
     check_kneel_clearance(parts)
     check_kneel_hands(parts)
+    check_bow(parts)
+    check_standing_hands(parts)
 
     glb = os.path.join(HERE, "monk.glb")
     export_glb(parts_coll, glb)
