@@ -97,7 +97,7 @@ export class SyncedLoop {
     this.seconds = options.seconds ?? SUTRA_SECONDS;
     this.now = options.now ?? (() => performance.now());
     this.createAudio = options.createAudio ?? ((source) => new Audio(source));
-    engine.onUnlock(() => this.prime());
+    engine.onUnlock(() => this.wake());
   }
 
   get playing(): boolean {
@@ -116,6 +116,13 @@ export class SyncedLoop {
     if (!audio) return;
     this.primed = true;
     void this.start(audio);
+  }
+
+  // Each time the context runs again, a loop that should be playing is started: a play that came before the context was
+  // running, or one halted by an interruption, would otherwise stay silent until the visitor changed place.
+  private wake(): void {
+    this.prime();
+    this.update();
   }
 
   setActive(active: boolean): void {

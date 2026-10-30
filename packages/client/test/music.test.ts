@@ -209,6 +209,7 @@ function rig(refuse = false) {
   return {
     loop,
     audio,
+    engine,
     gesture: () => listeners.forEach((fn) => fn()),
     advance(ms: number) {
       clock += ms;
@@ -371,6 +372,36 @@ describe("SyncedLoop", () => {
     t.advance(7000);
     t.audio.fire("loadedmetadata");
     expect(t.audio.currentTime).toBeCloseTo(aimAhead(t.place(), SUTRA_SECONDS), 6);
+  });
+
+  it("starts once the context runs, when the first play came before it was running", async () => {
+    const t = start();
+    t.engine.unlocked = false;
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    expect(t.loop.playing).toBe(false);
+    t.engine.unlocked = true;
+    t.gesture();
+    await flush();
+    expect(t.loop.playing).toBe(true);
+  });
+
+  it("starts again after an interruption has halted it, once the context runs again", async () => {
+    const t = start();
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    t.engine.unlocked = false;
+    t.loop.tick();
+    expect(t.loop.playing).toBe(false);
+    t.engine.unlocked = true;
+    t.gesture();
+    await flush();
+    expect(t.loop.playing).toBe(true);
+    expect(t.audio.play).toHaveBeenCalledTimes(2);
   });
 
   it("does not keep knocking when the browser refuses to play", async () => {
