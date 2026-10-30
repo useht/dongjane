@@ -19,7 +19,7 @@ import { ARRIVAL, SEAT_YAW, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yaw
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
-import { HOME_AREAS, type Point, clampToHome, planPath, resolveWalkable, zoneAt } from "./walk.ts";
+import { INTERIOR_AREA, type Point, planPath, randomPointIn, resolveWalkable, zoneAt } from "./walk.ts";
 
 // The corners left to walk, in order; the last is where the walk ends, and `seatId` is the seat it ends on (or -1).
 interface Route {
@@ -32,8 +32,6 @@ interface Runtime {
   route: Route | null;
   // the zone of the seat the monk holds, when it holds one
   seatZone: Zone | null;
-  // a computer-driven monk's own zone, which it never leaves
-  home: Zone | null;
   bowEndsAt: number;
   bowsLeft: number;
   nextBowAt: number;
@@ -63,10 +61,7 @@ export class TempleSim {
   private readonly chantMs: number;
   private readonly npcActions: NpcActions = {
     move: (id, x, z) => this.move(id, x, z),
-    sit: (id, seatId) => {
-      const home = this.runtimes.get(id)?.home;
-      return home != null && this.sit(id, home, seatId);
-    },
+    sit: (id, zone, seatId) => this.sit(id, zone, seatId),
     stand: (id) => this.stand(id),
     bow: (id, times) => this.bow(id, times),
   };
@@ -85,13 +80,7 @@ export class TempleSim {
     }
     this.updateChant();
 
-    let n = 0;
-    for (const zone of ZONES) {
-      for (let i = 0; i < (options.npcCount ?? 0); i += 1) {
-        n += 1;
-        this.spawnNpc(`npc-${n}`, zone, options.personas?.[n - 1]);
-      }
-    }
+    for (let n = 1; n <= (options.npcCount ?? 0); n += 1) this.spawnNpc(`npc-${n}`, options.personas?.[n - 1]);
   }
 
   get humanCount(): number {
@@ -135,7 +124,7 @@ export class TempleSim {
     });
     this.placeAtArrival(monk);
     this.state.monks.set(id, monk);
-    this.runtimes.set(id, this.runtime(null, null));
+    this.runtimes.set(id, this.runtime(null));
     return monk;
   }
 
@@ -161,7 +150,7 @@ export class TempleSim {
   sit(id: string, zone: Zone, seatId: number): boolean {
     const monk = this.state.monks.get(id);
     const runtime = this.runtimes.get(id);
-    if (!monk || !runtime || (runtime.home && runtime.home !== zone)) return false;
+    if (!monk || !runtime) return false;
     const spot = seatSpot(zone, seatId);
     const seat = this.state.seats.get(seatKey(zone, seatId));
     if (!spot || !seat) return false;
@@ -290,9 +279,7 @@ export class TempleSim {
         this.beginBow(monk, runtime, now);
       }
 
-      if (runtime.brain && runtime.home && now >= runtime.brain.nextThinkAt) {
-        this.think(monk, runtime.brain, runtime.home, now);
-      }
+      if (runtime.brain && now >= runtime.brain.nextThinkAt) this.think(monk, runtime.brain, now);
     }
   }
 
@@ -323,11 +310,10 @@ export class TempleSim {
     if (brain) disturbNpc(brain, this.clock(), this.random);
   }
 
-  private runtime(brain: NpcBrain | null, home: Zone | null): Runtime {
+  private runtime(brain: NpcBrain | null): Runtime {
     return {
       route: null,
       seatZone: null,
-      home,
       bowEndsAt: 0,
       bowsLeft: 0,
       nextBowAt: 0,
@@ -339,14 +325,9 @@ export class TempleSim {
     };
   }
 
-  private spawnNpc(id: string, zone: Zone, persona: Persona | undefined): void {
+  private spawnNpc(id: string, persona: Persona | undefined): void {
     const random = this.random;
-    const bounds = HOME_AREAS[zone];
-    const spot = clampToHome(
-      zone,
-      bounds.minX + random() * (bounds.maxX - bounds.minX),
-      bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
-    );
+    const spot = randomPointIn(INTERIOR_AREA, random);
     const monk = new Monk({
       id,
       slot: 0,
@@ -361,10 +342,11 @@ export class TempleSim {
     });
     this.state.monks.set(id, monk);
     const brain = createNpcBrain(persona ?? generatePersona(random), random, this.clock());
-    this.runtimes.set(id, this.runtime(brain, zone));
+    this.runtimes.set(id, this.runtime(brain));
   }
 
-  private think(monk: Monk, brain: NpcBrain, zone: Zone, now: number): void {
+  private think(monk: Monk, brain: NpcBrain, now: number): void {
+    const zone = zoneAt(monk.x, monk.z);
     const chant = this.state.chant;
     const chanting = now >= chant.startsAt && now < chantEndsAt(chant);
     thinkNpc(
