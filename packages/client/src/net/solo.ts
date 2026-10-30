@@ -54,6 +54,14 @@ export class SoloSession {
     if (!this.closed) this.sim.jump(SOLO_ID);
   }
 
+  cast(): void {
+    if (!this.closed) this.sim.cast(SOLO_ID);
+  }
+
+  reel(): void {
+    if (!this.closed) this.sim.reel(SOLO_ID);
+  }
+
   bow(times: BowMessage["times"]): void {
     if (!this.closed) this.sim.bow(SOLO_ID, times);
   }

@@ -6,9 +6,13 @@ import {
   CHANT_MS,
   DHARMA_SEATS,
   EMOTE_COOLDOWN_MS,
+  FISH,
   GATBAWI_SEATS,
+  ITEM_ROD,
   JUMP_COOLDOWN_MS,
   SEAT_COUNT,
+  SEA_LINE_X,
+  SHORE,
   WORLDS_PATH,
   WORLD_BOUNDS,
   WORLD_CAPACITY,
@@ -467,6 +471,41 @@ describe("two clients in one world", () => {
     expect(seenByB.mode).toBe("kneel");
   }, 20_000);
 
+  it("lets A cast from the water's edge with the rod and reel in a fish that B watches, and refuses both elsewhere", async () => {
+    const a = await rig.enter(1);
+    const b = await rig.enter(1);
+    await waitFor(() => b.state.monks.has(a.sessionId), "B sees A");
+    const seenByB = b.state.monks.get(a.sessionId)!;
+
+    a.send(MSG.cast, {});
+    a.send(MSG.reel, {});
+    await sleep(300);
+    expect(seenByB).toMatchObject({ mode: "stand", bite: false, catchSeq: 0 });
+
+    a.send(MSG.equip, { item: ITEM_ROD });
+    await waitFor(() => seenByB.item === ITEM_ROD, "B sees A hold the rod", 1000);
+    a.send(MSG.cast, {});
+    await sleep(300);
+    expect(seenByB.mode).toBe("stand");
+
+    a.send(MSG.move, { x: SEA_LINE_X, z: 6 });
+    await waitFor(() => seenByB.mode === "walk", "A sets off for the shore", 1000);
+    await waitFor(() => seenByB.mode === "stand" && seenByB.x > SEA_LINE_X - 0.2, "A stands at the water's edge", 25_000, 25);
+
+    a.send(MSG.cast, {});
+    await waitFor(() => seenByB.mode === "fish", "B sees A cast", 1000);
+    await waitFor(() => seenByB.bite, "B sees a fish bite", 12_000, 25);
+    a.send(MSG.reel, {});
+    await waitFor(() => seenByB.catchSeq === 1, "B sees A reel in", 1000);
+    expect(seenByB.mode).toBe("stand");
+    expect(seenByB.bite).toBe(false);
+    expect(FISH.map((fish) => fish.id)).toContain(seenByB.lastCatch);
+
+    a.send(MSG.reel, {});
+    await sleep(300);
+    expect(seenByB.catchSeq).toBe(1);
+  }, 60_000);
+
   it("rejects a bow while standing and keeps bowCount at zero", async () => {
     const a = await rig.enter(1);
     a.send("bow", { times: 1 });
@@ -654,11 +693,11 @@ describe("hardening", () => {
     a.send("move", { x: 1e9, z: 1e9 });
     await waitFor(() => monk.mode === "walk", "valid move accepted");
     await waitFor(
-      () => monk.x > WORLD_BOUNDS.maxX - 0.1 && monk.z > WORLD_BOUNDS.maxZ - 0.1,
+      () => monk.x > SHORE.maxX - 0.1 && monk.z > WORLD_BOUNDS.maxZ - 0.1,
       "clamped to the walkable corner",
-      20_000,
+      30_000,
     );
-    expect(monk.x).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxX));
+    expect(monk.x).toBeLessThanOrEqual(Math.fround(SHORE.maxX));
     expect(monk.z).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxZ));
   }, 30_000);
 

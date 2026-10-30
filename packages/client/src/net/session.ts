@@ -114,6 +114,14 @@ export class WorldSession {
     this.send(MSG.jump, {});
   }
 
+  cast(): void {
+    this.send(MSG.cast, {});
+  }
+
+  reel(): void {
+    this.send(MSG.reel, {});
+  }
+
   bow(times: BowMessage["times"]): void {
     this.send(MSG.bow, { times });
   }
