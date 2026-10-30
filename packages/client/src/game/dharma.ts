@@ -55,7 +55,6 @@ const CANDLE_LIGHT = { intensity: 9, distance: 11, decay: 2 } as const;
 const HEMISPHERE_LIGHT = 1.35;
 const WINDOW_LIGHT = 1.7;
 const LANTERN_GLOW = 0.9;
-const PAPER_GLOW = 0.55;
 const MURAL_GLOW = 0.5;
 const SEAT_OCCUPIED_TINT = 0.55;
 const FLAME_SIZE = { width: 0.34, height: 0.5 } as const;
@@ -178,7 +177,6 @@ export class DharmaScene {
     this.add(meshes.structure, lit());
     this.add(meshes.ceiling, lit());
     this.add(meshes.floor, lit()).receiveShadow = quality.shadows;
-    this.add(meshes.paper, vertexGlowMaterial(palette.paperGlow, PAPER_GLOW));
     this.add(meshes.mural, vertexGlowMaterial(palette.muralGlow, MURAL_GLOW));
 
     const gold = new MeshStandardMaterial({

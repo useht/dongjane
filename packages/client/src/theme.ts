@@ -66,7 +66,6 @@ export const THEME = {
     envLamp: "#fff1d2",
     envCandle: "#ffb866",
     candle: "#ffb45e",
-    paperGlow: "#ffe6b4",
     muralGlow: "#c0662f",
     goldGlow: "#ffcc66",
     lotusGlow: "#ff9db2",

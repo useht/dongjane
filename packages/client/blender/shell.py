@@ -12,7 +12,7 @@ import math
 
 from mathutils import Vector
 
-from common import GAME, Part, at, cells, hash01, hidden, mix, scaled, smoothstep, spun, turned
+from common import GAME, Part, at, cells, hash01, hidden, mix, scaled, smoothstep, spun, turned, wall_pieces
 
 UP = Vector((0.0, 1.0, 0.0))
 GAP = 0.02  # the plaster stands this far outside the room's own surfaces
@@ -24,9 +24,9 @@ EAVE_LIFT = 0.5  # the eaves' edge stands this far above the beams
 ROOF_THICK = 0.3  # tile to underside
 FASCIA = 0.3
 JAMB = 0.14
-WINDOW = (1.5, 4.5)  # bottom and top of the lattice windows
 RIB = 0.4  # tile ribs along the roof's length
 SLOPE_STEPS = 12
+PLAQUE_X = 1.35
 PLAQUE_Y = 4.9
 
 
@@ -55,6 +55,8 @@ class Shape:
         self.hz = (self.z1 - self.z0) / 2
         self.span = self.hz + self.eave  # from the ridge to the eaves' edge
         self.length = self.hx + self.eave  # from the middle to the gable eaves
+        self.openings = plan.openings  # the windows, by wall: (centre along the wall in the room's frame, width)
+        self.band = plan.band  # their bottom and top
         self.door_half = door["halfWidth"]
         self.door_high = door["height"]
         self.jambs = self.door_half + JAMB
@@ -165,7 +167,7 @@ def columns(parts, s):
 
 
 def walls(parts, s):
-    """The plaster: back and side walls in one part, the front wall in the other, with the doorway left open."""
+    """The plaster: back and side walls in one part, the front wall in the other, with the doorway left open and a gap for each window."""
     c = s.c
     height = s.wall_top - s.floor
     middle = (s.wall_top + s.floor) / 2
@@ -177,11 +179,25 @@ def walls(parts, s):
         part.box(centre, size, plaster, skip=hidden(*shown), cuts=cells(size, 1.2))
 
     thick = s.wall
+
+    def pierced(part, pieces, offset, along_z, *shown):
+        """Boxes for wall pieces at `offset` across the wall, running along z (side walls) or x (front)."""
+        for a0, a1, y0, y1, reveals in pieces:
+            mid, long, tall = (a0 + a1) / 2, a1 - a0, y1 - y0
+            if along_z:
+                # The pieces name their sides along the wall as x; here that is z.
+                block(part, (offset, (y0 + y1) / 2, mid), (thick, tall, long), *shown, *(side.replace("x", "z") for side in reveals))
+            else:
+                block(part, (mid, (y0 + y1) / 2, offset), (long, tall, thick), *shown, *reveals)
+
     block(parts["walls"], (0.0, middle, s.z0 + thick / 2), (2 * s.hx, height, thick), "-z")
+    for sign, name in ((1.0, "east"), (-1.0, "west")):
+        pieces = wall_pieces(s.z0, s.z1, s.floor, s.wall_top, s.openings[name], s.band)
+        pierced(parts["walls"], pieces, sign * (s.hx - thick / 2), True, "+x" if sign > 0 else "-x")
     for sign in (1.0, -1.0):
-        block(parts["walls"], (sign * (s.hx - thick / 2), middle, s.cz), (thick, height, s.z1 - s.z0), "+x" if sign > 0 else "-x")
-        run = s.hx - s.jambs
-        block(parts["front"], (sign * (s.hx + s.jambs) / 2, middle, s.z1 - thick / 2), (run, height, thick), "+z")
+        x0, x1 = sorted((sign * s.jambs, sign * s.hx))
+        run = [(along, width) for along, width in s.openings["front"] if x0 < along < x1]
+        pierced(parts["front"], wall_pieces(x0, x1, s.floor, s.wall_top, run, s.band), s.z1 - thick / 2, False, "+z")
 
     # Above the doorway: a dark lintel on the jambs, the plaster over it and the board that names the 법당.
     front = parts["front"]
@@ -195,14 +211,14 @@ def walls(parts, s):
             c["woodDark"],
             skip=hidden("+z", "-x" if sign > 0 else "+x"),
         )
-    front.box((0.0, PLAQUE_Y, s.z1 + 0.04), (2.7, 0.95, 0.08), c["gilt"], skip=hidden("+z", "+y", "-y", "+x", "-x"))
-    front.box((0.0, PLAQUE_Y, s.z1 + 0.09), (2.5, 0.75, 0.02), c["lacquerDeep"], skip=hidden("+z"))
+    front.box((PLAQUE_X, PLAQUE_Y, s.z1 + 0.04), (2.7, 0.95, 0.08), c["gilt"], skip=hidden("+z", "+y", "-y", "+x", "-x"))
+    front.box((PLAQUE_X, PLAQUE_Y, s.z1 + 0.09), (2.5, 0.75, 0.02), c["lacquerDeep"], skip=hidden("+z"))
 
 
 def window(part, s, x, width):
-    """A lattice window in a wall bay, in the wall's own frame: a frame, a paper pane, a few bars and a sill."""
+    """A lattice window over an opening in the wall, in the wall's own frame: a frame, a few bars and a sill, and nothing in the way of the view."""
     c = s.c
-    low, high = WINDOW
+    low, high = s.band
     height = high - low
     middle = (low + high) / 2
     bar = 0.1
@@ -210,9 +226,8 @@ def window(part, s, x, width):
     for y in (low, high):
         part.box((x, y, 0.06), (width, bar, 0.12), wood, skip=hidden("+z", "-y", "+y"))
     for side in (-1.0, 1.0):
-        part.box((x + side * (width / 2 - bar / 2), middle, 0.06), (bar, height - bar, 0.12), wood, skip=hidden("+z"))
+        part.box((x + side * (width / 2 - bar / 2), middle, 0.06), (bar, height - bar, 0.12), wood, skip=hidden("+z", "-x" if side > 0 else "+x"))
     part.box((x, low - 0.09, 0.16), (width + 0.24, 0.1, 0.34), c["woodMid"], skip=("-y",))
-    quad(part, (x, middle, 0.012), width - bar, height - bar, c["paper"])
     columns_across, rows = max(3, round(width / 0.5)), 7
     for i in range(1, columns_across):
         quad(part, (x - (width - bar) / 2 + (width - bar) * i / columns_across, middle, 0.035), 0.035, height - bar, c["woodMid"])
@@ -224,17 +239,16 @@ def windows(parts, s):
     # Where each wall's own frame stands (its outer face, looking out), and how a position along the world's x or z lands on its x.
     placements = {
         "front": (0.0, s.z1, 0.0, lambda mid: mid),
-        "back": (0.0, s.z0, math.pi, lambda mid: -mid),
         "east": (s.hx, s.cz, math.pi / 2, lambda mid: s.cz - mid),
         "west": (-s.hx, s.cz, -math.pi / 2, lambda mid: mid - s.cz),
     }
-    for name, _, stations, owner in s.sides():
+    for name, _, _, owner in s.sides():
+        if not s.openings[name]:
+            continue
         x, z, yaw, along = placements[name]
         with parts[owner].placed(at(x, 0.0, z) @ turned(yaw)):
-            for a, b in zip(stations, stations[1:]):
-                if name in ("front", "back") and a < 0.0 < b:
-                    continue
-                window(parts[owner], s, along((a + b) / 2), min(2.4, b - a - 0.8))
+            for centre, width in s.openings[name]:
+                window(parts[owner], s, along(centre), width)
 
 
 def beams(parts, s):
