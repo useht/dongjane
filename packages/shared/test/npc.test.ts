@@ -409,10 +409,10 @@ describe("npc behaviour", () => {
 });
 
 describe("npc prayer that is never still", () => {
-  const HALL = 20;
-  // A hall of monks who are all alike, so that two halls differ only in the persona.
-  const hall = (seed: number, persona: Persona) =>
-    new World(seed, { npcCount: HALL, personas: Array.from({ length: HALL }, () => persona) });
+  const GROUP = 20;
+  // A group of monks who are all alike, so that two groups differ only in the persona.
+  const group = (seed: number, persona: Persona) =>
+    new World(seed, { npcCount: GROUP, personas: Array.from({ length: GROUP }, () => persona) });
   const devout: Persona = { devotion: 1, restless: 0.5, sociability: 0, shyness: 0, frontRow: 0.5 };
   const lax: Persona = { ...devout, devotion: 0.3 };
 
@@ -449,13 +449,13 @@ describe("npc prayer that is never still", () => {
 
   it("bows again every minute or two for as long as it prays, the more devout the sooner", () => {
     for (const seed of [1, 2, 3]) {
-      const devoutWorld = hall(seed, devout);
-      const laxWorld = hall(seed, lax);
+      const devoutWorld = group(seed, devout);
+      const laxWorld = group(seed, lax);
       devoutWorld.run(PRAYER_RUN_MS);
       laxWorld.run(PRAYER_RUN_MS);
       const devoutRate = perMinute(devoutWorld, PRAYER_RUN_MS);
       const laxRate = perMinute(laxWorld, PRAYER_RUN_MS);
-      // even the least devout hall bows once in two minutes on average, and none of its monks goes quiet
+      // even the least devout group bows once in two minutes on average, and none of its monks goes quiet
       expect(laxRate.mean, `seed ${seed} lax`).toBeGreaterThanOrEqual(0.5);
       expect(laxRate.min, `seed ${seed} quietest lax`).toBeGreaterThanOrEqual(0.35);
       expect(devoutRate.mean, `seed ${seed} devout`).toBeGreaterThan(laxRate.mean * 1.5);
@@ -463,7 +463,7 @@ describe("npc prayer that is never still", () => {
   });
 
   it("bows once as a rule and now and then two or three times, and the sim never turns one down", () => {
-    const world = hall(4, devout);
+    const world = group(4, devout);
     const seen = watch(world);
     world.run(PRAYER_RUN_MS);
     expect(seen.batches.filter((times) => times === 1).length).toBeGreaterThan(seen.batches.length / 2);
@@ -475,12 +475,12 @@ describe("npc prayer that is never still", () => {
   });
 
   it("shifts to a free mat two or three metres off in the same zone, every monk many times over", () => {
-    const world = hall(5, devout);
+    const world = group(5, devout);
     const seen = watch(world);
     world.run(PRAYER_RUN_MS);
     const perMonk = new Map<string, number>();
     for (const shift of seen.shifts) perMonk.set(shift.id, (perMonk.get(shift.id) ?? 0) + 1);
-    expect(perMonk.size).toBe(HALL);
+    expect(perMonk.size).toBe(GROUP);
     expect(Math.min(...perMonk.values())).toBeGreaterThanOrEqual(10);
     expect(seen.shifts.every((shift) => shift.sameZone)).toBe(true);
     expect(Math.min(...seen.shifts.map((shift) => shift.metres))).toBeGreaterThanOrEqual(2);
@@ -490,7 +490,7 @@ describe("npc prayer that is never still", () => {
 
   it("shifts more often the more restless it is", () => {
     const shifts = (restless: number): number => {
-      const world = hall(6, { ...devout, restless });
+      const world = group(6, { ...devout, restless });
       const seen = watch(world);
       world.run(PRAYER_RUN_MS);
       return seen.shifts.length;
