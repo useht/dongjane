@@ -89,6 +89,7 @@ export class CasinoPanel {
     this.paintBalance();
     this.sheet.open();
     view.show();
+    this.sheet.body.scrollTop = 0;
   }
 
   close(): void {
