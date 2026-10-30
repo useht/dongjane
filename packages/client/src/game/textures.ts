@@ -122,6 +122,62 @@ export function leafTexture(): CanvasTexture {
   return toTexture(canvas);
 }
 
+// Long, faint troughs lying along the shore (z) across a white sea: the sea's colour times this picture, drifting toward the beach.
+export function seaTexture(): CanvasTexture {
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
+  const scene = THEME.scene;
+  ctx.fillStyle = scene.white;
+  ctx.fillRect(0, 0, size, size);
+  const rand = mulberry32(77);
+  for (let i = 0; i < 70; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const across = 4 + rand() * 9;
+    const along = 30 + rand() * 80;
+    ctx.fillStyle = withAlpha(scene.skyTopNight, 0.05 + rand() * 0.09);
+    for (const shiftX of [-size, 0, size]) {
+      for (const shiftY of [-size, 0, size]) {
+        ctx.beginPath();
+        ctx.ellipse(x + shiftX, y + shiftY, across, along, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  const texture = toTexture(canvas);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  return texture;
+}
+
+// The foam of one wave, drawn across its width (u runs from the land to the sea): a bright, ragged front trailing off toward the land.
+export function foamTexture(): CanvasTexture {
+  const width = 128;
+  const height = 64;
+  const [canvas, ctx] = makeCanvas(width, height);
+  const scene = THEME.scene;
+  const fade = ctx.createLinearGradient(0, 0, width, 0);
+  fade.addColorStop(0, withAlpha(scene.white, 0));
+  fade.addColorStop(0.7, withAlpha(scene.white, 0.35));
+  fade.addColorStop(0.9, withAlpha(scene.white, 0.9));
+  fade.addColorStop(1, withAlpha(scene.white, 0));
+  ctx.fillStyle = fade;
+  ctx.fillRect(0, 0, width, height);
+  const rand = mulberry32(19);
+  ctx.globalCompositeOperation = "destination-out";
+  for (let i = 0; i < 140; i += 1) {
+    const x = width * (0.45 + rand() * 0.55);
+    const y = rand() * height;
+    ctx.fillStyle = withAlpha(scene.white, 0.2 + rand() * 0.5);
+    ctx.beginPath();
+    ctx.ellipse(x, y, 2 + rand() * 7, 1 + rand() * 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = toTexture(canvas);
+  texture.wrapT = RepeatWrapping;
+  return texture;
+}
+
 // What the LED screen shows when the concert video is not playing: a night sky of lotus lanterns and the festival's name.
 export function stagePosterTexture(): CanvasTexture {
   const width = 1024;

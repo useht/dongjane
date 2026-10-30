@@ -74,6 +74,10 @@ export const THEME = {
     moktWoodDark: "#3a2112",
     prayerBead: "#6b3f26",
     prayerBeadMark: "#c99a3a",
+    sand: "#ecdcae",
+    sandWet: "#b8a074",
+    seaShallow: "#86d6cc",
+    seaDeep: "#2b7fa8",
   },
   material: {
     granite: "#ece4d4",

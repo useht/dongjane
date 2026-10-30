@@ -19,6 +19,7 @@ import {
   MeshStandardMaterial,
   NoBlending,
   PMREMGenerator,
+  PlaneGeometry,
   Points,
   PointsMaterial,
   Scene,
@@ -30,15 +31,16 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAWS } from "@dongjane/shared";
+import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAWS, SEA_LINE_X, SHORE } from "@dongjane/shared";
 import { type ModelMeshes, headOf, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
-import { cloudTexture, discGlowTexture, flakeTexture, leafTexture, mulberry32, stagePosterTexture } from "./textures.ts";
+import { cloudTexture, discGlowTexture, flakeTexture, foamTexture, leafTexture, mulberry32, seaTexture, stagePosterTexture } from "./textures.ts";
 import { lanternSpots, screenUv } from "./venue-layout.ts";
 import type { FloorSurfaces } from "./floor-pick.ts";
+import { WATER_Y, buildSand, buildSea, carveGround, withoutEastHillside } from "./shore.ts";
 import { vertexGlowMaterial } from "./vertex-glow.ts";
 
 export interface LandscapeQuality {
@@ -48,6 +50,7 @@ export interface LandscapeQuality {
   precipitation: number;
   anisotropy: number;
   lanterns: number;
+  weak: boolean;
 }
 
 interface Shadows {
@@ -70,7 +73,7 @@ const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
 // The paper lanterns glow a little by day and fully at night.
 const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;
 
-const LEAF_AREA = { minX: -10, spanX: 26, minZ: -2, spanZ: 17, top: 8, floor: 0.05 } as const;
+const LEAF_AREA = { minX: -10, spanX: 22, minZ: -2, spanZ: 17, top: 8, floor: 0.05 } as const;
 const LEAF_FALL_PER_SECOND = 0.05;
 const LEAF_WIND = 3;
 const LEAF_SIZE = 0.2;
@@ -129,6 +132,22 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
 // Either the picture of the lanterns, or a hole the renderer leaves empty so the video behind the canvas shows through.
 export type ScreenMode = "poster" | "video";
 
+// One band of surf along the waterline; `phase` (radians) keeps two bands from rising together.
+interface FoamStrip {
+  readonly mesh: Mesh;
+  readonly material: MeshLambertMaterial;
+  readonly phase: number;
+}
+
+const SURF_SECONDS = 8;
+const SURF_SWING = 0.9;
+const SURF_WIDTH = 1.3;
+const SURF_TILE = 2.4;
+const SEA_DRIFT_PER_SECOND = 0.009;
+const SEA_SWAY = 0.04;
+const SEA_SWAY_PER_SECOND = 0.07;
+const FOAM_LIFT = 0.03;
+
 export class Landscape {
   readonly group = new Group();
   readonly sun: DirectionalLight;
@@ -158,6 +177,9 @@ export class Landscape {
   private readonly materials: Material[] = [];
   private readonly textures: Texture[] = [];
   private readonly geometries: BufferGeometry[] = [];
+  private readonly sea: Texture;
+  private readonly foam: readonly FoamStrip[];
+  private readonly weak: boolean;
   private readonly occupied = new Set<number>();
   private readonly tint = new Color();
   private readonly sunDirection = new Vector3(...SUN_POSITION).normalize();
@@ -240,11 +262,11 @@ export class Landscape {
 
     const statue = this.buildStatue(gatbawi, buddha.buddha, world.rocks, anisotropy);
     this.group.add(statue);
-    const ground = this.add(world.ground, this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
+    const ground = this.add(this.derived(world.ground, carveGround(world.ground.geometry)), this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
     const steps = this.add(world.steps, this.surface(world.steps, anisotropy, LIFT.stone), { cast: true, receive: true });
-    const rocks = this.add(world.rocks, this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
-    const pine = this.add(world.pine, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
-    const maple = this.add(world.maple, new MeshLambertMaterial({ vertexColors: true }), { cast: true });
+    const rocks = this.add(this.derived(world.rocks, withoutEastHillside(world.rocks.geometry)), this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
+    const pine = this.add(this.derived(world.pine, withoutEastHillside(world.pine.geometry)), new MeshLambertMaterial({ vertexColors: true }), { cast: true });
+    const maple = this.add(this.derived(world.maple, withoutEastHillside(world.maple.geometry)), new MeshLambertMaterial({ vertexColors: true }), { cast: true });
     // The 법당 stands outside the sun's shadow box, which is cut round the plaza, so its walls take no shadows and give none.
     const dharmaBase = this.add(world.dharmaBase, new MeshLambertMaterial({ vertexColors: true }));
     const dharmaWalls = this.add(world.dharmaWalls, new MeshLambertMaterial({ vertexColors: true }));
@@ -253,6 +275,12 @@ export class Landscape {
 
     this.mats = this.buildMats(world.mat, anisotropy);
     this.group.add(this.mats);
+
+    const shore = this.buildShore(quality.weak);
+    this.sea = shore.sea;
+    this.foam = shore.foam;
+    this.weak = quality.weak;
+    this.group.add(shore.group);
 
     const stage = new Group();
     stage.name = "venue";
@@ -270,9 +298,10 @@ export class Landscape {
     stage.add(this.buildLanterns(venue.lantern, quality.lanterns, [palette.lanternPink, palette.lanternWhite, palette.lanternYellow, palette.lanternOrange, palette.lanternGreen, palette.lanternViolet]));
     this.group.add(stage);
 
-    // The ground, the steps and the 법당's plinth are floor; the front wall and the roof only count while they are drawn.
+    // The ground, the steps, the 법당's plinth and the sand are floor; the sea is not, and the front wall and the roof only count
+    // while they are drawn.
     this.surfaces = {
-      floors: [ground, steps, dharmaBase],
+      floors: [ground, steps, dharmaBase, shore.sand],
       blockers: [statue, rocks, pine, maple, dharmaWalls, this.dharmaFront, this.dharmaRoof, stageFloor, truss, poles, this.screen],
     };
 
@@ -398,6 +427,53 @@ export class Landscape {
       mats.setMatrixAt(spot.id, m);
     }
     return mats;
+  }
+
+  // The sand and the sea lie on the baked ground. The sand is floor and takes shadows; the sea is not floor and casts none, and the
+  // bands of surf run along the waterline over the edge of both.
+  private buildShore(weak: boolean): { group: Group; sand: Mesh; sea: Texture; foam: FoamStrip[] } {
+    const group = new Group();
+    group.name = "shore";
+    const sandMaterial = new MeshLambertMaterial({ vertexColors: true, transparent: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+    this.materials.push(sandMaterial);
+    const sand = new Mesh(this.track(buildSand()), sandMaterial);
+    sand.name = "sand";
+    sand.receiveShadow = true;
+    sand.renderOrder = 1;
+    group.add(sand);
+
+    const sea = this.texture(seaTexture());
+    const seaMaterial = new MeshLambertMaterial({ vertexColors: true, map: sea, transparent: !weak, depthWrite: weak });
+    this.materials.push(seaMaterial);
+    const water = new Mesh(this.track(buildSea(weak)), seaMaterial);
+    water.name = "sea";
+    water.renderOrder = 2;
+    water.frustumCulled = false;
+    group.add(water);
+
+    const length = SHORE.maxZ - SHORE.minZ;
+    const foamMap = this.texture(foamTexture());
+    foamMap.repeat.set(1, length / SURF_TILE);
+    const strip = this.track(new PlaneGeometry(SURF_WIDTH, length).rotateX(-Math.PI / 2));
+    const foam: FoamStrip[] = [];
+    for (const phase of weak ? [0] : [0, 2.4]) {
+      const material = new MeshLambertMaterial({ map: foamMap, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      this.materials.push(material);
+      const mesh = new Mesh(strip, material);
+      mesh.name = "surf";
+      mesh.renderOrder = 3;
+      mesh.position.set(SEA_LINE_X, WATER_Y + FOAM_LIFT, (SHORE.minZ + SHORE.maxZ) / 2);
+      group.add(mesh);
+      foam.push({ mesh, material, phase });
+    }
+    return { group, sand, sea, foam };
+  }
+
+  // The same geometry-and-name shell as `source`, around a geometry the landscape cut from it.
+  private derived(source: Mesh, geometry: BufferGeometry): Mesh {
+    const copy = new Mesh(this.track(geometry), source.material);
+    copy.name = source.name;
+    return copy;
   }
 
   // Each lantern's colour multiplies both the light it takes and the light it gives, so the paper glows in its own tint.
@@ -527,7 +603,20 @@ export class Landscape {
     if (!reduceMotion) this.cloudTurn += dt * CLOUD_TURN_PER_SECOND;
     this.clouds.rotation.y = this.cloudTurn;
 
+    this.driftSea(time, !reduceMotion);
+
     if (this.leaves.visible) this.driftLeaves(reduceMotion ? 0 : time);
+  }
+
+  // The ripples slide over the water and the surf runs up the sand and back. A weak device keeps one band, standing still.
+  private driftSea(time: number, moving: boolean): void {
+    this.sea.offset.set(moving ? time * SEA_DRIFT_PER_SECOND : 0, moving ? Math.sin(time * SEA_SWAY_PER_SECOND) * SEA_SWAY : 0);
+    const running = moving && !this.weak;
+    for (const strip of this.foam) {
+      const wave = running ? 0.5 + 0.5 * Math.sin((time * Math.PI * 2) / SURF_SECONDS + strip.phase) : 0.5;
+      strip.mesh.position.x = SEA_LINE_X + 0.3 + (wave - 0.5) * SURF_SWING;
+      strip.material.opacity = 0.2 + 0.6 * wave * wave;
+    }
   }
 
   private applyLook(look: SkyLook): void {

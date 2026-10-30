@@ -18,10 +18,11 @@ export const SHADOW_HALF_EXTENT = 15;
 
 // Where the camera may be outdoors. The ground and the far trees reach much further; these keep the lens
 // above the plaza, the court and the stage, short of the trees and in front of the steps. On the west it
-// reaches past the 법당's back wall (its front faces the plaza), so the camera can follow a visitor along the court.
+// reaches past the 법당's back wall (its front faces the plaza), so the camera can follow a visitor along the court. On the east it
+// reaches over the sand and a little way out over the sea, so a visitor at the waterline is framed with the water.
 export const LANDSCAPE_BOUNDS = {
   minX: -31,
-  maxX: 14,
+  maxX: 24,
   minZ: -2.6,
   maxZ: 30,
   minY: 0.5,
