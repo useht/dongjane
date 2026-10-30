@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_COUNT, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, GATBAWI_SEAT_TOP, type MachineSpot, NPC_COUNT, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
@@ -8,7 +8,7 @@ import { CASINO_FOG, CasinoScene } from "./casino.ts";
 import { CASINO_SHELL, casinoNearness, insideBounds } from "./casino-layout.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
-import { aimThroughCamera, pickFloor } from "./floor-pick.ts";
+import { type FloorSurfaces, aimThroughCamera, pickFloor, pickHit } from "./floor-pick.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { JumpTracker } from "./jump-tracker.ts";
@@ -200,12 +200,27 @@ export class World {
   }
 
   floorPointAt(clientX: number, clientY: number): { x: number; z: number } | null {
+    if (!this.aimAt(clientX, clientY)) return null;
+    const hit = pickFloor(this.raycaster, this.pickable());
+    return hit ? { x: hit.x, z: hit.z } : null;
+  }
+
+  // The casino machine under a screen point, when nothing solid is in front of it.
+  machineAt(clientX: number, clientY: number): MachineSpot | null {
+    if (!this.aimAt(clientX, clientY)) return null;
+    return this.casino.machineAt(pickHit(this.raycaster, this.pickable()));
+  }
+
+  private aimAt(clientX: number, clientY: number): boolean {
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
+    if (rect.width <= 0 || rect.height <= 0) return false;
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
     aimThroughCamera(this.raycaster, this.ndc, this.camera);
-    const hit = pickFloor(this.raycaster, [this.landscape.surfaces, this.dharma.surfaces, this.casino.surfaces]);
-    return hit ? { x: hit.x, z: hit.z } : null;
+    return true;
+  }
+
+  private pickable(): readonly FloorSurfaces[] {
+    return [this.landscape.surfaces, this.dharma.surfaces, this.casino.surfaces];
   }
 
   displayedPosition(id: string, out: { x: number; z: number }): boolean {

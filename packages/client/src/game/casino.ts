@@ -6,6 +6,7 @@ import {
   HemisphereLight,
   InstancedBufferAttribute,
   InstancedMesh,
+  type Intersection,
   type Material,
   Matrix4,
   Mesh,
@@ -71,6 +72,8 @@ export class CasinoScene {
   private readonly lamps: Lamp[] = [];
   private readonly materials: Material[] = [];
   private readonly machines: InstancedMesh[] = [];
+  // Which spot each instance of a machine mesh stands for.
+  private readonly spotsOf = new Map<object, readonly MachineSpot[]>();
   private readonly cutaway: readonly Mesh[];
   private readonly ceiling: Mesh;
   private inside = 0;
@@ -157,6 +160,7 @@ export class CasinoScene {
     const mesh = new InstancedMesh(geometry, material, spots.length);
     mesh.name = name;
     mesh.frustumCulled = false;
+    this.spotsOf.set(mesh, spots);
     const tinted = spots.some((spot) => tints[spot.kind] !== undefined);
     if (tinted) {
       mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(spots.length * 3).fill(1), 3);
@@ -175,6 +179,12 @@ export class CasinoScene {
     });
     this.group.add(mesh);
     return mesh;
+  }
+
+  // The machine a pick landed on, if it landed on one.
+  machineAt(hit: Intersection | null): MachineSpot | null {
+    if (!hit || hit.instanceId === undefined) return null;
+    return this.spotsOf.get(hit.object)?.[hit.instanceId] ?? null;
   }
 
   // The roof, the front wall and the sign are in the way of a camera over the room; they are hidden while a visitor is inside. The

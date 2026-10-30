@@ -4,7 +4,7 @@
 // (the road, the yard, the door, the aisle) is the shared `casino-layout.ts`; this file only dresses it.
 // Metres, the game's frame: Y up, +Z toward the viewer. The front of the building faces -z, toward the plaza.
 
-import { CASINO_DOOR, CASINO_YARD, COAST_ROAD, type Bounds } from "@dongjane/shared";
+import { CASINO_DOOR, CASINO_YARD, COAST_ROAD, type Bounds, type MachineKind } from "@dongjane/shared";
 
 // The building's outer faces and the thickness of its walls. The aisle (CASINO_FLOOR) is only the walkable middle: the machines
 // stand in the bays on either side of it, so the walls stand round the bays, x 6.2..16.3 inside.
@@ -76,6 +76,10 @@ export const CASINO_COLUMNS: readonly { readonly x: number; readonly z: number; 
 
 // How tall each prototype machine stands, in the order the model draws them: a slot cabinet, a roulette table and a scratch kiosk.
 export const MACHINE_HEIGHT = { slot: 1.95, roulette: 0.95, scratch: 1.5 } as const;
+
+export function machineHeight(kind: MachineKind): number {
+  return kind === "roulette" ? MACHINE_HEIGHT.roulette : kind === "scratch" ? MACHINE_HEIGHT.scratch : MACHINE_HEIGHT.slot;
+}
 
 // The lamps that light the inside and the front, as [x, y, z]. They stay in the scene all the time (one more or less would
 // recompile every material), and are turned up as a visitor comes in or near.

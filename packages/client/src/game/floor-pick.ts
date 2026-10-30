@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import type { Object3D, PerspectiveCamera, Raycaster, Vector2 } from "three";
+import type { Intersection, Object3D, PerspectiveCamera, Raycaster, Vector2 } from "three";
 
 // What a tap can land on in one part of the world: ground a monk may stand on, and the solid things that hide the ground behind them.
 export interface FloorSurfaces {
@@ -26,17 +26,19 @@ function shown(object: Object3D): boolean {
   return true;
 }
 
+// The nearest thing the ray meets, floor or solid, skipping what is hidden.
+export function pickHit(raycaster: Raycaster, parts: readonly FloorSurfaces[]): Intersection | null {
+  const targets: Object3D[] = [];
+  for (const part of parts) targets.push(...part.floors, ...part.blockers);
+  return raycaster.intersectObjects(targets, true).find((candidate) => shown(candidate.object)) ?? null;
+}
+
 // The floor point under the ray, or null when something solid is in front of it (or the ray meets nothing).
 export function pickFloor(raycaster: Raycaster, parts: readonly FloorSurfaces[]): Vector3 | null {
-  const floors = new Set<Object3D>();
-  const targets: Object3D[] = [];
+  const hit = pickHit(raycaster, parts);
+  if (!hit) return null;
   for (const part of parts) {
-    for (const floor of part.floors) {
-      floors.add(floor);
-      targets.push(floor);
-    }
-    targets.push(...part.blockers);
+    if (part.floors.some((floor) => floor === hit.object)) return hit.point;
   }
-  const hit = raycaster.intersectObjects(targets, true).find((candidate) => shown(candidate.object));
-  return hit && floors.has(hit.object) ? hit.point : null;
+  return null;
 }

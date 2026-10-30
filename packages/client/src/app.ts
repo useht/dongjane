@@ -5,6 +5,8 @@ import {
   ITEM_ROD,
   KNOCK_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
+  MACHINE_REACH,
+  type MachineSpot,
   type SeatResponse,
   type TempleState,
   type WorldInfo,
@@ -13,6 +15,8 @@ import {
   ZONE_SEATS,
   type Zone,
   isZone,
+  machineNear,
+  machineSpot,
   parseWorldParam,
   planPath,
   seatLabel,
@@ -25,13 +29,19 @@ import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
+import clickUrl from "./assets/audio/click.mp3?url";
+import coinUrl from "./assets/audio/coin.mp3?url";
+import jackpotUrl from "./assets/audio/jackpot.mp3?url";
 import sutraUrl from "./assets/audio/sutra.mp3?url";
 import { SyncedLoop, areaMix } from "./audio/music.ts";
+import { CasinoSounds } from "./audio/casino.ts";
 import { seaLevel } from "./audio/sea-level.ts";
+import { CasinoBank } from "./casino/bank.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { CatchWatcher } from "./game/catch-watch.ts";
+import { machineHeight } from "./game/casino-layout.ts";
 import { heldAction, isSeated } from "./game/held-action.ts";
 import { combineAxes, floorDirection, headingAlong, KeyboardInput } from "./game/input.ts";
 import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
@@ -50,16 +60,21 @@ import {
   loadBows,
   loadProfile,
   loadSettings,
+  loadWallet,
   newHue,
   saveBows,
   saveProfile,
   saveSettings,
+  saveWallet,
 } from "./storage.ts";
+import { BackGuard } from "./ui/back-guard.ts";
+import { CasinoPanel } from "./ui/casino-panel.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { catchMessage, describeChant, seatName } from "./ui/format.ts";
 import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
+import { MachineHint } from "./ui/machine-hint.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
@@ -83,6 +98,8 @@ const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 const TAP_ARRIVE_DISTANCE = 0.1;
+// The hint floats a little above the top of the machine it belongs to.
+const MACHINE_HINT_LIFT = 0.2;
 
 interface SelfSnapshot {
   x: number;
@@ -113,6 +130,10 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
+  private readonly machineHint: MachineHint;
+  private readonly casinoBank: CasinoBank;
+  private readonly casino: CasinoPanel;
+  private readonly backGuard: BackGuard;
   private readonly stageHint: StageHint;
   private readonly stage: StageScreen;
   private readonly soundChip: SoundChip;
@@ -137,6 +158,9 @@ export class App {
   private nextKnockAt = 0;
   private readonly prediction = new SelfPrediction();
   private tapPath: { x: number; z: number }[] = [];
+  // The machine the visitor stands at (its hint is up), and the one a tap is walking them to.
+  private nearMachine: MachineSpot | null = null;
+  private pendingMachine: MachineSpot | null = null;
   private lastFrameMs = 0;
   private nextJumpAt = 0;
   private nextChantTick = 0;
@@ -166,6 +190,7 @@ export class App {
         onRendered: (nowMs) => {
           const quad = this.stage.mounted ? this.world.screenQuad() : null;
           this.updateSeatHints();
+          this.updateMachineHint();
           this.updateStageHint(quad);
           this.updateVisitorTitles();
           this.emoteBubbles.update(nowMs);
@@ -177,6 +202,15 @@ export class App {
           const seatId = this.seatHints.seatAt(clientX, clientY);
           if (seatId !== null) {
             this.sitAt(seatId);
+            return;
+          }
+          if (this.nearMachine && this.machineHint.contains(clientX, clientY)) {
+            this.openMachine(this.nearMachine);
+            return;
+          }
+          const machine = this.world.machineAt(clientX, clientY);
+          if (machine) {
+            this.tapMachine(machine);
             return;
           }
           const point = this.world.floorPointAt(clientX, clientY);
@@ -244,6 +278,19 @@ export class App {
       this.stage.openTapWindow();
     });
     this.seatHints = new SeatHints(this.ui, (id) => this.sitAt(id));
+    this.machineHint = new MachineHint(this.ui, () => {
+      if (this.nearMachine) this.openMachine(this.nearMachine);
+    });
+    this.casinoBank = new CasinoBank({ load: loadWallet, save: saveWallet }, () => Date.now());
+    this.casino = new CasinoPanel(this.ui, {
+      bank: this.casinoBank,
+      sounds: new CasinoSounds(this.audio, { coin: coinUrl, click: clickUrl, jackpot: jackpotUrl }),
+      random: Math.random,
+      reduceMotion: () => this.settings.reduceMotion,
+      onClose: () => this.closedCasino(),
+    });
+    this.casino.setReduceMotion(this.settings.reduceMotion);
+    this.backGuard = new BackGuard(window, window.history, () => this.casino.close());
     this.stageHint = new StageHint(this.ui, { play: () => this.stage.play(), stop: () => this.stage.stop() });
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
@@ -257,6 +304,11 @@ export class App {
       },
       onStand: () => {
         if (!this.hud.closeSheets()) this.stand();
+      },
+      onInteract: () => {
+        if (!this.nearMachine || !this.machineHint.visible) return false;
+        this.openMachine(this.nearMachine);
+        return true;
       },
     });
 
@@ -294,6 +346,7 @@ export class App {
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
+    this.casino.close();
     this.stopWalking();
     this.clearSeatOwners();
     this.hud.setLink("online");
@@ -394,6 +447,7 @@ export class App {
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
+    this.casino.close();
     this.stopWalking();
     this.clearSeatOwners();
 
@@ -586,6 +640,7 @@ export class App {
     this.lost = true;
     this.session = null;
     this.syncZoneSound();
+    this.casino.close();
     this.stopWalking();
     this.world.clear();
     this.overlay.problem("연결이 끊어졌어요", "월드와의 연결이 끊겼어요. 다시 들어가 볼까요?", [
@@ -708,12 +763,47 @@ export class App {
   private stopWalking(): void {
     this.prediction.cancel();
     this.tapPath = [];
+    this.pendingMachine = null;
+  }
+
+  // The panel takes the keys and the monk stands still until it closes, however it is closed.
+  private openMachine(spot: MachineSpot): void {
+    if (!this.session || !this.self || this.casino.isOpen) return;
+    this.stopWalking();
+    this.keyboard.blocked = true;
+    this.machineHint.hide();
+    this.backGuard.engage();
+    this.casino.open(spot);
+  }
+
+  private closedCasino(): void {
+    this.keyboard.blocked = false;
+    this.backGuard.release();
+  }
+
+  // A tap on a machine plays it from where the visitor stands, or walks them to its front first.
+  private tapMachine(spot: MachineSpot): void {
+    const at = this.world.selfPosition;
+    if (at && Math.hypot(spot.frontX - at.x, spot.frontZ - at.z) <= MACHINE_REACH) {
+      this.openMachine(spot);
+      return;
+    }
+    this.walkTo(spot.frontX, spot.frontZ);
+    if (this.tapPath.length > 0) this.pendingMachine = spot;
+  }
+
+  private arriveAtMachine(): void {
+    const spot = this.pendingMachine;
+    this.pendingMachine = null;
+    const at = this.world.selfPosition;
+    if (spot && at && Math.hypot(spot.frontX - at.x, spot.frontZ - at.z) <= MACHINE_REACH) this.openMachine(spot);
   }
 
   // A tap on the floor walks the monk there (never sits them); the path bends through the doorway when the spot is in the other part of the world.
   private walkTo(x: number, z: number): void {
     const at = this.prediction.display() ?? this.world.selfPosition;
     if (!this.session || !this.self || !at) return;
+    this.pendingMachine = null;
     this.tapPath = planPath(at, { x, z });
   }
 
@@ -724,6 +814,7 @@ export class App {
     this.hud.setReduceMotion(next.reduceMotion);
     this.world.setReduceMotion(next.reduceMotion);
     this.stage.setReduceMotion(next.reduceMotion);
+    this.casino.setReduceMotion(next.reduceMotion);
     this.applyAudio();
     this.syncZoneSound();
   }
@@ -791,6 +882,12 @@ export class App {
       zone: () => this.zone,
       sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
       serverNow: () => this.world.serverNowAt(performance.now()),
+      walkTo: (x: number, z: number) => this.walkTo(x, z),
+      casino: (id: string) => {
+        const spot = machineSpot(id);
+        if (spot) this.openMachine(spot);
+      },
+      wallet: () => this.casinoBank.wallet,
     };
   }
 
@@ -894,13 +991,15 @@ export class App {
     const displayed = this.world.selfPosition;
     if (!session || !this.self || !displayed) {
       this.tapPath = [];
+      this.pendingMachine = null;
       return;
     }
-    const axes = combineAxes(this.keyboard.axes(), this.joystick.axes());
+    const axes = this.casino.isOpen ? { forward: 0, right: 0 } : combineAxes(this.keyboard.axes(), this.joystick.axes());
     const moving = axes.forward !== 0 || axes.right !== 0;
     let dir = moving ? floorDirection(axes, this.world.rig.forward) : null;
     if (moving) {
       this.tapPath = [];
+      this.pendingMachine = null;
     } else if (this.tapPath.length > 0) {
       const reach = Math.max(TAP_ARRIVE_DISTANCE, WALK_SPEED * Math.min(MAX_FRAME_DT_S, realDt));
       const heading = headingAlong(this.tapPath, this.prediction.display() ?? displayed, reach);
@@ -910,6 +1009,21 @@ export class App {
     const target = this.prediction.frame(realDt, nowMs, dir, displayed);
     this.world.setSelfPrediction(this.prediction.display());
     if (target) session.move(target.x, target.z, target.seq);
+    if (this.pendingMachine && !moving && this.tapPath.length === 0) this.arriveAtMachine();
+  }
+
+  // The "플레이" hint floats over the machine the visitor stands at, while they are on their feet.
+  private updateMachineHint(): void {
+    const self = this.self;
+    const at = this.world.selfPosition;
+    const idle = this.session && self && at && self.seatId < 0 && (self.mode === "stand" || self.mode === "walk") && !this.casino.isOpen;
+    const spot = idle && at ? machineNear(at.x, at.z) : undefined;
+    this.nearMachine = spot ?? null;
+    if (spot && this.world.projectToScreen(spot.x, machineHeight(spot.kind) + MACHINE_HINT_LIFT, spot.z, this.hintPoint)) {
+      this.machineHint.place(this.hintPoint.x, this.hintPoint.y);
+    } else {
+      this.machineHint.hide();
+    }
   }
 
   private updateSeatHints(): void {

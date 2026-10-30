@@ -279,10 +279,13 @@ export class PointerInput {
 export interface KeyHandlers {
   onSpace(): void;
   onStand(): void;
+  // E, when there is something to play or use where the visitor stands. True when it took the key; otherwise E turns the camera.
+  onInteract?(): boolean;
 }
 
 export class KeyboardInput {
   readonly held = new Set<string>();
+  private paused = false;
 
   constructor(
     private readonly target: Window,
@@ -299,6 +302,16 @@ export class KeyboardInput {
     this.target.removeEventListener("blur", this.clear);
   }
 
+  // While a panel is open the keys belong to it: nothing moves, and only Esc (which closes it) gets through.
+  get blocked(): boolean {
+    return this.paused;
+  }
+
+  set blocked(on: boolean) {
+    this.paused = on;
+    if (on) this.held.clear();
+  }
+
   axes(): MoveAxes {
     return axesFromKeys(this.held);
   }
@@ -310,6 +323,14 @@ export class KeyboardInput {
   private readonly down = (event: KeyboardEvent): void => {
     if (event.metaKey || event.ctrlKey || event.altKey || isEditable(event.target)) return;
     const code = event.code;
+    if (this.paused) {
+      if (code === "Escape") this.handlers.onStand();
+      return;
+    }
+    if (code === "KeyE" && !event.repeat && this.handlers.onInteract?.()) {
+      event.preventDefault();
+      return;
+    }
     if (code === "Space") {
       event.preventDefault();
       if (!event.repeat) this.handlers.onSpace();

@@ -1,6 +1,6 @@
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Raycaster, Vector2, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { aimThroughCamera, pickFloor } from "../src/game/floor-pick.ts";
+import { aimThroughCamera, pickFloor, pickHit } from "../src/game/floor-pick.ts";
 
 function floorAt(y: number): Mesh {
   const mesh = new Mesh(new PlaneGeometry(20, 20).rotateX(-Math.PI / 2), new MeshBasicMaterial());
@@ -19,6 +19,25 @@ function boxAt(x: number, y: number, z: number): Mesh {
 function down(x: number, z: number): Raycaster {
   return new Raycaster(new Vector3(x, 10, z), new Vector3(0, -1, 0));
 }
+
+describe("pickHit", () => {
+  it("returns the nearest solid thing, not the floor behind it", () => {
+    const box = boxAt(0, 1, 0);
+    const hit = pickHit(down(0, 0), [{ floors: [floorAt(0)], blockers: [box] }]);
+    expect(hit?.object).toBe(box);
+  });
+
+  it("returns the floor when nothing stands in front of it, and skips what is hidden", () => {
+    const floor = floorAt(0);
+    const hidden = boxAt(0, 1, 0);
+    hidden.visible = false;
+    expect(pickHit(down(0, 0), [{ floors: [floor], blockers: [hidden] }])?.object).toBe(floor);
+  });
+
+  it("returns null when the ray meets nothing", () => {
+    expect(pickHit(down(50, 50), [{ floors: [floorAt(0)], blockers: [] }])).toBeNull();
+  });
+});
 
 describe("pickFloor", () => {
   it("returns the floor point under the ray", () => {
