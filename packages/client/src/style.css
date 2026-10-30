@@ -206,13 +206,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.world-count {
-  flex: none;
-  font-weight: 500;
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .topbar-start {
   display: flex;
   min-width: 0;
@@ -1534,10 +1527,6 @@ noscript {
 }
 
 @media (max-width: 380px) {
-  .world-count {
-    display: none;
-  }
-
   :root {
     --hud-bow-size: 60px;
   }
