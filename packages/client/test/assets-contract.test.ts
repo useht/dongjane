@@ -3,7 +3,7 @@ import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import { BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
-import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL } from "../src/game/dharma-layout.ts";
+import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL, WALL_OPENINGS, WINDOW_BAND, type WindowWall } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
@@ -121,6 +121,42 @@ function expectCeiling(glb: Glb, name: string, token: MaterialToken): void {
   });
   const reach = Math.max(...brightest.map((top, c) => top / (linear[c] as number)));
   expect(reach, `${name} gets as bright as ${token}`).toBeGreaterThan(0.75);
+}
+
+// Where each wall stands in the room's frame: x for the east and west walls, z for the front one.
+const WALL_PLANES: Readonly<Record<WindowWall, number>> = { front: DHARMA.frontZ, east: DHARMA.halfWidth, west: -DHARMA.halfWidth };
+// The shell's plaster stands this far outside the room's wall plus its own thickness (GAP in blender/shell.py).
+const SHELL_OUT = 0.02 + DHARMA_SHELL.wall;
+const SHELL_PLANES: Readonly<Record<WindowWall, number>> = {
+  front: DHARMA.frontZ + SHELL_OUT,
+  east: DHARMA.halfWidth + SHELL_OUT,
+  west: -DHARMA.halfWidth - SHELL_OUT,
+};
+
+// The vertices of `name` on one wall's plane, as [along, y]: along is x on the front wall and z on the side walls, in the room's frame.
+function onWall(glb: Glb, name: string, wall: WindowWall, planes: Readonly<Record<WindowWall, number>>, origin: { x: number; z: number }): [number, number][] {
+  const { values, count } = positions(glb, name);
+  const found: [number, number][] = [];
+  for (let i = 0; i < count; i += 1) {
+    const x = (values[i * 3] as number) - origin.x;
+    const y = values[i * 3 + 1] as number;
+    const z = (values[i * 3 + 2] as number) - origin.z;
+    const [across, along] = wall === "front" ? [z, x] : [x, z];
+    if (Math.abs(across - planes[wall]) <= 0.01) found.push([along, y]);
+  }
+  return found;
+}
+
+// Nothing of the wall is left inside any of its openings, and the wall stops at their edges: the window is a hole, not a picture.
+function expectCut(points: readonly (readonly [number, number])[], wall: WindowWall, label: string): void {
+  const shrink = 0.12;
+  for (const opening of WALL_OPENINGS.filter((each) => each.wall === wall)) {
+    const where = `${label} ${wall} wall at ${opening.along}`;
+    const inside = points.filter(([along, y]) => Math.abs(along - opening.along) < opening.width / 2 - shrink && y > WINDOW_BAND.low + shrink && y < WINDOW_BAND.high - shrink);
+    expect(inside, `${where} is open`).toEqual([]);
+    const edges = points.filter(([along, y]) => Math.abs(Math.abs(along - opening.along) - opening.width / 2) <= 0.01 && y >= WINDOW_BAND.low - 0.01 && y <= WINDOW_BAND.high + 0.01);
+    expect(edges.length, `${where} has edges`).toBeGreaterThan(0);
+  }
 }
 
 describe("gatbawi.glb", () => {
@@ -377,6 +413,13 @@ describe("world.glb", () => {
     }
   });
 
+  it("cuts each window through the plaster, in the front wall and the two side walls", () => {
+    const parts: Readonly<Record<WindowWall, string>> = { front: "dharmaFront", east: "dharmaWalls", west: "dharmaWalls" };
+    for (const wall of ["front", "east", "west"] as const) {
+      expectCut(onWall(glb, parts[wall], wall, SHELL_PLANES, DHARMA_ORIGIN), wall, "shell");
+    }
+  });
+
   it("holds the ground level under the stage and round the 법당, sunk a hand below its floor and level across the court", () => {
     const { values, count } = positions(glb, "ground");
     const cos = Math.cos(STAGE_YAW);
@@ -603,7 +646,7 @@ describe("dharma.glb", () => {
 
   it("has no door in the front wall: the doorway is open and nothing of the room stands in it", () => {
     const edge = DHARMA_DOOR.halfWidth;
-    for (const name of ["structure", "paper", "ceiling"]) {
+    for (const name of ["structure", "ceiling"]) {
       const { values, count } = positions(glb, name);
       for (let i = 0; i < count; i += 1) {
         const x = values[i * 3] as number;
@@ -612,6 +655,12 @@ describe("dharma.glb", () => {
         const inDoorway = Math.abs(x) < edge - 0.02 && y > 0.05 && y < DHARMA_DOOR.height - 0.02 && z > DHARMA.frontZ - 0.1;
         expect(inDoorway, `${name} vertex ${i} at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`).toBe(false);
       }
+    }
+  });
+
+  it("cuts each window through the room's wall at the same place as the shell's, in the front wall and the two side walls", () => {
+    for (const wall of ["front", "east", "west"] as const) {
+      expectCut(onWall(glb, "structure", wall, WALL_PLANES, { x: 0, z: 0 }), wall, "room");
     }
   });
 

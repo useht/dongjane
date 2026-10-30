@@ -56,7 +56,6 @@ const CANDLE_LIGHT = { intensity: 9, distance: 11, decay: 2 } as const;
 const HEMISPHERE_LIGHT = 1.35;
 const WINDOW_LIGHT = 1.7;
 const LANTERN_GLOW = 0.9;
-const PAPER_GLOW = 0.55;
 const MURAL_GLOW = 0.5;
 const SEAT_OCCUPIED_TINT = 0.55;
 const FLAME_SIZE = { width: 0.34, height: 0.5 } as const;
@@ -182,7 +181,6 @@ export class DharmaScene {
     this.add(meshes.ceiling, lit());
     const floor = this.add(meshes.floor, lit());
     floor.receiveShadow = quality.shadows;
-    const paper = this.add(meshes.paper, vertexGlowMaterial(palette.paperGlow, PAPER_GLOW));
     const mural = this.add(meshes.mural, vertexGlowMaterial(palette.muralGlow, MURAL_GLOW));
 
     const gold = new MeshStandardMaterial({
@@ -214,7 +212,7 @@ export class DharmaScene {
     const halo = this.add(meshes.halo, gold);
     const lotus = this.add(meshes.lotus, petals);
     // The seats, the ceiling above the camera and the glows are not in the way of a tap.
-    this.surfaces = { floors: [floor], blockers: [structure, paper, mural, buddha, halo, lotus] };
+    this.surfaces = { floors: [floor], blockers: [structure, mural, buddha, halo, lotus] };
 
     const { geometry: glowGeometry, centre } = centredGlow(meshes.glow);
     this.geometries.push(glowGeometry);

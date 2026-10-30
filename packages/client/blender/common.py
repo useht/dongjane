@@ -87,6 +87,39 @@ def hidden(*shown):
     return tuple(name for name in BOX_FACES if name not in shown)
 
 
+def wall_openings(inputs):
+    """The windows cut through the 법당's walls: ({wall: [(centre along the wall, width)]}, (low, high)), sorted along each wall."""
+    d = inputs["dharma"]
+    walls = {"front": [], "back": [], "east": [], "west": []}
+    for opening in d["WALL_OPENINGS"]:
+        walls[opening["wall"]].append((opening["along"], opening["width"]))
+    for spots in walls.values():
+        spots.sort()
+    band = d["WINDOW_BAND"]
+    return walls, (band["low"], band["high"])
+
+
+def wall_pieces(left, right, bottom, top, openings, band):
+    """The rectangles (x0, x1, y0, y1, reveals) that cover a wall except its openings; `reveals` names the sides facing an opening."""
+    low, high = band
+    if not bottom < low < high < top:
+        raise ValueError(f"the band {band} does not lie inside the wall's height {bottom}..{top}")
+    pieces = []
+    cursor, shared = left, ()
+    for centre, width in openings:
+        a, b = centre - width / 2, centre + width / 2
+        if a < cursor - 1e-9 or b > right + 1e-9:
+            raise ValueError(f"the opening {centre} +- {width / 2} overlaps its neighbour or leaves the wall {left}..{right}")
+        if a > cursor + 1e-9:
+            pieces.append((cursor, a, bottom, top, (*shared, "+x")))
+        pieces.append((a, b, bottom, low, ("+y",)))
+        pieces.append((a, b, high, top, ("-y",)))
+        cursor, shared = b, ("-x",)
+    if right > cursor + 1e-9:
+        pieces.append((cursor, right, bottom, top, shared))
+    return pieces
+
+
 def hash01(x, y, z, seed=0.0):
     """A repeatable pseudo-random number in [0, 1) for a position, with no random state to carry around."""
     value = math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 4.1414) * 43758.5453

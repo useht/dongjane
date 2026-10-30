@@ -102,7 +102,7 @@ describe("the 법당's keep-out box", () => {
 });
 
 describe("the 법당's camera clearance", () => {
-  const SOLIDS = ["structure", "ceiling", "paper", "mural", "halo", "lotus"];
+  const SOLIDS = ["structure", "ceiling", "mural", "halo", "lotus"];
 
   // Every triangle the room draws that the lens could end up against, in world metres, with each one's bounding box.
   const loadRoom = (): { corners: number[]; low: Float32Array; high: Float32Array; count: number } => {

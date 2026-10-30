@@ -78,6 +78,7 @@ class Plan:
         self.room = dharma["DHARMA"]
         self.shell = dharma["DHARMA_SHELL"]
         self.door = dharma["DHARMA_DOOR"]
+        self.openings, self.band = common.wall_openings(inputs)
         self.origin = layout["DHARMA_ORIGIN"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         self.left, self.right = self.plaza["minX"], self.plaza["maxX"]

@@ -13,12 +13,11 @@ import os
 from mathutils import Matrix, Vector
 
 import common
-from common import GAME, Part, at, cells, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, turned
+from common import GAME, Part, at, cells, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, turned, wall_openings, wall_pieces
 
 STEP = 0.75
 BEAM_BAND = 0.8  # height of the painted beam under the frieze
 BEAM_DEPTH = 0.36
-WINDOW = (1.5, 4.5)  # bottom and top of the lattice windows
 FLOOR_PLANK = 0.5
 SQUASH = 0.78  # the lotus is shallower than it is wide
 LOTUS_FOOT, LOTUS_TOP = -0.45, -0.12  # the lotus is drawn from its foot to its flat top between these heights
@@ -54,6 +53,7 @@ class Plan:
         # The lotus is scaled so that its flat top stands LOTUS_EMBED above the statue's base, with its foot on the altar.
         self.lotus_scale = (self.buddha_at[1] - d["ALTAR"]["topY"] + d["LOTUS_EMBED"]) / (LOTUS_TOP - LOTUS_FOOT)
         self.door = d["DHARMA_DOOR"]
+        self.openings, self.band = wall_openings(inputs)
         self.candles = d["CANDLE_SPOTS"]
         self.lanterns = d["lanterns"]
         self.seat = d["DHARMA_SEAT_SIZE"]
@@ -63,13 +63,12 @@ class Plan:
         self.pillar_x = self.half - self.inset
 
     def walls(self):
-        """(placement, length, pillars along it, bays along it) of the four walls, in each wall's own x."""
-        side_bays = [((a + b) / 2, b - a) for a, b in zip(self.side_z, self.side_z[1:])]
-        front_bays = [((a + b) / 2, b - a) for a, b in zip(self.front_x, self.front_x[1:]) if abs(a + b) > 0.1]
+        """(placement, length, pillars along it, windows along it) of the four walls, in each wall's own x."""
         side_length = (self.front - self.back) - 2.0 * BEAM_DEPTH
-        yield at(-self.half, 0.0, 0.0) @ turned(math.pi / 2), side_length, self.side_z, [(-x, w) for x, w in side_bays]
-        yield at(self.half, 0.0, 0.0) @ turned(-math.pi / 2), side_length, self.side_z, side_bays
-        yield at(0.0, 0.0, self.front) @ turned(math.pi), 2.0 * self.half, self.front_x[1:-1], [(-x, w) for x, w in front_bays]
+        o = self.openings
+        yield at(-self.half, 0.0, 0.0) @ turned(math.pi / 2), side_length, self.side_z, [(-x, w) for x, w in o["west"]]
+        yield at(self.half, 0.0, 0.0) @ turned(-math.pi / 2), side_length, self.side_z, o["east"]
+        yield at(0.0, 0.0, self.front) @ turned(math.pi), 2.0 * self.half, self.front_x[1:-1], [(-x, w) for x, w in o["front"]]
         yield at(0.0, 0.0, self.back), 2.0 * self.half, [], []
 
 
@@ -94,7 +93,6 @@ def wall_surfaces(part, plan):
         return scaled(plaster, (0.62 + 0.38 * low) * high * grain)
 
     h = plan.ceiling
-    length = plan.front - plan.back
     width = 2.0 * plan.half
 
     def panel(corner, across, along):
@@ -102,12 +100,17 @@ def wall_surfaces(part, plan):
         rows = max(1, round(Vector(along).length / STEP))
         part.grid(corner, across, along, columns, rows, tone)
 
-    panel((-plan.half, 0.0, plan.back), (0.0, h, 0.0), (0.0, 0.0, length))
-    panel((plan.half, 0.0, plan.back), (0.0, 0.0, length), (0.0, h, 0.0))
+    # The windows are holes in the panels: the shell's plaster behind them has the same holes, so the view goes through.
+    for a0, a1, y0, y1, _ in wall_pieces(plan.back, plan.front, 0.0, h, plan.openings["west"], plan.band):
+        panel((-plan.half, y0, a0), (0.0, y1 - y0, 0.0), (0.0, 0.0, a1 - a0))
+    for a0, a1, y0, y1, _ in wall_pieces(plan.back, plan.front, 0.0, h, plan.openings["east"], plan.band):
+        panel((plan.half, y0, a0), (0.0, 0.0, a1 - a0), (0.0, y1 - y0, 0.0))
     # The front wall stands round the doorway, which has no door in it: visitors walk in from the court.
     opening, high = plan.door["halfWidth"], plan.door["height"]
-    panel((-plan.half, 0.0, plan.front), (0.0, h, 0.0), (plan.half - opening, 0.0, 0.0))
-    panel((opening, 0.0, plan.front), (0.0, h, 0.0), (plan.half - opening, 0.0, 0.0))
+    for x0, x1 in ((-plan.half, -opening), (opening, plan.half)):
+        run = [(along, wide) for along, wide in plan.openings["front"] if x0 < along < x1]
+        for a0, a1, y0, y1, _ in wall_pieces(x0, x1, 0.0, h, run, plan.band):
+            panel((a0, y0, plan.front), (0.0, y1 - y0, 0.0), (a1 - a0, 0.0, 0.0))
     panel((-opening, high, plan.front), (0.0, h - high, 0.0), (2.0 * opening, 0.0, 0.0))
     panel((-plan.half, 0.0, plan.back), (width, 0.0, 0.0), (0.0, h, 0.0))
 
@@ -169,9 +172,9 @@ def brackets(part, plan, along):
 
 
 def window(part, plan, x, width):
-    """A lattice window in a wall bay: a frame, a few bars and a sill."""
+    """A lattice window over an opening in the wall: a frame, a few bars and a sill, and nothing in the way of the view."""
     c = plan.c
-    low, high = WINDOW
+    low, high = plan.band
     height = high - low
     middle = (low + high) / 2
     bar = 0.08
@@ -179,7 +182,7 @@ def window(part, plan, x, width):
     for y in (low, high):
         part.box((x, y, 0.07), (width, bar, 0.1), wood, skip=hidden("+z", "-y", "+y"))
     for side in (-1.0, 1.0):
-        part.box((x + side * (width / 2 - bar / 2), middle, 0.07), (bar, height, 0.1), wood, skip=hidden("+z"))
+        part.box((x + side * (width / 2 - bar / 2), middle, 0.07), (bar, height, 0.1), wood, skip=hidden("+z", "-x" if side > 0 else "+x"))
     part.box((x, low - 0.07, 0.14), (width + 0.16, 0.08, 0.3), c["woodMid"], skip=("-y",))
     columns, rows = max(3, round(width / 0.36)), 7
     for i in range(1, columns):
@@ -188,16 +191,12 @@ def window(part, plan, x, width):
         quad(part, (x, low + height * k / rows, 0.062), width - bar, 0.028, c["woodMid"])
 
 
-def window_width(width):
-    return min(2.4, width - 0.8)
-
-
-def wall_fittings(part, plan, placement, length, along, bays):
+def wall_fittings(part, plan, placement, length, along, windows):
     with part.placed(placement):
         beam_band(part, plan, length)
         brackets(part, plan, along)
-        for x, width in bays:
-            window(part, plan, x, window_width(width))
+        for x, width in windows:
+            window(part, plan, x, width)
 
 
 def altar(part, plan):
@@ -240,25 +239,9 @@ def structure(plan):
     part = Part("structure", frame=GAME)
     wall_surfaces(part, plan)
     pillars(part, plan)
-    for placement, length, along, bays in plan.walls():
-        wall_fittings(part, plan, placement, length, along, bays)
+    for placement, length, along, windows in plan.walls():
+        wall_fittings(part, plan, placement, length, along, windows)
     altar(part, plan)
-    return part
-
-
-def paper(plan):
-    """The cream paper behind each lattice: it takes the light of the room and glows a little."""
-    part = Part("paper", frame=GAME)
-    low, high = WINDOW
-
-    def sheet(co):
-        return scaled(plan.c["paper"], 0.86 + 0.14 * math.sin(math.pi * (co.y - low) / (high - low)))
-
-    for placement, _length, _along, bays in plan.walls():
-        with part.placed(placement):
-            for x, width in bays:
-                inner = window_width(width) - 0.1
-                part.grid((x - inner / 2, low, 0.04), (inner, 0.0, 0.0), (0.0, high - low, 0.0), 1, 4, sheet)
     return part
 
 
@@ -485,7 +468,6 @@ def build(inputs, out_dir, head):
     common.bake_vertex_occlusion([objects["structure"], objects["ceiling"], objects["floor"]], distance=0.9, samples=40, floor=0.55)
     common.bake_vertex_occlusion([objects["lotus"], objects["halo"]], distance=0.35, samples=64, floor=0.5)
     objects["glow"] = glow(plan).build(solid, crease=False)
-    objects["paper"] = paper(plan).build(solid, crease=False)
     objects["mural"] = mural(plan).build(solid, crease=False)
     objects["seat"] = seat(plan).build(solid, crease=False)
 
