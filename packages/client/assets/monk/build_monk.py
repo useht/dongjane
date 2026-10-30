@@ -762,6 +762,8 @@ def dome_rings(radius, n, steps, z_centre=0.0, squash=1.0):
 
 SHOULDER_DOME = 0.5  # height of the shoulder cap over the joint, as a fraction of the sleeve radius
 SLEEVE_FLARE = 0.014  # how much wider the cuff is than the sleeve at the elbow
+ELBOW_BILLOW = 1.25  # sleeve width at the elbow relative to the shoulder
+ELBOW_R = SHOULDER_R * ELBOW_BILLOW
 
 
 def build_sleeve_upper():
@@ -770,12 +772,12 @@ def build_sleeve_upper():
     r = SHOULDER_R
     arm = RIG["upperArm"]
     tube = [
-        ring_xy(0.0, 0.0, -arm, r * 1.07, r * 1.07, n),
-        ring_xy(0.0, 0.0, -arm * 0.6, r * 1.04, r * 1.04, n),
-        ring_xy(0.0, 0.0, -arm * 0.2, r * 1.0, r * 1.0, n),
+        ring_xy(0.0, 0.0, -arm, ELBOW_R, ELBOW_R, n),
+        ring_xy(0.0, 0.0, -arm * 0.6, lerp(r, ELBOW_R, 0.5), lerp(r, ELBOW_R, 0.5), n),
+        ring_xy(0.0, 0.0, -arm * 0.2, r, r, n),
     ]
     dome = dome_rings(r, n, 3, squash=SHOULDER_DOME)
-    p.loft(tube + dome, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))
+    p.loft(tube + dome, "jacket", cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))  # no cap at the elbow: its flat normal would shade the last ring dark
     return p.to_object()
 
 
@@ -783,8 +785,7 @@ def build_sleeve_lower():
     p = Part("sleeveLower")
     n = SEGMENTS["sleeve"]
     fore = RIG["foreArm"]
-    top_r = SHOULDER_R * 1.07  # continues the upper sleeve, so the elbow shows no step
-    cuff = top_r + SLEEVE_FLARE  # the long loose sleeve widens toward the wrist and ends in an open cuff
+    cuff = SHOULDER_R * 1.07 + SLEEVE_FLARE  # the long loose sleeve widens toward the wrist and ends in an open cuff
     end = -(fore - 0.012)
     rings = [
         ring_xy(0.0, 0.0, end - 0.004, 0.032, 0.032, n),
@@ -792,14 +793,11 @@ def build_sleeve_lower():
         ring_xy(0.0, 0.0, end + 0.0, cuff - 0.01, cuff - 0.01, n),
         ring_xy(0.0, 0.0, end + 0.005, cuff + 0.003, cuff + 0.003, n),
         ring_xy(0.0, 0.0, end + 0.014, cuff - 0.003, cuff - 0.003, n),
-        ring_xy(0.0, 0.0, -fore * 0.4, lerp(top_r, cuff, 0.5), lerp(top_r, cuff, 0.5), n),
-        ring_xy(0.0, 0.0, -0.008, top_r, top_r, n),
+        ring_xy(0.0, 0.0, -fore * 0.4, lerp(ELBOW_R, cuff, 0.5), lerp(ELBOW_R, cuff, 0.5), n),
     ]
-    elbow_dome = [
-        ring_xy(0.0, 0.0, top_r * 0.7 * sin((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), top_r * cos((pi / 2) * i / 3), n)
-        for i in range(1, 3)
-    ]
-    p.loft(rings + elbow_dome, "jacket", cap_last=Vector((0.0, 0.0, top_r * 0.7)))
+    # a hemisphere about the elbow pivot stays round at any bend
+    elbow_ball = [ring_xy(0.0, 0.0, ELBOW_R * sin(radians(a)), ELBOW_R * cos(radians(a)), ELBOW_R * cos(radians(a)), n) for a in (0, 10, 35, 62)]
+    p.loft(rings + elbow_ball, "jacket", cap_last=Vector((0.0, 0.0, ELBOW_R)))
     return p.to_object()
 
 
