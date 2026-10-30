@@ -29,6 +29,7 @@ import {
   worldToDharma,
   wrapAngle,
   yawFromDirection,
+  zoneAt,
 } from "../src/index.ts";
 
 describe("zones", () => {
@@ -208,10 +209,14 @@ describe("seats", () => {
 });
 
 describe("arrival", () => {
-  it("brings everyone in at the back of the plaza, on walkable ground", () => {
-    expect(ARRIVAL).toMatchObject({ x: 0, z: 14 });
-    for (const x of [ARRIVAL.x - ARRIVAL.spread / 2, ARRIVAL.x + ARRIVAL.spread / 2]) {
+  it("brings everyone in inside the 법당, on the open floor between the last row of 방석 and the door", () => {
+    expect(ARRIVAL).toEqual({ x: -14.5, z: 0, spread: 3 });
+    const lastRowEdge = Math.max(...DHARMA_SEATS.map((seat) => seat.x)) + DHARMA_SEAT_SIZE.x / 2;
+    for (const x of [ARRIVAL.x - ARRIVAL.spread / 2, ARRIVAL.x, ARRIVAL.x + ARRIVAL.spread / 2]) {
       expect(resolveWalkable(x, ARRIVAL.z)).toEqual({ x, z: ARRIVAL.z });
+      expect(zoneAt(x, ARRIVAL.z)).toBe("dharma");
+      expect(x).toBeGreaterThan(lastRowEdge);
+      expect(x).toBeLessThan(DHARMA_BOUNDS.maxX);
     }
   });
 

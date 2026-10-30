@@ -42,6 +42,16 @@ export class SeatHints {
     hint.node.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -100%)`;
   }
 
+  seatAt(clientX: number, clientY: number): number | null {
+    for (let id = 0; id < this.hints.length; id += 1) {
+      const hint = this.hints[id];
+      if (!hint?.shown) continue;
+      const rect = hint.node.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return id;
+    }
+    return null;
+  }
+
   hide(id: number): void {
     const hint = this.hints[id];
     if (!hint?.shown) return;

@@ -9,7 +9,7 @@ export class StageHint {
   private shown = false;
 
   constructor(host: HTMLElement, onPlay: () => void) {
-    this.node = iconButton("play", "다시 재생", onPlay, "seat-hint hidden");
+    this.node = iconButton("play", "다시 재생", onPlay, "seat-hint stage-hint hidden");
     this.root.append(this.node);
     host.append(this.root);
   }

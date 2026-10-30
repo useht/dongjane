@@ -738,14 +738,14 @@ describe("dharma.glb", () => {
 });
 
 describe("the model set", () => {
-  // The glbs the game loads before its first frame; dharma.glb is fetched after it and has a budget of its own.
-  const EAGER = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
-  const LAZY = ["dharma.glb"];
+  // Every glb is loaded before the first frame; dharma.glb, the 법당's inside, has a byte budget of its own beside the total.
+  const OUTDOOR = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
+  const INDOOR = ["dharma.glb"];
   // main.ts loads the Korean monk beside the models above, before the first frame: it counts too, though main's own script builds it.
   const MONK = new URL("../assets/monk/monk.glb", import.meta.url);
 
   it("fits the total byte budget, counted in the files' actual sizes and with the monk", () => {
-    const total = EAGER.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
+    const total = OUTDOOR.reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
   });
 
@@ -753,9 +753,9 @@ describe("the model set", () => {
     expect(statSync(MONK).size).toBeLessThanOrEqual(BUDGET.monk.bytes);
   });
 
-  it("stores no picture twice among the files the first frame loads", () => {
+  it("stores no picture twice among the files the game loads", () => {
     const seen = new Map<string, string>();
-    for (const file of EAGER) {
+    for (const file of [...OUTDOOR, ...INDOOR]) {
       for (const [index, bytes] of imageBytes(loadGlb(new URL(file, MODELS))).entries()) {
         const hash = createHash("sha256").update(bytes).digest("hex");
         expect(seen.get(hash), `${file} image ${index} is already in ${seen.get(hash)}`).toBeUndefined();
@@ -766,6 +766,6 @@ describe("the model set", () => {
   });
 
   it("has no glb the game does not load", () => {
-    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual([...EAGER, ...LAZY].sort());
+    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual([...OUTDOOR, ...INDOOR].sort());
   });
 });

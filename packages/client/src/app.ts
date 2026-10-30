@@ -35,7 +35,7 @@ import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
 import type { MonkAssets } from "./game/monk-assets.ts";
 import { QuestTracker } from "./game/quest-tracker.ts";
 import { STAGE } from "./game/venue-layout.ts";
-import { type MonkView, World } from "./game/world.ts";
+import { type MonkView, START_ZONE, World } from "./game/world.ts";
 import { fetchWorlds, requestSeat } from "./net/worlds.ts";
 import { RetryCancelled } from "./net/retry.ts";
 import { ReturnCountdown } from "./net/return-countdown.ts";
@@ -79,8 +79,6 @@ const RETURN_COUNTDOWN_SECONDS = 10;
 const ENTER_ATTEMPTS = 3;
 const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 const TAP_ARRIVE_DISTANCE = 0.1;
-const INDOOR_PREFETCH_DELAY_MS = 2500;
-const INDOOR_PREFETCH_IDLE_TIMEOUT_MS = 4000;
 
 interface SelfSnapshot {
   x: number;
@@ -128,7 +126,7 @@ export class App {
   private joinToken = 0;
   private self: SelfSnapshot | null = null;
   // The part of the world the camera is in, which the seat hints, the sounds and the greetings belong to.
-  private zone: Zone = "gatbawi";
+  private zone: Zone = START_ZONE;
   private seatOwners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
   private nextKnockAt = 0;
   private readonly prediction = new SelfPrediction();
@@ -170,7 +168,15 @@ export class App {
         },
         onStick: (stick) => this.joystick.set(stick),
         onZone: (zone) => this.setZone(zone),
-        onFloorTap: (x, z) => this.walkTo(x, z),
+        onTap: (clientX, clientY) => {
+          const seatId = this.seatHints.seatAt(clientX, clientY);
+          if (seatId !== null) {
+            this.sitAt(seatId);
+            return;
+          }
+          const point = this.world.floorPointAt(clientX, clientY);
+          if (point) this.walkTo(point.x, point.z);
+        },
       },
       assets,
       monkAssets,
@@ -232,10 +238,7 @@ export class App {
       this.sutra.prime();
       this.stage.openTapWindow();
     });
-    this.seatHints = new SeatHints(this.ui, (id) => {
-      this.stopWalking();
-      this.session?.sit(this.zone, id);
-    });
+    this.seatHints = new SeatHints(this.ui, (id) => this.sitAt(id));
     this.stageHint = new StageHint(this.ui, () => this.stage.resume());
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
@@ -399,7 +402,6 @@ export class App {
     this.world.seedServerTime(Date.now(), performance.now());
     this.hud.setSolo({ kind: "idle" });
     this.overlay.hide();
-    this.prefetchIndoors();
     this.handleState(session.state);
   }
 
@@ -417,7 +419,6 @@ export class App {
     window.history.replaceState(null, "", url);
 
     this.overlay.hide();
-    this.prefetchIndoors();
     if (fellBackFrom !== null) {
       this.hud.toast(`${worldName(fellBackFrom)}는 없거나 비어 있거나 가득 차서 ${worldName(world)}로 모셨어요`);
     }
@@ -543,15 +544,6 @@ export class App {
     this.seatOwners = { gatbawi: new Map(), dharma: new Map() };
   }
 
-  // The 법당's inside is a big file, so it is fetched once the browser is idle after the visitor has settled in, not before they
-  // can see anything. A visitor who saves data gets it when they walk up to the door instead.
-  private prefetchIndoors(): void {
-    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
-    const load = (): void => void this.world.ensureDharma();
-    if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(load, { timeout: INDOOR_PREFETCH_IDLE_TIMEOUT_MS });
-    else window.setTimeout(load, INDOOR_PREFETCH_DELAY_MS);
-  }
-
   // The concert video and the sutra both run for as long as the visitor is in the world; where they stand (see tickMix) only
   // decides which of the two is heard. The wind belongs to the open air.
   private syncZoneSound(): void {
@@ -661,6 +653,11 @@ export class App {
   private stand(): void {
     this.stopWalking();
     if (this.self && this.self.mode !== "stand") this.session?.stand();
+  }
+
+  private sitAt(seatId: number): void {
+    this.stopWalking();
+    this.session?.sit(this.zone, seatId);
   }
 
   private stopWalking(): void {

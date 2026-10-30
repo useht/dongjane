@@ -17,6 +17,7 @@ import { SoloSession } from "../src/net/solo.ts";
 const T0 = 1_800_000_000_000;
 const SEAT = GATBAWI_SEATS[47]!;
 const SPAWN = ARRIVAL;
+const PLAZA_SPOT = { x: 0, z: 14 };
 
 function open(hue: unknown = 120): { session: SoloSession; onState: ReturnType<typeof vi.fn<(state: TempleState) => void>> } {
   const onState = vi.fn<(state: TempleState) => void>();
@@ -50,7 +51,7 @@ describe("SoloSession", () => {
     expect(monk.mode).toBe("stand");
     expect(Math.abs(monk.x - SPAWN.x)).toBeLessThanOrEqual(SPAWN.spread);
     expect(monk.z).toBe(SPAWN.z);
-    expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
+    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
     expect(session.sessionId).toBe("solo");
     void session.leave();
   });
@@ -86,7 +87,7 @@ describe("SoloSession", () => {
     session.move(1, WORLD_BOUNDS.maxZ, 7);
     expect(self(session).mode).toBe("walk");
     expect(self(session).ackSeq).toBe(7);
-    vi.advanceTimersByTime(10_000);
+    vi.advanceTimersByTime(30_000);
     expect(self(session).mode).toBe("stand");
     expect(self(session).x).toBeCloseTo(1, 5);
     expect(self(session).z).toBeCloseTo(WORLD_BOUNDS.maxZ, 5);
@@ -116,9 +117,12 @@ describe("SoloSession", () => {
     void session.leave();
   });
 
-  it("walks on foot through the 법당's doorway to a 방석 and kneels there", () => {
+  it("walks out onto the plaza and back on foot through the 법당's doorway to a 방석 and kneels there", () => {
     const { session } = open();
     const seat = DHARMA_SEATS[4]!;
+    session.move(PLAZA_SPOT.x, PLAZA_SPOT.z, 1);
+    vi.advanceTimersByTime(30_000);
+    expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");
     session.sit("dharma", seat.id);
     expect(session.state.seats.get(`dharma:${seat.id}`)?.occupantId).toBe("solo");
     expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");

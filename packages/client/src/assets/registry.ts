@@ -11,18 +11,13 @@ export const MODELS = { gatbawi: gatbawiUrl, buddha: buddhaUrl, world: worldUrl,
 
 export type ModelKey = keyof typeof MODELS;
 
-// The models the first frame needs; the 법당's inside is fetched when someone is about to enter it.
-export type EagerKey = Exclude<ModelKey, "dharma">;
-
 const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES } as const;
 
 // The glTF materials are placeholders: the game builds its own and only borrows the textures.
 export type ModelMeshes<K extends ModelKey> = { readonly [Name in (typeof NAMES)[K][number]]: Mesh };
 
 export interface GameAssets {
-  readonly models: { readonly [K in EagerKey]: ModelMeshes<K> };
-  // Fetches the 법당's inside once; a failed fetch is not remembered, so asking again retries it.
-  loadDharma(): Promise<ModelMeshes<"dharma">>;
+  readonly models: { readonly [K in ModelKey]: ModelMeshes<K> };
   dispose(): void;
 }
 
@@ -107,30 +102,11 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
     });
     return collectMeshes(scene, key);
   };
-  const [gatbawi, buddha, world, venue] = await Promise.all([load("gatbawi"), load("buddha"), load("world"), load("venue")]);
-  let pending: Promise<ModelMeshes<"dharma">> | null = null;
-  let dharma: ModelMeshes<"dharma"> | null = null;
+  const [gatbawi, buddha, world, venue, dharma] = await Promise.all([load("gatbawi"), load("buddha"), load("world"), load("venue"), load("dharma")]);
   return {
-    models: { gatbawi, buddha, world, venue },
-    loadDharma(): Promise<ModelMeshes<"dharma">> {
-      if (!pending) {
-        const request = load("dharma");
-        pending = request;
-        request.then(
-          (meshes) => {
-            if (pending === request) dharma = meshes;
-          },
-          () => {
-            if (pending === request) pending = null;
-          },
-        );
-      }
-      return pending;
-    },
+    models: { gatbawi, buddha, world, venue, dharma },
     dispose(): void {
-      for (const meshes of [gatbawi, buddha, world, venue]) disposeMeshes(meshes);
-      if (dharma) disposeMeshes(dharma);
-      else void pending?.then((meshes) => disposeMeshes(meshes), () => undefined);
+      for (const meshes of [gatbawi, buddha, world, venue, dharma]) disposeMeshes(meshes);
     },
   };
 }

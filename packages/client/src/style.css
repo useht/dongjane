@@ -247,7 +247,7 @@ button:disabled {
 .world-button:active,
 .clock-button:active,
 .quest-strip:active,
-.seat-hint:active {
+.stage-hint:active {
   opacity: 0.7;
 }
 
@@ -690,8 +690,12 @@ button:disabled {
   border: 0;
   background: transparent;
   color: var(--gold);
-  pointer-events: auto;
+  pointer-events: none;
   will-change: transform;
+}
+
+.stage-hint {
+  pointer-events: auto;
 }
 
 .seat-hint svg {

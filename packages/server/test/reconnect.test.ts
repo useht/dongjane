@@ -66,7 +66,7 @@ describe("reconnection window", () => {
     const a = await rig.enter(1);
     const b = await rig.enter(1);
     a.send("sit", { zone: "gatbawi", seatId: 47 });
-    await waitFor(() => b.state.monks.get(a.sessionId)?.mode === "kneel", "A kneels", 6000);
+    await waitFor(() => b.state.monks.get(a.sessionId)?.mode === "kneel", "A kneels", 15_000);
 
     const sessionId = a.sessionId;
     let reconnected = false;

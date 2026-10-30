@@ -14,6 +14,7 @@ import {
   distanceBefore,
   lensFor,
   maxDistanceInside,
+  pointInRoom,
   projectToCanvas,
   projectUnclipped,
   regionFor,
@@ -492,7 +493,7 @@ const SCREENS: ReadonlyArray<readonly [string, number, number, number, number]> 
 
 describe("default framing", () => {
   const halfMat = { x: GATBAWI_SEAT_SIZE.x / 2, z: GATBAWI_SEAT_SIZE.z / 2 };
-  const spawn = ARRIVAL;
+  const plazaBack = { x: 0, z: 14 };
 
   const frame = (width: number, height: number, view = viewFor("gatbawi", width / height)): CameraRig => {
     const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS);
@@ -515,12 +516,34 @@ describe("default framing", () => {
     const camera = rig.camera;
     rig.reduceMotion = true;
     configureCamera(camera, rig, width, height, top, bottom);
-    rig.follow(spawn.x, spawn.z, 0, true);
+    rig.follow(plazaBack.x, plazaBack.z, 0, true);
     rig.update(0.016);
     camera.updateMatrixWorld();
-    const screenY = (y: number) => ((1 - new Vector3(spawn.x, y, spawn.z).project(camera).y) / 2) * height;
+    const screenY = (y: number) => ((1 - new Vector3(plazaBack.x, y, plazaBack.z).project(camera).y) / 2) * height;
     expect(screenY(1.5)).toBeGreaterThan(top);
     expect(screenY(0)).toBeLessThan(height - bottom);
+  });
+
+  it.each(SCREENS)("starts inside the 법당 with the monk, wherever the arrival puts them, between the HUD bands on %s", (_name, width, height, top, bottom) => {
+    const region = regionFor("dharma");
+    const start = startViewFor("dharma", width / height);
+    for (const x of [ARRIVAL.x - ARRIVAL.spread / 2, ARRIVAL.x, ARRIVAL.x + ARRIVAL.spread / 2]) {
+      const rig = new CameraRig(new PerspectiveCamera(), region.bounds);
+      rig.setRegion(region.bounds, region.limits);
+      rig.yaw = start.yaw;
+      rig.pitch = start.pitch;
+      rig.distance = start.distance;
+      rig.reduceMotion = true;
+      configureCamera(rig.camera, rig, width, height, top, bottom);
+      rig.follow(x, ARRIVAL.z, 0, true);
+      rig.update(0.016);
+      rig.camera.updateMatrixWorld();
+      expect(pointInRoom(rig.camera.position), `camera inside the room for a monk at ${x}`).toBe(true);
+      expect(rig.camera.position.distanceTo(new Vector3(x, 1, ARRIVAL.z)), `camera clear of a monk at ${x}`).toBeGreaterThan(3.5);
+      const screenY = (y: number) => ((1 - new Vector3(x, y, ARRIVAL.z).project(rig.camera).y) / 2) * height;
+      expect(screenY(1.5), `head of a monk at ${x}`).toBeGreaterThan(top);
+      expect(screenY(0), `feet of a monk at ${x}`).toBeLessThan(height - bottom);
+    }
   });
 
   it.each(SCREENS)("keeps Gatbawi, all fifty mats and the monk between the HUD bands on %s", (_name, width, height, top, bottom) => {
@@ -528,7 +551,7 @@ describe("default framing", () => {
     const camera = rig.camera;
     rig.reduceMotion = true;
     configureCamera(camera, rig, width, height, top, bottom);
-    rig.follow(spawn.x, spawn.z, 0, true);
+    rig.follow(plazaBack.x, plazaBack.z, 0, true);
     rig.update(0.016);
     camera.updateMatrixWorld();
     const screen = (x: number, y: number, z: number) => {
@@ -550,8 +573,8 @@ describe("default framing", () => {
         }
       }
     }
-    const feet = screen(spawn.x, 0, spawn.z);
-    const head = screen(spawn.x, 1.5, spawn.z);
+    const feet = screen(plazaBack.x, 0, plazaBack.z);
+    const head = screen(plazaBack.x, 1.5, plazaBack.z);
     expect(head.y).toBeGreaterThan(top);
     expect(feet.y).toBeLessThan(height - bottom);
   });
@@ -560,7 +583,7 @@ describe("default framing", () => {
     const rig = frame(390, 844);
     const camera = rig.camera;
     rig.reduceMotion = true;
-    rig.follow(spawn.x, spawn.z, 0, true);
+    rig.follow(plazaBack.x, plazaBack.z, 0, true);
     rig.update(0.016);
     const { x, y, z } = camera.position;
     expect(x).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minX);
@@ -568,7 +591,7 @@ describe("default framing", () => {
     expect(y).toBeGreaterThanOrEqual(LANDSCAPE_BOUNDS.minY);
     expect(y).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxY);
     expect(z).toBeLessThanOrEqual(LANDSCAPE_BOUNDS.maxZ);
-    expect(z).toBeCloseTo(spawn.z + DEFAULT_VIEW.distance * Math.cos(DEFAULT_VIEW.pitch) * Math.cos(DEFAULT_VIEW.yaw), 2);
+    expect(z).toBeCloseTo(plazaBack.z + DEFAULT_VIEW.distance * Math.cos(DEFAULT_VIEW.pitch) * Math.cos(DEFAULT_VIEW.yaw), 2);
   });
 
   it("uses a wider lens on portrait screens", () => {
