@@ -287,7 +287,7 @@ export class Landscape {
     this.group.add(this.leaves);
 
     this.applyLook(this.current);
-    this.update(0, 0, null, true);
+    this.update(0, 0, null, true, { x: 0, z: 0 });
   }
 
   // The glb's screen is a bare quad; this copy also knows which part of the picture each corner shows.
@@ -516,12 +516,12 @@ export class Landscape {
     this.current = cloneLook(look);
   }
 
-  update(time: number, dt: number, camera: Camera | null, reduceMotion: boolean): void {
+  update(time: number, dt: number, camera: Camera | null, reduceMotion: boolean, focus: { x: number; z: number }): void {
     if (dt > 0) easeLook(this.current, this.target, 1 - Math.exp(-dt / SKY_EASE_SECONDS));
     const look = this.current;
     this.applyLook(look);
     const open = 1 - this.indoor;
-    this.precipitation.update(dt, reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1, look.rain * open, look.snow * open, packRgb(look.precipTint));
+    this.precipitation.update(dt, reduceMotion ? REDUCED_PRECIPITATION_MOTION : 1, look.rain * open, look.snow * open, packRgb(look.precipTint), focus);
 
     if (camera) this.sky.position.copy(camera.position);
     if (!reduceMotion) this.cloudTurn += dt * CLOUD_TURN_PER_SECOND;

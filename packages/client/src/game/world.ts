@@ -550,7 +550,7 @@ export class World {
     this.indoor = wanted > this.indoor ? Math.min(wanted, this.indoor + step) : Math.max(wanted, this.indoor - step);
     this.landscape.setCutaway(this.area === "dharma" && !this.cameraInRoom());
     this.applyAtmosphere(this.indoorShare());
-    this.landscape.update(this.time, dt, this.camera, this.reduceMotion);
+    this.landscape.update(this.time, dt, this.camera, this.reduceMotion, this.rig.focusPoint);
     this.dharma?.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered(nowMs);

@@ -12,16 +12,19 @@ import {
 import { THEME } from "../theme.ts";
 import { mulberry32 } from "./textures.ts";
 
-// The falling volume sits over the plaza and the steps, where the camera looks.
-const X_MIN = -8;
-const X_SPAN = 16;
-const Z_MIN = -5;
-const Z_SPAN = 14;
+// The falling volume is a square round the spot the camera is aimed at. Each drop keeps its place in the world and the
+// square slides under it, so walking does not drag the rain along.
+const RANGE = 14;
+const SPAN = RANGE * 2;
 const Y_TOP = 11;
 const RAIN_SPEED = 13;
 const SNOW_SPEED = 1.1;
 const SLANT = 0.14;
 const VISIBLE_AMOUNT = 0.01;
+
+function within(value: number, centre: number): number {
+  return centre + ((((value - centre + RANGE) % SPAN) + SPAN) % SPAN) - RANGE;
+}
 
 export class Precipitation {
   readonly group = new Group();
@@ -29,6 +32,7 @@ export class Precipitation {
   private readonly rain: LineSegments;
   private readonly snow: Points;
   private readonly seeds: Float32Array;
+  private readonly centre = { x: 0, z: 0 };
   private clock = 0;
 
   constructor(private readonly count: number, flake: Texture) {
@@ -59,8 +63,10 @@ export class Precipitation {
     }
   }
 
-  update(dt: number, motion: number, rain: number, snow: number, tint: number): void {
+  update(dt: number, motion: number, rain: number, snow: number, tint: number, focus: { x: number; z: number }): void {
     this.clock += dt * motion;
+    this.centre.x = focus.x;
+    this.centre.z = focus.z;
     this.rain.visible = rain > VISIBLE_AMOUNT;
     this.snow.visible = snow > VISIBLE_AMOUNT;
     if (this.rain.visible) {
@@ -91,9 +97,9 @@ export class Precipitation {
     for (let i = 0; i < visible; i += 1) {
       const fall = (this.seed(i, 2) + (this.clock * RAIN_SPEED * (0.85 + this.seed(i, 3) * 0.3)) / Y_TOP) % 1;
       const length = 0.5 + this.seed(i, 3) * 0.35;
-      const x = X_MIN + this.seed(i, 0) * X_SPAN - fall * Y_TOP * SLANT;
+      const x = within(this.seed(i, 0) * SPAN - fall * Y_TOP * SLANT, this.centre.x);
       const y = Y_TOP - fall * Y_TOP;
-      const z = Z_MIN + this.seed(i, 1) * Z_SPAN;
+      const z = within(this.seed(i, 1) * SPAN, this.centre.z);
       position.setXYZ(i * 2, x, y, z);
       position.setXYZ(i * 2 + 1, x + length * SLANT, y + length, z);
     }
@@ -109,9 +115,9 @@ export class Precipitation {
       const fall = (this.seed(i, 2) + (this.clock * SNOW_SPEED * (0.7 + this.seed(i, 3) * 0.6)) / Y_TOP) % 1;
       position.setXYZ(
         i,
-        X_MIN + this.seed(i, 0) * X_SPAN + Math.sin(this.clock * 0.6 + sway) * 0.5,
+        within(this.seed(i, 0) * SPAN + Math.sin(this.clock * 0.6 + sway) * 0.5, this.centre.x),
         Y_TOP - fall * Y_TOP,
-        Z_MIN + this.seed(i, 1) * Z_SPAN + Math.cos(this.clock * 0.45 + sway) * 0.5,
+        within(this.seed(i, 1) * SPAN + Math.cos(this.clock * 0.45 + sway) * 0.5, this.centre.z),
       );
     }
     position.needsUpdate = true;

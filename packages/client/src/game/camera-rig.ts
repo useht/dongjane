@@ -240,6 +240,10 @@ export class CameraRig {
     this.blendTo = { ...bounds };
   }
 
+  get focusPoint(): Readonly<Vector3> {
+    return this.focus;
+  }
+
   // Moves the camera's box and zoom range; with `blendSeconds` the box slides to the new one and the distance eases into the
   // new range, which is how the camera follows a monk through a doorway without a cut.
   setRegion(bounds: Box, limits: RigLimits, blendSeconds = 0): void {

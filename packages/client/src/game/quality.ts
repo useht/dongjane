@@ -30,7 +30,7 @@ export function detectQuality(env: QualityEnv): QualityProfile {
     shadows: true,
     shadowMapSize: weak ? 512 : 1024,
     leaves: weak ? 40 : 90,
-    precipitation: weak ? 420 : 900,
+    precipitation: weak ? 1260 : 2700,
     anisotropy: Math.max(1, Math.min(env.maxAnisotropy, weak ? 2 : 8)),
     lanterns: weak ? 90 : 180,
     dust: weak ? 40 : 90,
