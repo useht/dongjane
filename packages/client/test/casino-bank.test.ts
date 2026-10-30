@@ -165,4 +165,13 @@ describe("CasinoBank", () => {
     expect(second.takeNotice()).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it("keeps a win that was settled before a reload, once, however often the page reloads", () => {
+    stubStorage();
+    const store: WalletStore = { load: loadWallet, save: saveWallet };
+    new CasinoBank(store, () => NOON).settle({ stake: 10, payout: 100 });
+    expect(new CasinoBank(store, () => NOON).balance).toBe(START_BALANCE + 90);
+    expect(new CasinoBank(store, () => NOON).balance).toBe(START_BALANCE + 90);
+    vi.unstubAllGlobals();
+  });
 });
