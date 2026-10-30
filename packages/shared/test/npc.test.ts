@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHANT_MS, NPC_COUNT, TICK_MS, ZONE_CAPACITY } from "../src/constants.ts";
-import { GATBAWI_SEATS, ZONES, seatKey, type Zone } from "../src/layout.ts";
+import { GATBAWI_SEATS, ZONES, seatKey, seatSpot, type Zone } from "../src/layout.ts";
 import { type NpcActions, type NpcBody, type NpcVisitor, type NpcWorld, createNpcBrain, thinkNpc } from "../src/npc.ts";
 import type { Persona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
@@ -12,6 +12,8 @@ const NPC_TOTAL = NPC_COUNT;
 const PLAZA_SPOT = { x: 0, z: 8 };
 // Twenty minutes from QUIET_START: long enough for every prayer to end, and over before the next chant begins.
 const PRAYER_RUN_MS = 20 * 60_000;
+// An hour from QUIET_START: the chants at 25 and 55 minutes come and go, and the monks have time to roam.
+const ROAM_RUN_MS = 60 * 60_000;
 
 // A computer-driven monk is in the zone its feet are in, and it roams the whole world.
 const zoneOf = (monk: { x: number; z: number }): Zone => zoneAt(monk.x, monk.z);
@@ -106,6 +108,53 @@ function sharesOver(world: World, ms: number): Shares {
   return { walk: ticks.walk / total, stand: ticks.stand / total, seated: ticks.seated / total };
 }
 
+interface NpcCall {
+  name: "bow" | "sit" | "stand" | "move";
+  id: string;
+  args: unknown[];
+  ok: boolean;
+  // the monk as it was just before the call
+  before: { mode: string; seatId: number; x: number; z: number; bowCount: number };
+}
+
+// Hands every action an npc takes on the sim to `watch`, after the sim has answered it.
+function spyOnNpcs(world: World, watch: (call: NpcCall) => void): void {
+  const sim = world.sim;
+  for (const name of ["bow", "sit", "stand", "move"] as const) {
+    const original = (sim[name] as (...args: unknown[]) => boolean).bind(sim);
+    (sim as unknown as Record<string, unknown>)[name] = (id: string, ...args: unknown[]): boolean => {
+      const monk = sim.state.monks.get(id);
+      const before = monk?.npc ? { mode: monk.mode, seatId: monk.seatId, x: monk.x, z: monk.z, bowCount: monk.bowCount } : null;
+      const ok = original(id, ...args);
+      if (before) watch({ name, id, args, ok, before });
+      return ok;
+    };
+  }
+}
+
+// Leaving a mat for another mat without standing up in between.
+const isShift = (call: NpcCall): boolean => call.name === "sit" && call.ok && call.before.seatId >= 0;
+
+// The length of every stretch an npc walked without a break, in metres along the way it went.
+function walkLegs(world: World, ms: number): number[] {
+  const legs: number[] = [];
+  const walked = new Map<string, number>();
+  const last = new Map(world.npcs().map((npc) => [npc.id, { x: npc.x, z: npc.z }]));
+  world.run(ms, () => {
+    for (const npc of world.npcs()) {
+      const from = last.get(npc.id)!;
+      if (npc.mode === "walk") walked.set(npc.id, (walked.get(npc.id) ?? 0) + Math.hypot(npc.x - from.x, npc.z - from.z));
+      else if (walked.has(npc.id)) {
+        legs.push(walked.get(npc.id)!);
+        walked.delete(npc.id);
+      }
+      from.x = npc.x;
+      from.z = npc.z;
+    }
+  });
+  return legs;
+}
+
 function snapshot(world: World): string {
   return [...world.sim.state.monks.values()]
     .map((monk) => [monk.id, zoneOf(monk), monk.mode, monk.seatId, monk.bowCount, monk.x.toFixed(3), monk.z.toFixed(3)].join(":"))
@@ -170,56 +219,87 @@ describe("npc spawning", () => {
 });
 
 describe("npc behaviour", () => {
-  it("lets every npc sit, bow and stand up on its own after minutes of prayer, finishing each bow plan first", () => {
+  it("lets every npc sit, bow, shift mats and stand up on its own after minutes of prayer, finishing every bow before it leaves a mat", () => {
     const world = new World(7);
     const walked = new Set<string>();
     const sat = new Set<string>();
     const bowed = new Set<string>();
     const firstStoodUp = new Map<string, number>();
-    const bowsPerSeating = new Set<number>();
-    const before = new Map(world.npcs().map((npc) => [npc.id, { mode: npc.mode, bowsAtSeating: 0 }]));
+    const last = new Map(world.npcs().map((npc) => [npc.id, npc.mode]));
     const problems: string[] = [];
+    const batches = new Set<number>();
+    // what each npc has asked for since it last left a mat, against the bows it has actually made since then
+    const asked = new Map<string, number>();
+    const bowsAtLeaving = new Map<string, number>();
+    let leftMats = 0;
     let ticks = 0;
+
+    const leaving = (call: NpcCall): void => {
+      if (!call.ok || call.before.seatId < 0) return;
+      leftMats += 1;
+      const made = call.before.bowCount - (bowsAtLeaving.get(call.id) ?? 0);
+      if (call.before.mode !== "kneel") problems.push(`${call.id} leaves a mat while ${call.before.mode}`);
+      if (made !== (asked.get(call.id) ?? 0)) problems.push(`${call.id} left a mat after ${made} of ${asked.get(call.id)} bows`);
+      bowsAtLeaving.set(call.id, call.before.bowCount);
+      asked.set(call.id, 0);
+    };
+    spyOnNpcs(world, (call) => {
+      if (call.name === "bow" && call.ok) {
+        batches.add(call.args[0] as number);
+        asked.set(call.id, (asked.get(call.id) ?? 0) + (call.args[0] as number));
+      } else if (call.name === "stand" || call.name === "move" || call.name === "sit") {
+        leaving(call);
+      }
+    });
 
     world.run(PRAYER_RUN_MS, () => {
       ticks += 1;
       if (ticks % 20 === 0) problems.push(...world.seatProblems());
       for (const npc of world.npcs()) {
-        const last = before.get(npc.id)!;
+        const before = last.get(npc.id);
         if (npc.mode === "walk") walked.add(npc.id);
-        if (npc.mode === "kneel" && last.mode !== "kneel" && last.mode !== "bow") {
-          sat.add(npc.id);
-          last.bowsAtSeating = npc.bowCount;
-        }
+        if (npc.mode === "kneel" && before !== "kneel" && before !== "bow") sat.add(npc.id);
         if (npc.mode === "bow") bowed.add(npc.id);
-        if (npc.mode === "stand" && (last.mode === "kneel" || last.mode === "bow")) {
-          if (!firstStoodUp.has(npc.id)) firstStoodUp.set(npc.id, world.now - QUIET_START);
-          bowsPerSeating.add(npc.bowCount - last.bowsAtSeating);
+        if (npc.mode === "stand" && (before === "kneel" || before === "bow") && !firstStoodUp.has(npc.id)) {
+          firstStoodUp.set(npc.id, world.now - QUIET_START);
         }
-        last.mode = npc.mode;
+        last.set(npc.id, npc.mode);
       }
     });
 
     expect(problems).toEqual([]);
     expect(walked.size).toBe(NPC_TOTAL);
     expect(sat.size).toBe(NPC_TOTAL);
-    expect(bowed.size).toBeGreaterThan(0);
+    expect(bowed.size).toBe(NPC_TOTAL);
     expect(firstStoodUp.size).toBe(NPC_TOTAL);
-    expect([...bowsPerSeating].every((count) => [0, 1, 3].includes(count))).toBe(true);
+    expect(leftMats).toBeGreaterThan(NPC_TOTAL * 10);
+    expect([...batches].every((times) => [1, 2, 3].includes(times))).toBe(true);
+    expect(batches.has(1) && batches.has(2) && batches.has(3)).toBe(true);
     expect(world.sim.humanCount).toBe(0);
 
-    // Every monk prays for at least five minutes, and for its own length of time.
+    // Every monk prays for at least five minutes before it stands up for good, and for its own length of time.
     const times = [...firstStoodUp.values()];
     expect(Math.min(...times)).toBeGreaterThan(5 * 60_000);
     expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(3 * 60_000);
     expect(new Set(times.map((time) => Math.round(time / 1000))).size).toBeGreaterThan(NPC_TOTAL / 2);
   });
 
-  it("keeps almost every npc at prayer: walking is the rare exception, not the day's work", () => {
-    for (const seed of [1, 2, 3]) {
+  it("keeps almost every npc at prayer yet never still: a few percent of its time walking, the rest kneeling or bowing", () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
       const shares = sharesOver(new World(seed), PRAYER_RUN_MS);
-      expect(shares.walk, `seed ${seed} walks`).toBeLessThanOrEqual(0.05);
+      expect(shares.walk, `seed ${seed} walks`).toBeGreaterThanOrEqual(0.03);
+      expect(shares.walk, `seed ${seed} walks`).toBeLessThanOrEqual(0.08);
       expect(shares.seated, `seed ${seed} prays`).toBeGreaterThanOrEqual(0.9);
+    }
+  });
+
+  it("walks in short hops: nearly every leg is a few steps to the next mat, and a long walk is the rare exception", () => {
+    for (const seed of [1, 2, 3]) {
+      const legs = walkLegs(new World(seed), PRAYER_RUN_MS).sort((a, b) => a - b);
+      expect(legs.length, `seed ${seed} legs`).toBeGreaterThan(NPC_TOTAL * 10);
+      expect(legs[Math.floor(legs.length / 2)]!, `seed ${seed} median leg`).toBeLessThan(4);
+      expect(legs.filter((leg) => leg < 4).length / legs.length, `seed ${seed} short legs`).toBeGreaterThanOrEqual(0.9);
+      expect(legs[legs.length - 1]!, `seed ${seed} longest leg`).toBeGreaterThan(8);
     }
   });
 
@@ -230,7 +310,7 @@ describe("npc behaviour", () => {
     const cameBack = new Set<string>();
     const problems: string[] = [];
 
-    world.run(PRAYER_RUN_MS, () => {
+    world.run(ROAM_RUN_MS, () => {
       for (const npc of world.npcs()) {
         const zone = zoneOf(npc);
         const solid = resolveWalkable(npc.x, npc.z);
@@ -268,33 +348,51 @@ describe("npc behaviour", () => {
     expect(new Set(world.npcs().map((npc) => `${zoneOf(npc)}:${npc.x.toFixed(2)},${npc.z.toFixed(2)}`)).size).toBe(NPC_TOTAL);
   });
 
-  it("keeps praying through the chant: far fewer npcs stand up while it is on than in a quiet stretch", () => {
+  it("keeps praying through the chant: far fewer npcs stand up, shift mats or bow of their own while it is on than in a quiet stretch", () => {
     // Six minutes in, the first prayers begin to end. Same seed and same minute of prayer, with and without a chant.
-    const standUps = (start: number, seed: number): number => {
+    const activity = (start: number, seed: number) => {
       const world = new World(seed, { start });
+      let counting = false;
+      const counts = { standUps: 0, shifts: 0, bows: 0 };
+      spyOnNpcs(world, (call) => {
+        if (!counting) return;
+        if (isShift(call)) counts.shifts += 1;
+        if (call.name === "bow" && call.ok) counts.bows += 1;
+      });
       world.run(6 * 60_000);
       const last = new Map(world.npcs().map((npc) => [npc.id, npc.mode]));
-      let stood = 0;
+      counting = true;
       world.run(CHANT_MS, () => {
         for (const npc of world.npcs()) {
           const before = last.get(npc.id);
-          if (npc.mode === "stand" && (before === "kneel" || before === "bow")) stood += 1;
+          if (npc.mode === "stand" && (before === "kneel" || before === "bow")) counts.standUps += 1;
           last.set(npc.id, npc.mode);
         }
       });
-      return stood;
+      return counts;
     };
     const beforeChant = CHANT_START - 6 * 60_000;
-    let chant = 0;
-    let quiet = 0;
+    const chant = { standUps: 0, shifts: 0, bows: 0 };
+    const quiet = { standUps: 0, shifts: 0, bows: 0 };
     for (let seed = 1; seed <= 5; seed += 1) {
       expect(new World(seed, { start: beforeChant }).sim.state.chant.startsAt).toBe(CHANT_START);
       expect(new World(seed, { start: QUIET_START }).sim.state.chant.startsAt).toBeGreaterThan(QUIET_START + 6 * 60_000 + CHANT_MS);
-      chant += standUps(beforeChant, seed);
-      quiet += standUps(QUIET_START, seed);
+      for (const [counts, start] of [
+        [chant, beforeChant],
+        [quiet, QUIET_START],
+      ] as const) {
+        const seen = activity(start, seed);
+        counts.standUps += seen.standUps;
+        counts.shifts += seen.shifts;
+        counts.bows += seen.bows;
+      }
     }
-    expect(quiet).toBeGreaterThan(20);
-    expect(chant).toBeLessThan(quiet * 0.6);
+    expect(quiet.standUps).toBeGreaterThan(20);
+    expect(chant.standUps).toBeLessThan(quiet.standUps * 0.6);
+    expect(quiet.shifts).toBeGreaterThan(500);
+    expect(chant.shifts).toBe(0);
+    expect(quiet.bows).toBeGreaterThan(300);
+    expect(chant.bows).toBeLessThan(quiet.bows * 0.1);
   });
 
   it("repeats the same day for the same seed and a different one for another", () => {
@@ -307,6 +405,141 @@ describe("npc behaviour", () => {
     };
     expect(trace(3)).toEqual(trace(3));
     expect(trace(3)).not.toEqual(trace(4));
+  });
+});
+
+describe("npc prayer that is never still", () => {
+  const HALL = 20;
+  // A hall of monks who are all alike, so that two halls differ only in the persona.
+  const hall = (seed: number, persona: Persona) =>
+    new World(seed, { npcCount: HALL, personas: Array.from({ length: HALL }, () => persona) });
+  const devout: Persona = { devotion: 1, restless: 0.5, sociability: 0, shyness: 0, frontRow: 0.5 };
+  const lax: Persona = { ...devout, devotion: 0.3 };
+
+  interface Shift {
+    id: string;
+    sameZone: boolean;
+    metres: number;
+  }
+
+  function watch(world: World) {
+    const seen = { batches: [] as number[], refused: 0, shifts: [] as Shift[] };
+    spyOnNpcs(world, (call) => {
+      if (call.name === "bow") {
+        if (call.ok) seen.batches.push(call.args[0] as number);
+        else seen.refused += 1;
+      }
+      if (isShift(call)) {
+        const [zone, seatId] = call.args as [Zone, number];
+        const to = seatSpot(zone, seatId)!;
+        seen.shifts.push({
+          id: call.id,
+          sameZone: zoneAt(call.before.x, call.before.z) === zone,
+          metres: Math.hypot(to.x - call.before.x, to.z - call.before.z),
+        });
+      }
+    });
+    return seen;
+  }
+
+  const perMinute = (world: World, ms: number) => {
+    const rates = world.npcs().map((npc) => npc.bowCount / (ms / 60_000));
+    return { mean: rates.reduce((sum, rate) => sum + rate, 0) / rates.length, min: Math.min(...rates) };
+  };
+
+  it("bows again every minute or two for as long as it prays, the more devout the sooner", () => {
+    for (const seed of [1, 2, 3]) {
+      const devoutWorld = hall(seed, devout);
+      const laxWorld = hall(seed, lax);
+      devoutWorld.run(PRAYER_RUN_MS);
+      laxWorld.run(PRAYER_RUN_MS);
+      const devoutRate = perMinute(devoutWorld, PRAYER_RUN_MS);
+      const laxRate = perMinute(laxWorld, PRAYER_RUN_MS);
+      // even the least devout hall bows once in two minutes on average, and none of its monks goes quiet
+      expect(laxRate.mean, `seed ${seed} lax`).toBeGreaterThanOrEqual(0.5);
+      expect(laxRate.min, `seed ${seed} quietest lax`).toBeGreaterThanOrEqual(0.35);
+      expect(devoutRate.mean, `seed ${seed} devout`).toBeGreaterThan(laxRate.mean * 1.5);
+    }
+  });
+
+  it("bows once as a rule and now and then two or three times, and the sim never turns one down", () => {
+    const world = hall(4, devout);
+    const seen = watch(world);
+    world.run(PRAYER_RUN_MS);
+    expect(seen.batches.filter((times) => times === 1).length).toBeGreaterThan(seen.batches.length / 2);
+    expect(seen.batches.filter((times) => times === 2).length).toBeGreaterThan(0);
+    expect(seen.batches.filter((times) => times === 3).length).toBeGreaterThan(0);
+    expect(seen.batches.every((times) => times >= 1 && times <= 3)).toBe(true);
+    // the sim turns a bow down while another is under way or cooling down, which the npc must never ask for
+    expect(seen.refused).toBe(0);
+  });
+
+  it("shifts to a free mat two or three metres off in the same zone, every monk many times over", () => {
+    const world = hall(5, devout);
+    const seen = watch(world);
+    world.run(PRAYER_RUN_MS);
+    const perMonk = new Map<string, number>();
+    for (const shift of seen.shifts) perMonk.set(shift.id, (perMonk.get(shift.id) ?? 0) + 1);
+    expect(perMonk.size).toBe(HALL);
+    expect(Math.min(...perMonk.values())).toBeGreaterThanOrEqual(10);
+    expect(seen.shifts.every((shift) => shift.sameZone)).toBe(true);
+    expect(Math.min(...seen.shifts.map((shift) => shift.metres))).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...seen.shifts.map((shift) => shift.metres))).toBeLessThanOrEqual(3.5);
+    expect(world.seatProblems()).toEqual([]);
+  });
+
+  it("shifts more often the more restless it is", () => {
+    const shifts = (restless: number): number => {
+      const world = hall(6, { ...devout, restless });
+      const seen = watch(world);
+      world.run(PRAYER_RUN_MS);
+      return seen.shifts.length;
+    };
+    expect(shifts(0.9)).toBeGreaterThan(shifts(0.2) * 1.3);
+  });
+
+  describe("on a mat among others", () => {
+    const MAT = 22;
+    const REACH_M = 3.5;
+    const mat = seatSpot("gatbawi", MAT)!;
+    const neighbours = GATBAWI_SEATS.filter((spot) => spot.id !== MAT && Math.hypot(spot.x - mat.x, spot.z - mat.z) <= REACH_M);
+
+    // One monk on its mat for four minutes, less than any prayer lasts, with the mats around it taken or free.
+    const prayAmongMats = (crowded: boolean) => {
+      const world = new World(3, { npcCount: 1, personas: [devout] });
+      const npc = world.npcs()[0]!;
+      if (crowded) {
+        neighbours.forEach((spot, n) => {
+          world.sim.join(`guest-${n}`, 0);
+          world.sim.sit(`guest-${n}`, "gatbawi", spot.id);
+        });
+      }
+      Object.assign(npc, { x: mat.x, z: mat.z });
+      world.sim.sit("npc-1", "gatbawi", MAT);
+      const calls = { shifts: 0, others: 0, bows: 0 };
+      spyOnNpcs(world, (call) => {
+        if (isShift(call)) calls.shifts += 1;
+        else if (call.name !== "bow") calls.others += 1;
+        else if (call.ok) calls.bows += 1;
+      });
+      world.run(4 * 60_000);
+      return { calls, seatId: npc.seatId };
+    };
+
+    it("shifts over when a mat is free", () => {
+      const free = prayAmongMats(false);
+      expect(free.calls.shifts).toBeGreaterThanOrEqual(3);
+      expect(free.calls.others).toBe(0);
+    });
+
+    it("stays where it is, bowing, while every mat within reach is taken", () => {
+      expect(neighbours.length).toBeGreaterThan(4);
+      const crowded = prayAmongMats(true);
+      expect(crowded.calls.shifts).toBe(0);
+      expect(crowded.calls.others).toBe(0);
+      expect(crowded.seatId).toBe(MAT);
+      expect(crowded.calls.bows).toBeGreaterThanOrEqual(2);
+    });
   });
 });
 
@@ -649,7 +882,10 @@ describe("npc brain reactions", () => {
     const other = (zone: Zone): Zone => (zone === "dharma" ? "gatbawi" : "dharma");
 
     // Every roll is 0.5 unless a list says otherwise, in order, from the first roll the think makes.
-    const think = (zone: Zone, options: { rolls?: number[]; chantEndsAt?: number | null; free?: (zone: Zone) => boolean } = {}) => {
+    const think = (
+      zone: Zone,
+      options: { rolls?: number[]; chantEndsAt?: number | null; free?: (zone: Zone) => boolean; freeSeat?: (zone: Zone, seatId: number) => boolean } = {},
+    ) => {
       const rolls = [...(options.rolls ?? [])];
       const random = () => rolls.shift() ?? 0.5;
       const sits: [Zone, number][] = [];
@@ -660,7 +896,7 @@ describe("npc brain reactions", () => {
         random,
         chantEndsAt: options.chantEndsAt ?? null,
         visitors: [],
-        isFree: (seatZone) => options.free?.(seatZone) ?? true,
+        isFree: (seatZone, seatId) => options.freeSeat?.(seatZone, seatId) ?? options.free?.(seatZone) ?? true,
       };
       const actions: NpcActions = {
         move: (_id, x, z) => {
@@ -710,6 +946,31 @@ describe("npc brain reactions", () => {
     it("sits for certain while the chant is on", () => {
       expect(think("gatbawi", { rolls: [0.99] }).sits).toEqual([]);
       expect(think("gatbawi", { rolls: [0.99], chantEndsAt: 180_000 }).sits).toHaveLength(1);
+    });
+
+    // After the sit roll and the zone roll come the front-half roll (0.99: no wish for it), the nearness roll and the pick.
+    const distanceToMat = (sits: [Zone, number][]): number => {
+      const [zone, seatId] = sits[0]!;
+      const spot = seatSpot(zone, seatId)!;
+      return Math.hypot(spot.x, spot.z);
+    };
+
+    it("mostly takes a mat within a few metres of where it stands", () => {
+      for (const pick of [0, 0.5, 0.999]) {
+        const { sits } = think("gatbawi", { rolls: [0.5, 0.5, 0.99, 0.1, pick] });
+        expect(distanceToMat(sits)).toBeLessThanOrEqual(3);
+      }
+    });
+
+    it("now and then takes a mat anywhere in the zone", () => {
+      const { sits } = think("gatbawi", { rolls: [0.5, 0.5, 0.99, 0.9, 0.999] });
+      expect(sits).toEqual([["gatbawi", ZONE_CAPACITY - 1]]);
+      expect(distanceToMat(sits)).toBeGreaterThan(3);
+    });
+
+    it("takes a far mat when no mat close by is free", () => {
+      const { sits } = think("gatbawi", { rolls: [0.5, 0.5, 0.99, 0.1, 0.001], freeSeat: (_zone, seatId) => seatId === ZONE_CAPACITY - 1 });
+      expect(sits).toEqual([["gatbawi", ZONE_CAPACITY - 1]]);
     });
   });
 
