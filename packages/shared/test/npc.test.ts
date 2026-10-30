@@ -120,7 +120,8 @@ describe("npc spawning", () => {
     expect(human.npc).toBe(false);
     expect(human.slot).toBe(1);
     expect(world.sim.humanCount).toBe(1);
-    expect(world.sim.zoneCount("gatbawi")).toBe(1);
+    expect(world.sim.zoneCount("dharma")).toBe(1);
+    expect(world.sim.zoneCount("gatbawi")).toBe(0);
     expect(world.sim.state.monks.size).toBe(NPC_TOTAL + 1);
     world.sim.leave("session-1");
     expect(world.sim.humanCount).toBe(0);
@@ -352,6 +353,7 @@ describe("npc and visitor seats", () => {
   it("does not count npcs toward a zone's headcount, and gives a newcomer a seat an npc holds", () => {
     const world = new World(5);
     world.sim.join("guest", 0);
+    world.sim.move("guest", PLAZA_SPOT.x, PLAZA_SPOT.z);
     for (let n = 1; n < ZONE_CAPACITY; n += 1) {
       world.sim.join(`s${n}`, 0);
       expect(world.sim.sit(`s${n}`, "dharma", n - 1)).toBe(true);

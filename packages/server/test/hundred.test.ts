@@ -24,23 +24,23 @@ afterAll(async () => {
 const humansIn = (room: WorldClientRoom) => [...room.state.monks.values()].filter((monk) => !monk.npc);
 
 describe("a hundred visitors", () => {
-  it("lets a hundred arrive on the plaza, then sends the 101st to the next world", async () => {
+  it("lets a hundred arrive in the 법당, then sends the 101st to the next world", async () => {
     const everyone = await rig.fill(1, WORLD_CAPACITY);
     expect(everyone).toHaveLength(WORLD_CAPACITY);
     for (const room of everyone) {
       const monk = room.state.monks.get(room.sessionId)!;
-      expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
+      expect(zoneAt(monk.x, monk.z)).toBe("dharma");
       expect(Math.abs(monk.x - ARRIVAL.x)).toBeLessThanOrEqual(ARRIVAL.spread);
     }
 
     const world = await eventually(() => rig.world(1), (info) => info.clients === WORLD_CAPACITY, "world 1 holds a hundred", 5000);
     expect(world.full).toBe(true);
-    expect(world.zones).toEqual({ gatbawi: WORLD_CAPACITY, dharma: 0 });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: WORLD_CAPACITY });
 
     const late = await rig.arrive(null);
     expect(late.seat.world).toBe(2);
     const second = await eventually(() => rig.world(2), (info) => info.clients === 1, "world 2 counts the 101st", 3000);
-    expect(second.zones).toEqual({ gatbawi: 1, dharma: 0 });
+    expect(second.zones).toEqual({ gatbawi: 0, dharma: 1 });
 
     const watcher = everyone[0]!;
     await waitFor(() => humansIn(watcher).length === WORLD_CAPACITY, "the watcher sees everyone", 5000);

@@ -50,7 +50,7 @@ export const BUDGET = {
   dharma: { bytes: 1_000_000, tris: 45_000 },
   // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
   monk: { bytes: 95_000 },
-  // The sum of the actual file sizes of every glb loaded before the first frame (gatbawi, buddha, world,
-  // venue and the monk); the lazy one (dharma) is held to its own budget instead.
+  // The sum of the actual file sizes of the outdoor glbs (gatbawi, buddha, world, venue) and the monk;
+  // the 법당's inside (dharma) is held to its own budget instead.
   totalBytes: 3_000_000,
 } as const;

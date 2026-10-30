@@ -60,7 +60,7 @@ describe("world list", () => {
     expect(world.npcs).toBe(NPC_COUNT);
     expect(world.capacity).toBe(WORLD_CAPACITY);
     expect(world.full).toBe(false);
-    expect(world.zones).toEqual({ gatbawi: 2, dharma: 0 });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: 2 });
     expect(world.roomId).toEqual(expect.any(String));
     expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
   });
@@ -74,7 +74,7 @@ describe("world list", () => {
     expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
     const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "one visitor counted");
     expect(world.full).toBe(false);
-    expect(world.zones).toEqual({ gatbawi: 1, dharma: 0 });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: 1 });
   });
 
   it("closes a world once its last visitor leaves", async () => {
@@ -295,14 +295,14 @@ describe("two clients in one world", () => {
     expect(seenByB.slot).toBe(1);
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
-    expect(zoneAt(seenByB.x, seenByB.z)).toBe("gatbawi");
+    expect(zoneAt(seenByB.x, seenByB.z)).toBe("dharma");
     expect(b.state.seats.size).toBe(2 * SEAT_COUNT);
 
     a.send("sit", { zone: "gatbawi", seatId: 46 });
     await waitFor(() => seenByB.seatId === 46, "B sees A claim mat 46", 1000);
     expect(b.state.seats.get("gatbawi:46")?.occupantId).toBe(a.sessionId);
     await waitFor(() => seenByB.mode === "walk", "B sees A walking", 1000);
-    await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 10000);
+    await waitFor(() => seenByB.mode === "kneel", "B sees A kneeling", 15000);
     expect(seenByB.x).toBeCloseTo(GATBAWI_SEATS[46]!.x, 1);
     expect(seenByB.z).toBeCloseTo(GATBAWI_SEATS[46]!.z, 1);
 
@@ -532,14 +532,14 @@ describe("seat exclusivity", () => {
 });
 
 describe("one world", () => {
-  it("brings a visitor in on the plaza, outside the 법당", async () => {
+  it("brings a visitor in inside the 법당", async () => {
     const { room } = await rig.arrive(1);
     const monk = room.state.monks.get(room.sessionId)!;
-    expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
+    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
     expect(monk.z).toBeCloseTo(ARRIVAL.z, 3);
     expect(Math.abs(monk.x - ARRIVAL.x)).toBeLessThanOrEqual(ARRIVAL.spread);
-    expect(await eventually(() => rig.world(1), (info) => info.zones.gatbawi === 1, "the plaza counted")).toMatchObject({
-      zones: { gatbawi: 1, dharma: 0 },
+    expect(await eventually(() => rig.world(1), (info) => info.zones.dharma === 1, "the 법당 counted")).toMatchObject({
+      zones: { gatbawi: 0, dharma: 1 },
     });
   });
 
@@ -656,18 +656,18 @@ describe("hardening", () => {
     await waitFor(
       () => monk.x > WORLD_BOUNDS.maxX - 0.1 && monk.z > WORLD_BOUNDS.maxZ - 0.1,
       "clamped to the walkable corner",
-      8000,
+      20_000,
     );
     expect(monk.x).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxX));
     expect(monk.z).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxZ));
-  }, 15_000);
+  }, 30_000);
 
   it("keeps serving a client after a message flood passes the rate window", async () => {
     const a = await rig.enter(1);
     for (let i = 0; i < 50; i += 1) a.send("stand");
     await sleep(1200);
     a.send("sit", { zone: "gatbawi", seatId: 47 });
-    await waitFor(() => a.state.monks.get(a.sessionId)?.mode === "kneel", "sit accepted after the flood", 6000);
+    await waitFor(() => a.state.monks.get(a.sessionId)?.mode === "kneel", "sit accepted after the flood", 15_000);
   });
 
   it("ignores any name a client sends and numbers visitors by arrival", async () => {

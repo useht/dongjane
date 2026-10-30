@@ -68,8 +68,10 @@ export interface Spawn {
   readonly spread: number;
 }
 
-// Everyone arrives at the back of the plaza and walks from there, whichever zone they end up in.
-export const ARRIVAL: Spawn = { x: 0, z: 14, spread: 4 };
+// Everyone arrives inside the 법당, on the open floor between the last row of 방석 and the door, and walks from there.
+// The spread runs along the room's depth (the world's x), in line with the aisle; nearer the door the camera has no room behind the monk.
+const ARRIVAL_SPOT = dharmaToWorld(0, 4.5);
+export const ARRIVAL: Spawn = { x: ARRIVAL_SPOT.x, z: ARRIVAL_SPOT.z, spread: 3 };
 
 // Every mat faces -z, toward Gatbawi, which is yaw 0 in yawFromDirection's convention. Every 방석 faces the altar on
 // the room's back wall, which the quarter turn has put on the -x side: yaw DHARMA_YAW.

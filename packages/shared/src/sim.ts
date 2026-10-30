@@ -445,6 +445,6 @@ export class TempleSim {
     const point = resolveWalkable(ARRIVAL.x + (this.random() - 0.5) * ARRIVAL.spread, ARRIVAL.z);
     monk.x = point.x;
     monk.z = point.z;
-    monk.yaw = 0;
+    monk.yaw = SEAT_YAWS[zoneAt(point.x, point.z)];
   }
 }

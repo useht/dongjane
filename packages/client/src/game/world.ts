@@ -41,8 +41,8 @@ export interface WorldCallbacks {
   onFrame(dtSeconds: number, nowMs: number): void;
   onRendered(nowMs: number): void;
   onStick(stick: StickState | null): void;
-  // The visitor tapped or clicked the floor of the part of the world the camera is in, at this spot.
-  onFloorTap(x: number, z: number): void;
+  // The visitor tapped or clicked the stage at this screen point.
+  onTap(clientX: number, clientY: number): void;
   // The visitor's monk crossed the 법당's threshold: this is the part of the world the camera is in now.
   onZone(zone: Zone): void;
 }
@@ -72,6 +72,11 @@ const MAX_MONKS = WORLD_CAPACITY + NPC_COUNT;
 // and the light to change from the sun's to the room's.
 const REGION_BLEND_SECONDS = 0.5;
 
+// Every visit starts where ARRIVAL puts the monk, so the camera, the light and the sounds start in that part of the world too.
+export const START_ZONE: Zone = zoneAt(ARRIVAL.x, ARRIVAL.z);
+
+const indoorOf = (zone: Zone): number => (zone === "dharma" ? 1 : 0);
+
 export class World {
   readonly scene = new Scene();
   readonly camera = new PerspectiveCamera(50, 1, 0.1, 80);
@@ -83,17 +88,15 @@ export class World {
   selfId: string | null = null;
 
   // Where the camera is: the 법당 once the followed monk is inside its door, the open ground otherwise.
-  private area: Zone = "gatbawi";
+  private area: Zone = START_ZONE;
   // How far the light has gone over from the open ground's to the room's, 0 to 1, moving toward the area at a steady pace.
-  private indoor = 0;
+  private indoor = indoorOf(START_ZONE);
   private readonly occupied: Record<Zone, ReadonlySet<number>> = { gatbawi: new Set(), dharma: new Set() };
   private readonly renderer: WebGLRenderer;
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
   private readonly landscape: Landscape;
-  private dharma: DharmaScene | null = null;
-  private dharmaLoading: Promise<boolean> | null = null;
-  private disposed = false;
+  private readonly dharma: DharmaScene;
   private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
@@ -152,6 +155,9 @@ export class World {
 
     this.landscape = new Landscape(this.renderer, this.quality, assets.models.world, assets.models.gatbawi, assets.models.buddha, assets.models.venue);
     this.scene.add(this.landscape.group);
+    this.dharma = new DharmaScene(this.renderer, this.quality, assets.models.dharma, assets.models.buddha.buddha, assets.models.venue.lantern);
+    this.dharma.setPresence(this.indoorShare());
+    this.scene.add(this.dharma.group);
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
@@ -165,10 +171,7 @@ export class World {
       },
       onZoom: (factor) => this.rig.zoom(factor),
       onStick: (stick) => this.callbacks.onStick(stick),
-      onTap: (clientX, clientY) => {
-        const point = this.floorPointAt(clientX, clientY);
-        if (point) this.callbacks.onFloorTap(point.x, point.z);
-      },
+      onTap: (clientX, clientY) => this.callbacks.onTap(clientX, clientY),
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -187,7 +190,7 @@ export class World {
     if (rect.width <= 0 || rect.height <= 0) return null;
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
     aimThroughCamera(this.raycaster, this.ndc, this.camera);
-    const hit = pickFloor(this.raycaster, this.dharma ? [this.landscape.surfaces, this.dharma.surfaces] : [this.landscape.surfaces]);
+    const hit = pickFloor(this.raycaster, [this.landscape.surfaces, this.dharma.surfaces]);
     return hit ? { x: hit.x, z: hit.z } : null;
   }
 
@@ -214,42 +217,6 @@ export class World {
 
   get currentZone(): Zone {
     return this.area;
-  }
-
-  // The 법당's inside is fetched while the visitor settles in, and at the latest when they reach its door. Resolves false when it
-  // could not be had; asking again retries.
-  ensureDharma(): Promise<boolean> {
-    if (this.dharma) return Promise.resolve(true);
-    if (this.dharmaLoading) return this.dharmaLoading;
-    const loading = this.assets
-      .loadDharma()
-      .then((meshes) => {
-        if (this.disposed) return false;
-        const scene = new DharmaScene(this.renderer, this.quality, meshes, this.assets.models.buddha.buddha, this.assets.models.venue.lantern);
-        scene.setPresence(this.indoorShare());
-        this.scene.add(scene.group);
-        this.dharma = scene;
-        this.applyOccupancy("dharma");
-        return true;
-      })
-      .catch(() => false);
-    this.dharmaLoading = loading;
-    void loading.then((ok) => {
-      if (!ok && this.dharmaLoading === loading) this.dharmaLoading = null;
-    });
-    return loading;
-  }
-
-  // The camera goes where the followed monk stands. The 법당's inside has to be here before the camera enters it, so a monk
-  // who walks in early is followed from outside until it has arrived.
-  private followArea(x: number, z: number): void {
-    const wanted = zoneAt(x, z);
-    if (wanted === this.area) return;
-    if (wanted === "dharma" && !this.dharma) {
-      void this.ensureDharma();
-      return;
-    }
-    this.setArea(wanted);
   }
 
   private setArea(zone: Zone): void {
@@ -368,7 +335,7 @@ export class World {
     entry?.avatar.hop(nowMs);
   }
 
-  // Which seats of a zone are taken. The 법당's are remembered until its inside has arrived.
+  // Which seats of a zone are taken.
   setOccupancy(zone: Zone, occupied: ReadonlySet<number>): void {
     this.occupied[zone] = occupied;
     this.applyOccupancy(zone);
@@ -377,7 +344,7 @@ export class World {
   private applyOccupancy(zone: Zone): void {
     const occupied = this.occupied[zone];
     for (let id = 0; id < SEAT_COUNT; id += 1) {
-      if (zone === "dharma") this.dharma?.setOccupied(id, occupied.has(id));
+      if (zone === "dharma") this.dharma.setOccupied(id, occupied.has(id));
       else this.landscape.setOccupied(id, occupied.has(id));
     }
   }
@@ -389,8 +356,8 @@ export class World {
     this.selfPrediction = null;
     this.clock.reset();
     for (const zone of ZONES) this.setOccupancy(zone, new Set());
-    this.setArea("gatbawi");
-    this.indoor = 0;
+    this.setArea(START_ZONE);
+    this.indoor = indoorOf(START_ZONE);
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
   }
 
@@ -441,13 +408,12 @@ export class World {
   }
 
   dispose(): void {
-    this.disposed = true;
     this.stop();
     this.input.dispose();
     this.resizeObserver.disconnect();
     this.clear();
     this.pool.dispose();
-    this.dharma?.dispose();
+    this.dharma.dispose();
     this.landscape.dispose();
     this.assets.dispose();
     this.renderer.dispose();
@@ -533,7 +499,7 @@ export class World {
     }
 
     const self = this.selfId ? this.entries.get(this.selfId) : undefined;
-    if (self) this.followArea(self.x, self.z);
+    if (self) this.setArea(zoneAt(self.x, self.z));
     for (const entry of this.entries.values()) {
       entry.avatar.hidden = entry !== self && zoneAt(entry.x, entry.z) !== this.area;
     }
@@ -547,13 +513,13 @@ export class World {
     this.rig.update(dt);
     this.camera.updateMatrixWorld();
 
-    const wanted = this.area === "dharma" ? 1 : 0;
+    const wanted = indoorOf(this.area);
     const step = this.reduceMotion ? 1 : dt / REGION_BLEND_SECONDS;
     this.indoor = wanted > this.indoor ? Math.min(wanted, this.indoor + step) : Math.max(wanted, this.indoor - step);
     this.landscape.setCutaway(this.area === "dharma" && !this.cameraInRoom());
     this.applyAtmosphere(this.indoorShare());
     this.landscape.update(this.time, dt, this.camera, this.reduceMotion, this.rig.focusPoint);
-    this.dharma?.update(this.time, this.camera, this.reduceMotion);
+    this.dharma.update(this.time, this.camera, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered(nowMs);
 
