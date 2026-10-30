@@ -114,8 +114,10 @@ describe("the 법당's keep-out box", () => {
 describe("the 법당's camera clearance", () => {
   const SOLIDS = ["structure", "ceiling", "mural", "halo", "lotus"];
 
-  // Every triangle the room draws that the lens could end up against, in world metres, with each one's bounding box.
-  const loadRoom = (): { corners: number[]; low: Float32Array; high: Float32Array; count: number } => {
+  // Every triangle the room draws that the lens could end up against, in world metres, with each one's bounding box and the
+  // floor-plan cells it touches, so a lens position only has to test the triangles in the cells around it.
+  const CELL = 1;
+  const loadRoom = (): { corners: number[]; low: Float32Array; high: Float32Array; count: number; cells: Map<string, number[]> } => {
     const glb = loadGlb(new URL("../src/assets/models/dharma.glb", import.meta.url));
     const corners = SOLIDS.flatMap((name) => triangleCorners(glb, name));
     for (let i = 0; i < corners.length; i += 3) {
@@ -133,7 +135,18 @@ describe("the 법당's camera clearance", () => {
         high[t * 3 + axis] = Math.max(...values);
       }
     }
-    return { corners, low, high, count };
+    const cells = new Map<string, number[]>();
+    for (let t = 0; t < count; t += 1) {
+      for (let ix = Math.floor(low[t * 3]! / CELL); ix <= Math.floor(high[t * 3]! / CELL); ix += 1) {
+        for (let iz = Math.floor(low[t * 3 + 2]! / CELL); iz <= Math.floor(high[t * 3 + 2]! / CELL); iz += 1) {
+          const key = `${ix},${iz}`;
+          const list = cells.get(key);
+          if (list) list.push(t);
+          else cells.set(key, [t]);
+        }
+      }
+    }
+    return { corners, low, high, count, cells };
   };
   let loaded: ReturnType<typeof loadRoom> | undefined;
   const room = (): ReturnType<typeof loadRoom> => (loaded ??= loadRoom());
@@ -151,22 +164,31 @@ describe("the 법당's camera clearance", () => {
   // How near the lens comes to a surface of the room that faces it, in the picture or just outside it; `limit` when nothing is nearer.
   const clearanceAt = (room: ReturnType<typeof loadRoom>, camera: PerspectiveCamera, limit: number): number => {
     const { x, y, z } = camera.position;
+    const { low, high, cells } = room;
+    const candidates = new Set<number>();
+    for (let ix = Math.floor((x - limit) / CELL); ix <= Math.floor((x + limit) / CELL); ix += 1) {
+      for (let iz = Math.floor((z - limit) / CELL); iz <= Math.floor((z + limit) / CELL); iz += 1) {
+        for (const t of cells.get(`${ix},${iz}`) ?? []) candidates.add(t);
+      }
+    }
     const near: number[] = [];
-    for (let t = 0; t < room.count; t += 1) {
-      const { low, high } = room;
+    for (const t of candidates) {
       if (low[t * 3]! > x + limit || high[t * 3]! < x - limit) continue;
       if (low[t * 3 + 1]! > y + limit || high[t * 3 + 1]! < y - limit) continue;
       if (low[t * 3 + 2]! > z + limit || high[t * 3 + 2]! < z - limit) continue;
       near.push(t);
     }
-    let best = limit;
-    for (const point of fan) {
+    const rays = fan.map((point) => {
       raycaster.setFromCamera(point, camera);
-      for (const t of near) {
-        a.fromArray(room.corners, t * 9);
-        b.fromArray(room.corners, t * 9 + 3);
-        c.fromArray(room.corners, t * 9 + 6);
-        if (raycaster.ray.intersectTriangle(a, b, c, true, hit)) best = Math.min(best, hit.distanceTo(raycaster.ray.origin));
+      return raycaster.ray.clone();
+    });
+    let best = limit;
+    for (const t of near) {
+      a.fromArray(room.corners, t * 9);
+      b.fromArray(room.corners, t * 9 + 3);
+      c.fromArray(room.corners, t * 9 + 6);
+      for (const ray of rays) {
+        if (ray.intersectTriangle(a, b, c, true, hit)) best = Math.min(best, hit.distanceTo(ray.origin));
       }
     }
     return best;
