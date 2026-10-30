@@ -16,6 +16,18 @@ import common
 from common import GAME, Part, at, cells, hash01, hidden, mix, rgb, scaled, smooth_profile, smoothstep, spun, turned, wall_openings, wall_pieces
 
 STEP = 0.75
+CLOUDS = (  # x, base height, width, height, lobes and colour of the banks drifting each side of the Buddha
+    (3.8, 1.4, 3.0, 0.5, 5, "dancheongBlue"),
+    (6.9, 1.4, 2.8, 0.5, 5, "dancheongGreen"),
+    (6.2, 2.1, 2.2, 0.42, 4, "dancheongYellow"),
+    (4.9, 3.05, 2.0, 0.4, 4, "dancheongRed"),
+    (7.8, 2.9, 1.8, 0.4, 3, "dancheongBlue"),
+)
+MUSICIANS = (  # x, height, robe and sash colours, and what each of the two sides plays
+    (4.6, 3.4, "dancheongBlue", "dancheongYellow", ("flute", "drum")),
+    (6.3, 2.55, "dancheongGreen", "petal", ("lute", "flute")),
+    (7.5, 3.35, "pillarRed", "buddhaGoldPale", ("cymbals", "lute")),
+)
 BEAM_BAND = 0.8  # height of the painted beam under the frieze
 BEAM_DEPTH = 0.36
 FLOOR_PLANK = 0.5
@@ -308,11 +320,336 @@ def floor(plan):
     return part
 
 
+LAYER = 0.0016  # how far a painted layer of the mural stands in front of the one under it
+
+
+class Brush:
+    """Flat colour laid on the mural's plane; a higher layer is painted over a lower one."""
+
+    def __init__(self, part, z):
+        self.part, self.z = part, z
+
+    def fill(self, points, color, layer):
+        """A flat polygon, wound to face the viewer whichever way round `points` runs."""
+        turn = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(points, [*points[1:], points[0]]))
+        ordered = points if turn > 0.0 else points[::-1]
+        self.part.polygon([(x, y, self.z + LAYER * layer) for x, y in ordered], color)
+
+    def glow(self, points, middle, edge, layer):
+        """A polygon whose colour fades from `middle` (its centre) to `edge` (its rim)."""
+        z = self.z + LAYER * layer
+        x = sum(p[0] for p in points) / len(points)
+        y = sum(p[1] for p in points) / len(points)
+        self.part.fan((x, y, z), [(px, py, z) for px, py in points], middle, edge)
+
+    def stroke(self, points, width, color, layer, closed=False):
+        """A line along `points`; `width` is a number, or a function of the distance 0..1 along it."""
+        line = [*points, points[0]] if closed else list(points)
+        last = len(line) - 1
+        z = self.z + LAYER * layer
+        left, right = [], []
+        for i, (x, y) in enumerate(line):
+            before = line[i - 1 if i else (last - 1 if closed else 0)]
+            after = line[i + 1 if i < last else (1 if closed else last)]
+            dx, dy = after[0] - before[0], after[1] - before[1]
+            half = (width(i / last) if callable(width) else width) / (2.0 * (math.hypot(dx, dy) or 1.0))
+            left.append((x - dy * half, y + dx * half, z))
+            right.append((x + dy * half, y - dx * half, z))
+        self.part.ribbon(left, right, color)
+
+
+def taper(width, floor=0.008):
+    """A stroke width that narrows from `width` to `floor` along the line."""
+    return lambda t: floor + (width - floor) * (1.0 - t) ** 0.8
+
+
+def ellipse(x, y, rx, ry, steps=10, turn=0.0):
+    """Points round an ellipse, counter-clockwise."""
+    return [(x + rx * math.cos(turn + math.tau * i / steps), y + ry * math.sin(turn + math.tau * i / steps)) for i in range(steps)]
+
+
+def arcs(x, y, radius, steps, ymin, ymax):
+    """The parts of a circle that stay between ymin and ymax, as separate polylines."""
+    runs, run = [], []
+    for i in range(steps + 1):
+        a = math.tau * i / steps
+        point = (x + radius * math.cos(a), y + radius * math.sin(a))
+        if ymin <= point[1] <= ymax:
+            run.append(point)
+        elif run:
+            runs.append(run)
+            run = []
+    return [*runs, run] if run else runs
+
+
+def aura(brush, c, centre, ymin, ymax):
+    """The Buddha's aura: a pale disc ringed in gold, with rays alternately long gold and short pale."""
+    x, y = centre
+    clamp = lambda p: (p[0], min(ymax, max(ymin, p[1])))
+    brush.glow([clamp(p) for p in ellipse(x, y, 2.2, 2.2, 40)], scaled(c["muralHalo"], 0.75), mix(scaled(c["muralHalo"], 0.55), c["buddhaGold"], 0.6), 1)
+    for radius, width, color in ((1.9, 0.035, c["buddhaGoldDeep"]), (2.2, 0.05, c["muralLine"])):
+        for run in arcs(x, y, radius, 48, ymin, ymax):
+            brush.stroke(run, width, color, 2)
+    rays = 32
+    for i in range(rays):
+        a = math.tau * (i + 0.5) / rays
+        dx, dy = math.cos(a), math.sin(a)
+        length = 0.75 if i % 2 == 0 else 0.45
+        root = 2.25 * dy + y
+        length = min(length, (ymax - root) / dy if dy > 0 else length, (ymin - root) / dy if dy < 0 else length)
+        if length < 0.2:
+            continue
+        base = (x + 2.25 * dx, root)
+        side = 0.06 if i % 2 == 0 else 0.045
+        brush.fill(
+            [(base[0] + dy * side, base[1] - dx * side), (base[0] + dx * length, base[1] + dy * length), (base[0] - dy * side, base[1] + dx * side)],
+            c["muralLine"] if i % 2 == 0 else scaled(c["muralHalo"], 0.8),
+            1,
+        )
+
+
+def scaled_about(points, x, y, sx, sy):
+    return [(x + (px - x) * sx, y + (py - y) * sy) for px, py in points]
+
+
+def cloud_outline(x, y, width, height, lobes, seed, arc=5):
+    """A cloud with a flat base under a row of round lobes, running counter-clockwise from the base's left end."""
+    pitch, notch = width / lobes, 0.3 * height
+    points = [(x - width / 2.0, y), (x + width / 2.0, y)]
+    for i in reversed(range(lobes)):
+        centre = x - width / 2.0 + pitch * (i + 0.5)
+        rise = height * (0.75 + 0.25 * math.sin(math.pi * (i + 0.5) / lobes)) * (0.85 + 0.3 * hash01(i, seed, 0.0))
+        for k in range(0 if i == lobes - 1 else 1, arc):
+            a = math.pi * k / (arc - 1)
+            points.append((centre + pitch / 2.0 * math.cos(a), y + notch + (rise - notch) * math.sin(a)))
+    return points
+
+
+def curl(x, y, radius, side):
+    """A spiral that leaves (x, y) and winds in on itself, to the right for side 1 and to the left for -1."""
+    points = []
+    for i in range(8):
+        t = i / 7.0
+        a = -math.pi / 2.0 + side * 1.6 * math.pi * t
+        r = radius * (1.0 - 0.65 * t)
+        points.append((x + r * math.cos(a), y + radius + r * math.sin(a)))
+    return points
+
+
+def cloud_bank(brush, c, x, y, width, height, lobes, seed, tone, layer):
+    """A bank of cloud: gold rim, a coloured band, a pale body, and a curled ribbon at each end."""
+    outline = cloud_outline(x, y, width, height, lobes, seed)
+    pale = mix(scaled(c["muralHalo"], 0.85), tone, 0.25)
+    brush.fill(scaled_about(outline, x, y + height * 0.4, 1.04, 1.07), c["muralLine"], layer)
+    brush.fill(outline, tone, layer + 1)
+    brush.fill(scaled_about(outline, x, y, 0.88, 0.7), pale, layer + 2)
+    brush.stroke(curl(x + width / 2.0, y, height * 0.4, 1), taper(0.07), c["muralLine"], layer + 1)
+    brush.stroke(curl(x - width / 2.0, y, height * 0.4, -1), taper(0.07), pale, layer + 1)
+
+
+def skyline(x0, y0, x1, y1, steps, seed, jag):
+    """A jagged ridge from (x0, y0) to (x1, y1) with a peak at every other step."""
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        peak = jag * hash01(i, seed, 2.0) * (1.0 if i % 2 else 0.15) if 0 < i < steps else 0.0
+        points.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t**0.75 + peak))
+    return points
+
+
+def crag(brush, c, base, ridge, tone, layer, lit=True):
+    """A rock mass standing on y = base under a ridge line, with lit facets and a gold edge."""
+    foot = [(ridge[-1][0], base)] + ([(ridge[0][0], base)] if ridge[0][1] > base else [])
+    brush.fill([*ridge, *foot], tone, layer)
+    if not lit:
+        return
+    for i in range(1, len(ridge) - 2, 2):
+        (ax, ay), (bx, by) = ridge[i], ridge[i + 1]
+        brush.fill([(ax, ay), (bx, by), ((ax + bx) / 2.0 + 0.15 * (ax - bx), max(base + 0.02, (ay + by) / 2.0 - 0.6))], scaled(tone, 1.7), layer + 1)
+    brush.stroke(ridge, 0.04, c["muralLine"], layer + 2)
+
+
+def peaks(brush, c, edge, base):
+    """Vulture Peak: dark malachite crags at both ends of the mural and a low range along its foot."""
+    green, blue = c["dancheongGreen"], c["dancheongBlue"]
+    for side in (-1.0, 1.0):
+        far = skyline(side * 5.4, base, side * edge, base + 1.5, 7, 3.0 + side, 0.25)
+        crag(brush, c, base, far, scaled(mix(green, blue, 0.5), 0.4), 3, lit=False)
+        near = skyline(side * 6.6, base, side * edge, base + 2.0, 8, 5.0 + side, 0.4)
+        crag(brush, c, base, near, scaled(green, 0.5), 4)
+    foot = skyline(-edge, base + 0.3, edge, base + 0.3, 26, 9.0, 0.35)
+    crag(brush, c, base, foot, scaled(green, 0.42), 7)
+
+
+def flow(x, y, dx, dy, length, wave, steps):
+    """A wavy path leaving (x, y) along (dx, dy), swaying sideways by up to `wave`."""
+    norm = math.hypot(dx, dy)
+    ux, uy = dx / norm, dy / norm
+    path = []
+    for i in range(steps):
+        t = i / (steps - 1)
+        sway = wave * t * math.sin(math.tau * 1.1 * t)
+        path.append((x + ux * length * t - uy * sway, y + uy * length * t + ux * sway))
+    return path
+
+
+class Figure:
+    """Draws in a figure's own units: u forward (toward `face`, 1 or -1), v up, `scale` metres to the unit."""
+
+    def __init__(self, brush, x, y, scale, face, tilt=0.0):
+        self.brush, self.x, self.y, self.scale, self.face = brush, x, y, scale, face
+        self.cos, self.sin = math.cos(tilt), math.sin(tilt)
+
+    def at(self, points):
+        return [
+            (self.x + self.face * (u * self.cos - v * self.sin) * self.scale, self.y + (u * self.sin + v * self.cos) * self.scale)
+            for u, v in points
+        ]
+
+    def fill(self, points, color, layer):
+        self.brush.fill(self.at(points), color, layer)
+
+    def stroke(self, points, width, color, layer, closed=False):
+        size = (lambda t: width(t) * self.scale) if callable(width) else width * self.scale
+        self.brush.stroke(self.at(points), size, color, layer, closed)
+
+    def disc(self, u, v, radius, color, layer, steps=8):
+        self.fill(ellipse(u, v, radius, radius, steps), color, layer)
+
+
+def head(f, c, u, v, size, layer):
+    """A face in three-quarter view with hair, an eye and lips."""
+    f.fill(ellipse(u, v, size * 0.95, size, 8), c["skin"], layer)
+    f.fill([(u + size * 1.02 * math.cos(a), v + size * 1.08 * math.sin(a)) for a in (0.35, 0.9, 1.57, 2.25, 2.8)], c["muralInk"], layer + 1)
+    f.stroke([(u + size * 0.25, v - size * 0.05), (u + size * 0.7, v + size * 0.02)], size * 0.16, c["muralInk"], layer + 1)
+    f.fill([(u + size * 0.3, v - size * 0.45), (u + size * 0.62, v - size * 0.4), (u + size * 0.42, v - size * 0.3)], c["petalDeep"], layer + 1)
+
+
+def instrument(f, c, kind):
+    """What a musician plays, held at the hands (0.33, 0.14)."""
+    gold, ink = c["buddhaGold"], c["muralInk"]
+    if kind == "flute":
+        f.stroke([(0.3, 0.14), (0.8, 0.34)], 0.035, c["buddhaGoldDeep"], 17)
+    elif kind == "lute":
+        f.fill(ellipse(0.46, 0.04, 0.1, 0.14, 8, 0.4), gold, 17)
+        f.stroke([(0.5, 0.15), (0.78, 0.45)], 0.03, ink, 18)
+    elif kind == "cymbals":
+        f.disc(0.3, 0.3, 0.075, gold, 16, 6)
+        f.disc(0.43, 0.2, 0.075, c["buddhaGoldPale"], 16, 6)
+    else:
+        f.fill([(0.28, 0.24), (0.46, 0.24), (0.38, 0.14), (0.46, 0.04), (0.28, 0.04), (0.36, 0.14)], c["dancheongRed"], 17)
+        f.stroke([(0.28, 0.24), (0.46, 0.24)], 0.03, gold, 18)
+
+
+def musician(brush, c, x, y, scale, face, robe, sash, kind):
+    """A heavenly musician (비천) in flight: robe, long trailing scarves, a headdress and an instrument."""
+    f = Figure(brush, x, y, scale, face, 0.2)
+    gold = c["muralLine"]
+    light = scaled(c["muralHalo"], 0.8)
+    f.stroke(flow(-0.15, 0.24, -1.0, 0.3, 1.2, 0.2, 9), taper(0.1), sash, 15)
+    f.stroke(flow(-0.12, 0.08, -1.0, -0.4, 1.1, -0.18, 8), taper(0.09), light, 15)
+    skirt = [(0.13, -0.02), (0.18, -0.28), (0.02, -0.5), (-0.25, -0.42), (-0.58, -0.3), (-0.35, -0.1), (-0.14, -0.02)]
+    f.fill(skirt, sash, 13)
+    f.stroke(skirt, 0.014, gold, 14, closed=True)
+    f.fill([(-0.17, 0.27), (0.17, 0.27), (0.13, 0.0), (-0.13, 0.0)], robe, 14)
+    f.fill([(-0.07, 0.27), (0.07, 0.27), (0.0, 0.12)], c["skin"], 15)
+    f.stroke([(0.08, 0.22), (0.2, 0.16), (0.33, 0.14)], 0.08, c["skin"], 16)
+    instrument(f, c, kind)
+    head(f, c, 0.02, 0.42, 0.115, 17)
+    f.fill([(-0.1, 0.52), (0.0, 0.7), (0.1, 0.52)], gold, 19)
+
+
+def small_buddha(brush, c, x, y, size, tint):
+    """A seated Buddha in a gold halo."""
+    f = Figure(brush, x, y, size, 1)
+    f.disc(0.0, 0.62, 0.27, c["buddhaGold"], 13, 8)
+    f.disc(0.0, 0.62, 0.2, scaled(c["muralHalo"], 0.85), 14, 8)
+    f.fill([(-0.36, 0.0), (0.36, 0.0), (0.16, 0.45), (-0.16, 0.45)], tint, 15)
+    f.fill([(-0.4, 0.0), (0.4, 0.0), (0.32, 0.1), (-0.32, 0.1)], mix(tint, c["muralLine"], 0.4), 17)
+    f.fill(ellipse(0.0, 0.58, 0.095, 0.1, 6), c["skin"], 17)
+    f.fill(ellipse(0.0, 0.7, 0.04, 0.035, 4), c["muralInk"], 18)
+
+
+def small_cloud(brush, c, x, y, width):
+    """The small cloud a distant Buddha sits on."""
+    outline = cloud_outline(x, y, width, width * 0.55, 3, x)
+    brush.fill(scaled_about(outline, x, y + width * 0.1, 1.06, 1.1), c["muralLine"], 10)
+    brush.fill(outline, mix(scaled(c["muralHalo"], 0.9), c["petal"], 0.35), 11)
+
+
+def lion(f, c):
+    """Munsu's lion in profile, green with a gold mane; returns the height of its back."""
+    body, ink = scaled(c["dancheongGreen"], 1.5), c["muralInk"]
+    for u, lean in ((0.4, 0.05), (0.2, 0.03), (-0.3, -0.02), (-0.5, -0.02)):
+        f.stroke([(u, 0.5), (u + lean, 0.02)], 0.15, scaled(body, 0.75), 13)
+    f.fill(ellipse(-0.05, 0.62, 0.62, 0.27, 10), body, 14)
+    f.stroke(flow(-0.62, 0.66, -0.4, 1.0, 0.6, 0.14, 6), taper(0.1), c["buddhaGold"], 13)
+    mane = [(0.52 + (0.46 if i % 2 else 0.33) * math.cos(math.tau * i / 12), 0.86 + (0.46 if i % 2 else 0.33) * math.sin(math.tau * i / 12)) for i in range(12)]
+    f.fill(mane, c["buddhaGoldDeep"], 15)
+    f.fill(ellipse(0.62, 0.8, 0.23, 0.21, 8), scaled(body, 1.15), 16)
+    f.disc(0.7, 0.88, 0.04, scaled(c["muralHalo"], 0.9), 17, 5)
+    f.disc(0.72, 0.88, 0.02, ink, 18, 4)
+    f.fill([(0.82, 0.8), (0.86, 0.76), (0.79, 0.74)], ink, 17)
+    f.fill([(0.72, 0.7), (0.84, 0.72), (0.82, 0.64), (0.72, 0.62)], c["dancheongRed"], 17)
+    return 0.89
+
+
+def elephant(f, c):
+    """Bohyeon's white elephant in profile, in a red and gold howdah cloth; returns the height of its back."""
+    ivory, gold = scaled(c["muralHalo"], 0.95), c["buddhaGold"]
+    for u in (0.42, 0.18, -0.3, -0.52):
+        f.stroke([(u, 0.5), (u, 0.02)], 0.2, scaled(ivory, 0.78), 13)
+    f.stroke([(0.78, 0.7), (1.0, 0.5), (1.08, 0.28), (0.98, 0.1)], taper(0.2, 0.06), scaled(ivory, 0.85), 13)
+    f.fill(ellipse(0.0, 0.66, 0.62, 0.38, 10), ivory, 14)
+    f.fill([(-0.34, 0.98), (0.34, 0.98), (0.4, 0.62), (-0.4, 0.62)], c["dancheongRed"], 15)
+    f.fill([(-0.4, 0.66), (0.4, 0.66), (0.4, 0.62), (-0.4, 0.62)], gold, 16)
+    f.fill(ellipse(0.72, 0.8, 0.24, 0.27, 8), ivory, 15)
+    f.fill(ellipse(0.52, 0.82, 0.14, 0.22, 6), c["petal"], 16)
+    f.fill([(0.86, 0.62), (1.05, 0.46), (0.94, 0.7)], c["buddhaGoldPale"], 16)
+    f.fill(ellipse(0.82, 0.88, 0.03, 0.03, 4), c["muralInk"], 17)
+    return 1.0
+
+
+def rider(f, c, seat, robe, scarf):
+    """A bodhisattva seated on a lotus: gold halo, crown, robe, joined hands, a flower and a streaming scarf."""
+    gold, pale = c["muralLine"], scaled(c["muralHalo"], 0.85)
+    face = seat + 0.78
+    f.disc(0.05, face, 0.3, c["buddhaGold"], 15, 10)
+    f.disc(0.05, face, 0.23, pale, 16, 10)
+    f.fill(ellipse(0.05, seat + 0.02, 0.33, 0.09, 8), c["petalDeep"], 16)
+    f.fill([(-0.27, seat + 0.02), (0.27, seat + 0.02), (0.15, seat + 0.58), (-0.15, seat + 0.58)], robe, 17)
+    f.stroke(flow(-0.12, seat + 0.5, -1.0, 0.5, 1.0, 0.15, 8), taper(0.09), scarf, 18)
+    f.stroke([(0.1, seat + 0.5), (0.2, seat + 0.25), (0.02, seat + 0.2)], 0.08, c["skin"], 18)
+    f.stroke([(0.02, seat + 0.22), (0.3, seat + 0.5)], 0.025, c["dancheongGreen"], 19)
+    f.fill(ellipse(0.3, seat + 0.52, 0.08, 0.08, 6), c["petal"], 19)
+    head(f, c, 0.05, face, 0.1, 18)
+    h = face + 0.08
+    f.fill([(-0.11, h), (-0.09, h + 0.1), (-0.03, h + 0.05), (0.05, h + 0.13), (0.13, h + 0.05), (0.19, h + 0.1), (0.21, h)], gold, 20)
+
+
+def bodhisattva(brush, c, x, y, face, lion_or_elephant):
+    """Munsu on his lion or Bohyeon on his white elephant, facing the Buddha."""
+    f = Figure(brush, x, y, 0.8, face)
+    robe, scarf = (c["dancheongBlue"], scaled(c["muralHalo"], 0.8)) if lion_or_elephant == "lion" else (c["dancheongYellow"], c["dancheongGreen"])
+    seat = lion(f, c) if lion_or_elephant == "lion" else elephant(f, c)
+    rider(Figure(brush, x + face * 0.04, y + seat * 0.8, 0.62, face), c, 0.0, robe, scarf)
+
+
+def lozenges(brush, left, right, y, colors):
+    """A row of diamonds across the mural, cycling through `colors`."""
+    count = round((right - left) / 0.6)
+    pitch = (right - left) / count
+    for i in range(count):
+        x = left + pitch * (i + 0.5)
+        brush.fill([(x - 0.2, y), (x, y - 0.065), (x + 0.2, y), (x, y + 0.065)], colors[i % len(colors)], 1)
+
+
 def mural(plan):
-    """The painting behind the Buddha: a red field, a pale disc behind the halo, rows of attendants and gold clouds."""
+    """The painting behind the Buddha, after the 영산회상도: his aura, attendants and clouds on a red ground."""
     c = plan.c
     part = Part("mural", frame=GAME)
     z = plan.back + 0.02
+    brush = Brush(part, z)
     left, right = -plan.half + 0.8, plan.half - 0.8
     low, high = 0.9, plan.wall - BEAM_BAND
     centre = (0.0, plan.head[1])
@@ -320,38 +657,30 @@ def mural(plan):
     def field(co):
         glow_amount = 1.0 - smoothstep(0.0, 8.5, math.hypot(co.x - centre[0], (co.y - centre[1]) * 1.3))
         base = mix(scaled(c["muralGround"], 0.62), c["muralGround"], smoothstep(low, 3.0, co.y))
-        return mix(base, scaled(c["muralHalo"], 0.55), 0.22 * glow_amount)
+        base = scaled(base, 1.0 - 0.3 * smoothstep(6.0, right, abs(co.x)))
+        return mix(base, scaled(c["muralHalo"], 0.55), 0.3 * glow_amount)
 
     columns, rows = round((right - left) / STEP), round((high - low) / STEP)
     part.grid((left, low, z), (right - left, 0.0, 0.0), (0.0, high - low, 0.0), columns, rows, field)
 
-    ring = []
-    for i in range(56):
-        angle = math.tau * i / 56
-        x = centre[0] + 3.4 * math.cos(angle)
-        y = min(high - 0.04, max(low + 0.04, centre[1] + 3.4 * math.sin(angle)))
-        ring.append((x, y, z + 0.004))
-    part.fan((centre[0], centre[1], z + 0.004), ring, scaled(c["muralHalo"], 0.5), scaled(c["muralGround"], 0.9))
-
-    robes = (c["dancheongBlue"], c["dancheongGreen"], c["pillarRed"], c["dancheongYellow"], c["lacquerDeep"])
+    ymin, ymax = low + 0.29, high - 0.29
+    aura(brush, c, centre, ymin, ymax)
+    peaks(brush, c, right - 0.12, low + 0.29)
+    for i, (x, y, width, height, lobes, tone) in enumerate(CLOUDS):
+        for side in (-1.0, 1.0):
+            cloud_bank(brush, c, side * x, y, width, height, lobes, i + side, c[tone], 10)
+    for x, y, robe, sash, kinds in MUSICIANS:
+        for side, kind in zip((-1.0, 1.0), kinds):
+            colors = (c[robe], c[sash]) if side < 0 else (c[sash], c[robe])
+            musician(brush, c, side * x, y, 0.95, -side, *colors, kind)
+    for side, mount in ((-1.0, "lion"), (1.0, "elephant")):
+        bodhisattva(brush, c, side * 4.2, 1.62, -side, mount)
+    tints = (c["dancheongYellow"], c["dancheongBlue"], c["petal"], c["dancheongGreen"], c["buddhaGoldPale"])
     for side in (-1.0, 1.0):
-        for column, x in enumerate((4.7, 6.5, 8.3)):
-            for row, y in enumerate((1.75, 3.0, 4.25)):
-                index = column * 3 + row + (0 if side < 0 else 9)
-                px = side * x + 0.15 * (hash01(index, 1.0, 0.0) - 0.5)
-                body_color = robes[index % len(robes)]
-                part.radial((px, y - 0.42, z + 0.006), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.5, 1, 8, c["petal"], smooth=False)
-                part.polygon([(px - 0.42, y - 0.4, z + 0.01), (px + 0.42, y - 0.4, z + 0.01), (px + 0.2, y + 0.18, z + 0.01), (px - 0.2, y + 0.18, z + 0.01)], body_color)
-                part.radial((px, y + 0.34, z + 0.008), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.3, 1, 10, c["muralHalo"], smooth=False)
-                part.radial((px, y + 0.34, z + 0.012), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), 0.14, 1, 8, c["skin"], smooth=False)
-
-    for index in range(14):
-        side = 1.0 if index % 2 else -1.0
-        cx = side * (3.2 + 5.2 * hash01(index, 2.0, 0.0))
-        cy = low + 0.4 + (high - low - 0.8) * hash01(index, 3.0, 0.0)
-        puff = 0.16 + 0.08 * hash01(index, 4.0, 0.0)
-        for k, (dx, dy, scale) in enumerate(((-1.0, -0.2, 0.75), (0.0, 0.1, 1.0), (1.0, -0.2, 0.8))):
-            part.radial((cx + dx * puff * 1.25, cy + dy * puff, z + 0.014 + 0.002 * k), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), puff * scale, 1, 9, scaled(c["muralLine"], 0.8), smooth=False)
+        for i, x in enumerate((3.3, 4.8, 6.1, 7.4, 8.5)):
+            y, size = 4.0 + 0.32 * (i % 2), 0.68 - 0.2 * (i % 2) - 0.015 * i
+            small_cloud(brush, c, side * x, y - 0.09, size * 1.2)
+            small_buddha(brush, c, side * x, y, size, tints[(i + (side > 0)) % len(tints)])
 
     for x, y, w, h in (
         (0.0, high - 0.03, right - left, 0.06),
@@ -362,6 +691,10 @@ def mural(plan):
         part.box((x, y, z + 0.02), (w, h, 0.03), c["muralLine"], skip=hidden("+z"))
     part.box((0.0, high - 0.1, z + 0.016), (right - left - 0.1, 0.03, 0.02), c["muralInk"], skip=hidden("+z"))
     part.box((0.0, low + 0.1, z + 0.016), (right - left - 0.1, 0.03, 0.02), c["muralInk"], skip=hidden("+z"))
+    band = (c["dancheongBlue"], c["dancheongRed"], c["dancheongGreen"])
+    for y, edge in ((high - 0.2, high - 0.28), (low + 0.2, low + 0.28)):
+        lozenges(brush, left + 0.15, right - 0.15, y, band)
+        brush.stroke([(left + 0.15, edge), (right - 0.15, edge)], 0.02, c["muralLine"], 1)
     return part
 
 
