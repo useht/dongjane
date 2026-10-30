@@ -7,6 +7,7 @@ import {
   ZONE_NAMES,
   chantEndsAt,
   chantPhase,
+  fishById,
   isZone,
 } from "@dongjane/shared";
 import type { IconName } from "./icons.ts";
@@ -32,9 +33,23 @@ export function modeLabel(mode: string, seatId: number, zone: string): string {
       return "앉아 있어요";
     case "bow":
       return "절하는 중";
+    case "fish":
+      return "낚시하는 중";
     default:
       return "서 있어요";
   }
+}
+
+// 을 after a word that ends in a consonant sound, 를 after one that ends in a vowel.
+function objectParticle(word: string): string {
+  const last = word.charCodeAt(word.length - 1);
+  return last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 !== 0 ? "을" : "를";
+}
+
+// What the toast says when a line comes in: the fish that was on it, or that nothing was.
+export function catchMessage(fishId: number): string {
+  const fish = fishById(fishId);
+  return fish ? `${fish.name}${objectParticle(fish.name)} 낚았어요!` : "아무것도 잡지 못했어요";
 }
 
 export interface ChantStatus {

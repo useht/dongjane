@@ -1,4 +1,4 @@
-import { type SkyState, type WorldInfo, ITEM_CHANT, ITEM_MOKT, ITEM_NONE, seatLabel, worldName } from "@dongjane/shared";
+import { type SkyState, type WorldInfo, ITEM_NONE, seatLabel, worldName } from "@dongjane/shared";
 import { checkWorldEntry } from "../net/worlds.ts";
 import type { LinkState } from "../net/session.ts";
 import { type HeldAction, heldAction, isSeated } from "../game/held-action.ts";
@@ -28,6 +28,9 @@ export interface SelfStatus {
   seatId: number;
   chanting: boolean;
   item: number;
+  x?: number;
+  z?: number;
+  bite?: boolean;
 }
 
 export interface HudHandlers {
@@ -39,6 +42,8 @@ export interface HudHandlers {
   onEmote(emote: number): void;
   onKnock(): void;
   onChant(on: boolean): void;
+  onCast(): void;
+  onReel(): void;
   onEquip(item: number): void;
   onInvite(): void;
   onCancelReturn(): void;
@@ -46,6 +51,13 @@ export interface HudHandlers {
 }
 
 export type SoloStatus = { kind: "idle" } | { kind: "countdown"; seconds: number } | { kind: "held" };
+
+const ACTION_LABELS: Record<HeldAction, (chanting: boolean) => string> = {
+  knock: () => "목탁치기",
+  chant: (chanting) => (chanting ? "염불 그만두기" : "염불하기"),
+  cast: () => "낚싯줄 던지기",
+  reel: () => "낚싯줄 당기기",
+};
 
 const MAX_TOASTS = 3;
 const TOAST_MS = 3200;
@@ -117,6 +129,8 @@ export class Hud {
     this.actionButton.addEventListener("click", () => {
       if (this.selfAction === "knock") handlers.onKnock();
       else if (this.selfAction === "chant") handlers.onChant(!this.selfChanting);
+      else if (this.selfAction === "cast") handlers.onCast();
+      else if (this.selfAction === "reel") handlers.onReel();
     });
     this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "bow-button jump-button");
     this.bowActions.append(this.standButton, this.bowButton, this.actionButton, this.jumpButton);
@@ -207,30 +221,31 @@ export class Hud {
   }
 
   setSelf(self: SelfStatus | null): void {
-    const key = self ? `${self.mode}|${self.seatId}|${self.chanting}|${self.item}` : "none";
+    const action = heldAction(self);
+    const key = self ? `${self.mode}|${self.seatId}|${self.chanting}|${self.item}|${action}|${self.bite === true}` : "none";
     if (key === this.lastSelf) return;
     this.lastSelf = key;
     const seated = !!self && isSeated(self);
     const bowing = self?.mode === "bow";
-    const action = heldAction(self);
+    const fishing = self?.mode === "fish";
     this.selfAction = action;
     this.selfItem = self?.item ?? ITEM_NONE;
     this.selfChanting = action === "chant" && !!self?.chanting;
     this.bowButton.classList.toggle("hidden", !seated || bowing || action !== null);
-    this.standButton.classList.toggle("hidden", !seated);
-    this.jumpButton.classList.toggle("hidden", !self || self.seatId >= 0);
-    this.bowActions.classList.toggle("seated", seated);
+    this.standButton.classList.toggle("hidden", !seated && !fishing);
+    this.jumpButton.classList.toggle("hidden", !self || self.seatId >= 0 || fishing);
+    this.bowActions.classList.toggle("seated", seated || fishing);
     this.bowActions.classList.toggle("hidden", !self);
     this.toolButton.classList.toggle("ready", this.selfItem !== ITEM_NONE);
 
-    const item = self && (self.item === ITEM_MOKT || self.item === ITEM_CHANT) ? self.item : null;
+    const item = self && HELD_ITEMS.some((held) => held === self.item) ? (self.item as HeldItem) : null;
     this.actionButton.classList.toggle("hidden", action === null || (action === "knock" && bowing));
     this.actionButton.classList.toggle("active", this.selfChanting);
+    this.actionButton.classList.toggle("biting", action === "reel" && self?.bite === true);
     if (action && item !== null) {
-      const label = action === "knock" ? "목탁치기" : this.selfChanting ? "염불 그만두기" : "염불하기";
       this.actionButton.replaceChildren(h("span", "bow-icon", itemImage(item)));
-      this.actionButton.setAttribute("aria-label", label);
-      this.actionButton.title = label;
+      this.actionButton.setAttribute("aria-label", ACTION_LABELS[action](this.selfChanting));
+      this.actionButton.title = ACTION_LABELS[action](this.selfChanting);
       if (action === "chant") this.actionButton.setAttribute("aria-pressed", String(this.selfChanting));
       else this.actionButton.removeAttribute("aria-pressed");
     }

@@ -2,6 +2,7 @@ import {
   ITEM_CHANT,
   ITEM_MOKT,
   ITEM_NONE,
+  ITEM_ROD,
   KNOCK_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
   type SeatResponse,
@@ -26,9 +27,11 @@ import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
 import sutraUrl from "./assets/audio/sutra.mp3?url";
 import { SyncedLoop, areaMix } from "./audio/music.ts";
+import { seaLevel } from "./audio/sea-level.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
 import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
+import { CatchWatcher } from "./game/catch-watch.ts";
 import { heldAction, isSeated } from "./game/held-action.ts";
 import { combineAxes, floorDirection, headingAlong, KeyboardInput } from "./game/input.ts";
 import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
@@ -54,7 +57,7 @@ import {
 } from "./storage.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
-import { describeChant, seatName } from "./ui/format.ts";
+import { catchMessage, describeChant, seatName } from "./ui/format.ts";
 import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
@@ -95,6 +98,7 @@ export class App {
   private readonly base = serverHttpBase();
   private readonly audio = new AudioEngine();
   private readonly bowWatch = new BowWatcher();
+  private readonly catchWatch = new CatchWatcher();
   private readonly chantBell = new ChantBellScheduler();
   private readonly quests = new QuestTracker();
   private readonly canvas: HTMLCanvasElement;
@@ -223,6 +227,8 @@ export class App {
         onEmote: (emote) => this.session?.emote(emote),
         onKnock: () => this.knock(),
         onChant: (on) => this.chant(on),
+        onCast: () => this.cast(),
+        onReel: () => this.reel(),
         onEquip: (item) => this.equip(item),
         onInvite: () => void this.copyInvite(),
         onCancelReturn: () => this.holdReturn(),
@@ -246,7 +252,7 @@ export class App {
     this.overlay = new Overlay(this.ui);
     this.keyboard = new KeyboardInput(window, {
       onSpace: () => {
-        if (this.self && this.self.seatId >= 0) this.act();
+        if (this.self && (this.self.seatId >= 0 || heldAction(this.self) !== null)) this.act();
         else this.jump();
       },
       onStand: () => {
@@ -284,6 +290,7 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.catchWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
@@ -383,6 +390,7 @@ export class App {
 
     this.world.clear();
     this.bowWatch.reset();
+    this.catchWatch.reset();
     this.lastSelfBows = null;
     this.self = null;
     this.hud.setSelf(null);
@@ -459,6 +467,7 @@ export class App {
         chanting: monk.chanting,
         item: monk.item,
         jumpSeq: monk.jumpSeq,
+        bite: monk.bite,
       });
       // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
       if (monk.npc) return;
@@ -479,7 +488,8 @@ export class App {
       if (monk.id === selfId) {
         this.self = { x: monk.x, z: monk.z, mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item };
         this.prediction.reconcile({ x: monk.x, z: monk.z, mode: monk.mode, ackSeq: monk.ackSeq });
-        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item });
+        this.hud.setSelf({ mode: monk.mode, seatId: monk.seatId, chanting: monk.chanting, item: monk.item, x: monk.x, z: monk.z, bite: monk.bite });
+        this.noteFishing(monk);
         this.creditBows(monk.bowCount);
         for (const quest of this.quests.observe(selfId, { bowCount: monk.bowCount, zone: monkZone, seatId: monk.seatId }, state)) this.hud.toast(`퀘스트를 끝냈어요: ${quest.text}`);
       }
@@ -508,6 +518,12 @@ export class App {
     const report = this.bowWatch.update(watched, selfId, now);
     if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
+  }
+
+  private noteFishing(monk: { bite: boolean; catchSeq: number; lastCatch: number }): void {
+    const report = this.catchWatch.observe(monk);
+    if (report.bitten) this.hud.toast("입질이 왔어요! 낚싯줄을 당겨요");
+    if (report.caught !== null) this.hud.toast(catchMessage(report.caught));
   }
 
   private creditBows(current: number): void {
@@ -596,7 +612,27 @@ export class App {
     const action = heldAction(this.self);
     if (action === "knock") this.knock();
     else if (action === "chant") this.chant(!this.self?.chanting);
+    else if (action === "cast") this.cast();
+    else if (action === "reel") this.reel();
     else this.bow();
+  }
+
+  // The line goes out toward the sea from where the visitor stands at the water's edge.
+  private cast(): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    if (heldAction(this.self) !== "cast") return;
+    this.stopWalking();
+    session.cast();
+  }
+
+  private reel(): void {
+    const session = this.session;
+    if (!session) return;
+    this.audio.unlock();
+    if (this.self?.mode !== "fish") return;
+    session.reel();
   }
 
   private knock(): void {
@@ -627,7 +663,8 @@ export class App {
     if (!session) return;
     this.audio.unlock();
     session.equip(item);
-    if (item !== ITEM_NONE && !(this.self && isSeated(this.self))) this.hud.toast("방석에 앉으면 쓸 수 있어요");
+    if (item === ITEM_ROD) this.hud.toast("바닷가에서 낚싯대를 던질 수 있어요");
+    else if (item !== ITEM_NONE && !(this.self && isSeated(this.self))) this.hud.toast("방석에 앉으면 쓸 수 있어요");
   }
 
   // The player's own knock already sounded on the click; only other monks' knocks reach here, quieter with distance.
@@ -838,6 +875,7 @@ export class App {
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
     this.sutra.setMix(mix);
     this.stage.setLevel(1 - mix);
+    this.audio.setSeaLevel(this.session !== null && at ? seaLevel(at.x, at.z) : 0);
   }
 
   private driveMovement(dt: number, realDt: number, nowMs: number): void {

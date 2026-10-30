@@ -655,6 +655,25 @@ button:disabled {
   background: color-mix(in srgb, white 16%, transparent);
 }
 
+.action-button.biting {
+  background: color-mix(in srgb, white 24%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 45%, transparent), 0 0 18px color-mix(in srgb, var(--gold-pale) 70%, transparent), 0 8px 24px color-mix(in srgb, black 18%, transparent);
+}
+
+.action-button.biting .bow-icon img {
+  animation: rod-tug 0.45s ease-in-out infinite;
+}
+
+.reduce-motion .action-button.biting .bow-icon img {
+  animation: none;
+}
+
+@keyframes rod-tug {
+  50% {
+    transform: rotate(-9deg) translateY(2px);
+  }
+}
+
 /* The beads turn like a rosary being counted while chanting; the wrapper keeps the drop shadow from turning with them. */
 .action-button.active .bow-icon img {
   animation: bead-turn 5s linear infinite;
