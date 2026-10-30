@@ -4,6 +4,8 @@ export * from "./item.ts";
 export * from "./fish.ts";
 export * from "./layout.ts";
 export * from "./walk.ts";
+export * from "./casino-layout.ts";
+export * from "./casino/index.ts";
 export * from "./schema.ts";
 export * from "./messages.ts";
 export * from "./identity.ts";

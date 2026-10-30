@@ -1,9 +1,11 @@
+import { CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD } from "./casino-layout.ts";
 import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, SHORE, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
 
-// Where feet may go. The world is four rectangles in a chain: the plaza, the court between the plaza and the 법당's
-// porch (the door faces +x, so the court is the strip along the plaza's west edge), the doorway through the front
-// wall, and the room inside. Every rectangle is convex, so a straight line between two points of the same one is
-// always walkable, and a walk across the world is a few such lines joined at the places where two rectangles touch.
+// Where feet may go. The world is a chain of rectangles: the room inside the 법당, the doorway through its front wall,
+// the court between the doorway and the plaza (the door faces +x, so the court is the strip along the plaza's west
+// edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway and its floor. Every
+// rectangle is convex, so a straight line between two points of the same one is always walkable, and a walk across the
+// world is a few such lines joined at the places where two rectangles touch.
 
 export interface Point {
   x: number;
@@ -28,7 +30,17 @@ export const DOORWAY_AREA: Bounds = {
 export const INTERIOR_AREA: Bounds = DHARMA_BOUNDS;
 
 // The chain, from the room outward: each area touches the next along a doorstep.
-const CHAIN: readonly Bounds[] = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE];
+const CHAIN: readonly Bounds[] = [
+  INTERIOR_AREA,
+  DOORWAY_AREA,
+  COURT_AREA,
+  PLAZA_AREA,
+  SHORE,
+  COAST_ROAD,
+  CASINO_YARD,
+  CASINO_DOOR,
+  CASINO_FLOOR,
+];
 
 // A walker's body is wider than a point: crossing a doorstep, it stays this far from the edge of the opening.
 const DOORSTEP_MARGIN = 0.35;
