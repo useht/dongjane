@@ -53,7 +53,8 @@ interface Seat {
   bowsAsked: boolean;
   greetBows: number;
   settleAt: number;
-  leaveAt: number;
+  // a devotional bow is under way, and standing or stepping away now would cancel its queued bows
+  bowingUntil: number;
 }
 
 export interface NpcBrain {
@@ -62,6 +63,12 @@ export interface NpcBrain {
   seat: Seat | null;
   greetAt: number;
   seen: Map<string, number>;
+  // One prayer spans several mats: these clocks run from the first mat until the monk stands up for good (0 = not started).
+  leaveAt: number;
+  devoutAt: number;
+  shiftAt: number;
+  // the mat under the monk was reached by shifting over, so it does not bow again for sitting down
+  shifted: boolean;
 }
 
 type Range = readonly [number, number];
@@ -72,6 +79,11 @@ const PAUSE_MS: Range = [1500, 5000];
 const STROLL_REACH_M: Range = [1.5, 3.5];
 const SETTLE_MS: Range = [1000, 3000];
 const SIT_MS: Range = [5 * 60_000, 15 * 60_000];
+// A long prayer is never still: the monk bows again every minute or two, and shifts to a mat a few steps off.
+const DEVOUT_MS: Range = [50_000, 130_000];
+const SHIFT_MS: Range = [18_000, 50_000];
+const SHIFT_REACH_M: Range = [2, 3.4];
+const DEVOUT_MULTI_CHANCE = 0.3;
 const LINGER_MS: Range = [0, 6000];
 const AFTER_STAND_MS: Range = [1000, 3000];
 const GREET_DELAY_MS: Range = [500, 1500];
@@ -88,6 +100,9 @@ const SIT_CHANCE = 0.9;
 const CHANT_SIT_BOOST = 0.1;
 // Roaming happens between seats: now and then a monk walks to a seat in the other zone to pray there.
 const OTHER_ZONE_SEAT_CHANCE = 0.5;
+// Within a zone a monk mostly picks a mat close to where it stands, and only now and then one anywhere.
+const NEAR_SEAT_M = 3;
+const NEAR_SEAT_CHANCE = 0.8;
 const WALK_RECHECK_MS = 300;
 const BOW_RECHECK_MS = 400;
 const SOCIAL_RECHECK_MS = 1000;
@@ -108,6 +123,10 @@ export function createNpcBrain(persona: Persona, random: () => number, now: numb
     seat: null,
     greetAt: 0,
     seen: new Map(),
+    leaveAt: 0,
+    devoutAt: 0,
+    shiftAt: 0,
+    shifted: false,
   };
 }
 
@@ -120,8 +139,12 @@ export function disturbNpc(brain: NpcBrain, now: number, random: () => number): 
 export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
   if (monk.seatId < 0) {
     brain.seat = null;
+    brain.leaveAt = 0;
+    brain.devoutAt = 0;
+    brain.shiftAt = 0;
+    brain.shifted = false;
   } else if (brain.seat?.seatId !== monk.seatId) {
-    brain.seat = { seatId: monk.seatId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, leaveAt: 0 };
+    brain.seat = { seatId: monk.seatId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, bowingUntil: 0 };
     brain.greetAt = 0;
   }
 
@@ -170,7 +193,8 @@ function thinkSeated(
   }
 
   if (seat.bows < 0) {
-    seat.bows = rollBows(brain, random);
+    seat.bows = brain.shifted ? 0 : rollBows(brain, random);
+    brain.shifted = false;
     seat.bowBase = monk.bowCount;
     seat.settleAt = now + span(random, SETTLE_MS);
     brain.nextThinkAt = seat.settleAt;
@@ -211,21 +235,69 @@ function thinkSeated(
     return;
   }
 
-  if (seat.leaveAt === 0) seat.leaveAt = now + sitMs(brain, random);
-  if (now < seat.leaveAt) {
-    brain.nextThinkAt = seat.leaveAt;
+  if (now < seat.bowingUntil) {
+    brain.nextThinkAt = seat.bowingUntil;
     return;
   }
 
-  if (world.chantEndsAt !== null && random() < brain.persona.devotion) {
-    seat.leaveAt = world.chantEndsAt + span(random, LINGER_MS);
-    brain.nextThinkAt = seat.leaveAt;
+  if (brain.leaveAt === 0) brain.leaveAt = now + sitMs(brain, random);
+  if (brain.devoutAt === 0) brain.devoutAt = now + devoutMs(brain, random);
+  if (brain.shiftAt === 0) brain.shiftAt = now + shiftMs(brain, random);
+
+  if (now >= brain.leaveAt) {
+    if (world.chantEndsAt !== null && random() < brain.persona.devotion) {
+      brain.leaveAt = world.chantEndsAt + span(random, LINGER_MS);
+      brain.nextThinkAt = brain.leaveAt;
+      return;
+    }
+    actions.stand(monk.id);
+    brain.seat = null;
+    brain.nextThinkAt = now + span(random, AFTER_STAND_MS);
     return;
   }
 
-  actions.stand(monk.id);
+  // the chant is prayed still: bows and shifting wait until it is over
+  if (now >= brain.devoutAt) {
+    if (world.chantEndsAt !== null) brain.devoutAt = world.chantEndsAt + devoutMs(brain, random);
+    else if (devoutBow(brain, seat, monk, world, actions)) return;
+    else {
+      brain.nextThinkAt = now + BOW_RECHECK_MS;
+      return;
+    }
+  }
+
+  if (now >= brain.shiftAt) {
+    if (world.chantEndsAt !== null) brain.shiftAt = world.chantEndsAt + shiftMs(brain, random);
+    else if (shiftOver(brain, monk, world, actions)) return;
+  }
+
+  brain.nextThinkAt = Math.min(brain.leaveAt, brain.devoutAt, brain.shiftAt);
+}
+
+function devoutBow(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld, actions: NpcActions): boolean {
+  const { now, random } = world;
+  const times = random() < DEVOUT_MULTI_CHANCE * brain.persona.devotion ? 2 + Math.floor(random() * (BOW_MAX_TIMES - 1)) : 1;
+  if (!actions.bow(monk.id, times)) return false;
+  const bowing = times * BOW_MS + (times - 1) * BOW_COOLDOWN_MS;
+  seat.bowingUntil = now + bowing + ARRIVE_SLACK_MS;
+  brain.devoutAt = now + bowing + devoutMs(brain, random);
+  brain.nextThinkAt = seat.bowingUntil;
+  return true;
+}
+
+// Gets up and kneels on a free mat a few steps off in the same zone, keeping the prayer going; false if there is none.
+function shiftOver(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): boolean {
+  const { now, random } = world;
+  const spot = pickNearbySpot(brain.persona, monk, world);
+  if (!spot || !actions.sit(monk.id, world.zone, spot.id)) {
+    brain.shiftAt = now + shiftMs(brain, random);
+    return false;
+  }
   brain.seat = null;
-  brain.nextThinkAt = now + span(random, AFTER_STAND_MS);
+  brain.shiftAt = 0;
+  brain.shifted = true;
+  brain.nextThinkAt = now + travelMs(monk, spot.x, spot.z) + ARRIVE_SLACK_MS;
+  return true;
 }
 
 function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): void {
@@ -249,7 +321,7 @@ function thinkStanding(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions:
   const chanting = world.chantEndsAt !== null;
   const sitChance = SIT_CHANCE + 0.06 * (1 - persona.restless) + 0.03 * persona.devotion + (chanting ? CHANT_SIT_BOOST : 0);
   if (random() < sitChance) {
-    const pick = pickSeat(persona, world);
+    const pick = pickSeat(persona, monk, world);
     if (pick && actions.sit(monk.id, pick.zone, pick.spot.id)) {
       brain.nextThinkAt = now + travelMs(monk, pick.spot.x, pick.spot.z) + ARRIVE_SLACK_MS;
       return;
@@ -295,26 +367,48 @@ function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Poi
   return resolveWalkable(visitor.x + side.x * gap, visitor.z + side.z * gap, monk);
 }
 
-function pickSeat(persona: Persona, world: NpcWorld): { zone: Zone; spot: SeatSpot } | undefined {
+function pickSeat(persona: Persona, monk: NpcBody, world: NpcWorld): { zone: Zone; spot: SeatSpot } | undefined {
   const here = world.zone;
   const there: Zone = here === "dharma" ? "gatbawi" : "dharma";
   const order = world.random() < OTHER_ZONE_SEAT_CHANCE * persona.restless ? [there, here] : [here, there];
   for (const zone of order) {
-    const spot = pickSpotIn(zone, persona, world);
+    const spot = pickSpotIn(zone, persona, monk, world);
     if (spot) return { zone, spot };
   }
   return undefined;
 }
 
 // "In front" is the half of the zone's rows nearest the Buddha.
-function pickSpotIn(zone: Zone, persona: Persona, world: NpcWorld): SeatSpot | undefined {
-  const spots = ZONE_SEATS[zone];
-  const free = spots.filter((spot) => world.isFree(zone, spot.id));
-  const depth = SEAT_DEPTH[zone];
-  const depths = spots.map(depth);
-  const middle = (Math.min(...depths) + Math.max(...depths)) / 2;
-  const front = world.random() < persona.frontRow ? free.filter((spot) => depth(spot) <= middle) : free;
+const FRONT_DEPTH: Readonly<Record<Zone, number>> = (() => {
+  const limit = (zone: Zone): number => {
+    const depths = ZONE_SEATS[zone].map(SEAT_DEPTH[zone]);
+    return (Math.min(...depths) + Math.max(...depths)) / 2;
+  };
+  return { gatbawi: limit("gatbawi"), dharma: limit("dharma") };
+})();
+
+const isFront = (zone: Zone, spot: SeatSpot): boolean => SEAT_DEPTH[zone](spot) <= FRONT_DEPTH[zone];
+const seatDistance = (spot: SeatSpot, monk: NpcBody): number => Math.hypot(spot.x - monk.x, spot.z - monk.z);
+
+// The front half comes first when the monk wants it, then a mat close by, then any free one.
+function pickSpotIn(zone: Zone, persona: Persona, monk: NpcBody, world: NpcWorld): SeatSpot | undefined {
+  const free = ZONE_SEATS[zone].filter((spot) => world.isFree(zone, spot.id));
+  const front = world.random() < persona.frontRow ? free.filter((spot) => isFront(zone, spot)) : free;
   const pool = front.length > 0 ? front : free;
+  const near = world.random() < NEAR_SEAT_CHANCE ? pool.filter((spot) => seatDistance(spot, monk) <= NEAR_SEAT_M) : [];
+  const from = near.length > 0 ? near : pool;
+  return from[Math.floor(world.random() * from.length)];
+}
+
+// A free mat two or three metres off in the zone the monk kneels in, in the front half if it wants that and one is there.
+function pickNearbySpot(persona: Persona, monk: NpcBody, world: NpcWorld): SeatSpot | undefined {
+  const zone = world.zone;
+  const near = ZONE_SEATS[zone].filter((spot) => {
+    const distance = seatDistance(spot, monk);
+    return spot.id !== monk.seatId && distance >= SHIFT_REACH_M[0] && distance <= SHIFT_REACH_M[1] && world.isFree(zone, spot.id);
+  });
+  const front = world.random() < persona.frontRow ? near.filter((spot) => isFront(zone, spot)) : near;
+  const pool = front.length > 0 ? front : near;
   return pool[Math.floor(world.random() * pool.length)];
 }
 
@@ -332,6 +426,17 @@ function pickStrollTarget(monk: NpcBody, random: () => number): Point {
 function rollBows(brain: NpcBrain, random: () => number): number {
   if (random() >= 0.35 + 0.65 * brain.persona.devotion) return 0;
   return random() < 0.6 * brain.persona.devotion ? BOW_MAX_TIMES : 1;
+}
+
+// The more devout the monk, the sooner it bows again.
+function devoutMs(brain: NpcBrain, random: () => number): number {
+  const mix = Math.min(1, random() * 0.6 + (1 - brain.persona.devotion) * 0.6);
+  return DEVOUT_MS[0] + (DEVOUT_MS[1] - DEVOUT_MS[0]) * mix;
+}
+
+// The more restless the monk, the sooner it moves on to another mat.
+function shiftMs(brain: NpcBrain, random: () => number): number {
+  return span(random, SHIFT_MS) * (1.3 - 0.7 * brain.persona.restless);
 }
 
 function sitMs(brain: NpcBrain, random: () => number): number {
