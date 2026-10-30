@@ -6,11 +6,10 @@ import {
   EMOTE_COOLDOWN_MS,
   GATBAWI_SEATS,
   JUMP_COOLDOWN_MS,
-  NPC_PER_ZONE,
+  NPC_COUNT,
   TICK_MS,
   type TempleState,
   WORLD_BOUNDS,
-  ZONES,
   zoneAt,
 } from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
@@ -56,11 +55,11 @@ describe("SoloSession", () => {
     void session.leave();
   });
 
-  it("keeps every zone company with npc monks that the player does not count as visitors", () => {
+  it("fills the 법당 with npc monks that the player does not count as visitors", () => {
     const { session } = open();
     const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
-    expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
-    for (const zone of ZONES) expect(npcs.filter((npc) => zoneAt(npc.x, npc.z) === zone)).toHaveLength(NPC_PER_ZONE);
+    expect(npcs).toHaveLength(NPC_COUNT);
+    for (const npc of npcs) expect(zoneAt(npc.x, npc.z)).toBe("dharma");
     for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });

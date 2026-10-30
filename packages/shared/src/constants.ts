@@ -3,8 +3,8 @@ export const ROOM_NAME = "world";
 export const ZONE_CAPACITY = 50;
 export const WORLD_CAPACITY = 100;
 export const WORLD_SPARE_AT = 90;
-// Computer-driven monks who keep each zone company; they never count toward a capacity.
-export const NPC_PER_ZONE = 3;
+// Computer-driven monks who start in the 법당 and wander the whole world; they never count toward a capacity.
+export const NPC_COUNT = 50;
 
 export const TICK_MS = 50;
 export const WALK_SPEED = 2.4;

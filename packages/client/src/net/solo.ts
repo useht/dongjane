@@ -1,6 +1,6 @@
 import {
   type BowMessage,
-  NPC_PER_ZONE,
+  NPC_COUNT,
   TICK_MS,
   TempleSim,
   type TempleState,
@@ -14,7 +14,7 @@ const SOLO_ID = "solo";
 
 export class SoloSession {
   readonly sessionId = SOLO_ID;
-  private readonly sim = new TempleSim({ npcCount: NPC_PER_ZONE });
+  private readonly sim = new TempleSim({ npcCount: NPC_COUNT });
   private readonly timer: ReturnType<typeof setInterval>;
   private closed = false;
 

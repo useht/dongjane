@@ -15,8 +15,7 @@ import {
   WORLD_SPARE_AT,
   ZONE_CAPACITY,
   MSG,
-  NPC_PER_ZONE,
-  ZONES,
+  NPC_COUNT,
   SEAT_PATH,
   isWorldFullError,
   resolveWalkable,
@@ -58,7 +57,7 @@ describe("world list", () => {
     await rig.enter(1);
     const world = await eventually(() => rig.world(1), (info) => info.clients === 2, "two clients counted");
     expect(world.clients).toBe(2);
-    expect(world.npcs).toBe(NPC_PER_ZONE * ZONES.length);
+    expect(world.npcs).toBe(NPC_COUNT);
     expect(world.capacity).toBe(WORLD_CAPACITY);
     expect(world.full).toBe(false);
     expect(world.zones).toEqual({ gatbawi: 2, dharma: 0 });
@@ -66,11 +65,11 @@ describe("world list", () => {
     expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
   });
 
-  it("keeps every zone company with npc monks that the visitor count and seat numbers ignore", async () => {
+  it("fills the 법당 with npc monks that the visitor count and seat numbers ignore", async () => {
     const room = await rig.enter(1);
     const npcs = [...room.state.monks.values()].filter((monk) => monk.npc);
-    expect(npcs).toHaveLength(NPC_PER_ZONE * ZONES.length);
-    for (const zone of ZONES) expect(npcs.filter((monk) => zoneAt(monk.x, monk.z) === zone)).toHaveLength(NPC_PER_ZONE);
+    expect(npcs).toHaveLength(NPC_COUNT);
+    for (const monk of npcs) expect(zoneAt(monk.x, monk.z)).toBe("dharma");
     expect(npcs.every((monk) => monk.slot === 0)).toBe(true);
     expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
     const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "one visitor counted");

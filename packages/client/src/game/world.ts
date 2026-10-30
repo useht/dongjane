@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_COUNT, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
@@ -67,7 +67,7 @@ interface Entry {
 }
 
 // Every monk of the world is in the scene, so the pool holds a world full of visitors and every zone's computer-driven monks.
-const MAX_MONKS = WORLD_CAPACITY + ZONES.length * NPC_PER_ZONE;
+const MAX_MONKS = WORLD_CAPACITY + NPC_COUNT;
 // How long the camera takes to slide between the open ground's box and the room's box when the monk crosses the doorway,
 // and the light to change from the sun's to the room's.
 const REGION_BLEND_SECONDS = 0.5;

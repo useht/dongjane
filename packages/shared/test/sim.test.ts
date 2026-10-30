@@ -7,6 +7,7 @@ import {
   EMOTE_COOLDOWN_MS,
   JUMP_COOLDOWN_MS,
   KNOCK_COOLDOWN_MS,
+  NPC_COUNT,
   TICK_MS,
   WALK_SPEED,
   WORLD_CAPACITY,
@@ -26,7 +27,7 @@ import {
   type Zone,
 } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
-import { COURT_AREA, DOORWAY_AREA, resolveWalkable, zoneAt } from "../src/walk.ts";
+import { COURT_AREA, DOORWAY_AREA, INTERIOR_AREA, resolveWalkable, zoneAt } from "../src/walk.ts";
 
 const T0 = 1_800_000_000_000;
 
@@ -441,13 +442,13 @@ describe("emoticons", () => {
   });
 
   it("never makes npc monks emote", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: NPC_COUNT });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
     }
     const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
-    expect(npcs).toHaveLength(6);
+    expect(npcs).toHaveLength(NPC_COUNT);
     for (const npc of npcs) expect(npc.emoteSeq).toBe(0);
   });
 });
@@ -679,7 +680,7 @@ describe("held items", () => {
   });
 
   it("never makes npc monks hold items, knock or chant", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 6 });
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: NPC_COUNT });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
@@ -773,13 +774,13 @@ describe("jumping", () => {
   });
 
   it("never makes npc monks jump", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: 3 });
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.5, npcCount: NPC_COUNT });
     for (let t = 0; t < 10 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
     }
     const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
-    expect(npcs).toHaveLength(6);
+    expect(npcs).toHaveLength(NPC_COUNT);
     for (const npc of npcs) expect(npc.jumpSeq).toBe(0);
   });
 });
@@ -961,16 +962,26 @@ describe("one world", () => {
     expect(h.mat(9, "dharma").occupantId).toBe("");
   });
 
-  it("keeps the computer-driven monks in the zone they live in", () => {
-    const sim = new TempleSim({ clock: () => h.now, random: () => 0.37, npcCount: 3 });
+  it("starts the computer-driven monks in the 법당 and keeps them on walkable ground as they wander", () => {
+    const sim = new TempleSim({ clock: () => h.now, random: () => 0.37, npcCount: NPC_COUNT });
+    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
+    expect(npcs).toHaveLength(NPC_COUNT);
+    for (const npc of npcs) {
+      expect(zoneAt(npc.x, npc.z)).toBe("dharma");
+      expect(npc.x).toBeGreaterThanOrEqual(INTERIOR_AREA.minX);
+      expect(npc.x).toBeLessThanOrEqual(INTERIOR_AREA.maxX);
+      expect(npc.z).toBeGreaterThanOrEqual(INTERIOR_AREA.minZ);
+      expect(npc.z).toBeLessThanOrEqual(INTERIOR_AREA.maxZ);
+    }
+
     for (let t = 0; t < 5 * 60 * 1000; t += TICK_MS) {
       h.now += TICK_MS;
       sim.tick(TICK_MS);
     }
-    const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
-    const dharma = npcs.filter((monk) => zoneAt(monk.x, monk.z) === "dharma");
-    expect(npcs).toHaveLength(6);
-    expect(dharma).toHaveLength(3);
+    for (const npc of npcs) {
+      const solid = resolveWalkable(npc.x, npc.z);
+      expect(Math.hypot(solid.x - npc.x, solid.z - npc.z)).toBeLessThan(1e-4);
+    }
   });
 });
 

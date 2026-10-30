@@ -4,7 +4,7 @@ import {
   WORLD_CAPACITY,
   MESSAGE_RATE_PER_SECOND,
   MSG,
-  NPC_PER_ZONE,
+  NPC_COUNT,
   RECONNECT_SECONDS,
   TICK_MS,
   TempleSim,
@@ -87,7 +87,7 @@ export class WorldRoom extends Room<{ state: TempleState; metadata: WorldMetadat
 
     this.reconnectSeconds = options.reconnectSeconds ?? RECONNECT_SECONDS;
     this.relocationGraceMs = options.relocationGraceMs ?? RELOCATION_GRACE_MS;
-    this.sim = new TempleSim({ npcCount: NPC_PER_ZONE });
+    this.sim = new TempleSim({ npcCount: NPC_COUNT });
     this.state = this.sim.state;
     await this.setMetadata({ world, name: worldName(world) });
 

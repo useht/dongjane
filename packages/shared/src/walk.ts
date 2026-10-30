@@ -40,9 +40,6 @@ const TIE = 1e-9;
 const SETTLE_ROUNDS = 24;
 const SETTLED = 1e-6;
 
-// Where a monk of a zone may wander when nobody sends them elsewhere (computer-driven monks never leave their zone).
-export const HOME_AREAS: Readonly<Record<Zone, Bounds>> = { gatbawi: PLAZA_AREA, dharma: INTERIOR_AREA };
-
 function contains(area: Bounds, x: number, z: number): boolean {
   return x >= area.minX - EDGE && x <= area.maxX + EDGE && z >= area.minZ - EDGE && z <= area.maxZ + EDGE;
 }
@@ -51,8 +48,22 @@ function clampTo(area: Bounds, x: number, z: number): Point {
   return { x: Math.min(area.maxX, Math.max(area.minX, x)), z: Math.min(area.maxZ, Math.max(area.minZ, z)) };
 }
 
-export function clampToHome(zone: Zone, x: number, z: number): Point {
-  return clampTo(HOME_AREAS[zone], x, z);
+export function randomPointIn(area: Bounds, random: () => number): Point {
+  return { x: area.minX + random() * (area.maxX - area.minX), z: area.minZ + random() * (area.maxZ - area.minZ) };
+}
+
+const CHAIN_AREAS = CHAIN.map((area) => (area.maxX - area.minX) * (area.maxZ - area.minZ));
+const CHAIN_AREA_TOTAL = CHAIN_AREAS.reduce((sum, area) => sum + area, 0);
+
+// A point spread evenly over every walkable area of the world.
+export function randomWalkable(random: () => number): Point {
+  let pick = random() * CHAIN_AREA_TOTAL;
+  let index = 0;
+  while (index < CHAIN.length - 1 && pick >= (CHAIN_AREAS[index] as number)) {
+    pick -= CHAIN_AREAS[index] as number;
+    index += 1;
+  }
+  return randomPointIn(CHAIN[index] as Bounds, random);
 }
 
 function indexesAt(x: number, z: number): number[] {
@@ -82,6 +93,24 @@ export function resolveWalkable(x: number, z: number, from?: Point): Point {
       bestIsHome = isHome;
     }
   });
+  return best;
+}
+
+// Like resolveWalkable, but only on the ground `from` stands on, so a short stroll against a wall slides along it
+// instead of jumping to a nearer room behind the wall; crossing between areas is for planPath.
+export function resolveNearby(x: number, z: number, from: Point): Point {
+  const here = indexesAt(from.x, from.z);
+  if (here.length === 0) return resolveWalkable(x, z, from);
+  let best = { x, z };
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const index of here) {
+    const point = clampTo(CHAIN[index] as Bounds, x, z);
+    const distance = (point.x - x) ** 2 + (point.z - z) ** 2;
+    if (distance < bestDistance) {
+      best = point;
+      bestDistance = distance;
+    }
+  }
   return best;
 }
 

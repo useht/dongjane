@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NPC_PER_ZONE } from "../src/constants.ts";
-import { ZONES } from "../src/layout.ts";
+import { NPC_COUNT } from "../src/constants.ts";
 import { type Persona, generatePersona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
 
@@ -63,12 +62,10 @@ describe("generatePersona", () => {
   });
 });
 
-const NPC_COUNT = NPC_PER_ZONE * ZONES.length;
-
 describe("npc personas in the sim", () => {
   it("gives each of the world's npcs its own persona, repeatably", () => {
     const personasFor = (seed: number) => {
-      const sim = new TempleSim({ clock: () => 0, random: seededRandom(seed), npcCount: NPC_PER_ZONE });
+      const sim = new TempleSim({ clock: () => 0, random: seededRandom(seed), npcCount: NPC_COUNT });
       return Array.from({ length: NPC_COUNT }, (_, n) => sim.personaOf(`npc-${n + 1}`));
     };
 

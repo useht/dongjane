@@ -3,12 +3,13 @@ import { DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, GATBAWI_SEATS, WORLD_BOUNDS
 import {
   COURT_AREA,
   DOORWAY_AREA,
-  HOME_AREAS,
   INTERIOR_AREA,
   PLAZA_AREA,
   type Point,
-  clampToHome,
   planPath,
+  randomPointIn,
+  randomWalkable,
+  resolveNearby,
   resolveWalkable,
   slideWalkable,
   zoneAt,
@@ -137,12 +138,58 @@ describe("resolveWalkable", () => {
     const other = resolveWalkable(middle, wallZ, outside);
     expect(other.x).toBeGreaterThanOrEqual(COURT_AREA.minX);
   });
+});
 
-  it("clamps a computer-driven monk to its own zone", () => {
-    expect(clampToHome("dharma", 100, 100)).toEqual({ x: DHARMA_BOUNDS.maxX, z: DHARMA_BOUNDS.maxZ });
-    expect(clampToHome("gatbawi", -100, 100)).toEqual({ x: WORLD_BOUNDS.minX, z: WORLD_BOUNDS.maxZ });
-    expect(HOME_AREAS.dharma).toBe(INTERIOR_AREA);
-    expect(HOME_AREAS.gatbawi).toBe(PLAZA_AREA);
+describe("resolveNearby", () => {
+  it("clamps to the ground the walker stands on, even when another area is nearer behind a wall", () => {
+    const onPlaza = { x: WORLD_BOUNDS.minX + 1, z: 0 };
+    const target = { x: (WORLD_BOUNDS.minX + DHARMA_BOUNDS.maxX) / 2 - 1, z: 0 };
+    expect(resolveWalkable(target.x, target.z).x).toBe(DHARMA_BOUNDS.maxX);
+    expect(resolveNearby(target.x, target.z, onPlaza)).toEqual({ x: WORLD_BOUNDS.minX, z: 0 });
+
+    const inRoom = { x: DHARMA_BOUNDS.maxX - 1, z: 0 };
+    const beyond = { x: (WORLD_BOUNDS.minX + DHARMA_BOUNDS.maxX) / 2 + 1, z: 0 };
+    expect(resolveWalkable(beyond.x, beyond.z).x).toBe(WORLD_BOUNDS.minX);
+    expect(resolveNearby(beyond.x, beyond.z, inRoom)).toEqual({ x: DHARMA_BOUNDS.maxX, z: 0 });
+  });
+
+  it("leaves a walkable point alone and keeps a walker in a corner where they are", () => {
+    expect(resolveNearby(1, 2, { x: 0, z: 0 })).toEqual({ x: 1, z: 2 });
+    const corner = { x: WORLD_BOUNDS.minX, z: WORLD_BOUNDS.minZ };
+    expect(resolveNearby(corner.x - 3, corner.z, corner)).toEqual(corner);
+  });
+
+  it("falls back to the nearest ground for a walker who is not on any", () => {
+    expect(resolveNearby(100, 100, { x: 500, z: 500 })).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.maxZ });
+  });
+});
+
+describe("random points", () => {
+  it("picks a point of an area from two draws", () => {
+    const draws = [0, 1];
+    const point = randomPointIn(INTERIOR_AREA, () => draws.shift()!);
+    expect(point.x).toBeCloseTo(INTERIOR_AREA.minX, 9);
+    expect(point.z).toBeCloseTo(INTERIOR_AREA.maxZ, 9);
+  });
+
+  it("spreads walkable points over every area in proportion to its size", () => {
+    const random = seededRandom(5);
+    const hits = CHAIN.map(() => 0);
+    const total = 20_000;
+    for (let n = 0; n < total; n += 1) {
+      const point = randomWalkable(random);
+      expect(walkable(point), `(${point.x.toFixed(3)}, ${point.z.toFixed(3)}) is inside a wall`).toBe(true);
+      const index = CHAIN.findIndex(
+        (area) => point.x >= area.minX && point.x <= area.maxX && point.z >= area.minZ && point.z <= area.maxZ,
+      );
+      hits[index] = (hits[index] ?? 0) + 1;
+    }
+    const size = (area: (typeof CHAIN)[number]) => (area.maxX - area.minX) * (area.maxZ - area.minZ);
+    const whole = CHAIN.reduce((sum, area) => sum + size(area), 0);
+    CHAIN.forEach((area, index) => {
+      expect((hits[index] ?? 0) / total).toBeCloseTo(size(area) / whole, 1);
+    });
+    expect(hits.every((count) => count > 0)).toBe(true);
   });
 });
 
