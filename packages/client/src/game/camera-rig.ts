@@ -71,11 +71,10 @@ export interface RigLimits {
 const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 22, minPitch: 0.16, maxPitch: 1.3 };
 const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 12, minPitch: 0.16, maxPitch: 1.3 };
 
-// How far the lens keeps from anything the room draws, so the sway never brings a surface to within a few centimetres of it.
+// How far the lens keeps from anything the room draws.
 export const CAMERA_CLEARANCE = 0.3;
 
-// Inside the 법당: the camera stays below the beam band that runs round the walls (its underside is at 5.2) and the lanterns
-// above it, and short of the side pillars (their faces are at 9.27).
+// Below the beam band (underside at 5.2) and inside the side pillars (faces at 9.27).
 export const DHARMA_CAMERA_BOUNDS: Box = {
   minX: DHARMA_ORIGIN.x - 8.9,
   maxX: DHARMA_ORIGIN.x + 8.9,
@@ -95,9 +94,7 @@ export const DHARMA_KEEP_OUT: Box = {
   maxZ: DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ,
 };
 
-// The engaged pillars on the room's front wall (0.3 m round at their fullest, standing `inset` out from the wall), widened by the
-// clearance on each side: a camera that follows someone toward them stops short instead of ending up against a shaft. The front
-// is drawn out a further 0.1 m because the keep-out margin is measured along a sight line that rises steeply.
+// Round the front wall's engaged pillars, widened by the clearance.
 const PILLAR_RADIUS = 0.3;
 export const DHARMA_PILLARS_KEEP_OUT: readonly Box[] = FRONT_PILLARS_X.map((x) => ({
   minX: DHARMA_ORIGIN.x + x - PILLAR_RADIUS - CAMERA_CLEARANCE,
