@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BORROWS_STONE, BUDDHA_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
+import { BORROWS_PAVING, BORROWS_STONE, BUDDHA_MESHES, CASINO_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "../src/assets/contract.ts";
 import { MODELS, type ModelKey, type ModelLoader, collectMeshes, headOf, loadGameAssets, normalOf, textureOf } from "../src/assets/registry.ts";
 
-const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES } as const;
-const MODEL_KEYS = ["buddha", "dharma", "gatbawi", "venue", "world"];
+const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES, casino: CASINO_MESHES } as const;
+const MODEL_KEYS = ["buddha", "casino", "dharma", "gatbawi", "venue", "world"];
 const textured: readonly string[] = TEXTURED;
-const borrowsStone: readonly string[] = BORROWS_STONE;
+const borrowsStone: readonly string[] = [...BORROWS_STONE, ...BORROWS_PAVING];
 
 const HEAD = { headTop: [0, 1, 0.04], headRadius: 0.074 };
 
@@ -76,6 +76,11 @@ describe("collectMeshes", () => {
 
   it("lets the hat stone and the pedestal go without a picture: they borrow the rocks'", () => {
     expect(Object.keys(collectMeshes(group(GATBAWI_MESHES, false), "gatbawi")).sort()).toEqual([...GATBAWI_MESHES].sort());
+  });
+
+  it("asks the casino for its carpet's picture, but not for the yard's and the road's: they borrow the paving's", () => {
+    expect(() => collectMeshes(group(CASINO_MESHES, false), "casino")).toThrow(/mesh "casinoFloor" has no texture/);
+    expect(Object.keys(collectMeshes(group(CASINO_MESHES), "casino")).sort()).toEqual([...CASINO_MESHES].sort());
   });
 });
 
@@ -158,6 +163,19 @@ describe("loadGameAssets", () => {
     expect(normalOf(world.rocks)).toBeInstanceOf(Texture);
   });
 
+  it("gives the casino's carpet a picture and a normal map, and its yard and road UVs and vertex colour but no picture", async () => {
+    const { casino } = (await loadGameAssets(diskLoader())).models;
+    expect(textureOf(casino.casinoFloor)).toBeInstanceOf(Texture);
+    expect(normalOf(casino.casinoFloor)).toBeInstanceOf(Texture);
+    for (const mesh of [casino.casinoYard, casino.coastRoad]) {
+      expect(mesh.geometry.hasAttribute("uv"), mesh.name).toBe(true);
+      expect(mesh.geometry.hasAttribute("color"), mesh.name).toBe(true);
+      expect(() => textureOf(mesh), mesh.name).toThrow(/has no texture/);
+      expect(normalOf(mesh), mesh.name).toBeNull();
+    }
+    for (const mesh of [casino.slotCabinet, casino.rouletteTable, casino.scratchKiosk]) expect(mesh.geometry.hasAttribute("color"), mesh.name).toBe(true);
+  });
+
   it("gives the shipped Buddha one picture, no vertex colour, and the head the game seats the hat stone on", async () => {
     const { buddha } = (await loadGameAssets(diskLoader())).models;
     expect(textureOf(buddha.buddha)).toBeInstanceOf(Texture);
@@ -199,7 +217,7 @@ describe("loadGameAssets", () => {
       }
     }
     assets.dispose();
-    expect(geometries.size).toBe(GATBAWI_MESHES.length + BUDDHA_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length);
+    expect(geometries.size).toBe(GATBAWI_MESHES.length + BUDDHA_MESHES.length + WORLD_MESHES.length + VENUE_MESHES.length + DHARMA_MESHES.length + CASINO_MESHES.length);
     expect(textures.size).toBeGreaterThanOrEqual(TEXTURED.length);
     expect([...geometries.values()].every((times) => times === 1)).toBe(true);
     expect([...textures.values()].every((times) => times === 1)).toBe(true);
@@ -209,7 +227,7 @@ describe("loadGameAssets", () => {
 
   it("names the model that fails to load and keeps the cause", async () => {
     const disk = diskLoader();
-    for (const key of ["world", "dharma"] as const) {
+    for (const key of ["world", "dharma", "casino"] as const) {
       const broken: ModelLoader = {
         loadAsync: (url) => (url === MODELS[key] ? Promise.reject(new Error("offline")) : disk.loadAsync(url)),
       };

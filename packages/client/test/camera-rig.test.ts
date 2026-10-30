@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Raycaster, Vector2, Vector3 } from "three";
-import { ARRIVAL, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
+import { ARRIVAL, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import {
   CAMERA_CLEARANCE,
   CameraRig,
@@ -9,7 +9,9 @@ import {
   DHARMA_KEEP_OUT,
   DHARMA_KEEP_OUTS,
   DHARMA_PILLARS_KEEP_OUT,
+  KEEP_OUTS,
   SWAY,
+  casinoRegion,
   configureCamera,
   distanceBefore,
   lensFor,
@@ -22,6 +24,7 @@ import {
   viewFor,
   type Box,
 } from "../src/game/camera-rig.ts";
+import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, CASINO_ROOM, CASINO_SHELL, CASINO_TOP } from "../src/game/casino-layout.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 import { BUDDHA_AT, DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "../src/game/dharma-layout.ts";
 import { loadGlb, triangleCorners } from "./glb.ts";
@@ -596,5 +599,81 @@ describe("default framing", () => {
 
   it("uses a wider lens on portrait screens", () => {
     expect(lensFor(390 / 844).fov).toBeGreaterThan(lensFor(1280 / 800).fov);
+  });
+});
+
+describe("the casino's camera", () => {
+  const { bounds, limits } = casinoRegion();
+  const aisle = { x: (CASINO_FLOOR.minX + CASINO_FLOOR.maxX) / 2, z: (CASINO_FLOOR.minZ + CASINO_FLOOR.maxZ) / 2 };
+  const inBox = (position: { x: number; y: number; z: number }, within: Box): boolean =>
+    position.x >= within.minX && position.x <= within.maxX && position.y >= within.minY && position.y <= within.maxY && position.z >= within.minZ && position.z <= within.maxZ;
+
+  it("keeps a keep-out box for the building beside the 법당's, from its walls to over the ridge of the sign's eave", () => {
+    expect(KEEP_OUTS).toEqual([...DHARMA_KEEP_OUTS, CASINO_KEEP_OUT]);
+    expect(CASINO_KEEP_OUT.minX).toBe(CASINO_SHELL.minX);
+    expect(CASINO_KEEP_OUT.maxX).toBe(CASINO_SHELL.maxX);
+    expect(CASINO_KEEP_OUT.minZ).toBe(CASINO_SHELL.minZ);
+    expect(CASINO_KEEP_OUT.maxZ).toBe(CASINO_SHELL.maxZ);
+    expect(CASINO_KEEP_OUT.maxY).toBeGreaterThan(CASINO_TOP);
+    expect(CASINO_KEEP_OUT.minY).toBeLessThan(0);
+  });
+
+  it("gives the room's box over the whole room, inside its walls and above its hidden roof, with a zoom range of its own", () => {
+    expect(bounds).toBe(CASINO_CAMERA_BOUNDS);
+    expect(bounds.minX).toBeGreaterThan(CASINO_ROOM.minX);
+    expect(bounds.maxX).toBeLessThan(CASINO_ROOM.maxX);
+    expect(bounds.minZ).toBeGreaterThan(CASINO_ROOM.minZ);
+    expect(bounds.maxZ).toBeLessThan(CASINO_ROOM.maxZ);
+    expect(bounds.minY).toBeGreaterThan(0);
+    expect(bounds.maxY, "the roof is hidden inside, so the camera may look down from above it").toBeGreaterThan(CASINO_SHELL.topY);
+    for (const [x, z] of [[CASINO_FLOOR.minX, CASINO_FLOOR.minZ], [CASINO_FLOOR.maxX, CASINO_FLOOR.maxZ]] as const) {
+      expect(x).toBeGreaterThan(bounds.minX);
+      expect(x).toBeLessThan(bounds.maxX);
+      expect(z).toBeGreaterThan(bounds.minZ);
+      expect(z).toBeLessThan(bounds.maxZ);
+    }
+    expect(limits.minDistance).toBeLessThan(limits.maxDistance);
+    expect(limits.minPitch).toBeLessThan(limits.maxPitch);
+    expect(limits.maxDistance, "the room is smaller than the open air").toBeLessThan(regionFor("gatbawi").limits.maxDistance);
+  });
+
+  it("keeps a camera that follows a visitor on the aisle inside the room's box, however it is turned and zoomed", () => {
+    for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      for (const [pitch, distance] of [[limits.minPitch, limits.maxDistance], [limits.maxPitch, limits.maxDistance], [0.6, limits.minDistance]] as const) {
+        const rig = new CameraRig(new PerspectiveCamera(), bounds, limits, [CASINO_KEEP_OUT]);
+        rig.reduceMotion = true;
+        rig.yaw = yaw;
+        rig.pitch = pitch;
+        rig.distance = distance;
+        rig.follow(aisle.x, aisle.z, 1, true);
+        rig.update(0.016);
+        const { x, y, z } = rig.camera.position;
+        expect(inBox({ x, y, z }, { ...bounds, minX: bounds.minX - 1e-6, maxX: bounds.maxX + 1e-6, minZ: bounds.minZ - 1e-6, maxZ: bounds.maxZ + 1e-6 }), `yaw ${yaw}, pitch ${pitch}, distance ${distance}: ${x}, ${y}, ${z}`).toBe(true);
+      }
+    }
+  });
+
+  it("stops a camera that swings round behind someone in the yard from going through the building's front", () => {
+    const behind = (keepOut: readonly Box[]): CameraRig => {
+      const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS, undefined, keepOut);
+      rig.reduceMotion = true;
+      // Yaw 0 puts the camera on the +z side of the followed point: from the yard that is the building.
+      rig.yaw = 0;
+      rig.pitch = 0.3;
+      rig.distance = 12;
+      rig.follow((CASINO_YARD.minX + CASINO_YARD.maxX) / 2, CASINO_YARD.maxZ - 2, 1, true);
+      rig.update(0.016);
+      return rig;
+    };
+    const without = behind([]).camera.position;
+    expect(inBox(without, CASINO_KEEP_OUT), "without the box the camera passes into the building").toBe(true);
+    const { x, y, z } = behind([CASINO_KEEP_OUT]).camera.position;
+    expect(inBox({ x, y, z }, CASINO_KEEP_OUT)).toBe(false);
+    expect(z).toBeLessThan(CASINO_SHELL.minZ);
+    expect(y).toBeGreaterThan(0);
+  });
+
+  it("lets a camera look at the casino from the shore's side: the world's bounds reach past the building", () => {
+    expect(LANDSCAPE_BOUNDS.maxZ).toBeGreaterThan(CASINO_SHELL.maxZ);
   });
 });

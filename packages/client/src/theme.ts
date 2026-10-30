@@ -80,6 +80,7 @@ export const THEME = {
     sandWet: "#b8a074",
     seaShoal: "#86d6cc",
     seaDeep: "#2b7fa8",
+    casinoBackground: "#150a14",
     casinoHemiSky: "#ffe0c8",
     casinoHemiGround: "#4a2428",
     casinoLampGold: "#ffc86a",

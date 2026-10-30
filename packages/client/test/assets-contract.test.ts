@@ -1,10 +1,38 @@
 import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { type Bounds, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, SEAT_YAWS, STEPS, WORLD_BOUNDS, dharmaToWorld, worldToDharma } from "@dongjane/shared";
-import { BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
+import {
+  type Bounds,
+  CASINO_DOOR,
+  CASINO_FLOOR,
+  CASINO_YARD,
+  COAST_ROAD,
+  COURT_AREA,
+  DHARMA_BOUNDS,
+  DHARMA_ORIGIN,
+  DHARMA_SEATS,
+  DHARMA_SEAT_SIZE,
+  GATBAWI_SEATS,
+  GATBAWI_SEAT_SIZE,
+  GATBAWI_Z,
+  MACHINE_SIZE,
+  MACHINE_SPOTS,
+  type MachineKind,
+  type MachineSpot,
+  PLATFORM,
+  PLAZA,
+  SEAT_YAWS,
+  STEPS,
+  WORLD_BOUNDS,
+  dharmaToWorld,
+  machineFootprint,
+  worldToDharma,
+} from "@dongjane/shared";
+import { BORROWS_PAVING, BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, CASINO_MESHES, CASINO_PROTOTYPES, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
+import { CASINO_COLUMNS, CASINO_KEEP_OUT, CASINO_PAD, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, FLOOR_Y, MACHINE_HEIGHT, PAVING_MARGIN } from "../src/game/casino-layout.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL, WALL_OPENINGS, WINDOW_BAND, type WindowWall } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
+import { GROUND_UNDER, SAND_Y } from "../src/game/shore.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW, lanternSpots, screenCorners, stageToWorld } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
 import { type Glb, type GlbNode, colors, imageBytes, jpegSize, loadGlb, positions, rootNodes } from "./glb.ts";
@@ -14,7 +42,7 @@ const TOLERANCE = 0.03;
 const COLOR_TOLERANCE = 0.004;
 
 const textured: readonly string[] = TEXTURED;
-const borrowsStone: readonly string[] = BORROWS_STONE;
+const borrowsStone: readonly string[] = [...BORROWS_STONE, ...BORROWS_PAVING];
 
 type MaterialToken = keyof typeof THEME.material;
 
@@ -54,7 +82,7 @@ function expectContract(glb: Glb, names: readonly string[]): GlbNode[] {
       expect(node.hasTexture, `${node.name} carries a texture`).toBe(true);
     } else if (borrowsStone.includes(node.name)) {
       expect(node.attributes, node.name).toEqual(expect.arrayContaining(["TEXCOORD_0", "COLOR_0"]));
-      expect(node.hasTexture, `${node.name} borrows the world's rock picture and carries none`).toBe(false);
+      expect(node.hasTexture, `${node.name} borrows the world's rock or paving picture and carries none`).toBe(false);
     } else {
       expect(node.attributes, node.name).toContain("COLOR_0");
       expect(node.hasTexture, `${node.name} is vertex coloured`).toBe(false);
@@ -737,15 +765,167 @@ describe("dharma.glb", () => {
   });
 });
 
+describe("casino.glb", () => {
+  const glb = loadGlb(new URL("casino.glb", MODELS));
+  const nodes = expectContract(glb, CASINO_MESHES);
+  const mesh = byName(nodes);
+  const near = (actual: number, expected: number, slack = TOLERANCE): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(slack);
+  // Each machine prototype stands for these kinds, once per spot the layout gives them.
+  const SERVES: Readonly<Record<string, readonly MachineKind[]>> = { slotCabinet: ["classic", "fiveReel", "luckySeven"], rouletteTable: ["roulette"], scratchKiosk: ["scratch"] };
+  const spotsOf = (name: string): readonly MachineSpot[] => MACHINE_SPOTS.filter((spot) => SERVES[name]?.includes(spot.kind));
+  const inside = (box: Bounds, x: number, z: number, slack = 0): boolean => x >= box.minX - slack && x <= box.maxX + slack && z >= box.minZ - slack && z <= box.maxZ + slack;
+
+  it("stays inside its size budget, counting every machine the game lays out", () => {
+    const prototypes: readonly string[] = CASINO_PROTOTYPES;
+    const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? spotsOf(node.name).length : 1), 0);
+    expect(triangles).toBeLessThanOrEqual(BUDGET.casino.tris);
+    expect(glb.bytes).toBeLessThanOrEqual(BUDGET.casino.bytes);
+  });
+
+  it("holds the carpet's picture and normal map and no other picture: the yard and the road wear the paving's", () => {
+    expect(glb.json.images ?? []).toHaveLength(2);
+    expect(BORROWS_PAVING).toEqual(["casinoYard", "coastRoad"]);
+    for (const name of BORROWS_PAVING) expect(mesh(name).hasTexture, name).toBe(false);
+    expect(mesh("casinoFloor").hasTexture).toBe(true);
+  });
+
+  it("builds the room the layout describes: the carpet over its whole floor, the ceiling and the walls at their heights", () => {
+    const floor = mesh("casinoFloor").positions;
+    near(floor.min[0], CASINO_ROOM.minX);
+    near(floor.max[0], CASINO_ROOM.maxX);
+    near(floor.min[2], CASINO_ROOM.minZ);
+    near(floor.max[2], CASINO_ROOM.maxZ);
+    near(floor.min[1], FLOOR_Y);
+    near(floor.max[1], FLOOR_Y);
+    for (const corner of [[CASINO_FLOOR.minX, CASINO_FLOOR.minZ], [CASINO_FLOOR.maxX, CASINO_FLOOR.maxZ]] as const) {
+      expect(inside(CASINO_ROOM, corner[0], corner[1]), "the walkable aisle lies on the carpet").toBe(true);
+    }
+    near(mesh("casinoCeiling").positions.max[1], CASINO_SHELL.ceilingY);
+    near(mesh("casinoWalls").positions.max[1], CASINO_SHELL.topY);
+    near(mesh("casinoRoof").positions.min[1], CASINO_SHELL.topY);
+    const shell = mesh("casinoFront").positions;
+    near(shell.min[0], CASINO_SHELL.minX);
+    near(shell.max[0], CASINO_SHELL.maxX);
+    near(mesh("casinoWalls").positions.min[0], CASINO_SHELL.minX, 0.3);
+    near(mesh("casinoWalls").positions.max[2], CASINO_SHELL.maxZ, 0.3);
+  });
+
+  it("stands the sign tower on the front wall, under the top the camera's keep-out box reaches", () => {
+    const { front, board } = { front: mesh("casinoFront").positions, board: mesh("casinoSign").positions };
+    expect(front.max[1]).toBeGreaterThanOrEqual(CASINO_TOP - TOLERANCE);
+    expect(front.max[1]).toBeLessThanOrEqual(CASINO_KEEP_OUT.maxY);
+    expect(mesh("casinoRoof").positions.max[1]).toBeLessThanOrEqual(CASINO_KEEP_OUT.maxY);
+    // The sign's marquee bulbs stand a little above the board's frame.
+    near(board.max[1], CASINO_SIGN.bottom + CASINO_SIGN.height, 0.3);
+    near((board.min[0] + board.max[0]) / 2, (CASINO_SHELL.minX + CASINO_SHELL.maxX) / 2, 0.5);
+    expect(board.max[0] - board.min[0], "the board is at least as wide as its frame").toBeGreaterThanOrEqual(CASINO_SIGN.halfWidth * 2);
+  });
+
+  it("has no door in the front wall: the doorway is open, as wide as the layout's door", () => {
+    const sill = CASINO_SHELL.doorHeight;
+    for (const name of ["casinoFront", "casinoWalls"]) {
+      const { values, count } = positions(glb, name);
+      for (let i = 0; i < count; i += 1) {
+        const x = values[i * 3] as number;
+        const y = values[i * 3 + 1] as number;
+        const z = values[i * 3 + 2] as number;
+        const inDoorway = x > CASINO_DOOR.minX + 0.05 && x < CASINO_DOOR.maxX - 0.05 && y > 0.1 && y < sill - 0.1 && z > CASINO_SHELL.minZ + 0.02 && z < CASINO_ROOM.minZ - 0.02;
+        expect(inDoorway, `${name} vertex ${i} at ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`).toBe(false);
+      }
+    }
+    const jambs = positions(glb, "casinoFront");
+    const atEdge = (edge: number): number => Array.from({ length: jambs.count }, (_, i) => i).filter((i) => Math.abs((jambs.values[i * 3] as number) - edge) <= 0.01 && (jambs.values[i * 3 + 1] as number) > 0.1 && (jambs.values[i * 3 + 1] as number) < sill - 0.1).length;
+    expect(atEdge(CASINO_DOOR.minX), "the wall stands at the west jamb").toBeGreaterThan(0);
+    expect(atEdge(CASINO_DOOR.maxX), "the wall stands at the east jamb").toBeGreaterThan(0);
+  });
+
+  it("authors each machine at the origin, as deep and as tall as the layout says and about as wide", () => {
+    const sizes: Readonly<Record<string, { kind: MachineKind; height: number }>> = {
+      slotCabinet: { kind: "classic", height: MACHINE_HEIGHT.slot },
+      rouletteTable: { kind: "roulette", height: MACHINE_HEIGHT.roulette },
+      scratchKiosk: { kind: "scratch", height: MACHINE_HEIGHT.scratch },
+    };
+    for (const [name, { kind, height }] of Object.entries(sizes)) {
+      const { min, max } = mesh(name).positions;
+      const size = MACHINE_SIZE[kind];
+      near(max[2] - min[2], size.depth, 0.1);
+      // A lever, a wheel or a hood may stand a little outside the footprint's width.
+      expect(max[0] - min[0], `${name} is as wide as its kind`).toBeGreaterThanOrEqual(size.width - 0.1);
+      expect(max[0] - min[0], `${name} is not much wider`).toBeLessThanOrEqual(size.width + 0.3);
+      expect(Math.abs((min[2] + max[2]) / 2), `${name} is centred on its depth`).toBeLessThanOrEqual(0.1);
+      expect(min[1], `${name} stands on the floor`).toBeGreaterThanOrEqual(-0.01);
+      expect(min[1]).toBeLessThanOrEqual(0.02);
+      expect(max[1], `${name} is at least as tall as its kind`).toBeGreaterThanOrEqual(height - TOLERANCE);
+      expect(max[1], `${name} is not much taller`).toBeLessThanOrEqual(height + 0.3);
+    }
+  });
+
+  it("keeps every machine and column inside the room, the columns clear of the machines", () => {
+    for (const spot of MACHINE_SPOTS) {
+      const footprint = machineFootprint(spot);
+      expect(inside(CASINO_ROOM, footprint.minX, footprint.minZ) && inside(CASINO_ROOM, footprint.maxX, footprint.maxZ), `machine ${spot.id} is inside the walls`).toBe(true);
+      expect(inside(CASINO_FLOOR, footprint.minX, footprint.minZ) || inside(CASINO_FLOOR, footprint.maxX, footprint.maxZ), `machine ${spot.id} stays out of the aisle`).toBe(false);
+    }
+    for (const column of CASINO_COLUMNS) {
+      expect(inside(CASINO_ROOM, column.x, column.z, -column.radius)).toBe(true);
+      expect(inside(CASINO_FLOOR, column.x, column.z, column.radius), "a column does not stand in the aisle").toBe(false);
+      for (const spot of MACHINE_SPOTS) {
+        const box = machineFootprint(spot);
+        expect(inside(box, column.x, column.z, column.radius), `column at ${column.x}, ${column.z} against ${spot.id}`).toBe(false);
+      }
+    }
+    const { min, max } = mesh("casinoColumns").positions;
+    for (const column of CASINO_COLUMNS) {
+      expect(min[0], `a column at ${column.x}`).toBeLessThanOrEqual(column.x - column.radius + TOLERANCE);
+      expect(max[0]).toBeGreaterThanOrEqual(column.x + column.radius - TOLERANCE);
+    }
+    near(max[1], CASINO_SHELL.ceilingY);
+  });
+
+  it("paves the road and the yard out past their walkable edges, and under the doorsill", () => {
+    const road = mesh("coastRoad").positions;
+    const yard = mesh("casinoYard").positions;
+    near(road.min[0], COAST_ROAD.minX - PAVING_MARGIN, 0.05);
+    near(road.max[0], COAST_ROAD.maxX + PAVING_MARGIN, 0.05);
+    expect(road.min[2], "the road starts inside the shore's sand").toBeLessThan(COAST_ROAD.minZ);
+    near(road.max[2], COAST_ROAD.maxZ, 0.05);
+    near(yard.min[0], CASINO_YARD.minX - PAVING_MARGIN, 0.05);
+    near(yard.max[0], CASINO_YARD.maxX + PAVING_MARGIN, 0.05);
+    near(yard.min[2], CASINO_YARD.minZ, 0.05);
+    expect(yard.max[2], "the yard runs through the thickness of the front wall to the carpet").toBeGreaterThanOrEqual(CASINO_ROOM.minZ - TOLERANCE);
+    for (const paving of [road, yard]) expect(paving.min[1], "paving lies above the pad").toBeGreaterThan(CASINO_PAD.y + 0.03);
+  });
+
+  it("stands on the level pad world.glb presses into the hillside, at the height the shore's sand lies at", () => {
+    expect(CASINO_PAD.y).toBeCloseTo(SAND_Y - GROUND_UNDER, 6);
+    const ground = positions(loadGlb(new URL("world.glb", MODELS)), "ground");
+    let flat = 0;
+    for (let i = 0; i < ground.count; i += 1) {
+      const x = ground.values[i * 3] as number;
+      const z = ground.values[i * 3 + 2] as number;
+      if (!CASINO_PAD.boxes.some((box) => inside(box, x, z))) continue;
+      flat += 1;
+      near(ground.values[i * 3 + 1] as number, CASINO_PAD.y, 0.005);
+    }
+    expect(flat, "the terrain has vertices on the pad").toBeGreaterThan(50);
+  });
+
+  it("paints vertices in linear light, never as sRGB", () => {
+    expectLinearColors(glb, nodes, { casinoNeon: "casinoNeonPink", casinoSign: "casinoCream", casinoFront: "gilt", casinoColumns: "casinoBlack", rouletteTable: "woodDark", slotCabinet: "casinoRed", scratchKiosk: "casinoRed" });
+    expectLinearColors(glb, [], { casinoNeon: "casinoNeonCyan" });
+  });
+});
+
 describe("the model set", () => {
-  // Every glb is loaded before the first frame, dharma.glb (the 법당's inside) too; it also has a byte budget of its own.
+  // Every glb is loaded before the first frame, dharma.glb (the 법당's inside) and casino.glb (far down the coast) too; each also has a byte budget of its own.
   const OUTDOOR = ["buddha.glb", "gatbawi.glb", "venue.glb", "world.glb"];
   const INDOOR = ["dharma.glb"];
+  const FAR = ["casino.glb"];
   // main.ts loads the Korean monk beside the models above, before the first frame: it counts too, though main's own script builds it.
   const MONK = new URL("../assets/monk/monk.glb", import.meta.url);
 
   it("fits the total byte budget, counted in the files' actual sizes and with the monk", () => {
-    const total = [...OUTDOOR, ...INDOOR].reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
+    const total = [...OUTDOOR, ...INDOOR, ...FAR].reduce((sum, file) => sum + statSync(new URL(file, MODELS)).size, statSync(MONK).size);
     expect(total).toBeLessThanOrEqual(BUDGET.totalBytes);
   });
 
@@ -755,7 +935,7 @@ describe("the model set", () => {
 
   it("stores no picture twice among the files the game loads", () => {
     const seen = new Map<string, string>();
-    for (const file of [...OUTDOOR, ...INDOOR]) {
+    for (const file of [...OUTDOOR, ...INDOOR, ...FAR]) {
       for (const [index, bytes] of imageBytes(loadGlb(new URL(file, MODELS))).entries()) {
         const hash = createHash("sha256").update(bytes).digest("hex");
         expect(seen.get(hash), `${file} image ${index} is already in ${seen.get(hash)}`).toBeUndefined();
@@ -766,6 +946,6 @@ describe("the model set", () => {
   });
 
   it("has no glb the game does not load", () => {
-    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual([...OUTDOOR, ...INDOOR].sort());
+    expect(readdirSync(MODELS).filter((file) => file.endsWith(".glb")).sort()).toEqual([...OUTDOOR, ...INDOOR, ...FAR].sort());
   });
 });

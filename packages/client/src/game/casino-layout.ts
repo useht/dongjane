@@ -89,11 +89,11 @@ export const CASINO_LAMPS = {
   sign: [[11.25, 7.2, 36.6]],
 } as const;
 
-export const CASINO_LIGHT = { gold: { intensity: 9, distance: 11 }, neon: { intensity: 6, distance: 7 }, sign: { intensity: 14, distance: 14 }, decay: 2 } as const;
+export const CASINO_LIGHT = { gold: { intensity: 9, distance: 11 }, neon: { intensity: 6, distance: 7 }, sign: { intensity: 36, distance: 16 }, decay: 2 } as const;
 
 // Where the camera may be while the followed visitor is inside: over the whole room, from just above the floor to well above
 // the (hidden) roof, so the cutaway shows the machines from above. The shell, which the camera must not enter from outside,
-// reaches from just under the ground to the top of the sign's eave.
+// reaches from just under the ground to over the ridge of the sign's eave, which stands a little above CASINO_TOP.
 export const CASINO_CAMERA_BOUNDS = {
   minX: CASINO_ROOM.minX + 0.1,
   maxX: CASINO_ROOM.maxX - 0.1,
@@ -107,7 +107,7 @@ export const CASINO_KEEP_OUT = {
   minX: CASINO_SHELL.minX,
   maxX: CASINO_SHELL.maxX,
   minY: -1,
-  maxY: CASINO_TOP,
+  maxY: CASINO_TOP + 0.3,
   minZ: CASINO_SHELL.minZ,
   maxZ: CASINO_SHELL.maxZ,
 } as const;
@@ -119,4 +119,13 @@ export function insideBounds(box: Bounds, x: number, z: number): boolean {
 // How far (x, z) is from the rectangle: zero on it and inside it.
 export function distanceToBounds(box: Bounds, x: number, z: number): number {
   return Math.hypot(Math.max(box.minX - x, 0, x - box.maxX), Math.max(box.minZ - z, 0, z - box.maxZ));
+}
+
+// How near a visitor must come before the casino lights up for them: all the way within `full` metres of the walls, not at all
+// beyond `none`. The lamps stay in the scene all the time; this only turns them up.
+export const CASINO_NEAR = { full: 4, none: 26 } as const;
+
+export function casinoNearness(x: number, z: number): number {
+  const t = Math.min(1, Math.max(0, (distanceToBounds(CASINO_SHELL, x, z) - CASINO_NEAR.full) / (CASINO_NEAR.none - CASINO_NEAR.full)));
+  return 1 - t * t * (3 - 2 * t);
 }

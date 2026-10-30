@@ -69,7 +69,7 @@ const SUN_DISTANCE = 58;
 
 // The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted. The scanned
 // Buddha is only a grey picture of light and shade, tinted granite, and is lifted the same way.
-const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
+export const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
 
 // The paper lanterns glow a little by day and fully at night.
 const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;

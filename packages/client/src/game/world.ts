@@ -3,7 +3,9 @@ import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_COUNT, SEAT_COUNT, type SkyState, WORLD_
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
-import { CameraRig, DHARMA_KEEP_OUTS, configureCamera, pointInRoom, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
+import { CameraRig, KEEP_OUTS, casinoRegion, configureCamera, pointInRoom, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
+import { CASINO_FOG, CasinoScene } from "./casino.ts";
+import { CASINO_SHELL, casinoNearness, insideBounds } from "./casino-layout.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
 import { aimThroughCamera, pickFloor } from "./floor-pick.ts";
@@ -76,7 +78,9 @@ const REGION_BLEND_SECONDS = 0.5;
 // Every visit starts where ARRIVAL puts the monk, so the camera, the light and the sounds start in that part of the world too.
 export const START_ZONE: Zone = zoneAt(ARRIVAL.x, ARRIVAL.z);
 
+const smooth = (t: number): number => t * t * (3 - 2 * t);
 const indoorOf = (zone: Zone): number => (zone === "dharma" ? 1 : 0);
+const casinoOf = (inside: boolean): number => (inside ? 1 : 0);
 
 export class World {
   readonly scene = new Scene();
@@ -92,13 +96,19 @@ export class World {
   private area: Zone = START_ZONE;
   // How far the light has gone over from the open ground's to the room's, 0 to 1, moving toward the area at a steady pace.
   private indoor = indoorOf(START_ZONE);
+  // The casino has no zone of its own (it is open ground to the rules); the camera is in it once the followed monk is between its
+  // walls. `casinoIn` is the same kind of share as `indoor`, for the casino's light and air.
+  private inCasino = false;
+  private casinoIn = casinoOf(false);
   private readonly occupied: Record<Zone, ReadonlySet<number>> = { gatbawi: new Set(), dharma: new Set() };
   private readonly renderer: WebGLRenderer;
   private readonly background = new Color(packRgb(DAY_LOOK.fogColor));
   private readonly fog = new Fog(packRgb(DAY_LOOK.fogColor), DAY_LOOK.fogNear, DAY_LOOK.fogFar);
   private readonly landscape: Landscape;
   private readonly dharma: DharmaScene;
+  private readonly casino: CasinoScene;
   private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
+  private readonly casinoColor = new Color(THEME.scene.casinoBackground);
   private readonly pool: MonkPool;
   private readonly entries = new Map<string, Entry>();
   private readonly jumps = new JumpTracker();
@@ -159,10 +169,12 @@ export class World {
     this.dharma = new DharmaScene(this.renderer, this.quality, assets.models.dharma, assets.models.buddha.buddha, assets.models.venue.lantern);
     this.dharma.setPresence(this.indoorShare());
     this.scene.add(this.dharma.group);
+    this.casino = new CasinoScene(assets.models.casino, assets.models.world.ground, this.quality);
+    this.scene.add(this.casino.group);
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
-    this.rig = new CameraRig(this.camera, region.bounds, region.limits, DHARMA_KEEP_OUTS);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits, KEEP_OUTS);
     this.resetCamera();
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 
@@ -192,7 +204,7 @@ export class World {
     if (rect.width <= 0 || rect.height <= 0) return null;
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
     aimThroughCamera(this.raycaster, this.ndc, this.camera);
-    const hit = pickFloor(this.raycaster, [this.landscape.surfaces, this.dharma.surfaces]);
+    const hit = pickFloor(this.raycaster, [this.landscape.surfaces, this.dharma.surfaces, this.casino.surfaces]);
     return hit ? { x: hit.x, z: hit.z } : null;
   }
 
@@ -224,9 +236,20 @@ export class World {
   private setArea(zone: Zone): void {
     if (zone === this.area) return;
     this.area = zone;
-    const region = regionFor(zone);
-    this.rig.setRegion(region.bounds, region.limits, REGION_BLEND_SECONDS);
+    this.applyRegion();
     this.callbacks.onZone(zone);
+  }
+
+  private setInCasino(inside: boolean): void {
+    if (inside === this.inCasino) return;
+    this.inCasino = inside;
+    this.applyRegion();
+  }
+
+  // The camera's box and zoom range: the casino's room while the monk is inside it, otherwise the part of the world the area names.
+  private applyRegion(): void {
+    const region = this.inCasino ? casinoRegion() : regionFor(this.area);
+    this.rig.setRegion(region.bounds, region.limits, REGION_BLEND_SECONDS);
   }
 
   setReduceMotion(value: boolean): void {
@@ -359,8 +382,10 @@ export class World {
     this.selfPrediction = null;
     this.clock.reset();
     for (const zone of ZONES) this.setOccupancy(zone, new Set());
+    this.setInCasino(false);
     this.setArea(START_ZONE);
     this.indoor = indoorOf(START_ZONE);
+    this.casinoIn = casinoOf(false);
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
   }
 
@@ -389,7 +414,7 @@ export class World {
   // Where the concert screen's corners are on the canvas (bottom-left, bottom-right, top-right, top-left), or null
   // when the camera is inside the 법당 or any corner is behind the camera. The points are reused between calls.
   screenQuad(): Quad | null {
-    if (this.area !== "gatbawi") return null;
+    if (this.area !== "gatbawi" || this.inCasino) return null;
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     for (let i = 0; i < this.screenCorners.length; i += 1) {
@@ -416,6 +441,7 @@ export class World {
     this.resizeObserver.disconnect();
     this.clear();
     this.pool.dispose();
+    this.casino.dispose();
     this.dharma.dispose();
     this.landscape.dispose();
     this.assets.dispose();
@@ -434,7 +460,7 @@ export class World {
   }
 
   private indoorShare(): number {
-    return this.indoor * this.indoor * (3 - 2 * this.indoor);
+    return smooth(this.indoor);
   }
 
   // The camera is in the room itself, not just following someone who is: only then are the front wall and the roof in the way.
@@ -442,14 +468,18 @@ export class World {
     return pointInRoom(this.camera.position);
   }
 
-  // The air, the lights and the colour behind the world go over from the open ground's to the room's as the share rises.
-  private applyAtmosphere(share: number): void {
+  // The air, the lights and the colour behind the world go over from the open ground's to the room's as the share rises, and from
+  // there to the casino's as the casino's share does.
+  private applyAtmosphere(share: number, casinoShare: number): void {
     const look = this.landscape.look;
-    this.background.setHex(packRgb(look.fogColor)).lerp(this.indoorColor, share);
+    const dharmaShare = share * (1 - casinoShare);
+    this.background.setHex(packRgb(look.fogColor)).lerp(this.indoorColor, dharmaShare).lerp(this.casinoColor, casinoShare);
     this.fog.color.copy(this.background);
-    this.fog.near = look.fogNear + (DHARMA_FOG.near - look.fogNear) * share;
-    this.fog.far = look.fogFar + (DHARMA_FOG.far - look.fogFar) * share;
-    this.landscape.setIndoor(share);
+    const near = look.fogNear + (DHARMA_FOG.near - look.fogNear) * dharmaShare;
+    const far = look.fogFar + (DHARMA_FOG.far - look.fogFar) * dharmaShare;
+    this.fog.near = near + (CASINO_FOG.near - near) * casinoShare;
+    this.fog.far = far + (CASINO_FOG.far - far) * casinoShare;
+    this.landscape.setIndoor(Math.max(share, casinoShare));
     this.dharma.setPresence(share);
   }
 
@@ -502,7 +532,10 @@ export class World {
     }
 
     const self = this.selfId ? this.entries.get(this.selfId) : undefined;
-    if (self) this.setArea(zoneAt(self.x, self.z));
+    if (self) {
+      this.setArea(zoneAt(self.x, self.z));
+      this.setInCasino(insideBounds(CASINO_SHELL, self.x, self.z));
+    }
     for (const entry of this.entries.values()) {
       entry.avatar.hidden = entry !== self && zoneAt(entry.x, entry.z) !== this.area;
     }
@@ -519,10 +552,16 @@ export class World {
     const wanted = indoorOf(this.area);
     const step = this.reduceMotion ? 1 : dt / REGION_BLEND_SECONDS;
     this.indoor = wanted > this.indoor ? Math.min(wanted, this.indoor + step) : Math.max(wanted, this.indoor - step);
+    const casinoWanted = casinoOf(this.inCasino);
+    this.casinoIn = casinoWanted > this.casinoIn ? Math.min(casinoWanted, this.casinoIn + step) : Math.max(casinoWanted, this.casinoIn - step);
+    const casinoShare = smooth(this.casinoIn);
     this.landscape.setCutaway(this.area === "dharma" && !this.cameraInRoom());
-    this.applyAtmosphere(this.indoorShare());
+    this.casino.setCutaway(this.inCasino, this.camera.position.y);
+    this.casino.setPresence(casinoShare, casinoNearness(this.rig.focusPoint.x, this.rig.focusPoint.z));
+    this.applyAtmosphere(this.indoorShare(), casinoShare);
     this.landscape.update(this.time, dt, this.camera, this.reduceMotion, this.rig.focusPoint);
     this.dharma.update(this.time, this.camera, this.reduceMotion);
+    this.casino.update(this.time, this.reduceMotion);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onRendered(nowMs);
 

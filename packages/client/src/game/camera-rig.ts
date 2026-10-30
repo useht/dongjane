@@ -1,5 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
 import { DHARMA_YAW, type Zone, dharmaToWorld, worldToDharma } from "@dongjane/shared";
+import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT } from "./casino-layout.ts";
 import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
@@ -70,6 +71,7 @@ export interface RigLimits {
 
 const GATBAWI_LIMITS: RigLimits = { minDistance: 2.6, maxDistance: 22, minPitch: 0.16, maxPitch: 1.3 };
 const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 12, minPitch: 0.16, maxPitch: 1.3 };
+const CASINO_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 14, minPitch: 0.16, maxPitch: 1.3 };
 
 // How far the lens keeps from anything the room draws.
 export const CAMERA_CLEARANCE = 0.3;
@@ -120,6 +122,10 @@ export const DHARMA_PILLARS_KEEP_OUT: readonly Box[] = FRONT_PILLARS_X.map((x) =
 // Everything a camera inside the 법당 is held back from.
 export const DHARMA_KEEP_OUTS: readonly Box[] = [DHARMA_KEEP_OUT, ...DHARMA_PILLARS_KEEP_OUT];
 
+// Everything a camera on the open ground is held back from: the 법당 and the casino, whose shell reaches up to its sign. A camera
+// whose monk is inside one of them is already in its box and is not held back by it.
+export const KEEP_OUTS: readonly Box[] = [...DHARMA_KEEP_OUTS, CASINO_KEEP_OUT];
+
 // How far short of a keep-out box the camera stops.
 const KEEP_OUT_MARGIN = 0.4;
 
@@ -152,6 +158,11 @@ export function regionFor(zone: Zone): { bounds: Box; limits: RigLimits } {
   return zone === "dharma"
     ? { bounds: DHARMA_CAMERA_BOUNDS, limits: DHARMA_LIMITS }
     : { bounds: LANDSCAPE_BOUNDS, limits: GATBAWI_LIMITS };
+}
+
+// While the followed visitor is inside the casino the camera has the whole room, up over its (hidden) roof.
+export function casinoRegion(): { bounds: Box; limits: RigLimits } {
+  return { bounds: CASINO_CAMERA_BOUNDS, limits: CASINO_LIMITS };
 }
 
 export interface Lens {
