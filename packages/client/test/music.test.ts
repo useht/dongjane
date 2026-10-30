@@ -194,7 +194,38 @@ const flush = async (): Promise<void> => {
   for (let i = 0; i < 4; i += 1) await Promise.resolve();
 };
 
-function rig(refuse = false) {
+interface FakeScreenLock {
+  released: boolean;
+  release: ReturnType<typeof vi.fn>;
+}
+
+function fakeScreenLock(): FakeScreenLock {
+  const lock: FakeScreenLock = {
+    released: false,
+    release: vi.fn(async () => {
+      lock.released = true;
+    }),
+  };
+  return lock;
+}
+
+function fakeWakeLocks(answer?: () => Promise<FakeScreenLock>) {
+  const granted: FakeScreenLock[] = [];
+  const request = vi.fn((_type: string) => {
+    if (answer) return answer();
+    const lock = fakeScreenLock();
+    granted.push(lock);
+    return Promise.resolve(lock);
+  });
+  const held = (): FakeScreenLock => {
+    const lock = granted[0];
+    if (!lock) throw new Error("no lock was granted");
+    return lock;
+  };
+  return { request, held };
+}
+
+function rig(refuse = false, wake?: ReturnType<typeof fakeWakeLocks>) {
   let clock = 0;
   let server = 1_000_000;
   const targets: number[] = [];
@@ -208,7 +239,11 @@ function rig(refuse = false) {
   const listeners: Array<() => void> = [];
   const engine = { context: ctx, output: {}, unlocked: true, onUnlock: (fn: () => void) => void listeners.push(fn) };
   const audio = fakeAudio(refuse);
-  const loop = new SyncedLoop(engine as never, () => server, "sutra.mp3", { now: () => clock, createAudio: () => audio as never });
+  const loop = new SyncedLoop(engine as never, () => server, "sutra.mp3", {
+    now: () => clock,
+    createAudio: () => audio as never,
+    wakeLock: () => wake as never,
+  });
   return {
     loop,
     audio,
@@ -225,8 +260,8 @@ function rig(refuse = false) {
 
 describe("SyncedLoop", () => {
   let current: ReturnType<typeof rig> | null = null;
-  const start = (refuse = false) => {
-    current = rig(refuse);
+  const start = (refuse = false, wake?: ReturnType<typeof fakeWakeLocks>) => {
+    current = rig(refuse, wake);
     return current;
   };
   afterEach(() => {
@@ -450,5 +485,69 @@ describe("SyncedLoop", () => {
     await flush();
     expect(t.audio.play).toHaveBeenCalledTimes(1);
     expect(t.loop.playing).toBe(false);
+  });
+
+  it("holds the screen while the loop plays and lets it go when the loop stops", async () => {
+    const wake = fakeWakeLocks();
+    const t = start(false, wake);
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    expect(wake.request).toHaveBeenCalledTimes(1);
+    expect(wake.request).toHaveBeenCalledWith("screen");
+    expect(wake.held().release).not.toHaveBeenCalled();
+    t.loop.setActive(false);
+    expect(wake.held().release).toHaveBeenCalledTimes(1);
+    expect(wake.request).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks again after the browser released the lock while the loop still plays", async () => {
+    const wake = fakeWakeLocks();
+    const t = start(false, wake);
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    expect(wake.request).toHaveBeenCalledTimes(1);
+    wake.held().released = true;
+    t.loop.tick();
+    await flush();
+    expect(wake.request).toHaveBeenCalledTimes(2);
+    expect(t.loop.playing).toBe(true);
+  });
+
+  it("releases a lock that arrives after the loop has already stopped", async () => {
+    let arrive: (lock: FakeScreenLock) => void = () => undefined;
+    const late = fakeScreenLock();
+    const wake = fakeWakeLocks(() => new Promise<FakeScreenLock>((resolve) => void (arrive = resolve)));
+    const t = start(false, wake);
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    expect(wake.request).toHaveBeenCalledTimes(1);
+    t.loop.setActive(false);
+    arrive(late);
+    await flush();
+    expect(late.release).toHaveBeenCalledTimes(1);
+    expect(wake.request).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask for a second lock while one request is still pending", async () => {
+    let arrive: (lock: FakeScreenLock) => void = () => undefined;
+    const wake = fakeWakeLocks(() => new Promise<FakeScreenLock>((resolve) => void (arrive = resolve)));
+    const t = start(false, wake);
+    t.loop.setActive(true);
+    t.loop.setMix(1);
+    t.gesture();
+    await flush();
+    t.loop.tick();
+    t.loop.tick();
+    expect(wake.request).toHaveBeenCalledTimes(1);
+    arrive(fakeScreenLock());
+    await flush();
+    t.loop.tick();
+    expect(wake.request).toHaveBeenCalledTimes(1);
   });
 });

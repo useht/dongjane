@@ -67,10 +67,20 @@ export const QUIET_PAUSE_MS = 20_000;
 export const SUTRA_LEVEL = 1.4;
 const GAIN_SMOOTHING_SECONDS = 0.4;
 
+interface ScreenLock {
+  readonly released: boolean;
+  release(): Promise<void>;
+}
+
+interface ScreenWakeLocks {
+  request(type: "screen"): Promise<ScreenLock>;
+}
+
 export interface SyncedLoopOptions {
   seconds?: number;
   now?: () => number;
   createAudio?: (url: string) => HTMLAudioElement;
+  wakeLock?: () => ScreenWakeLocks | undefined;
 }
 
 // The chant, looped. It runs through the engine's ambience bus, so the one volume slider and the one sound switch also
@@ -85,9 +95,13 @@ export class SyncedLoop {
   private primed = false;
   private starting = false;
   private timer: ReturnType<typeof setInterval> | undefined;
+  private screenLock: ScreenLock | null = null;
+  private screenWanted = false;
+  private screenAsked = false;
   private readonly seconds: number;
   private readonly now: () => number;
   private readonly createAudio: (url: string) => HTMLAudioElement;
+  private readonly wakeLock: () => ScreenWakeLocks | undefined;
 
   constructor(
     private readonly engine: AudioEngine,
@@ -98,6 +112,12 @@ export class SyncedLoop {
     this.seconds = options.seconds ?? SUTRA_SECONDS;
     this.now = options.now ?? (() => performance.now());
     this.createAudio = options.createAudio ?? ((source) => new Audio(source));
+    this.wakeLock =
+      options.wakeLock ??
+      (() => {
+        const scope = globalThis as unknown as { navigator?: { wakeLock?: ScreenWakeLocks } };
+        return scope.navigator?.wakeLock;
+      });
     engine.onUnlock(() => this.prime());
   }
 
@@ -140,6 +160,7 @@ export class SyncedLoop {
     clearInterval(this.timer);
     this.timer = undefined;
     this.audio?.pause();
+    this.holdScreen(false);
     this.audio = null;
     this.gain = null;
   }
@@ -204,6 +225,35 @@ export class SyncedLoop {
       clearInterval(this.timer);
       this.timer = undefined;
     }
+    this.holdScreen(wanted && !audio.paused);
+  }
+
+  // iPhone Safari suspends the chant's audio when the screen locks, so the screen stays awake while it plays.
+  private holdScreen(on: boolean): void {
+    this.screenWanted = on;
+    if (!on) {
+      const lock = this.screenLock;
+      this.screenLock = null;
+      if (lock) void lock.release().catch(() => undefined);
+      return;
+    }
+    if (this.screenLock && !this.screenLock.released) return;
+    this.screenLock = null;
+    const locks = this.wakeLock();
+    if (!locks || this.screenAsked) return;
+    this.screenAsked = true;
+    locks
+      .request("screen")
+      .then(
+        (lock) => {
+          if (this.screenWanted) this.screenLock = lock;
+          else void lock.release().catch(() => undefined);
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        this.screenAsked = false;
+      });
   }
 
   private async start(audio: HTMLAudioElement): Promise<void> {
