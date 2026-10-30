@@ -154,7 +154,7 @@ export class RouletteView implements MachineView {
     this.host.sounds.click();
     this.last = null;
     this.note.textContent = "";
-    for (const { node } of this.places.values()) node.classList.remove("hit");
+    this.clearHits();
     this.root.classList.remove("win", "lose");
     this.headline.textContent = "돌리는 중…";
     delete this.headline.dataset.color;
@@ -198,6 +198,7 @@ export class RouletteView implements MachineView {
       this.note.textContent = "엽전이 모자라요.";
     } else if (this.slip.add(target, chip, wallet)) {
       this.host.sounds.click();
+      this.clearHits();
       this.note.textContent = "";
     } else {
       this.note.textContent = this.refusal(target, chip);
@@ -207,9 +208,16 @@ export class RouletteView implements MachineView {
 
   private take(change: () => boolean): void {
     if (this.run) return;
-    if (change()) this.host.sounds.click();
+    if (change()) {
+      this.host.sounds.click();
+      this.clearHits();
+    }
     this.note.textContent = "";
     this.refresh();
+  }
+
+  private clearHits(): void {
+    for (const { node } of this.places.values()) node.classList.remove("hit");
   }
 
   // Why a chip was turned away, in words. The rules themselves are the slip's (and the shared ones behind it).
