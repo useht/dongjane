@@ -65,6 +65,11 @@ export class AudioEngine {
     return this.ambience;
   }
 
+  // Short effects from other modules (the casino's) join the effects bus, so the effect volume covers them.
+  get effectsOutput(): AudioNode | null {
+    return this.effects;
+  }
+
   // Called each time the context starts running, which is when a browser first lets sound out after a gesture.
   onUnlock(listener: () => void): void {
     this.unlockListeners.add(listener);
