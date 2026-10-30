@@ -689,15 +689,15 @@ export class App {
   }
 
   private bindAudioUnlock(): void {
+    let stageReady = false;
+    // Every gesture stays bound: a context the browser suspended or interrupted later is resumed by the next tap.
     const unlock = (): void => {
       this.audio.unlock();
-      this.stage.userGesture();
-      this.sutra.prime();
-      if (this.audio.unlocked) {
-        window.removeEventListener("pointerdown", unlock, true);
-        window.removeEventListener("keydown", unlock, true);
-        window.removeEventListener("touchend", unlock, true);
+      if (!stageReady) {
+        this.stage.userGesture();
+        stageReady = this.audio.unlocked;
       }
+      this.sutra.prime();
     };
     window.addEventListener("pointerdown", unlock, true);
     window.addEventListener("keydown", unlock, true);
