@@ -16,6 +16,7 @@ import {
   buildSea,
   carveGround,
   carvedGroundHeight,
+  duneWeight,
   sandAlpha,
   seaDepth,
   withoutEastHillside,
@@ -34,6 +35,10 @@ function worldGeometry(glb: Glb, name: string): BufferGeometry {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(readAccessor(glb, primitive.attributes.POSITION as number).values, 3));
   geometry.setAttribute("normal", new Float32BufferAttribute(readAccessor(glb, primitive.attributes.NORMAL as number).values, 3));
+  if (primitive.attributes.COLOR_0 !== undefined) {
+    const color = readAccessor(glb, primitive.attributes.COLOR_0);
+    geometry.setAttribute("color", new Float32BufferAttribute(color.values, color.size));
+  }
   if (primitive.indices !== undefined) geometry.setIndex(readAccessor(glb, primitive.indices).values);
   return geometry;
 }
@@ -143,6 +148,58 @@ describe("cutting the shore into the baked ground", () => {
     for (let i = 0; i < position.count; i += 1) {
       if (position.getX(i) > PLAZA.maxX && position.getX(i) < SEA_AREA.maxX) expect(normal.getY(i)).toBeGreaterThan(0.2);
     }
+  });
+});
+
+describe("the hillside's tone beside the shore", () => {
+  it("takes on none of the sand's tone under the plaza's paving and all of it under and right beside the sand", () => {
+    for (const z of [-40, 0, 6, 16, 50]) {
+      for (const x of [-60, 0, PLAZA.maxX]) expect(duneWeight(x, z)).toBe(0);
+    }
+    for (let x = PLAZA.maxX + 1.2; x <= SAND_AREA.maxX; x += 0.5) {
+      for (let z = SAND_AREA.minZ; z <= SAND_AREA.maxZ; z += 1.5) expect(duneWeight(x, z)).toBe(1);
+    }
+  });
+
+  it("fades out smoothly with the distance from the sand, until the baked forest floor is all there is", () => {
+    for (const [dx, dz] of [[1, 0], [0, 1], [0, -1], [0.7, 0.7]] as const) {
+      const ax = dz === 0 ? SAND_AREA.maxX : PLAZA.maxX + 4;
+      const az = dz === 0 ? 6 : dz > 0 ? SAND_AREA.maxZ : SAND_AREA.minZ;
+      let last = 1;
+      for (let away = 0.5; away <= 40; away += 0.5) {
+        const weight = duneWeight(ax + dx * away, az + dz * away);
+        expect(weight).toBeLessThanOrEqual(last + 1e-9);
+        expect(last - weight).toBeLessThan(0.12);
+        last = weight;
+      }
+      expect(last).toBe(0);
+    }
+  });
+
+  it("recolours a copy of the real ground toward the sand, and leaves the plaza and the far forest floor as baked", () => {
+    const ground = worldGeometry(world, "ground");
+    const baked = ground.getAttribute("color").array.slice() as Float32Array;
+    const carved = carveGround(ground);
+    expect(ground.getAttribute("color").array).toEqual(baked);
+    const position = carved.getAttribute("position");
+    const color = carved.getAttribute("color");
+    const bright = (r: number, g: number, b: number): number => r + g + b;
+    let tinted = 0;
+    for (let i = 0; i < position.count; i += 1) {
+      const x = position.getX(i);
+      const z = position.getZ(i);
+      const weight = duneWeight(x, z);
+      const before = bright(baked[i * color.itemSize] as number, baked[i * color.itemSize + 1] as number, baked[i * color.itemSize + 2] as number);
+      const after = bright(color.getX(i), color.getY(i), color.getZ(i));
+      if (weight === 0) {
+        for (let c = 0; c < color.itemSize; c += 1) expect(color.getComponent(i, c)).toBe(baked[i * color.itemSize + c]);
+      } else if (weight === 1) {
+        tinted += 1;
+        expect(after).toBeGreaterThan(before);
+        expect(color.getX(i)).toBeGreaterThan(color.getZ(i));
+      }
+    }
+    expect(tinted).toBeGreaterThan(20);
   });
 });
 

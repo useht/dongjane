@@ -19,6 +19,8 @@ export const GROUND_UNDER = 0.06;
 const SHOULDER_SLOPE = 0.35;
 const SHOULDER_EASE = 6;
 const CARVE_EDGE = 1.2;
+const DUNE_REACH = 26;
+const DUNE_SHADE = 1.7;
 const SAND_STEP = 0.5;
 const SAND_FADE = 1.5;
 const WET_REACH = 2.2;
@@ -53,18 +55,37 @@ export function carvedGroundHeight(x: number, z: number, natural: number): numbe
   return natural + weight * (Math.min(natural, limit) - natural);
 }
 
+// How much of the sand's own tone the ground takes on: all of it under and right beside the sand, so the sand's fading edge has no
+// seam to show, and none of it DUNE_REACH metres out, where the baked forest floor takes over again. The hillside the shore is cut
+// from is baked dark for the shade of its trees, which no longer stand there.
+export function duneWeight(x: number, z: number): number {
+  const { maxX, minZ, maxZ } = SAND_AREA;
+  const outside = Math.hypot(Math.max(0, x - maxX), Math.max(0, minZ - z, z - maxZ));
+  return smoothstep(PLAZA.maxX, PLAZA.maxX + CARVE_EDGE, x) * (1 - smoothstep(0, DUNE_REACH, outside));
+}
+
 // A copy of the ground with the shore cut into it. Only normals of vertices the cut reaches are redone, so the rest of the
 // ground shades exactly as it was baked.
 export function carveGround(source: BufferGeometry): BufferGeometry {
   const geometry = source.clone();
   const position = geometry.getAttribute("position");
+  const color = geometry.getAttribute("color");
+  const dune = new Color(THEME.scene.sand).multiplyScalar(DUNE_SHADE);
+  const tone = new Color();
   const changed = new Set<number>();
   for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const z = position.getZ(i);
     const y = position.getY(i);
-    const carved = carvedGroundHeight(position.getX(i), position.getZ(i), y);
+    const carved = carvedGroundHeight(x, z, y);
     if (Math.abs(carved - y) > 1e-6) {
       position.setY(i, carved);
       changed.add(i);
+    }
+    const weight = duneWeight(x, z);
+    if (weight > 0) {
+      tone.setRGB(color.getX(i), color.getY(i), color.getZ(i)).lerp(dune, weight);
+      color.setXYZ(i, tone.r, tone.g, tone.b);
     }
   }
   const index = geometry.index;
