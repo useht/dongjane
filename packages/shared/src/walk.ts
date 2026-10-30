@@ -64,18 +64,21 @@ export function randomPointIn(area: Bounds, random: () => number): Point {
   return { x: area.minX + random() * (area.maxX - area.minX), z: area.minZ + random() * (area.maxZ - area.minZ) };
 }
 
-const CHAIN_AREAS = CHAIN.map((area) => (area.maxX - area.minX) * (area.maxZ - area.minZ));
-const CHAIN_AREA_TOTAL = CHAIN_AREAS.reduce((sum, area) => sum + area, 0);
+// The computer-driven monks keep to the temple: the room, the doorway, the court, the plaza and the shore. The coast road
+// and the casino stay a visitor's walk alone.
+const STROLL_AREAS: readonly Bounds[] = CHAIN.slice(0, 5);
+const STROLL_SIZES = STROLL_AREAS.map((area) => (area.maxX - area.minX) * (area.maxZ - area.minZ));
+const STROLL_TOTAL = STROLL_SIZES.reduce((sum, area) => sum + area, 0);
 
-// A point spread evenly over every walkable area of the world.
+// A point spread evenly over the temple's walkable areas.
 export function randomWalkable(random: () => number): Point {
-  let pick = random() * CHAIN_AREA_TOTAL;
+  let pick = random() * STROLL_TOTAL;
   let index = 0;
-  while (index < CHAIN.length - 1 && pick >= (CHAIN_AREAS[index] as number)) {
-    pick -= CHAIN_AREAS[index] as number;
+  while (index < STROLL_AREAS.length - 1 && pick >= (STROLL_SIZES[index] as number)) {
+    pick -= STROLL_SIZES[index] as number;
     index += 1;
   }
-  return randomPointIn(CHAIN[index] as Bounds, random);
+  return randomPointIn(STROLL_AREAS[index] as Bounds, random);
 }
 
 function indexesAt(x: number, z: number): number[] {

@@ -184,21 +184,23 @@ describe("random points", () => {
     expect(point.z).toBeCloseTo(INTERIOR_AREA.maxZ, 9);
   });
 
-  it("spreads walkable points over every area in proportion to its size", () => {
+  it("spreads walkable points over every temple area in proportion to its size", () => {
     const random = seededRandom(5);
-    const hits = CHAIN.map(() => 0);
+    const temple = CHAIN.slice(0, 5);
+    const hits = temple.map(() => 0);
     const total = 20_000;
     for (let n = 0; n < total; n += 1) {
       const point = randomWalkable(random);
       expect(walkable(point), `(${point.x.toFixed(3)}, ${point.z.toFixed(3)}) is inside a wall`).toBe(true);
-      const index = CHAIN.findIndex(
+      const index = temple.findIndex(
         (area) => point.x >= area.minX && point.x <= area.maxX && point.z >= area.minZ && point.z <= area.maxZ,
       );
+      expect(index, `(${point.x.toFixed(3)}, ${point.z.toFixed(3)}) is outside the temple`).toBeGreaterThanOrEqual(0);
       hits[index] = (hits[index] ?? 0) + 1;
     }
     const size = (area: (typeof CHAIN)[number]) => (area.maxX - area.minX) * (area.maxZ - area.minZ);
-    const whole = CHAIN.reduce((sum, area) => sum + size(area), 0);
-    CHAIN.forEach((area, index) => {
+    const whole = temple.reduce((sum, area) => sum + size(area), 0);
+    temple.forEach((area, index) => {
       expect((hits[index] ?? 0) / total).toBeCloseTo(size(area) / whole, 1);
     });
     expect(hits.every((count) => count > 0)).toBe(true);
@@ -511,15 +513,16 @@ describe("the casino", () => {
     expect(insideCasino(0, 0)).toBe(false);
   });
 
-  it("scatters random walks over the casino too", () => {
+  it("keeps the computer-driven monks out of the coast road and the casino: random walks never leave the temple", () => {
     const random = seededRandom(31);
-    const seen = new Set<Bounds>();
-    for (let n = 0; n < 4000; n += 1) {
+    const away = [COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
+    for (let n = 0; n < 20_000; n += 1) {
       const point = randomWalkable(random);
-      for (const area of LINKS.slice(1)) {
-        if (point.x >= area.minX && point.x <= area.maxX && point.z >= area.minZ && point.z <= area.maxZ) seen.add(area);
+      for (const area of away) {
+        const inside = point.x > area.minX && point.x < area.maxX && point.z > area.minZ && point.z < area.maxZ;
+        expect(inside, `(${point.x.toFixed(3)}, ${point.z.toFixed(3)}) is in the casino's ground`).toBe(false);
       }
+      expect(point.z).toBeLessThanOrEqual(WORLD_BOUNDS.maxZ);
     }
-    expect(seen.size).toBe(4);
   });
 });
