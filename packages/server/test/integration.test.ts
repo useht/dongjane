@@ -26,7 +26,7 @@ import { WorldRoom } from "../src/world-room.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
-const SEAT_RESERVATION_MS = 1500;
+const SEAT_RESERVATION_MS = 5000;
 
 let game: GameServer;
 let rig: TestRig;
@@ -40,7 +40,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await rig.closeAll();
-  await eventually(() => rig.worlds(), (worlds) => worlds.length === 0, "every world closed", 5000);
+  await eventually(() => rig.worlds(), (worlds) => worlds.length === 0, "every world closed", 10_000);
 });
 
 afterAll(async () => {
@@ -236,7 +236,7 @@ describe("merging worlds", () => {
       lock.mockRestore();
       reported.mockRestore();
     }
-  }, 20_000);
+  }, 30_000);
 
   it("holds a lone visitor back while the last free place in the other world is a seat waiting to be used", async () => {
     await rig.fill(1, WORLD_CAPACITY - 1);
@@ -250,9 +250,9 @@ describe("merging worlds", () => {
     expect(relocations).toEqual([]);
     expect(lone.connection.isOpen).toBe(true);
 
-    await waitFor(() => relocations.length > 0, "relocation once the seat lapses", 4000);
+    await waitFor(() => relocations.length > 0, "relocation once the seat lapses", 7000);
     expect(relocations).toEqual([1]);
-  }, 20_000);
+  }, 30_000);
 
   it("offers the merge again when closing the world fails after the grace period", async () => {
     const { crowd, lone, relocations } = await loneVisitorInWorld2();

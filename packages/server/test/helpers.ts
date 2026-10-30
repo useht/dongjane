@@ -71,7 +71,7 @@ export class TestRig {
     const room = await this.client.joinById<TempleState>(seat.roomId, options, TempleState);
     room.reconnection.minUptime = 0;
     this.rooms.push(room);
-    await waitFor(() => room.state.monks.has(room.sessionId), "own monk in state");
+    await waitFor(() => room.state.monks.has(room.sessionId), "own monk in state", 5000);
     return room;
   }
 

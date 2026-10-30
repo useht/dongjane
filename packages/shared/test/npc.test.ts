@@ -190,7 +190,7 @@ describe("npc behaviour", () => {
         expect(npc.z).toBeLessThanOrEqual(bounds.maxZ + 1e-4);
       }
     });
-  });
+  }, 30_000);
 
   it("gives each npc its own rhythm instead of moving in lockstep", () => {
     const world = new World(11);

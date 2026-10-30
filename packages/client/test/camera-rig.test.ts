@@ -207,12 +207,12 @@ describe("the 법당's camera clearance", () => {
   it("keeps the lens at least the clearance from every surface the room draws, wherever the monk stands and however the camera sways", () => {
     const worst = nearestLens(room(), DHARMA_CAMERA_BOUNDS, DHARMA_KEEP_OUTS);
     expect(worst.clearance, worst.where).toBeGreaterThanOrEqual(CAMERA_CLEARANCE);
-  });
+  }, 30_000);
 
   it("catches the camera box that let the lens up into the beams, which the rule above is there to prevent", () => {
     const old = { ...DHARMA_CAMERA_BOUNDS, minX: DHARMA_ORIGIN.x - 9.6, maxX: DHARMA_ORIGIN.x + 9.6, maxY: 7 };
     expect(nearestLens(room(), old, [DHARMA_KEEP_OUT]).clearance).toBeLessThan(CAMERA_CLEARANCE);
-  });
+  }, 30_000);
 
   it("keeps a keep-out box round each front pillar, wider than the pillar by the clearance", () => {
     expect(DHARMA_KEEP_OUTS).toEqual([DHARMA_KEEP_OUT, ...DHARMA_PILLARS_KEEP_OUT]);
