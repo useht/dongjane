@@ -2,6 +2,8 @@ import { h, iconButton } from "./dom.ts";
 
 export interface SheetOptions {
   phone?: boolean;
+  // Runs each time the sheet closes, however it was closed (its button, Esc, the backdrop, or another sheet opening).
+  onClose?: () => void;
 }
 
 // A bottom sheet on phones and a centred panel on desktop; only one is open at a time.
@@ -14,10 +16,12 @@ export class Sheet {
   private readonly heading = h("h2", "sheet-title");
   private back: HTMLButtonElement | null = null;
   private onBack: (() => void) | null = null;
+  private readonly onClose: (() => void) | null;
   private static current: Sheet | null = null;
 
   constructor(host: HTMLElement, title: string, options: SheetOptions = {}) {
     const close = iconButton("close", "닫기", () => this.close());
+    this.onClose = options.onClose ?? null;
     this.panel.setAttribute("role", "dialog");
     if (options.phone) {
       this.backdrop.classList.add("phone-backdrop");
@@ -59,8 +63,10 @@ export class Sheet {
   }
 
   close(): void {
+    const wasOpen = this.isOpen;
     this.backdrop.classList.add("hidden");
     if (Sheet.current === this) Sheet.current = null;
+    if (wasOpen) this.onClose?.();
   }
 
   toggle(): void {
