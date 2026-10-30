@@ -7,7 +7,7 @@ import { CameraRig, DHARMA_KEEP_OUT, configureCamera, projectToCanvas, projectUn
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
 import { DHARMA } from "./dharma-layout.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
-import { pickFloor } from "./floor-pick.ts";
+import { aimThroughCamera, pickFloor } from "./floor-pick.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
 import { PointerInput, type StickState } from "./input.ts";
 import { JumpTracker } from "./jump-tracker.ts";
@@ -186,7 +186,7 @@ export class World {
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return null;
     this.ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, 1 - ((clientY - rect.top) / rect.height) * 2);
-    this.raycaster.setFromCamera(this.ndc, this.camera);
+    aimThroughCamera(this.raycaster, this.ndc, this.camera);
     const hit = pickFloor(this.raycaster, this.dharma ? [this.landscape.surfaces, this.dharma.surfaces] : [this.landscape.surfaces]);
     return hit ? { x: hit.x, z: hit.z } : null;
   }
