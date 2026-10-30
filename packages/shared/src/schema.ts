@@ -19,6 +19,9 @@ export const Monk = schema(
     knockSeq: t.uint32().default(0),
     chanting: t.boolean().default(false),
     item: t.uint8().default(0),
+    bite: t.boolean().default(false),
+    catchSeq: t.uint32().default(0),
+    lastCatch: t.uint8().default(0),
   },
   "Monk",
 );

@@ -15,6 +15,9 @@ export const EMOTE_COOLDOWN_MS = 1500;
 export const KNOCK_COOLDOWN_MS = 300;
 export const JUMP_COOLDOWN_MS = 700;
 export const JUMP_MS = 600;
+export const FISH_WAIT_MIN_MS = 3000;
+export const FISH_WAIT_MAX_MS = 9000;
+export const FISH_BITE_MS = 2500;
 
 export const CHANT_EVERY_MS = 30 * 60 * 1000;
 export const CHANT_MS = 3 * 60 * 1000;
@@ -28,5 +31,5 @@ export const ARRIVE_DISTANCE = 0.04;
 export const WORLDS_PATH = "/api/worlds";
 export const SEAT_PATH = "/api/worlds/seat";
 
-export const MONK_MODES = ["stand", "walk", "kneel", "bow"] as const;
+export const MONK_MODES = ["stand", "walk", "kneel", "bow", "fish"] as const;
 export type MonkMode = (typeof MONK_MODES)[number];

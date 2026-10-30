@@ -6,6 +6,7 @@ import {
   DHARMA_SEATS,
   DHARMA_SEAT_SIZE,
   DHARMA_YAW,
+  FISHING_REACH,
   GATBAWI_SEATS,
   GATBAWI_SEAT_SIZE,
   GATBAWI_Z,
@@ -13,6 +14,8 @@ import {
   PLAZA,
   SEAT_COUNT,
   SEAT_YAWS,
+  SEA_LINE_X,
+  SHORE,
   STEPS,
   WORLD_BOUNDS,
   ZONES,
@@ -224,6 +227,26 @@ describe("arrival", () => {
     expect(DHARMA_BOUNDS.maxX).toBeLessThan(WORLD_BOUNDS.minX);
     expect(DHARMA_BOUNDS.maxZ).toBeLessThan(WORLD_BOUNDS.maxZ);
     expect(DHARMA_ORIGIN).toEqual({ x: -19, z: 0 });
+  });
+});
+
+describe("shore", () => {
+  it("runs east from the plaza's edge to the waterline, as deep as the plaza", () => {
+    expect(SHORE.minX).toBe(WORLD_BOUNDS.maxX);
+    expect(SHORE.maxX).toBe(SEA_LINE_X);
+    expect(SHORE.minZ).toBe(WORLD_BOUNDS.minZ);
+    expect(SHORE.maxZ).toBe(WORLD_BOUNDS.maxZ);
+    expect(SHORE.maxX - SHORE.minX).toBeGreaterThanOrEqual(5);
+  });
+
+  it("lets a fisher reach the water from a short way up the sand", () => {
+    expect(FISHING_REACH).toBeGreaterThan(0);
+    expect(SEA_LINE_X - FISHING_REACH).toBeGreaterThan(SHORE.minX);
+  });
+
+  it("leaves the plaza where it was", () => {
+    expect(WORLD_BOUNDS).toEqual({ minX: -7, maxX: 12.5, minZ: -2.4, maxZ: 15.5 });
+    expect(PLAZA.maxX).toBeGreaterThan(WORLD_BOUNDS.maxX);
   });
 });
 

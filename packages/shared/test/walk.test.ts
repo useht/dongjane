@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, GATBAWI_SEATS, WORLD_BOUNDS } from "../src/layout.ts";
+import {
+  DHARMA_BOUNDS,
+  DHARMA_ORIGIN,
+  DHARMA_SEATS,
+  GATBAWI_SEATS,
+  SEA_LINE_X,
+  SHORE,
+  WORLD_BOUNDS,
+} from "../src/layout.ts";
 import {
   COURT_AREA,
   DOORWAY_AREA,
@@ -15,7 +23,7 @@ import {
   zoneAt,
 } from "../src/walk.ts";
 
-const CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA];
+const CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE];
 
 function walkable(point: Point): boolean {
   const solid = resolveWalkable(point.x, point.z);
@@ -59,7 +67,7 @@ const inDoorway = (p: Point): boolean =>
   p.x >= DHARMA_BOUNDS.maxX - 1e-6 && p.x <= COURT_AREA.minX + 1e-6 && p.z >= DOORWAY_AREA.minZ - 1e-6 && p.z <= DOORWAY_AREA.maxZ + 1e-6;
 
 describe("walkable areas", () => {
-  it("chains the room, the doorway, the court and the plaza so that each touches the next", () => {
+  it("chains the room, the doorway, the court, the plaza and the shore so that each touches the next", () => {
     expect(PLAZA_AREA).toBe(WORLD_BOUNDS);
     expect(INTERIOR_AREA).toBe(DHARMA_BOUNDS);
     for (let i = 0; i + 1 < CHAIN.length; i += 1) {
@@ -111,10 +119,10 @@ describe("zoneAt", () => {
 describe("resolveWalkable", () => {
   it("leaves walkable points alone and pulls the rest back to the nearest ground", () => {
     expect(resolveWalkable(1, 2)).toEqual({ x: 1, z: 2 });
-    expect(resolveWalkable(100, 100)).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.maxZ });
+    expect(resolveWalkable(100, 100)).toEqual({ x: SHORE.maxX, z: WORLD_BOUNDS.maxZ });
     expect(resolveWalkable(-100, -100)).toEqual({ x: DHARMA_BOUNDS.minX, z: DHARMA_BOUNDS.minZ });
     expect(resolveWalkable(DOORWAY_AREA.maxX - 0.5, DHARMA_ORIGIN.z)).toEqual({ x: DOORWAY_AREA.maxX - 0.5, z: DHARMA_ORIGIN.z });
-    expect(resolveWalkable(500, -500)).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.minZ });
+    expect(resolveWalkable(500, -500)).toEqual({ x: SHORE.maxX, z: WORLD_BOUNDS.minZ });
   });
 
   it("keeps a point that sits in the court, in front of the wall", () => {
@@ -161,7 +169,7 @@ describe("resolveNearby", () => {
   });
 
   it("falls back to the nearest ground for a walker who is not on any", () => {
-    expect(resolveNearby(100, 100, { x: 500, z: 500 })).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.maxZ });
+    expect(resolveNearby(100, 100, { x: 500, z: 500 })).toEqual({ x: SHORE.maxX, z: WORLD_BOUNDS.maxZ });
   });
 });
 
@@ -202,7 +210,7 @@ describe("planPath", () => {
 
   it("ends at the nearest walkable point when the target is out of bounds", () => {
     const path = planPath({ x: 0, z: 14 }, { x: 500, z: 500 });
-    expect(path.at(-1)).toEqual({ x: WORLD_BOUNDS.maxX, z: WORLD_BOUNDS.maxZ });
+    expect(path.at(-1)).toEqual({ x: SHORE.maxX, z: WORLD_BOUNDS.maxZ });
   });
 
   it("leads from the plaza through the court and the east doorway to a seat in the 법당", () => {
@@ -301,6 +309,52 @@ describe("planPath", () => {
   });
 });
 
+describe("the shore", () => {
+  it("is the last link of the chain, beyond the plaza's east edge", () => {
+    expect(CHAIN.at(-1)).toBe(SHORE);
+    expect(zoneAt(SHORE.minX + 1, 5)).toBe("gatbawi");
+    expect(zoneAt(SEA_LINE_X - 0.5, 5)).toBe("gatbawi");
+  });
+
+  it("walks from the plaza onto the sand in one straight line", () => {
+    const from = { x: 0, z: 14 };
+    const target = { x: SHORE.minX + 3, z: 5 };
+    const path = planPath(from, target);
+    expect(path.at(-1)).toEqual(target);
+    assertWalkableRoute(from, path);
+  });
+
+  it("walks from a seat in the 법당 all the way to the water's edge", () => {
+    const seat = DHARMA_SEATS[24]!;
+    const edge = { x: SEA_LINE_X, z: 6 };
+    const path = planPath(seat, edge);
+    expect(path.filter(inDoorway).length).toBeGreaterThan(0);
+    expect(path.at(-1)).toEqual(edge);
+    assertWalkableRoute(seat, path);
+  });
+
+  it("pulls a point in the sea back to the waterline", () => {
+    expect(walkable({ x: SEA_LINE_X, z: 6 })).toBe(true);
+    expect(resolveWalkable(SEA_LINE_X + 4, 6)).toEqual({ x: SEA_LINE_X, z: 6 });
+    expect(planPath({ x: 0, z: 14 }, { x: SEA_LINE_X + 20, z: 6 }).at(-1)).toEqual({ x: SEA_LINE_X, z: 6 });
+  });
+
+  it("stops a keyboard walker at the waterline instead of letting them into the sea", () => {
+    const slid = slideWalkable({ x: SEA_LINE_X - 0.2, z: 5 }, 1, 0);
+    expect(slid.x).toBeCloseTo(SEA_LINE_X, 6);
+    expect(slid.z).toBeCloseTo(5, 6);
+    const across = slideWalkable({ x: WORLD_BOUNDS.maxX - 0.5, z: 5 }, 2, 0);
+    expect(across.x).toBeCloseTo(WORLD_BOUNDS.maxX + 1.5, 6);
+  });
+
+  it("picks sand for random walks too", () => {
+    const random = seededRandom(11);
+    let onSand = 0;
+    for (let n = 0; n < 2000; n += 1) if (randomWalkable(random).x > SHORE.minX) onSand += 1;
+    expect(onSand).toBeGreaterThan(0);
+  });
+});
+
 describe("slideWalkable", () => {
   it("walks the whole way when the ground allows it", () => {
     expect(slideWalkable({ x: 0, z: 14 }, 1, -2)).toEqual({ x: 1, z: 12 });
@@ -330,13 +384,13 @@ describe("slideWalkable", () => {
   });
 
   it("ends exactly on the wall when a slanted push runs into it a hair away", () => {
-    const slid = slideWalkable({ x: WORLD_BOUNDS.maxX - 0.015, z: 5 }, 0.05, 0.05);
-    expect(slid.x).toBe(WORLD_BOUNDS.maxX);
+    const slid = slideWalkable({ x: SHORE.maxX - 0.015, z: 5 }, 0.05, 0.05);
+    expect(slid.x).toBe(SHORE.maxX);
     expect(slid.z).toBeCloseTo(5.05, 9);
   });
 
   it("stays put when it is pushed straight out of the world", () => {
-    const edge = { x: WORLD_BOUNDS.maxX, z: 5 };
+    const edge = { x: SHORE.maxX, z: 5 };
     expect(slideWalkable(edge, 2, 0)).toEqual(edge);
   });
 });

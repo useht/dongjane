@@ -4,6 +4,8 @@ import {
   ITEM_CHANT,
   ITEM_MOKT,
   ITEM_NONE,
+  ITEM_ROD,
+  MSG,
   isValidEmote,
   isValidItem,
   parseBow,
@@ -93,8 +95,9 @@ describe("message parsers", () => {
     expect(parseEquip({ item: ITEM_NONE })).toEqual({ item: 0 });
     expect(parseEquip({ item: ITEM_MOKT })).toEqual({ item: 1 });
     expect(parseEquip({ item: ITEM_CHANT })).toEqual({ item: 2 });
+    expect(parseEquip({ item: ITEM_ROD })).toEqual({ item: 3 });
     expect(parseEquip({ item: 1, extra: true })).toEqual({ item: 1 });
-    for (const item of [3, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "1", true, null, undefined, [1], {}]) {
+    for (const item of [4, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "1", true, null, undefined, [1], {}]) {
       expect(parseEquip({ item })).toBeNull();
     }
     expect(parseEquip({})).toBeNull();
@@ -102,8 +105,8 @@ describe("message parsers", () => {
     expect(parseEquip(null)).toBeNull();
     expect(parseEquip(undefined)).toBeNull();
     expect(parseEquip([1])).toBeNull();
-    expect(isValidItem(2)).toBe(true);
-    expect(isValidItem(3)).toBe(false);
+    expect(isValidItem(3)).toBe(true);
+    expect(isValidItem(4)).toBe(false);
   });
 
   it("accepts only a positive integer world to relocate to", () => {
@@ -113,5 +116,14 @@ describe("message parsers", () => {
     expect(parseRelocate({ world: "3" })).toBeNull();
     expect(parseRelocate({})).toBeNull();
     expect(parseRelocate(null)).toBeNull();
+  });
+});
+
+describe("message names", () => {
+  it("names the fishing messages and keeps every name distinct", () => {
+    expect(MSG.cast).toBe("cast");
+    expect(MSG.reel).toBe("reel");
+    const names = Object.values(MSG);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

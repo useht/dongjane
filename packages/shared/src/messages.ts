@@ -14,6 +14,8 @@ export const MSG = {
   chant: "chant",
   equip: "equip",
   jump: "jump",
+  cast: "cast",
+  reel: "reel",
   relocate: "relocate",
 } as const;
 
@@ -37,6 +39,8 @@ export type KnockMessage = Record<string, never>;
 export interface ChantMessage {
   on: boolean;
 }
+export type CastMessage = Record<string, never>;
+export type ReelMessage = Record<string, never>;
 export interface EquipMessage {
   item: Item;
 }
@@ -50,6 +54,8 @@ export interface ClientToServerMessages {
   chant: ChantMessage;
   equip: EquipMessage;
   jump: Record<string, never>;
+  cast: CastMessage;
+  reel: ReelMessage;
 }
 
 export interface RelocateMessage {

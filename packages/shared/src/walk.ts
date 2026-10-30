@@ -1,4 +1,4 @@
-import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
+import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, SHORE, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
 
 // Where feet may go. The world is four rectangles in a chain: the plaza, the court between the plaza and the 법당's
 // porch (the door faces +x, so the court is the strip along the plaza's west edge), the doorway through the front
@@ -28,7 +28,7 @@ export const DOORWAY_AREA: Bounds = {
 export const INTERIOR_AREA: Bounds = DHARMA_BOUNDS;
 
 // The chain, from the room outward: each area touches the next along a doorstep.
-const CHAIN: readonly Bounds[] = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA];
+const CHAIN: readonly Bounds[] = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE];
 
 // A walker's body is wider than a point: crossing a doorstep, it stays this far from the edge of the opening.
 const DOORSTEP_MARGIN = 0.35;

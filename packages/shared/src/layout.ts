@@ -28,6 +28,12 @@ export interface Bounds {
 
 export const WORLD_BOUNDS: Bounds = { minX: -7, maxX: 12.5, minZ: -2.4, maxZ: 15.5 };
 
+// East of the plaza the ground runs on as sand down to the sea. SEA_LINE_X is where the water starts (the shore ends there
+// and the sea is not walkable); FISHING_REACH is how close to it a visitor must stand to cast a line.
+export const SEA_LINE_X = 18.5;
+export const FISHING_REACH = 1.6;
+export const SHORE: Bounds = { minX: WORLD_BOUNDS.maxX, maxX: SEA_LINE_X, minZ: WORLD_BOUNDS.minZ, maxZ: WORLD_BOUNDS.maxZ };
+
 // The 법당 stands west of the plaza, its door facing the plaza and Gatbawi (+x). Its room is modelled around its own
 // origin, the middle of its floor, with the door in the +z wall and the altar against the -z wall (the "room frame": the
 // models, dharma-layout.ts and the Blender scripts all speak it). The world turns that frame a quarter turn

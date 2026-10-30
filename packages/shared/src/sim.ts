@@ -7,6 +7,9 @@ import {
   CHANT_EVERY_MS,
   CHANT_MS,
   EMOTE_COOLDOWN_MS,
+  FISH_BITE_MS,
+  FISH_WAIT_MAX_MS,
+  FISH_WAIT_MIN_MS,
   JUMP_COOLDOWN_MS,
   KNOCK_COOLDOWN_MS,
   WALK_SPEED,
@@ -14,8 +17,20 @@ import {
 } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
-import { ITEM_CHANT, ITEM_MOKT, isValidItem } from "./item.ts";
-import { ARRIVAL, SEAT_YAWS, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yawFromDirection } from "./layout.ts";
+import { NO_FISH, pickFish } from "./fish.ts";
+import { ITEM_CHANT, ITEM_MOKT, ITEM_ROD, isValidItem } from "./item.ts";
+import {
+  ARRIVAL,
+  FISHING_REACH,
+  SEAT_YAWS,
+  SEA_LINE_X,
+  ZONES,
+  ZONE_SEATS,
+  type Zone,
+  seatKey,
+  seatSpot,
+  yawFromDirection,
+} from "./layout.ts";
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
@@ -39,6 +54,8 @@ interface Runtime {
   nextEmoteAt: number;
   nextKnockAt: number;
   nextJumpAt: number;
+  biteAt: number;
+  biteEndsAt: number;
   brain: NpcBrain | null;
 }
 
@@ -213,6 +230,7 @@ export class TempleSim {
     if (!monk || !isValidItem(item)) return false;
     monk.item = item;
     if (item !== ITEM_CHANT) monk.chanting = false;
+    if (item !== ITEM_ROD) this.endFishing(monk);
     return true;
   }
 
@@ -256,6 +274,30 @@ export class TempleSim {
     return true;
   }
 
+  // A visitor with the rod, standing at the water's edge, throws the line out toward the sea (+x) and waits for a bite.
+  cast(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    const runtime = this.runtimes.get(id);
+    if (!monk || !runtime || monk.item !== ITEM_ROD || monk.seatId >= 0 || monk.mode === "fish") return false;
+    if (monk.x < SEA_LINE_X - FISHING_REACH) return false;
+
+    this.releaseSeat(monk);
+    monk.mode = "fish";
+    monk.yaw = yawFromDirection(1, 0);
+    monk.bite = false;
+    runtime.biteAt = this.clock() + FISH_WAIT_MIN_MS + this.random() * (FISH_WAIT_MAX_MS - FISH_WAIT_MIN_MS);
+    runtime.biteEndsAt = 0;
+    return true;
+  }
+
+  // Reeling in ends the fishing: a fish if one was biting, an empty hook if not.
+  reel(id: string): boolean {
+    const monk = this.state.monks.get(id);
+    if (!monk || monk.mode !== "fish") return false;
+    this.finishFishing(monk, monk.bite ? pickFish(this.random).id : NO_FISH);
+    return true;
+  }
+
   tick(dtMs: number): void {
     const now = this.clock();
     const dt = Math.max(0, Math.min(dtMs, 250)) / 1000;
@@ -277,6 +319,13 @@ export class TempleSim {
       } else if (monk.mode === "kneel" && runtime.bowsLeft > 0 && now >= runtime.nextBowAt) {
         runtime.bowsLeft -= 1;
         this.beginBow(monk, runtime, now);
+      } else if (monk.mode === "fish") {
+        if (!monk.bite && now >= runtime.biteAt) {
+          monk.bite = true;
+          runtime.biteEndsAt = now + FISH_BITE_MS;
+        } else if (monk.bite && now >= runtime.biteEndsAt) {
+          this.finishFishing(monk, NO_FISH);
+        }
       }
 
       if (runtime.brain && now >= runtime.brain.nextThinkAt) this.think(monk, runtime.brain, now);
@@ -321,6 +370,8 @@ export class TempleSim {
       nextEmoteAt: 0,
       nextKnockAt: 0,
       nextJumpAt: 0,
+      biteAt: 0,
+      biteEndsAt: 0,
       brain,
     };
   }
@@ -426,7 +477,19 @@ export class TempleSim {
     }
   }
 
+  private finishFishing(monk: Monk, fish: number): void {
+    monk.lastCatch = fish;
+    monk.catchSeq += 1;
+    this.endFishing(monk);
+  }
+
+  private endFishing(monk: Monk): void {
+    monk.bite = false;
+    if (monk.mode === "fish") monk.mode = "stand";
+  }
+
   private releaseSeat(monk: Monk): void {
+    this.endFishing(monk);
     monk.chanting = false;
     const runtime = this.runtimes.get(monk.id);
     if (runtime) {

@@ -24,6 +24,7 @@ import {
   GATBAWI_SEATS,
   SEAT_COUNT,
   SEAT_YAWS,
+  SHORE,
   WORLD_BOUNDS,
   type Zone,
 } from "../src/layout.ts";
@@ -111,7 +112,7 @@ describe("join and movement", () => {
     h.sim.join("a", 0);
     h.sim.move("a", 500, -500);
     h.advance(30_000);
-    expect(h.monk("a").x).toBeCloseTo(WORLD_BOUNDS.maxX, 4);
+    expect(h.monk("a").x).toBeCloseTo(SHORE.maxX, 4);
     expect(h.monk("a").z).toBeCloseTo(WORLD_BOUNDS.minZ, 4);
   });
 
@@ -488,7 +489,7 @@ describe("held items", () => {
     expect(h.sim.equip("a", ITEM_NONE)).toBe(true);
     expect(h.monk("a").item).toBe(ITEM_NONE);
     h.sim.equip("a", ITEM_MOKT);
-    for (const bad of [3, -1, 1.5, Number.NaN, 255]) {
+    for (const bad of [4, -1, 1.5, Number.NaN, 255]) {
       expect(h.sim.equip("a", bad)).toBe(false);
       expect(h.monk("a").item).toBe(ITEM_MOKT);
     }
@@ -941,7 +942,7 @@ describe("one world", () => {
     h.sim.join("a", 0);
     h.sim.move("a", 500, -500);
     h.advance(30_000);
-    expect(h.monk("a").x).toBeCloseTo(WORLD_BOUNDS.maxX, 4);
+    expect(h.monk("a").x).toBeCloseTo(SHORE.maxX, 4);
     expect(h.monk("a").z).toBeCloseTo(WORLD_BOUNDS.minZ, 4);
   });
 
