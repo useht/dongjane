@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVE_DISTANCE, DHARMA_BOUNDS, DHARMA_ORIGIN, WALK_SPEED, WORLD_BOUNDS, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
+import { ARRIVE_DISTANCE, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, WALK_SPEED, WORLD_BOUNDS, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
 import {
   KEY_MOVE_INTERVAL_MS,
   KEY_MOVE_REACH,
@@ -108,21 +108,22 @@ describe("SelfPrediction movement", () => {
 
   it("walks from the court through the doorway into the 법당 on foot", () => {
     const prediction = new SelfPrediction();
-    const door = DHARMA_ORIGIN.x;
-    hold(prediction, 120, { x: 0, z: -1 }, { x: door, z: 12 });
+    // The door faces +x, so the way in is toward -x.
+    const door = DHARMA_ORIGIN.z;
+    hold(prediction, 120, { x: -1, z: 0 }, { x: COURT_AREA.minX + 0.5, z: door });
     const shown = must(prediction.display());
-    expect(shown.x).toBeCloseTo(door, 6);
-    expect(shown.z).toBeLessThan(DHARMA_BOUNDS.maxZ - 1);
+    expect(shown.z).toBeCloseTo(door, 6);
+    expect(shown.x).toBeLessThan(DHARMA_BOUNDS.maxX - 1);
     expect(zoneAt(shown.x, shown.z)).toBe("dharma");
   });
 
   it("stops at the front wall beside the doorway, and does not let a sidestep through it", () => {
     const prediction = new SelfPrediction();
-    const beside = DHARMA_ORIGIN.x + 4;
-    hold(prediction, 120, { x: 0, z: -1 }, { x: beside, z: 12 });
+    const beside = DHARMA_ORIGIN.z + 4;
+    hold(prediction, 120, { x: -1, z: 0 }, { x: COURT_AREA.minX + 0.5, z: beside });
     const shown = must(prediction.display());
-    expect(shown.x).toBeCloseTo(beside, 6);
-    expect(shown.z).toBeGreaterThanOrEqual(DHARMA_BOUNDS.maxZ);
+    expect(shown.z).toBeCloseTo(beside, 6);
+    expect(shown.x).toBeGreaterThanOrEqual(DHARMA_BOUNDS.maxX);
     expect(zoneAt(shown.x, shown.z)).toBe("gatbawi");
   });
 });

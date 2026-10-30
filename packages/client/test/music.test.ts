@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DHARMA_BOUNDS, DHARMA_ORIGIN } from "@dongjane/shared";
+import { DHARMA_BOUNDS, DHARMA_ORIGIN, WORLD_BOUNDS, dharmaToWorld } from "@dongjane/shared";
 import { DHARMA, DHARMA_DOOR } from "../src/game/dharma-layout.ts";
 import {
   DEEP_METRES,
@@ -93,47 +93,50 @@ describe("driftAction", () => {
 });
 
 describe("areaMix", () => {
-  const doorX = DHARMA_ORIGIN.x;
-  const doorZ = DHARMA_ORIGIN.z + DHARMA.frontZ;
+  // The door is in the room's front wall; the room is turned so that wall faces +x: inside is toward -x, outside toward +x.
+  const { x: doorX, z: doorZ } = dharmaToWorld(0, DHARMA.frontZ);
 
   it("is half and half in the doorway", () => {
     expect(areaMix(doorX, doorZ)).toBeCloseTo(0.5, 9);
   });
 
   it("is the chant alone from three metres inside, wherever across the room", () => {
-    expect(areaMix(doorX, doorZ - DEEP_METRES)).toBe(1);
-    expect(areaMix(doorX, DHARMA_ORIGIN.z)).toBe(1);
+    expect(areaMix(doorX - DEEP_METRES, doorZ)).toBe(1);
+    expect(areaMix(doorX - DEEP_METRES, DHARMA_BOUNDS.maxZ - 1)).toBe(1);
+    expect(areaMix(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe(1);
     expect(areaMix(DHARMA_BOUNDS.minX + 1, DHARMA_ORIGIN.z)).toBe(1);
   });
 
   it("is the concert alone from six metres outside the door", () => {
-    expect(areaMix(doorX, doorZ + OUTSIDE_METRES)).toBe(0);
-    expect(areaMix(doorX, doorZ + OUTSIDE_METRES + 4)).toBe(0);
+    expect(areaMix(doorX + OUTSIDE_METRES, doorZ)).toBe(0);
+    expect(areaMix(doorX + OUTSIDE_METRES + 4, doorZ)).toBe(0);
     expect(areaMix(0, 14)).toBe(0);
   });
 
   it("falls steadily from the doorway to six metres out, and rises steadily to three metres in", () => {
     let last = areaMix(doorX, doorZ);
     for (let step = 1; step <= 12; step += 1) {
-      const next = areaMix(doorX, doorZ + step * 0.5);
+      const next = areaMix(doorX + step * 0.5, doorZ);
       expect(next).toBeLessThanOrEqual(last);
       last = next;
     }
     last = areaMix(doorX, doorZ);
     for (let step = 1; step <= 12; step += 1) {
-      const next = areaMix(doorX, doorZ - step * 0.25);
+      const next = areaMix(doorX - step * 0.25, doorZ);
       expect(next).toBeGreaterThanOrEqual(last);
       last = next;
     }
   });
 
   it("does not jump where the room meets the court", () => {
-    expect(Math.abs(areaMix(doorX, doorZ - 0.001) - areaMix(doorX, doorZ + 0.001))).toBeLessThan(0.01);
+    expect(Math.abs(areaMix(doorX - 0.001, doorZ) - areaMix(doorX + 0.001, doorZ))).toBeLessThan(0.01);
   });
 
   it("counts the court beside the door and the plaza as outdoors", () => {
-    expect(areaMix(doorX - DHARMA_DOOR.halfWidth - 5, doorZ + 1)).toBeLessThan(0.1);
-    expect(areaMix(-6, 0)).toBe(0);
+    expect(areaMix(doorX + 1, doorZ + DHARMA_DOOR.halfWidth + 5)).toBeLessThan(0.1);
+    expect(areaMix(0, 0)).toBe(0);
+    // The plaza's near edge is only the court's width from the porch, so the chant still reaches it a little.
+    expect(areaMix(WORLD_BOUNDS.minX, doorZ)).toBeLessThan(0.3);
   });
 
   it("stays between 0 and 1 and answers 0 for nonsense", () => {

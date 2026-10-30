@@ -34,7 +34,7 @@ PIT_DROP = 0.12  # and this deep, so the room's floor never shares a height with
 PIT_EDGE = 0.05  # the wall of the pit is this wide: steep, but not a vertical fold
 
 # (x, z, height above ground, radii, seed, segments); the outcrop stands behind Gatbawi and leaves
-# the north-east corner (x 4..16, z -13..-5) free for the stage and the 법당's footprint (x -30..-8, z -11..10)
+# the north-east corner (x 4..16, z -13..-5) free for the stage and the 법당's footprint (x -29..-9, z -11..11)
 OUTCROP = (
     (-0.8, -11.0, 2.4, (4.8, 4.6, 3.6), 1.0, 18),
     (-4.2, -9.6, 1.2, (3.0, 3.0, 2.8), 2.0, 16),
@@ -80,25 +80,37 @@ class Plan:
         self.door = dharma["DHARMA_DOOR"]
         self.openings, self.band = common.wall_openings(inputs)
         self.origin = layout["DHARMA_ORIGIN"]
+        self.yaw = layout["DHARMA_YAW"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         self.left, self.right = self.plaza["minX"], self.plaza["maxX"]
         self.front = self.plaza["maxZ"] + PLAZA_MARGIN
         self.back = self.platform["minZ"] - PLATFORM_BACK
-        ox, oz, reach = self.origin["x"], self.origin["z"], self.shell["plinth"]
-        # The granite footprint of the 법당, and the paved court between it and the plaza that runs along its front.
-        self.temple = {
-            "minX": ox - self.room["halfWidth"] - reach,
-            "maxX": ox + self.room["halfWidth"] + reach,
-            "minZ": oz + self.room["backZ"] - reach,
-            "maxZ": oz + self.shell["porchZ"],
-        }
-        self.court = (self.temple["minX"], self.left, self.temple["maxZ"], self.front)
-        self.pit = (
-            ox - self.room["halfWidth"] - PIT_MARGIN,
-            ox + self.room["halfWidth"] + PIT_MARGIN,
-            oz + self.room["backZ"] - PIT_MARGIN,
-            oz + self.room["frontZ"] + PIT_MARGIN,
+        reach = self.shell["plinth"]
+        # The granite footprint of the 법당 (the room's own footprint, turned to where the game stands it, so its front faces
+        # the plaza), and the paved court between its porch and the plaza that runs along its front.
+        self.temple = self.footprint(
+            -self.room["halfWidth"] - reach, self.room["halfWidth"] + reach, self.room["backZ"] - reach, self.shell["porchZ"]
         )
+        self.court = (self.temple["maxX"], self.left, self.plaza["minZ"], self.front)
+        self.pit = tuple(
+            self.footprint(
+                -self.room["halfWidth"] - PIT_MARGIN,
+                self.room["halfWidth"] + PIT_MARGIN,
+                self.room["backZ"] - PIT_MARGIN,
+                self.room["frontZ"] + PIT_MARGIN,
+            ).values()
+        )
+
+    def to_world(self, x, z):
+        """A point of the room's own frame as the game's (x, z): turned by the room's yaw, the way three.js rotation.y turns."""
+        cos, sin = math.cos(self.yaw), math.sin(self.yaw)
+        return (self.origin["x"] + x * cos + z * sin, self.origin["z"] - x * sin + z * cos)
+
+    def footprint(self, x0, x1, z0, z1):
+        """The rectangle (minX, maxX, minZ, maxZ) of a room-frame rectangle in the game's frame; the yaw is a quarter turn."""
+        corners = [self.to_world(x, z) for x in (x0, x1) for z in (z0, z1)]
+        xs, zs = [c[0] for c in corners], [c[1] for c in corners]
+        return {"minX": min(xs), "maxX": max(xs), "minZ": min(zs), "maxZ": max(zs)}
 
     @staticmethod
     def gap(box, x, z):

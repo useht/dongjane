@@ -145,21 +145,22 @@ describe("hangingLanterns", () => {
 });
 
 describe("the outside", () => {
+  // The room's door is on its +z side; the world turns the room a quarter turn, so that side is the world's +x.
   it("runs the porch out to the court the visitors walk along, and the doorway across to it", () => {
-    expect(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ).toBe(COURT_AREA.minZ);
-    expect(DHARMA_ORIGIN.z + DHARMA.frontZ).toBeLessThan(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ);
-    expect(DOORWAY_AREA.maxZ).toBe(COURT_AREA.minZ);
-    expect(DOORWAY_AREA.minZ).toBe(DHARMA_BOUNDS.maxZ);
+    expect(DHARMA_ORIGIN.x + DHARMA_SHELL.porchZ).toBe(COURT_AREA.minX);
+    expect(DHARMA_ORIGIN.x + DHARMA.frontZ).toBeLessThan(DHARMA_ORIGIN.x + DHARMA_SHELL.porchZ);
+    expect(DOORWAY_AREA.maxX).toBe(COURT_AREA.minX);
+    expect(DOORWAY_AREA.minX).toBe(DHARMA_BOUNDS.maxX);
   });
 
   it("opens the walkers' doorway inside the doorway of the wall, with room for the body on both sides", () => {
-    expect(DOORWAY_AREA.maxX - DHARMA_ORIGIN.x).toBeLessThan(DHARMA_DOOR.halfWidth);
-    expect(DHARMA_ORIGIN.x - DOORWAY_AREA.minX).toBeLessThan(DHARMA_DOOR.halfWidth);
+    expect(DOORWAY_AREA.maxZ - DHARMA_ORIGIN.z).toBeLessThan(DHARMA_DOOR.halfWidth);
+    expect(DHARMA_ORIGIN.z - DOORWAY_AREA.minZ).toBeLessThan(DHARMA_DOOR.halfWidth);
   });
 
   it("stands the plinth clear of the plaza and the roof high over its edge", () => {
-    expect(DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth).toBeLessThan(WORLD_BOUNDS.minX);
-    const eaveEdge = DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.eave;
+    expect(DHARMA_ORIGIN.x + DHARMA_SHELL.porchZ).toBeLessThan(WORLD_BOUNDS.minX);
+    const eaveEdge = DHARMA_ORIGIN.x + DHARMA.frontZ + DHARMA_SHELL.eave;
     expect(eaveEdge - WORLD_BOUNDS.minX).toBeLessThan(0.5);
     expect(DHARMA_SHELL.beamTop).toBeGreaterThanOrEqual(DHARMA.wallHeight);
     expect(DHARMA_SHELL.beamTop).toBeGreaterThan(3);

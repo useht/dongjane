@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { COURT_AREA, DHARMA_ORIGIN, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { COURT_AREA, DHARMA_ORIGIN, DHARMA_SEAT_SIZE, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import {
   BORROWS_STONE,
   BUDDHA,
@@ -46,7 +46,7 @@ export function buddhaSource(): BuddhaSource {
 export function assetInputs() {
   const source = buddhaSource();
   return {
-    layout: { GATBAWI_Z, PLATFORM, STEPS, PLAZA, WORLD_BOUNDS, COURT_AREA, DHARMA_ORIGIN, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_SEATS, GATBAWI_STATUE },
+    layout: { GATBAWI_Z, PLATFORM, STEPS, PLAZA, WORLD_BOUNDS, COURT_AREA, DHARMA_ORIGIN, DHARMA_YAW, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_SEATS, GATBAWI_STATUE },
     // The source's own hash (and its companions') stands for the scan, so a different scan makes a different stamp; its path is added
     // when the build runs.
     buddha: { ...BUDDHA, sha256: source.sha256, companions: source.companions, upAxis: source.upAxis, frontAxis: source.frontAxis },

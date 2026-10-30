@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Raycaster, Vector2, Vector3 } from "three";
-import { ARRIVAL, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM } from "@dongjane/shared";
+import { ARRIVAL, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import {
   CAMERA_CLEARANCE,
   CameraRig,
@@ -22,10 +22,17 @@ import {
   type Box,
 } from "../src/game/camera-rig.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
-import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "../src/game/dharma-layout.ts";
+import { BUDDHA_AT, DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "../src/game/dharma-layout.ts";
 import { loadGlb, triangleCorners } from "./glb.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
+
+// A box on the floor as the room sees it: the room's frame is the world's turned a quarter turn about DHARMA_ORIGIN.
+function inRoomFrame(floor: { minX: number; maxX: number; minZ: number; maxZ: number }): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const a = worldToDharma(floor.minX, floor.minZ);
+  const b = worldToDharma(floor.maxX, floor.maxZ);
+  return { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
+}
 
 describe("maxDistanceInside", () => {
   it("returns the wanted distance when there is room", () => {
@@ -67,10 +74,11 @@ describe("distanceBefore", () => {
 
 describe("the 법당's keep-out box", () => {
   it("is the footprint of the shell, from its plinth at the back to the porch's edge at the court", () => {
-    expect(DHARMA_KEEP_OUT.minX).toBeCloseTo(DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth, 6);
-    expect(DHARMA_KEEP_OUT.maxX).toBeCloseTo(DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth, 6);
-    expect(DHARMA_KEEP_OUT.minZ).toBeCloseTo(DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth, 6);
-    expect(DHARMA_KEEP_OUT.maxZ).toBe(DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ);
+    // The back of the room is on the world's -x side and its door side on the +x side.
+    expect(DHARMA_KEEP_OUT.minX).toBeCloseTo(DHARMA_ORIGIN.x + DHARMA.backZ - DHARMA_SHELL.plinth, 6);
+    expect(DHARMA_KEEP_OUT.maxX).toBe(DHARMA_ORIGIN.x + DHARMA_SHELL.porchZ);
+    expect(DHARMA_KEEP_OUT.minZ).toBeCloseTo(DHARMA_ORIGIN.z - DHARMA.halfWidth - DHARMA_SHELL.plinth, 6);
+    expect(DHARMA_KEEP_OUT.maxZ).toBeCloseTo(DHARMA_ORIGIN.z + DHARMA.halfWidth + DHARMA_SHELL.plinth, 6);
     expect(DHARMA_KEEP_OUT.maxY).toBeGreaterThan(DHARMA_SHELL.beamTop + DHARMA_SHELL.rise);
   });
 
@@ -78,17 +86,18 @@ describe("the 법당's keep-out box", () => {
     const behind = (keepOut: readonly (typeof DHARMA_KEEP_OUT)[]): CameraRig => {
       const rig = new CameraRig(new PerspectiveCamera(), LANDSCAPE_BOUNDS, undefined, keepOut);
       rig.reduceMotion = true;
-      rig.yaw = Math.PI;
+      // The camera stands on the side of the followed point its yaw names: -DHARMA_YAW puts it on their -x side, toward the temple.
+      rig.yaw = -DHARMA_YAW;
       rig.pitch = 0.3;
       rig.distance = 12;
-      rig.follow(DHARMA_ORIGIN.x, DHARMA_KEEP_OUT.maxZ + 2, 1, true);
+      rig.follow(DHARMA_KEEP_OUT.maxX + 2, DHARMA_ORIGIN.z, 1, true);
       rig.update(0.016);
       return rig;
     };
-    expect(behind([]).camera.position.z, "without the box the camera passes into the wall").toBeLessThan(DHARMA_KEEP_OUT.maxZ);
+    expect(behind([]).camera.position.x, "without the box the camera passes into the wall").toBeLessThan(DHARMA_KEEP_OUT.maxX);
     const { x, y, z } = behind([DHARMA_KEEP_OUT]).camera.position;
-    expect(z).toBeGreaterThanOrEqual(DHARMA_KEEP_OUT.maxZ);
-    expect(x).toBeCloseTo(DHARMA_ORIGIN.x, 1);
+    expect(x).toBeGreaterThanOrEqual(DHARMA_KEEP_OUT.maxX);
+    expect(z).toBeCloseTo(DHARMA_ORIGIN.z, 1);
     expect(y).toBeGreaterThan(0);
   });
 
@@ -110,8 +119,9 @@ describe("the 법당's camera clearance", () => {
     const glb = loadGlb(new URL("../src/assets/models/dharma.glb", import.meta.url));
     const corners = SOLIDS.flatMap((name) => triangleCorners(glb, name));
     for (let i = 0; i < corners.length; i += 3) {
-      corners[i] = (corners[i] as number) + DHARMA_ORIGIN.x;
-      corners[i + 2] = (corners[i + 2] as number) + DHARMA_ORIGIN.z;
+      const placed = dharmaToWorld(corners[i] as number, corners[i + 2] as number);
+      corners[i] = placed.x;
+      corners[i + 2] = placed.z;
     }
     const count = corners.length / 9;
     const low = new Float32Array(count * 3);
@@ -192,8 +202,10 @@ describe("the 법당's camera clearance", () => {
               const clearance = clearanceAt(room, camera, CAMERA_CLEARANCE * 2);
               if (clearance < worst.clearance) {
                 const { x, y, z } = camera.position;
-                const [lx, lz] = [x - DHARMA_ORIGIN.x, z - DHARMA_ORIGIN.z].map((v) => v.toFixed(2));
-                const [fx, fz] = [mx - DHARMA_ORIGIN.x, mz - DHARMA_ORIGIN.z].map((v) => v.toFixed(1));
+                const lens = worldToDharma(x, z);
+                const follow = worldToDharma(mx, mz);
+                const [lx, lz] = [lens.x, lens.z].map((v) => v.toFixed(2));
+                const [fx, fz] = [follow.x, follow.z].map((v) => v.toFixed(1));
                 worst = { clearance, where: `${width}x${height}, following room (${fx}, ${fz}) with yaw ${yaw}, pitch ${pitch}: lens at room (${lx}, ${y.toFixed(2)}, ${lz})` };
               }
             }
@@ -210,7 +222,7 @@ describe("the 법당's camera clearance", () => {
   }, 30_000);
 
   it("catches the camera box that let the lens up into the beams, which the rule above is there to prevent", () => {
-    const old = { ...DHARMA_CAMERA_BOUNDS, minX: DHARMA_ORIGIN.x - 9.6, maxX: DHARMA_ORIGIN.x + 9.6, maxY: 7 };
+    const old = { ...DHARMA_CAMERA_BOUNDS, minZ: DHARMA_ORIGIN.z - 9.6, maxZ: DHARMA_ORIGIN.z + 9.6, maxY: 7 };
     expect(nearestLens(room(), old, [DHARMA_KEEP_OUT]).clearance).toBeLessThan(CAMERA_CLEARANCE);
   }, 30_000);
 
@@ -219,9 +231,11 @@ describe("the 법당's camera clearance", () => {
     expect(DHARMA_PILLARS_KEEP_OUT).toHaveLength(FRONT_PILLARS_X.length);
     FRONT_PILLARS_X.forEach((x, i) => {
       const pillar = DHARMA_PILLARS_KEEP_OUT[i] as Box;
-      expect(DHARMA_ORIGIN.x + x - pillar.minX).toBeGreaterThanOrEqual(CAMERA_CLEARANCE + 0.28);
-      expect(pillar.maxX - (DHARMA_ORIGIN.x + x)).toBeGreaterThanOrEqual(CAMERA_CLEARANCE + 0.28);
-      expect(pillar.maxZ).toBe(DHARMA_ORIGIN.z + DHARMA.frontZ);
+      // A pillar at x across the front wall stands at z = DHARMA_ORIGIN.z - x in the world, on the wall's outside face at x = DHARMA_ORIGIN.x + frontZ.
+      const across = dharmaToWorld(x, DHARMA.frontZ).z;
+      expect(across - pillar.minZ).toBeGreaterThanOrEqual(CAMERA_CLEARANCE + 0.28);
+      expect(pillar.maxZ - across).toBeGreaterThanOrEqual(CAMERA_CLEARANCE + 0.28);
+      expect(pillar.maxX).toBe(DHARMA_ORIGIN.x + DHARMA.frontZ);
     });
   });
 });
@@ -297,12 +311,14 @@ describe("CameraRig", () => {
   });
 
   it("keeps the room's box inside the room's walls, around the walkable floor", () => {
-    expect(DHARMA_CAMERA_BOUNDS.minX).toBeGreaterThan(DHARMA_ORIGIN.x - DHARMA.halfWidth);
-    expect(DHARMA_CAMERA_BOUNDS.maxX).toBeLessThan(DHARMA_ORIGIN.x + DHARMA.halfWidth);
-    expect(DHARMA_CAMERA_BOUNDS.maxZ).toBeLessThan(DHARMA_ORIGIN.z + DHARMA.frontZ);
+    const camera = inRoomFrame(DHARMA_CAMERA_BOUNDS);
+    const floor = inRoomFrame(DHARMA_BOUNDS);
+    expect(camera.minX).toBeGreaterThan(-DHARMA.halfWidth);
+    expect(camera.maxX).toBeLessThan(DHARMA.halfWidth);
+    expect(camera.maxZ).toBeLessThan(DHARMA.frontZ);
     // The side pillars stand just outside the floor's edge, so the box stops up to the clearance short of it.
-    expect(DHARMA_CAMERA_BOUNDS.minX - DHARMA_BOUNDS.minX).toBeLessThanOrEqual(CAMERA_CLEARANCE + 1e-9);
-    expect(DHARMA_BOUNDS.maxX - DHARMA_CAMERA_BOUNDS.maxX).toBeLessThanOrEqual(CAMERA_CLEARANCE + 1e-9);
+    expect(camera.minX - floor.minX).toBeLessThanOrEqual(CAMERA_CLEARANCE + 1e-9);
+    expect(floor.maxX - camera.maxX).toBeLessThanOrEqual(CAMERA_CLEARANCE + 1e-9);
     expect(regionFor("dharma").bounds).toBe(DHARMA_CAMERA_BOUNDS);
   });
 
@@ -312,6 +328,16 @@ describe("CameraRig", () => {
     expect(rig.forward.z).toBeCloseTo(-1, 6);
     rig.yaw = Math.PI / 2;
     expect(rig.forward.x).toBeCloseTo(-1, 6);
+  });
+
+  it("opens in the 법당 looking from the door toward the altar, the way the room is turned", () => {
+    const rig = make();
+    rig.yaw = viewFor("dharma", 1.6).yaw;
+    const door = dharmaToWorld(0, DHARMA.frontZ);
+    const altar = dharmaToWorld(BUDDHA_AT.x, BUDDHA_AT.z);
+    const length = Math.hypot(altar.x - door.x, altar.z - door.z);
+    expect(rig.forward.x).toBeCloseTo((altar.x - door.x) / length, 6);
+    expect(rig.forward.z).toBeCloseTo((altar.z - door.z) / length, 6);
   });
 
   it("does not sway when motion is reduced", () => {

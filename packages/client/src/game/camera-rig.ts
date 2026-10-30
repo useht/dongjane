@@ -1,5 +1,5 @@
 import { PerspectiveCamera, Vector3 } from "three";
-import { DHARMA_ORIGIN, type Zone } from "@dongjane/shared";
+import { DHARMA_YAW, type Zone, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
@@ -74,36 +74,48 @@ const DHARMA_LIMITS: RigLimits = { minDistance: 2.2, maxDistance: 12, minPitch: 
 // How far the lens keeps from anything the room draws.
 export const CAMERA_CLEARANCE = 0.3;
 
+// A box given in the room's own frame (door +z, relative to the middle of its floor), as the world holds it after the quarter turn.
+function inWorld(room: { minX: number; maxX: number; minZ: number; maxZ: number }, minY: number, maxY: number): Box {
+  const a = dharmaToWorld(room.minX, room.minZ);
+  const b = dharmaToWorld(room.maxX, room.maxZ);
+  return { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minY, maxY, minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
+}
+
 // Below the beam band (underside at 5.2) and inside the side pillars (faces at 9.27).
-export const DHARMA_CAMERA_BOUNDS: Box = {
-  minX: DHARMA_ORIGIN.x - 8.9,
-  maxX: DHARMA_ORIGIN.x + 8.9,
-  minY: 0.5,
-  maxY: 4.9,
-  minZ: DHARMA_ORIGIN.z - 5,
-  maxZ: DHARMA_ORIGIN.z + 8.8,
-};
+export const DHARMA_CAMERA_BOUNDS: Box = inWorld({ minX: -8.9, maxX: 8.9, minZ: -5, maxZ: 8.8 }, 0.5, 4.9);
 
 // The 법당's solid outside, up to the finials on its ridge: a camera that follows someone along its front may not swing into it.
-export const DHARMA_KEEP_OUT: Box = {
-  minX: DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth,
-  maxX: DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth,
-  minY: -1,
-  maxY: 13,
-  minZ: DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth,
-  maxZ: DHARMA_ORIGIN.z + DHARMA_SHELL.porchZ,
-};
+export const DHARMA_KEEP_OUT: Box = inWorld(
+  {
+    minX: -DHARMA.halfWidth - DHARMA_SHELL.plinth,
+    maxX: DHARMA.halfWidth + DHARMA_SHELL.plinth,
+    minZ: DHARMA.backZ - DHARMA_SHELL.plinth,
+    maxZ: DHARMA_SHELL.porchZ,
+  },
+  -1,
+  13,
+);
+
+// Whether a world point is inside the room itself: between its walls and under its ceiling.
+export function pointInRoom(point: { x: number; y: number; z: number }): boolean {
+  const room = worldToDharma(point.x, point.z);
+  return Math.abs(room.x) < DHARMA.halfWidth && room.z > DHARMA.backZ && room.z < DHARMA.frontZ && point.y < DHARMA.ceilingHeight;
+}
 
 // Round the front wall's engaged pillars, widened by the clearance.
 const PILLAR_RADIUS = 0.3;
-export const DHARMA_PILLARS_KEEP_OUT: readonly Box[] = FRONT_PILLARS_X.map((x) => ({
-  minX: DHARMA_ORIGIN.x + x - PILLAR_RADIUS - CAMERA_CLEARANCE,
-  maxX: DHARMA_ORIGIN.x + x + PILLAR_RADIUS + CAMERA_CLEARANCE,
-  minY: 0,
-  maxY: DHARMA.ceilingHeight,
-  minZ: DHARMA_ORIGIN.z + DHARMA.frontZ - DHARMA.inset - PILLAR_RADIUS - 0.1,
-  maxZ: DHARMA_ORIGIN.z + DHARMA.frontZ,
-}));
+export const DHARMA_PILLARS_KEEP_OUT: readonly Box[] = FRONT_PILLARS_X.map((x) =>
+  inWorld(
+    {
+      minX: x - PILLAR_RADIUS - CAMERA_CLEARANCE,
+      maxX: x + PILLAR_RADIUS + CAMERA_CLEARANCE,
+      minZ: DHARMA.frontZ - DHARMA.inset - PILLAR_RADIUS - 0.1,
+      maxZ: DHARMA.frontZ,
+    },
+    0,
+    DHARMA.ceilingHeight,
+  ),
+);
 
 // Everything a camera inside the 법당 is held back from.
 export const DHARMA_KEEP_OUTS: readonly Box[] = [DHARMA_KEEP_OUT, ...DHARMA_PILLARS_KEEP_OUT];
@@ -121,7 +133,8 @@ export interface View {
 export const DEFAULT_VIEW: View = { yaw: -0.085, pitch: 0.62, distance: 16 };
 
 const LANDSCAPE_VIEW_WIDE_DISTANCE = 12;
-const DHARMA_VIEW: View = { yaw: 0, pitch: 0.75, distance: 8.5 };
+// From the door side of the room toward the altar, whichever way the world has turned the room.
+const DHARMA_VIEW: View = { yaw: DHARMA_YAW, pitch: 0.75, distance: 8.5 };
 const START_DISTANCE = 7;
 
 // A wide window frames the plaza from nearer than a tall one, which needs the distance to fit the plaza's depth.

@@ -5,18 +5,20 @@ import {
   DHARMA_ORIGIN,
   DHARMA_SEATS,
   DHARMA_SEAT_SIZE,
+  DHARMA_YAW,
   GATBAWI_SEATS,
   GATBAWI_SEAT_SIZE,
   GATBAWI_Z,
   PLATFORM,
   PLAZA,
   SEAT_COUNT,
-  SEAT_YAW,
+  SEAT_YAWS,
   STEPS,
   WORLD_BOUNDS,
   ZONES,
   ZONE_CAPACITY,
   ZONE_SEATS,
+  dharmaToWorld,
   isZone,
   lerpAngle,
   pickSeat,
@@ -24,6 +26,7 @@ import {
   seatKey,
   seatSpot,
   worldName,
+  worldToDharma,
   wrapAngle,
   yawFromDirection,
 } from "../src/index.ts";
@@ -71,7 +74,7 @@ describe("gatbawi seats", () => {
   });
 
   it("faces every mat toward Gatbawi", () => {
-    expect(SEAT_YAW).toBeCloseTo(yawFromDirection(0, -1));
+    expect(SEAT_YAWS.gatbawi).toBeCloseTo(yawFromDirection(0, -1));
     for (const spot of GATBAWI_SEATS) expect(GATBAWI_Z).toBeLessThan(spot.z - GATBAWI_SEAT_SIZE.z / 2);
   });
 
@@ -90,11 +93,30 @@ describe("gatbawi seats", () => {
 describe("dharma seats", () => {
   it("lays fifty 방석 in two blocks of five rows with an aisle down the middle", () => {
     expect(DHARMA_SEATS.map((spot) => spot.id)).toEqual(Array.from({ length: 50 }, (_, id) => id));
-    expect(DHARMA_SEATS[0]).toMatchObject({ id: 0, x: -25.65, z: -2.6, row: 0, column: 0 });
-    expect(DHARMA_SEATS[4]).toMatchObject({ id: 4, x: -20.45 });
-    expect(DHARMA_SEATS[5]).toMatchObject({ id: 5, x: -17.55 });
-    expect(DHARMA_SEATS[49]).toMatchObject({ id: 49, x: -12.35, z: 2.4, row: 4, column: 9 });
-    expect(DHARMA_SEATS.some((spot) => Math.abs(spot.x - DHARMA_ORIGIN.x) < 1)).toBe(false);
+    expect(DHARMA_SEATS[0]).toMatchObject({ id: 0, x: -21.6, z: 6.65, row: 0, column: 0 });
+    expect(DHARMA_SEATS[4]).toMatchObject({ id: 4, x: -21.6, z: 1.45 });
+    expect(DHARMA_SEATS[5]).toMatchObject({ id: 5, x: -21.6, z: -1.45 });
+    expect(DHARMA_SEATS[49]).toMatchObject({ id: 49, x: -16.6, z: -6.65, row: 4, column: 9 });
+    expect(DHARMA_SEATS.some((spot) => Math.abs(spot.z - DHARMA_ORIGIN.z) < 1)).toBe(false);
+  });
+
+  it("puts the first row against the altar on the back wall and the last row nearest the door", () => {
+    for (const spot of DHARMA_SEATS) expect(spot.x).toBeCloseTo(-21.6 + spot.row * 1.25, 9);
+    expect(new Set(DHARMA_SEATS.map((spot) => spot.x)).size).toBe(5);
+  });
+
+  it("faces every 방석 at the altar on the back wall, which is on the -x side", () => {
+    expect(SEAT_YAWS.dharma).toBe(DHARMA_YAW);
+    expect(SEAT_YAWS.dharma).toBeCloseTo(yawFromDirection(-1, 0), 12);
+    // yaw is the direction yawFromDirection inverts: a monk looking along (dx, dz) has yaw atan2(-dx, -dz).
+    const lookX = -Math.sin(SEAT_YAWS.dharma);
+    const lookZ = -Math.cos(SEAT_YAWS.dharma);
+    expect(lookX).toBeCloseTo(-1, 12);
+    expect(lookZ).toBeCloseTo(0, 12);
+    for (const spot of DHARMA_SEATS) {
+      expect((DHARMA_BOUNDS.minX - spot.x) * lookX, `방석 ${spot.id} looks away from the altar`).toBeGreaterThan(0);
+      expect((DHARMA_BOUNDS.maxX - spot.x) * lookX, `방석 ${spot.id} looks at the door`).toBeLessThan(0);
+    }
   });
 
   it("keeps the 방석 apart and inside the room", () => {
@@ -113,6 +135,39 @@ describe("dharma seats", () => {
         expect(apartX || apartZ, `방석 ${a.id} and ${b.id} overlap`).toBe(true);
       }
     }
+  });
+});
+
+describe("the 법당's quarter turn", () => {
+  it("turns the room frame counter-clockwise seen from above, so its door lands on the +x side", () => {
+    expect(DHARMA_YAW).toBe(Math.PI / 2);
+    // three.js rotation.y = yaw sends the local +z (the door) to (sin yaw, 0, cos yaw).
+    const door = dharmaToWorld(0, 1);
+    expect(door.x - DHARMA_ORIGIN.x).toBeCloseTo(Math.sin(DHARMA_YAW), 12);
+    expect(door.z - DHARMA_ORIGIN.z).toBeCloseTo(Math.cos(DHARMA_YAW), 12);
+    // The room's +x turns to world -z, the same way (cos yaw, 0, -sin yaw).
+    const side = dharmaToWorld(1, 0);
+    expect(side.x - DHARMA_ORIGIN.x).toBeCloseTo(Math.cos(DHARMA_YAW), 12);
+    expect(side.z - DHARMA_ORIGIN.z).toBeCloseTo(-Math.sin(DHARMA_YAW), 12);
+  });
+
+  it("maps floor points to the world and back", () => {
+    expect(dharmaToWorld(0, 0)).toEqual({ x: DHARMA_ORIGIN.x, z: DHARMA_ORIGIN.z });
+    expect(dharmaToWorld(0, 9)).toEqual({ x: -10, z: 0 });
+    expect(dharmaToWorld(0, -8.4)).toEqual({ x: -27.4, z: 0 });
+    for (const [x, z] of [[3.5, -2], [-9.2, 8.4], [0, 9.9], [6.65, 2.4]] as const) {
+      const world = dharmaToWorld(x, z);
+      const back = worldToDharma(world.x, world.z);
+      expect(back.x).toBeCloseTo(x, 9);
+      expect(back.z).toBeCloseTo(z, 9);
+    }
+  });
+
+  it("stands the room on the west side, its front wall on the plaza side of the floor", () => {
+    expect(DHARMA_BOUNDS.minX).toBeCloseTo(-23.8, 9);
+    expect(DHARMA_BOUNDS.maxX).toBeCloseTo(-10.6, 9);
+    expect(DHARMA_BOUNDS.minZ).toBeCloseTo(-9.2, 9);
+    expect(DHARMA_BOUNDS.maxZ).toBeCloseTo(9.2, 9);
   });
 });
 

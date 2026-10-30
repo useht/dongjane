@@ -1,4 +1,4 @@
-import { DHARMA_BOUNDS, DHARMA_ORIGIN } from "@dongjane/shared";
+import { DHARMA_BOUNDS, dharmaToWorld } from "@dongjane/shared";
 import { DHARMA, DHARMA_DOOR } from "../game/dharma-layout.ts";
 import type { AudioEngine } from "./engine.ts";
 
@@ -25,7 +25,8 @@ export function aimAhead(target: number, durationSeconds: number): number {
 export const DEEP_METRES = 3;
 export const OUTSIDE_METRES = 6;
 
-const DOORWAY = { x: DHARMA_ORIGIN.x, z: DHARMA_ORIGIN.z + DHARMA.frontZ };
+// The middle of the front door, in the front wall's plane; the door faces +x.
+const DOORWAY = dharmaToWorld(0, DHARMA.frontZ);
 
 function unit(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -33,10 +34,10 @@ function unit(value: number): number {
 
 export function areaMix(x: number, z: number): number {
   if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
-  const inside = x >= DHARMA_BOUNDS.minX && x <= DHARMA_BOUNDS.maxX && z >= DHARMA_BOUNDS.minZ && z <= DOORWAY.z;
-  if (inside) return 0.5 + 0.5 * unit((DOORWAY.z - z) / DEEP_METRES);
-  const beside = Math.max(0, Math.abs(x - DOORWAY.x) - DHARMA_DOOR.halfWidth);
-  const away = Math.hypot(beside, Math.max(0, z - DOORWAY.z));
+  const inside = x >= DHARMA_BOUNDS.minX && x <= DOORWAY.x && z >= DHARMA_BOUNDS.minZ && z <= DHARMA_BOUNDS.maxZ;
+  if (inside) return 0.5 + 0.5 * unit((DOORWAY.x - x) / DEEP_METRES);
+  const beside = Math.max(0, Math.abs(z - DOORWAY.z) - DHARMA_DOOR.halfWidth);
+  const away = Math.hypot(beside, Math.max(0, x - DOORWAY.x));
   return 0.5 * (1 - unit(away / OUTSIDE_METRES));
 }
 

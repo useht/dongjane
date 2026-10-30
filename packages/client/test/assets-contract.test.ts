@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
+import { type Bounds, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_SEAT_SIZE, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, PLAZA, SEAT_YAWS, STEPS, WORLD_BOUNDS, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import { BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL, WALL_OPENINGS, WINDOW_BAND, type WindowWall } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
@@ -133,14 +133,50 @@ const SHELL_PLANES: Readonly<Record<WindowWall, number>> = {
   west: -DHARMA.halfWidth - SHELL_OUT,
 };
 
+// World positions as the room sees them: the room's frame is the world's turned a quarter turn about DHARMA_ORIGIN.
+type Where = (x: number, z: number) => { x: number; z: number };
+const IN_ROOM: Where = worldToDharma;
+const AS_IS: Where = (x, z) => ({ x, z });
+
+// A box of the room's frame (door on +z) as the world holds it, for checks that read world positions.
+function roomBoundsInWorld(room: Bounds): Bounds {
+  const [a, b] = [dharmaToWorld(room.minX, room.minZ), dharmaToWorld(room.maxX, room.maxZ)];
+  return { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
+}
+
+// What the shell's base covers, in the room's frame: the walls plus a plinth, running out to the porch in front.
+const FOOTPRINT: Bounds = {
+  minX: -DHARMA.halfWidth - DHARMA_SHELL.plinth,
+  maxX: DHARMA.halfWidth + DHARMA_SHELL.plinth,
+  minZ: DHARMA.backZ - DHARMA_SHELL.plinth,
+  maxZ: DHARMA_SHELL.porchZ,
+};
+
+// The extent of `name` in the room's frame, from a glb that holds it in the world's.
+function roomExtent(glb: Glb, name: string, keep: (x: number, y: number, z: number) => boolean = () => true): Bounds & { minY: number; maxY: number } {
+  const { values, count } = positions(glb, name);
+  const box = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (let i = 0; i < count; i += 1) {
+    const { x, z } = IN_ROOM(values[i * 3] as number, values[i * 3 + 2] as number);
+    const y = values[i * 3 + 1] as number;
+    if (!keep(x, y, z)) continue;
+    box.minX = Math.min(box.minX, x);
+    box.maxX = Math.max(box.maxX, x);
+    box.minY = Math.min(box.minY, y);
+    box.maxY = Math.max(box.maxY, y);
+    box.minZ = Math.min(box.minZ, z);
+    box.maxZ = Math.max(box.maxZ, z);
+  }
+  return box;
+}
+
 // The vertices of `name` on one wall's plane, as [along, y]: along is x on the front wall and z on the side walls, in the room's frame.
-function onWall(glb: Glb, name: string, wall: WindowWall, planes: Readonly<Record<WindowWall, number>>, origin: { x: number; z: number }): [number, number][] {
+function onWall(glb: Glb, name: string, wall: WindowWall, planes: Readonly<Record<WindowWall, number>>, where: Where): [number, number][] {
   const { values, count } = positions(glb, name);
   const found: [number, number][] = [];
   for (let i = 0; i < count; i += 1) {
-    const x = (values[i * 3] as number) - origin.x;
+    const { x, z } = where(values[i * 3] as number, values[i * 3 + 2] as number);
     const y = values[i * 3 + 1] as number;
-    const z = (values[i * 3 + 2] as number) - origin.z;
     const [across, along] = wall === "front" ? [z, x] : [x, z];
     if (Math.abs(across - planes[wall]) <= 0.01) found.push([along, y]);
   }
@@ -342,12 +378,7 @@ describe("world.glb", () => {
   });
 
   it("keeps trees and boulders out of the area players walk in", () => {
-    const footprint = {
-      minX: DHARMA_ORIGIN.x - DHARMA.halfWidth - DHARMA_SHELL.plinth,
-      maxX: DHARMA_ORIGIN.x + DHARMA.halfWidth + DHARMA_SHELL.plinth,
-      minZ: DHARMA_ORIGIN.z + DHARMA.backZ - DHARMA_SHELL.plinth,
-      maxZ: COURT_AREA.minZ,
-    };
+    const footprint = roomBoundsInWorld(FOOTPRINT);
     for (const name of ["pine", "maple", "rocks"]) {
       const { values, count } = positions(glb, name);
       let inside = 0;
@@ -365,40 +396,62 @@ describe("world.glb", () => {
   });
 
   it("stands the 법당's shell round its room, the porch running out to the court and the roof high over the walkers", () => {
-    const base = mesh("dharmaBase").positions;
+    const base = roomExtent(glb, "dharmaBase");
     const walls = mesh("dharmaWalls").positions;
-    const front = mesh("dharmaFront").positions;
-    const roof = mesh("dharmaRoof").positions;
+    const front = roomExtent(glb, "dharmaFront");
+    const roof = roomExtent(glb, "dharmaRoof");
     const { halfWidth, backZ, frontZ } = DHARMA;
-    near(base.min[0], DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.plinth);
-    near(base.max[0], DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.plinth);
-    near(base.min[2], DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.plinth);
-    near(base.max[2], COURT_AREA.minZ);
-    near(base.min[1], -0.1);
-    expect(base.max[1]).toBeGreaterThanOrEqual(DHARMA_SHELL.baseHeight);
+    // All of these are read in the room's frame: the world holds the same shell turned a quarter turn.
+    near(base.minX, -halfWidth - DHARMA_SHELL.plinth);
+    near(base.maxX, halfWidth + DHARMA_SHELL.plinth);
+    near(base.minZ, backZ - DHARMA_SHELL.plinth);
+    near(base.maxZ, worldToDharma(COURT_AREA.minX, DHARMA_ORIGIN.z).z);
+    near(base.minY, -0.1);
+    expect(base.maxY).toBeGreaterThanOrEqual(DHARMA_SHELL.baseHeight);
     near(walls.min[1], DHARMA_SHELL.baseHeight);
-    expect(front.min[2]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.z + frontZ - 0.05);
-    expect(front.max[2]).toBeLessThanOrEqual(COURT_AREA.minZ + 1);
-    near(roof.min[1], DHARMA_SHELL.beamTop);
-    expect(roof.max[1]).toBeGreaterThan(DHARMA_SHELL.beamTop + DHARMA_SHELL.rise);
-    expect(roof.min[0]).toBeLessThanOrEqual(DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.eave);
-    expect(roof.max[0]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.eave);
-    expect(roof.min[2]).toBeLessThanOrEqual(DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.eave);
-    expect(roof.max[2]).toBeGreaterThanOrEqual(DHARMA_ORIGIN.z + frontZ + DHARMA_SHELL.eave);
-    for (const part of [base, walls, front]) expect(part.max[0], "solid parts stay off the plaza").toBeLessThan(WORLD_BOUNDS.minX);
+    expect(front.minZ).toBeGreaterThanOrEqual(frontZ - 0.05);
+    expect(front.maxZ).toBeLessThanOrEqual(worldToDharma(COURT_AREA.minX, DHARMA_ORIGIN.z).z + 1);
+    near(roof.minY, DHARMA_SHELL.beamTop);
+    expect(roof.maxY).toBeGreaterThan(DHARMA_SHELL.beamTop + DHARMA_SHELL.rise);
+    expect(roof.minX).toBeLessThanOrEqual(-halfWidth - DHARMA_SHELL.eave);
+    expect(roof.maxX).toBeGreaterThanOrEqual(halfWidth + DHARMA_SHELL.eave);
+    expect(roof.minZ).toBeLessThanOrEqual(backZ - DHARMA_SHELL.eave);
+    expect(roof.maxZ).toBeGreaterThanOrEqual(frontZ + DHARMA_SHELL.eave);
+    for (const name of ["dharmaBase", "dharmaWalls", "dharmaFront"]) expect(mesh(name).positions.max[0], `${name} stays off the plaza`).toBeLessThan(WORLD_BOUNDS.minX);
+  });
+
+  it("turns the 법당 so its front wall, porch and doorway face +x toward the plaza and Gatbawi, and its back faces -x", () => {
+    const front = mesh("dharmaFront").positions;
+    const base = mesh("dharmaBase").positions;
+    expect(front.min[0], "the front wall stands on the +x side of the room's middle").toBeGreaterThanOrEqual(DHARMA_ORIGIN.x + DHARMA.frontZ - 0.05);
+    near(base.max[0], COURT_AREA.minX);
+    expect(base.min[0], "the back is the westernmost part").toBeLessThan(DHARMA_ORIGIN.x + DHARMA.backZ);
+    near((base.min[2] + base.max[2]) / 2, DHARMA_ORIGIN.z);
+  });
+
+  it("hangs the signboard over the middle of the doorway: centred on the door, above the lintel, proud of the front wall's outer face", () => {
+    const outer = SHELL_PLANES.front;
+    // Between the lintel and the top of the plaster, and nothing but the board stands out of the wall there.
+    const plaque = roomExtent(glb, "dharmaFront", (x, y, z) => Math.abs(x) < 1.5 && y > DHARMA_DOOR.height + 0.4 && y < DHARMA.wallHeight && z > outer + 0.05);
+    expect(Number.isFinite(plaque.minX), "the signboard is there").toBe(true);
+    near((plaque.minX + plaque.maxX) / 2, 0);
+    expect(plaque.maxX - plaque.minX, "wider than a window, narrower than the doorway").toBeGreaterThan(2);
+    expect(plaque.maxX - plaque.minX).toBeLessThan(2 * DHARMA_DOOR.halfWidth);
+    expect(plaque.minY, "above the doorway").toBeGreaterThan(DHARMA_DOOR.height);
+    expect(plaque.maxY, "under the top of the wall").toBeLessThan(DHARMA.wallHeight - 0.2);
+    expect(plaque.minZ, "proud of the plaster").toBeGreaterThan(outer);
   });
 
   it("leaves the doorway open: nothing of the shell stands in it, with a jamb on either side", () => {
     const edge = DHARMA_DOOR.halfWidth;
-    const frontFace = DHARMA_ORIGIN.z + DHARMA.frontZ - 0.05;
+    const frontFace = DHARMA.frontZ - 0.05;
     for (const name of ["dharmaWalls", "dharmaFront"]) {
       const { values, count } = positions(glb, name);
       let left = 0;
       let right = 0;
       for (let i = 0; i < count; i += 1) {
-        const across = (values[i * 3] as number) - DHARMA_ORIGIN.x;
+        const { x: across, z } = IN_ROOM(values[i * 3] as number, values[i * 3 + 2] as number);
         const y = values[i * 3 + 1] as number;
-        const z = values[i * 3 + 2] as number;
         if (z < frontFace || z > DHARMA_SHELL.porchZ) continue;
         if (Math.abs(across) < edge - 0.02 && y > DHARMA_SHELL.baseHeight + 0.05 && y < DHARMA_DOOR.height - 0.02) {
           throw new Error(`${name} vertex ${i} stands in the doorway at ${across.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)}`);
@@ -416,7 +469,7 @@ describe("world.glb", () => {
   it("cuts each window through the plaster, in the front wall and the two side walls", () => {
     const parts: Readonly<Record<WindowWall, string>> = { front: "dharmaFront", east: "dharmaWalls", west: "dharmaWalls" };
     for (const wall of ["front", "east", "west"] as const) {
-      expectCut(onWall(glb, parts[wall], wall, SHELL_PLANES, DHARMA_ORIGIN), wall, "shell");
+      expectCut(onWall(glb, parts[wall], wall, SHELL_PLANES, IN_ROOM), wall, "shell");
     }
   });
 
@@ -425,12 +478,7 @@ describe("world.glb", () => {
     const cos = Math.cos(STAGE_YAW);
     const sin = Math.sin(STAGE_YAW);
     const { halfWidth, backZ, frontZ } = DHARMA;
-    const footprint = {
-      minX: DHARMA_ORIGIN.x - halfWidth - DHARMA_SHELL.plinth,
-      maxX: DHARMA_ORIGIN.x + halfWidth + DHARMA_SHELL.plinth,
-      minZ: DHARMA_ORIGIN.z + backZ - DHARMA_SHELL.plinth,
-      maxZ: COURT_AREA.minZ,
-    };
+    const footprint = roomBoundsInWorld(FOOTPRINT);
     let onStageChecked = 0;
     let underRoom = 0;
     let underCourt = 0;
@@ -452,7 +500,8 @@ describe("world.glb", () => {
         const outsidePlinth = x < footprint.minX - 0.01 || x > footprint.maxX + 0.01 || z < footprint.minZ - 0.01 || z > footprint.maxZ + 0.01;
         if (outsidePlinth) expect(Math.abs(y), `${where} is level beyond the plinth`).toBeLessThanOrEqual(0.01);
       }
-      const underFloor = Math.abs(x - DHARMA_ORIGIN.x) <= halfWidth - 0.1 && z >= DHARMA_ORIGIN.z + backZ + 0.1 && z <= DHARMA_ORIGIN.z + frontZ - 0.1;
+      const inside = IN_ROOM(x, z);
+      const underFloor = Math.abs(inside.x) <= halfWidth - 0.1 && inside.z >= backZ + 0.1 && inside.z <= frontZ - 0.1;
       if (underFloor) {
         underRoom += 1;
         expect(y, `${where} lies under the floor`).toBeLessThanOrEqual(-0.1);
@@ -575,8 +624,10 @@ describe("dharma.glb", () => {
   const nodes = expectContract(glb, DHARMA_MESHES);
   const mesh = byName(nodes);
   const near = (actual: number, expected: number): void => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(TOLERANCE);
-  // The glb is authored around the middle of the floor; the game puts that middle at DHARMA_ORIGIN.
-  const room = { minX: DHARMA_BOUNDS.minX - DHARMA_ORIGIN.x, maxX: DHARMA_BOUNDS.maxX - DHARMA_ORIGIN.x, minZ: DHARMA_BOUNDS.minZ - DHARMA_ORIGIN.z, maxZ: DHARMA_BOUNDS.maxZ - DHARMA_ORIGIN.z };
+  // The glb is authored around the middle of the floor in the room's own frame; the game puts that middle at DHARMA_ORIGIN
+  // and turns the frame a quarter turn, so the walkable floor is read back into the room's frame.
+  const corners = [worldToDharma(DHARMA_BOUNDS.minX, DHARMA_BOUNDS.minZ), worldToDharma(DHARMA_BOUNDS.maxX, DHARMA_BOUNDS.maxZ)];
+  const room = { minX: Math.min(...corners.map((c) => c.x)), maxX: Math.max(...corners.map((c) => c.x)), minZ: Math.min(...corners.map((c) => c.z)), maxZ: Math.max(...corners.map((c) => c.z)) };
 
   it("stays inside its size budget, counting every seat the game lays out", () => {
     const prototypes: readonly string[] = DHARMA_PROTOTYPES;
@@ -635,12 +686,19 @@ describe("dharma.glb", () => {
   });
 
   it("keeps the seats clear of the altar and inside the room, each facing the Buddha", () => {
+    const buddha = dharmaToWorld(BUDDHA_AT.x, BUDDHA_AT.z);
+    // The way a monk on a seat looks (yaw 0 looks toward -z), and the way the room's back wall lies from its middle, both in the world's frame.
+    const facing = { x: -Math.sin(SEAT_YAWS.dharma), z: -Math.cos(SEAT_YAWS.dharma) };
+    const towardAltar = dharmaToWorld(0, -1);
+    expect(facing.x).toBeCloseTo(towardAltar.x - DHARMA_ORIGIN.x, 6);
+    expect(facing.z).toBeCloseTo(towardAltar.z - DHARMA_ORIGIN.z, 6);
     for (const spot of DHARMA_SEATS) {
-      const x = spot.x - DHARMA_ORIGIN.x;
-      const z = spot.z - DHARMA_ORIGIN.z;
+      const { x, z } = worldToDharma(spot.x, spot.z);
       expect(z - DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeGreaterThan(ALTAR.maxZ);
       expect(z + DHARMA_SEAT_SIZE.z / 2, `seat ${spot.id}`).toBeLessThanOrEqual(room.maxZ);
       expect(Math.abs(x) + DHARMA_SEAT_SIZE.x / 2, `seat ${spot.id}`).toBeLessThanOrEqual(room.maxX);
+      const ahead = (buddha.x - spot.x) * facing.x + (buddha.z - spot.z) * facing.z;
+      expect(ahead, `the Buddha is in front of seat ${spot.id}`).toBeGreaterThan(1);
     }
   });
 
@@ -660,7 +718,7 @@ describe("dharma.glb", () => {
 
   it("cuts each window through the room's wall at the same place as the shell's, in the front wall and the two side walls", () => {
     for (const wall of ["front", "east", "west"] as const) {
-      expectCut(onWall(glb, "structure", wall, WALL_PLANES, { x: 0, z: 0 }), wall, "room");
+      expectCut(onWall(glb, "structure", wall, WALL_PLANES, AS_IS), wall, "room");
     }
   });
 

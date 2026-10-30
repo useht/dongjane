@@ -31,7 +31,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { DHARMA_ORIGIN, SEAT_COUNT, SEAT_YAW, ZONE_SEATS } from "@dongjane/shared";
+import { DHARMA_ORIGIN, DHARMA_YAW, SEAT_COUNT, ZONE_SEATS, worldToDharma } from "@dongjane/shared";
 import { type ModelMeshes, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, FLAME_HEIGHT, hangingLanterns } from "./dharma-layout.ts";
@@ -61,7 +61,8 @@ const SEAT_OCCUPIED_TINT = 0.55;
 const FLAME_SIZE = { width: 0.34, height: 0.5 } as const;
 const DUST_SIZE = 0.09;
 
-// A soft warm room for the gold to reflect, with a window panel on one side and the candles on the other.
+// A soft warm room for the gold to reflect, with a window panel on one side and the candles on the other. The panels are
+// laid out in the room's own frame and turned with it, because an environment map reflects what is around the room in the world.
 function buildEnvironment(renderer: WebGLRenderer): Texture {
   const { scene: palette } = THEME;
   const scene = new Scene();
@@ -89,13 +90,15 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   const lamp = new Mesh(lampGeometry, lampMaterial);
   lamp.position.set(8, 4, 0);
   lamp.rotation.y = -Math.PI / 2;
-  scene.add(lamp);
   const candleGeometry = new PlaneGeometry(3, 2);
   const candleMaterial = new MeshBasicMaterial({ color: new Color(palette.envCandle).multiplyScalar(4), side: DoubleSide });
   const candle = new Mesh(candleGeometry, candleMaterial);
   candle.position.set(0, 2, 8);
   candle.rotation.y = Math.PI;
-  scene.add(candle);
+  const panels = new Group();
+  panels.rotation.y = DHARMA_YAW;
+  panels.add(lamp, candle);
+  scene.add(panels);
 
   const generator = new PMREMGenerator(renderer);
   const target = generator.fromScene(scene, 0.03);
@@ -114,10 +117,11 @@ function centredGlow(source: Mesh): { geometry: BufferGeometry; centre: Vector3 
   return { geometry, centre };
 }
 
-// The 법당's inside: the room, the Buddha on his altar, fifty floor seats. It is modelled around its own origin and its group
-// stands at DHARMA_ORIGIN in the world. It owns its own lights and never looks at the sky, so the weather and the hour
-// outside change nothing in here. The lights stay in the scene all the time (adding or removing one would recompile every
-// material); `setPresence` turns them up as the camera comes in and down as it goes out.
+// The 법당's inside: the room, the Buddha on his altar, fifty floor seats. It is modelled around its own origin with the door
+// in the +z wall; its group stands at DHARMA_ORIGIN turned DHARMA_YAW, which puts the door on the +x side facing the plaza.
+// It owns its own lights and never looks at the sky, so the weather and the hour outside change nothing in here. The lights
+// stay in the scene all the time (adding or removing one would recompile every material); `setPresence` turns them up as the
+// camera comes in and down as it goes out.
 export class DharmaScene {
   readonly group = new Group();
   // The room's floor a tap can walk to, and the pillars, altar and Buddha that stand on it.
@@ -148,6 +152,7 @@ export class DharmaScene {
     const { scene: palette } = THEME;
     this.group.name = "dharma";
     this.group.position.set(DHARMA_ORIGIN.x, 0, DHARMA_ORIGIN.z);
+    this.group.rotation.y = DHARMA_YAW;
     this.environment = buildEnvironment(renderer);
 
     this.hemisphere = new HemisphereLight(palette.dharmaHemiSky, palette.dharmaHemiGround, 0);
@@ -279,8 +284,10 @@ export class DharmaScene {
     seats.frustumCulled = false;
     seats.name = "seats";
     const m = new Matrix4();
+    // In the room's frame every seat faces the altar at -z without a turn of its own; the group's turn carries it to -x.
     for (const spot of ZONE_SEATS.dharma) {
-      m.makeRotationY(SEAT_YAW).setPosition(spot.x - DHARMA_ORIGIN.x, 0, spot.z - DHARMA_ORIGIN.z);
+      const place = worldToDharma(spot.x, spot.z);
+      m.makeTranslation(place.x, 0, place.z);
       seats.setMatrixAt(spot.id, m);
     }
     this.group.add(seats);
@@ -342,7 +349,8 @@ export class DharmaScene {
       const [x, z] = CANDLE_SPOTS[i] as readonly [number, number];
       const wobble = 0.92 + flicker * (0.09 * Math.sin(time * 9 + i * 1.7) + 0.05 * Math.sin(time * 17 + i * 3.1));
       base.set(x, ALTAR.topY + FLAME_HEIGHT, z);
-      if (camera) this.tmpQuat.copy(camera.quaternion);
+      // The flame faces the camera: its turn in the world, less the group's own turn.
+      if (camera) this.tmpQuat.copy(this.group.quaternion).invert().multiply(camera.quaternion);
       else this.tmpQuat.identity();
       this.tmpScale.set(wobble * 0.9, wobble, 1);
       this.tmpMatrix.compose(base, this.tmpQuat, this.tmpScale);

@@ -21,6 +21,7 @@ import {
   DHARMA_SEATS,
   GATBAWI_SEATS,
   SEAT_COUNT,
+  SEAT_YAWS,
   WORLD_BOUNDS,
   type Zone,
 } from "../src/layout.ts";
@@ -194,6 +195,23 @@ describe("seats", () => {
     expect(h.monk("a").seatId).toBe(5);
   });
 
+  it("walks a visitor in through the east door and kneels them on a 방석 facing the altar at the -x wall", () => {
+    h.sim.join("a", 0);
+    expect(h.sim.sit("a", "dharma", 24)).toBe(true);
+    h.advance(40_000);
+    const monk = h.monk("a");
+    const spot = DHARMA_SEATS[24]!;
+    expect(monk.mode).toBe("kneel");
+    expect(monk.x).toBeCloseTo(spot.x, 4);
+    expect(monk.z).toBeCloseTo(spot.z, 4);
+    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    expect(monk.yaw).toBeCloseTo(Math.PI / 2, 5);
+    // yaw is atan2(-dx, -dz), so the monk looks along (-sin yaw, -cos yaw): toward -x, at the altar.
+    expect(-Math.sin(monk.yaw)).toBeCloseTo(-1, 5);
+    expect(-Math.cos(monk.yaw)).toBeCloseTo(0, 5);
+    expect(DHARMA_BOUNDS.minX).toBeLessThan(spot.x);
+  });
+
   it("seats fifty visitors in each zone, each kneeling on a seat of their own", () => {
     for (const zone of ["gatbawi", "dharma"] as const) {
       const seats = zone === "gatbawi" ? GATBAWI_SEATS : DHARMA_SEATS;
@@ -206,7 +224,7 @@ describe("seats", () => {
         const monk = h.monk(`${zone}${i}`);
         const spot = seats[i]!;
         expect(monk.mode).toBe("kneel");
-        expect(monk.yaw).toBe(0);
+        expect(monk.yaw).toBeCloseTo(SEAT_YAWS[zone], 5);
         expect(monk.x).toBeCloseTo(spot.x, 4);
         expect(monk.z).toBeCloseTo(spot.z, 4);
         expect(zoneAt(monk.x, monk.z)).toBe(zone);
@@ -904,7 +922,7 @@ describe("one world", () => {
       const { x, z } = h.monk("a");
       const solid = resolveWalkable(x, z);
       expect(Math.hypot(solid.x - x, solid.z - z)).toBeLessThan(1e-3);
-      if (z > DHARMA_BOUNDS.maxZ && z < DOORWAY_AREA.maxZ) through = true;
+      if (x > DHARMA_BOUNDS.maxX && x < DOORWAY_AREA.maxX && z > DOORWAY_AREA.minZ && z < DOORWAY_AREA.maxZ) through = true;
     }
     expect(through).toBe(true);
     expect(h.monk("a").mode).toBe("stand");
@@ -917,7 +935,7 @@ describe("one world", () => {
 
   it("stops a visitor at the edge of the court when sent past it", () => {
     h.sim.join("a", 0);
-    h.sim.move("a", COURT_AREA.minX - 3, 12);
+    h.sim.move("a", COURT_AREA.minX - 0.5, 12);
     h.advance(30_000);
     expect(h.monk("a").x).toBeCloseTo(COURT_AREA.minX, 3);
     expect(h.monk("a").z).toBeCloseTo(12, 3);

@@ -28,15 +28,38 @@ export interface Bounds {
 
 export const WORLD_BOUNDS: Bounds = { minX: -7, maxX: 12.5, minZ: -2.4, maxZ: 15.5 };
 
-// The 법당 stands west of the plaza. Its room is modelled around its own origin, the middle of its floor, and its door
-// faces +z; the room is 20 m wide and 18 m deep, so its front wall is at DHARMA_ORIGIN.z + 9.
+// The 법당 stands west of the plaza, its door facing the plaza and Gatbawi (+x). Its room is modelled around its own
+// origin, the middle of its floor, with the door in the +z wall and the altar against the -z wall (the "room frame": the
+// models, dharma-layout.ts and the Blender scripts all speak it). The world turns that frame a quarter turn
+// counter-clockwise seen from above, DHARMA_YAW about the Y axis, so the door lands on the +x side and the altar on the
+// -x side. dharmaToWorld and worldToDharma do the same turn exactly, without trig, for positions on the floor.
 export const DHARMA_ORIGIN = { x: -19, z: 0 } as const;
-const DHARMA_ROOM: Bounds = { minX: -9.2, maxX: 9.2, minZ: -4.8, maxZ: 8.4 };
+export const DHARMA_YAW = Math.PI / 2;
+
+export interface FloorPoint {
+  readonly x: number;
+  readonly z: number;
+}
+
+// Room frame to world: the room's +z (toward its door) becomes +x, its +x becomes -z.
+export function dharmaToWorld(x: number, z: number): FloorPoint {
+  return { x: DHARMA_ORIGIN.x + z, z: DHARMA_ORIGIN.z - x };
+}
+
+export function worldToDharma(x: number, z: number): FloorPoint {
+  return { x: DHARMA_ORIGIN.z - z, z: x - DHARMA_ORIGIN.x };
+}
+
+// The room is 20 m wide and 18 m deep, so its front wall is at 9 m and the granite porch runs out to 9.9 m from the
+// middle (DHARMA_SHELL.porchZ). What a visitor can walk on is the floor between the walls and the altar's step, in the room frame.
+export const DHARMA_PORCH_Z = 9.9;
+export const DHARMA_ROOM: Bounds = { minX: -9.2, maxX: 9.2, minZ: -4.8, maxZ: 8.4 };
+const roomCorners = [dharmaToWorld(DHARMA_ROOM.minX, DHARMA_ROOM.minZ), dharmaToWorld(DHARMA_ROOM.maxX, DHARMA_ROOM.maxZ)];
 export const DHARMA_BOUNDS: Bounds = {
-  minX: DHARMA_ORIGIN.x + DHARMA_ROOM.minX,
-  maxX: DHARMA_ORIGIN.x + DHARMA_ROOM.maxX,
-  minZ: DHARMA_ORIGIN.z + DHARMA_ROOM.minZ,
-  maxZ: DHARMA_ORIGIN.z + DHARMA_ROOM.maxZ,
+  minX: Math.min(...roomCorners.map((corner) => corner.x)),
+  maxX: Math.max(...roomCorners.map((corner) => corner.x)),
+  minZ: Math.min(...roomCorners.map((corner) => corner.z)),
+  maxZ: Math.max(...roomCorners.map((corner) => corner.z)),
 };
 
 export interface Spawn {
@@ -48,8 +71,9 @@ export interface Spawn {
 // Everyone arrives at the back of the plaza and walks from there, whichever zone they end up in.
 export const ARRIVAL: Spawn = { x: 0, z: 14, spread: 4 };
 
-// Every seat faces -z, toward Gatbawi and toward the Buddha, which is yaw 0 in yawFromDirection's convention.
-export const SEAT_YAW = 0;
+// Every mat faces -z, toward Gatbawi, which is yaw 0 in yawFromDirection's convention. Every 방석 faces the altar on
+// the room's back wall, which the quarter turn has put on the -x side: yaw DHARMA_YAW.
+export const SEAT_YAWS: Readonly<Record<Zone, number>> = { gatbawi: 0, dharma: DHARMA_YAW };
 export const GATBAWI_SEAT_SIZE = { x: 1, z: 1.2 } as const;
 // How high a kneeling monk sits above the ground on a 돗자리; a 방석 is higher, and the monk's own rig says how much.
 export const GATBAWI_SEAT_TOP = 0.03;
@@ -71,13 +95,16 @@ const round = (value: number): number => Math.round(value * 100) / 100;
 
 export const GATBAWI_COLUMNS_X = [-2.4, -1.2, 0, 1.2, 2.4] as const;
 export const GATBAWI_ROWS_Z = Array.from({ length: 10 }, (_, row) => round(-1.3 + 1.45 * row));
-export const DHARMA_COLUMNS_X: readonly number[] = [-6.65, -5.35, -4.05, -2.75, -1.45, 1.45, 2.75, 4.05, 5.35, 6.65].map((x) =>
-  round(DHARMA_ORIGIN.x + x),
-);
-export const DHARMA_ROWS_Z: readonly number[] = [-2.6, -1.35, -0.1, 1.15, 2.4].map((z) => round(DHARMA_ORIGIN.z + z));
+// The 방석 lie in two blocks of five columns across the room (room-frame x) with an aisle between them, and five rows
+// from the altar toward the door (room-frame z), the first row nearest the altar.
+const DHARMA_COLUMNS_X: readonly number[] = [-6.65, -5.35, -4.05, -2.75, -1.45, 1.45, 2.75, 4.05, 5.35, 6.65];
+const DHARMA_ROWS_Z: readonly number[] = [-2.6, -1.35, -0.1, 1.15, 2.4];
 
 export const GATBAWI_SEATS = grid(GATBAWI_COLUMNS_X, GATBAWI_ROWS_Z);
-export const DHARMA_SEATS = grid(DHARMA_COLUMNS_X, DHARMA_ROWS_Z);
+export const DHARMA_SEATS: readonly SeatSpot[] = grid(DHARMA_COLUMNS_X, DHARMA_ROWS_Z).map((spot) => {
+  const world = dharmaToWorld(spot.x, spot.z);
+  return { ...spot, x: round(world.x), z: round(world.z) };
+});
 export const ZONE_SEATS: Readonly<Record<Zone, readonly SeatSpot[]>> = { gatbawi: GATBAWI_SEATS, dharma: DHARMA_SEATS };
 
 // Each zone seats fifty, so a world of a hundred visitors has a place for everyone when they spread out evenly.
@@ -93,19 +120,26 @@ export function seatKey(zone: Zone, id: number): string {
 
 // Where a visitor sits when nobody chose for them: the front row, then closest to the middle, then the lowest number.
 export function pickSeat(zone: Zone, taken: (id: number) => boolean): SeatSpot | undefined {
-  const middle = SEAT_MIDDLE_X[zone];
   let best: SeatSpot | undefined;
   for (const spot of ZONE_SEATS[zone]) {
     if (taken(spot.id)) continue;
-    if (!best || compareSeats(middle, spot, best) < 0) best = spot;
+    if (!best || compareSeats(zone, spot, best) < 0) best = spot;
   }
   return best;
 }
 
-const SEAT_MIDDLE_X: Readonly<Record<Zone, number>> = { gatbawi: 0, dharma: DHARMA_ORIGIN.x };
+// How far back a seat is from what the zone faces, and how far it is to the side of the middle line: Gatbawi's rows run
+// along z and its middle is x = 0; the room's rows run along x (the altar is on its -x side) and its aisle is z = DHARMA_ORIGIN.z.
+const SEAT_DEPTH: Readonly<Record<Zone, (spot: SeatSpot) => number>> = { gatbawi: (spot) => spot.z, dharma: (spot) => spot.x };
+const SEAT_OFFSET: Readonly<Record<Zone, (spot: SeatSpot) => number>> = {
+  gatbawi: (spot) => Math.abs(spot.x),
+  dharma: (spot) => Math.abs(spot.z - DHARMA_ORIGIN.z),
+};
 
-function compareSeats(middle: number, a: SeatSpot, b: SeatSpot): number {
-  return a.z - b.z || round(Math.abs(a.x - middle)) - round(Math.abs(b.x - middle)) || a.id - b.id;
+function compareSeats(zone: Zone, a: SeatSpot, b: SeatSpot): number {
+  return (
+    SEAT_DEPTH[zone](a) - SEAT_DEPTH[zone](b) || round(SEAT_OFFSET[zone](a)) - round(SEAT_OFFSET[zone](b)) || a.id - b.id
+  );
 }
 
 export function worldName(world: number): string {

@@ -30,7 +30,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAW } from "@dongjane/shared";
+import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAWS } from "@dongjane/shared";
 import { type ModelMeshes, headOf, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
@@ -394,7 +394,7 @@ export class Landscape {
     mats.name = "mats";
     const m = new Matrix4();
     for (const spot of GATBAWI_SEATS) {
-      m.makeRotationY(SEAT_YAW).setPosition(spot.x, 0, spot.z);
+      m.makeRotationY(SEAT_YAWS.gatbawi).setPosition(spot.x, 0, spot.z);
       mats.setMatrixAt(spot.id, m);
     }
     return mats;

@@ -1,9 +1,9 @@
-import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, WORLD_BOUNDS, type Zone } from "./layout.ts";
+import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
 
-// Where feet may go. The world is four rectangles in a chain: the plaza, the court in front of the 법당 (which runs
-// along its whole front and meets the plaza), the doorway in the front wall, and the room inside. Every rectangle is
-// convex, so a straight line between two points of the same one is always walkable, and a walk across the world is a
-// few such lines joined at the places where two rectangles touch.
+// Where feet may go. The world is four rectangles in a chain: the plaza, the court between the plaza and the 법당's
+// porch (the door faces +x, so the court is the strip along the plaza's west edge), the doorway through the front
+// wall, and the room inside. Every rectangle is convex, so a straight line between two points of the same one is
+// always walkable, and a walk across the world is a few such lines joined at the places where two rectangles touch.
 
 export interface Point {
   x: number;
@@ -11,12 +11,19 @@ export interface Point {
 }
 
 export const PLAZA_AREA: Bounds = WORLD_BOUNDS;
-export const COURT_AREA: Bounds = { minX: -28, maxX: WORLD_BOUNDS.minX, minZ: 9.9, maxZ: WORLD_BOUNDS.maxZ };
+// The court covers the plaza's whole depth (z) and runs from the porch's edge to the plaza.
+export const COURT_AREA: Bounds = {
+  minX: dharmaToWorld(0, DHARMA_PORCH_Z).x,
+  maxX: WORLD_BOUNDS.minX,
+  minZ: WORLD_BOUNDS.minZ,
+  maxZ: WORLD_BOUNDS.maxZ,
+};
+// The doorway runs through the front wall and the porch, 2.8 m wide, centred on the door.
 export const DOORWAY_AREA: Bounds = {
-  minX: DHARMA_ORIGIN.x - 1.4,
-  maxX: DHARMA_ORIGIN.x + 1.4,
-  minZ: DHARMA_BOUNDS.maxZ,
-  maxZ: COURT_AREA.minZ,
+  minX: DHARMA_BOUNDS.maxX,
+  maxX: COURT_AREA.minX,
+  minZ: DHARMA_ORIGIN.z - 1.4,
+  maxZ: DHARMA_ORIGIN.z + 1.4,
 };
 export const INTERIOR_AREA: Bounds = DHARMA_BOUNDS;
 
@@ -29,6 +36,9 @@ const DOORSTEP_MARGIN = 0.35;
 const EDGE = 1e-5;
 const SAME_POINT = 1e-3;
 const TIE = 1e-9;
+// A walk through a few doorsteps settles in a handful of rounds; it is called done when no corner moves more than this.
+const SETTLE_ROUNDS = 24;
+const SETTLED = 1e-6;
 
 // Where a monk of a zone may wander when nobody sends them elsewhere (computer-driven monks never leave their zone).
 export const HOME_AREAS: Readonly<Record<Zone, Bounds>> = { gatbawi: PLAZA_AREA, dharma: INTERIOR_AREA };
@@ -93,19 +103,40 @@ function doorstep(a: Bounds, b: Bounds): { from: Point; to: Point } {
   return { from: { x: x0, z: z0 }, to: { x: x1, z: z1 } };
 }
 
-// Where the straight line from `a` to `b` crosses the doorstep, or the nearest point of the doorstep when it misses.
+// The point of the doorstep that makes the walk `a` -> doorstep -> `b` shortest: where the straight line from `a` to `b`
+// crosses it, or, when both lie on one side of it, where the line from `a` to `b` mirrored across it does; clamped to the
+// doorstep when that misses it.
 function crossing(step: { from: Point; to: Point }, a: Point, b: Point): Point {
   const alongX = step.to.x - step.from.x > step.to.z - step.from.z;
-  if (alongX) {
-    const dz = b.z - a.z;
-    const t = Math.abs(dz) < EDGE ? 0.5 : (step.from.z - a.z) / dz;
-    const x = a.x + (b.x - a.x) * Math.min(1, Math.max(0, t));
-    return { x: Math.min(step.to.x, Math.max(step.from.x, x)), z: step.from.z };
+  // The doorstep is a segment at `level` on the axis it does not run along; `a` and `b` are seen as (across, along).
+  const level = alongX ? step.from.z : step.from.x;
+  const [low, high] = alongX ? [step.from.x, step.to.x] : [step.from.z, step.to.z];
+  const [aAcross, aAlong] = alongX ? [a.z, a.x] : [a.x, a.z];
+  const [bAcross, bAlong] = alongX ? [b.z, b.x] : [b.x, b.z];
+  const mirrored = (aAcross - level) * (bAcross - level) > 0 ? 2 * level - bAcross : bAcross;
+  const span = mirrored - aAcross;
+  const t = Math.abs(span) < EDGE ? 0.5 : (level - aAcross) / span;
+  const along = Math.min(high, Math.max(low, aAlong + (bAlong - aAlong) * Math.min(1, Math.max(0, t))));
+  return alongX ? { x: along, z: level } : { x: level, z: along };
+}
+
+// The corners of the shortest walk from `start` through each doorstep in turn to `end`. Every doorstep's crossing is
+// the best one given its neighbours, and the neighbours move as the crossings do, so they are settled by going round
+// until nothing moves (the length is convex in the crossings, so this ends at the shortest walk).
+function shortestCrossings(steps: readonly { from: Point; to: Point }[], start: Point, end: Point): Point[] {
+  const corners: Point[] = steps.map((step) => ({ x: (step.from.x + step.to.x) / 2, z: (step.from.z + step.to.z) / 2 }));
+  for (let round = 0; round < SETTLE_ROUNDS; round += 1) {
+    let moved = 0;
+    steps.forEach((step, index) => {
+      const before = (corners[index - 1] ?? start) as Point;
+      const after = (corners[index + 1] ?? end) as Point;
+      const next = crossing(step, before, after);
+      moved = Math.max(moved, Math.hypot(next.x - (corners[index] as Point).x, next.z - (corners[index] as Point).z));
+      corners[index] = next;
+    });
+    if (moved < SETTLED) break;
   }
-  const dx = b.x - a.x;
-  const t = Math.abs(dx) < EDGE ? 0.5 : (step.from.x - a.x) / dx;
-  const z = a.z + (b.z - a.z) * Math.min(1, Math.max(0, t));
-  return { x: step.from.x, z: Math.min(step.to.z, Math.max(step.from.z, z)) };
+  return corners;
 }
 
 function nearestPair(from: readonly number[], to: readonly number[]): [number, number] {
@@ -128,12 +159,14 @@ export function planPath(from: Point, to: Point): Point[] {
   const end = resolveWalkable(to.x, to.z, from);
   const start = resolveWalkable(from.x, from.z);
   const [first, last] = nearestPair(indexesAt(start.x, start.z), indexesAt(end.x, end.z));
-  const path: Point[] = [];
   const direction = first <= last ? 1 : -1;
-  let previous: Point = start;
+  const steps: { from: Point; to: Point }[] = [];
   for (let index = first; index !== last; index += direction) {
-    const step = doorstep(CHAIN[index] as Bounds, CHAIN[index + direction] as Bounds);
-    const corner = crossing(step, start, end);
+    steps.push(doorstep(CHAIN[index] as Bounds, CHAIN[index + direction] as Bounds));
+  }
+  const path: Point[] = [];
+  let previous: Point = start;
+  for (const corner of shortestCrossings(steps, start, end)) {
     if (Math.hypot(corner.x - previous.x, corner.z - previous.z) > SAME_POINT) path.push(corner);
     previous = corner;
   }

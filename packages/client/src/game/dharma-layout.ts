@@ -1,7 +1,8 @@
 // Plain numbers about the 법당 inside: the room, the altar, the candles, the doorway and the lanterns.
 // Pure data and arithmetic: the Blender build reads it through scripts/asset-inputs.ts and the runtime
 // and its tests read the same file, so the model and the game cannot drift apart.
-// Metres, the game's frame: Y up, +Z toward the viewer. The room has its own origin at the middle of the floor.
+// Metres, the game's frame: Y up, +Z toward the viewer. The room has its own origin at the middle of the floor and its own
+// axes (the door on +z, the altar on -z); the world turns that frame by DHARMA_YAW (shared/layout.ts), so the door faces +x.
 
 import type { Point3 } from "./venue-layout.ts";
 

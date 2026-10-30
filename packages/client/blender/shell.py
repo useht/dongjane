@@ -2,7 +2,8 @@
 painted beams with stacked brackets under a tiled gable roof whose slope is concave and whose eaves turn up.
 
 It is drawn in the room's own frame (the middle of the floor at the origin, the open doorway in the +z wall, the
-ridge along x) and moved to where the game puts the room. Four Parts, so the game can hide the ones that stand
+ridge along x) and moved to where the game puts the room: turned a quarter turn about the vertical by the layout's
+yaw, so the doorway faces the plaza (+x), and then stood at the room's origin. Four Parts, so the game can hide the ones that stand
 between the camera and the people inside: the plinth, the walls on three sides, the front wall and the roof.
 Every dimension comes from the inputs; the plaster stands just outside the room's own surfaces, so the
 shell closes round the room without touching it.
@@ -26,7 +27,7 @@ FASCIA = 0.3
 JAMB = 0.14
 RIB = 0.4  # tile ribs along the roof's length
 SLOPE_STEPS = 12
-PLAQUE_X = 1.35
+PLAQUE_X = 0.0  # the board hangs over the middle of the doorway
 PLAQUE_Y = 4.9
 
 
@@ -383,7 +384,7 @@ def roof(part, s):
 def build(plan):
     """The four Parts, named for the meshes they become."""
     s = Shape(plan)
-    frame = GAME @ at(plan.origin["x"], 0.0, plan.origin["z"])
+    frame = GAME @ at(plan.origin["x"], 0.0, plan.origin["z"]) @ turned(plan.yaw)
     parts = {
         "base": Part("dharmaBase", frame=frame),
         "walls": Part("dharmaWalls", frame=frame),

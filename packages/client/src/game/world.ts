@@ -1,11 +1,10 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, DHARMA_ORIGIN, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, GATBAWI_SEAT_TOP, NPC_PER_ZONE, SEAT_COUNT, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, zoneAt } from "@dongjane/shared";
 import type { GameAssets } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
-import { CameraRig, DHARMA_KEEP_OUTS, configureCamera, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
+import { CameraRig, DHARMA_KEEP_OUTS, configureCamera, pointInRoom, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
-import { DHARMA } from "./dharma-layout.ts";
 import { EmoteTracker } from "./emote-tracker.ts";
 import { aimThroughCamera, pickFloor } from "./floor-pick.ts";
 import { Landscape, type ScreenMode } from "./landscape.ts";
@@ -470,13 +469,7 @@ export class World {
 
   // The camera is in the room itself, not just following someone who is: only then are the front wall and the roof in the way.
   private cameraInRoom(): boolean {
-    const { x, y, z } = this.camera.position;
-    return (
-      Math.abs(x - DHARMA_ORIGIN.x) < DHARMA.halfWidth &&
-      z > DHARMA_ORIGIN.z + DHARMA.backZ &&
-      z < DHARMA_ORIGIN.z + DHARMA.frontZ &&
-      y < DHARMA.ceilingHeight
-    );
+    return pointInRoom(this.camera.position);
   }
 
   // The air, the lights and the colour behind the world go over from the open ground's to the room's as the share rises.

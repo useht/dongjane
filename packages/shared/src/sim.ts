@@ -15,7 +15,7 @@ import {
 import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
 import { ITEM_CHANT, ITEM_MOKT, isValidItem } from "./item.ts";
-import { ARRIVAL, SEAT_YAW, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yawFromDirection } from "./layout.ts";
+import { ARRIVAL, SEAT_YAWS, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, yawFromDirection } from "./layout.ts";
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
@@ -436,8 +436,8 @@ export class TempleSim {
     }
     monk.x = route.end.x;
     monk.z = route.end.z;
-    if (route.seatId >= 0 && monk.seatId === route.seatId) {
-      monk.yaw = SEAT_YAW;
+    if (route.seatId >= 0 && monk.seatId === route.seatId && runtime.seatZone) {
+      monk.yaw = SEAT_YAWS[runtime.seatZone];
       monk.mode = "kneel";
     } else {
       monk.mode = "stand";

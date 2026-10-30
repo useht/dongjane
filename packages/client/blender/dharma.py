@@ -1,6 +1,7 @@
 """dharma.glb: the 법당's inside, the lotus, halo and glow of its Buddha, and one seat to instance. The front wall has an open doorway.
 
-Everything is drawn in the game's own coordinates through Parts whose frame is GAME. A wall's fittings
+Everything is drawn in the room's own frame (door on +z, altar on -z) around the middle of its floor; the game turns the model a quarter turn
+(DHARMA_YAW) so the door faces +x. It is drawn in the game's own coordinates through Parts whose frame is GAME. A wall's fittings
 are drawn in the wall's own frame (x along the wall, y up, z into the room) inside `part.placed(...)`.
 Walls, beams and pillars are subdivided so the baked occlusion has vertices to land on, and faces
 nobody can see are never built. The Buddha is buddha.glb, which the game puts on the altar at BUDDHA_AT: the lotus
