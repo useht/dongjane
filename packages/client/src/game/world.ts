@@ -109,6 +109,7 @@ export class World {
   private readonly adaptive: AdaptiveScale;
   private readonly resizeObserver: ResizeObserver;
   private frame = 0;
+  private sizeDirty = false;
   private last = 0;
   private time = 0;
   private reduceMotion = false;
@@ -493,11 +494,19 @@ export class World {
   private resize(): void {
     const width = Math.max(1, this.canvas.clientWidth);
     const height = Math.max(1, this.canvas.clientHeight);
-    this.renderer.setSize(width, height, false);
     configureCamera(this.camera, this.rig, width, height, this.hudTop, this.hudBottom);
+    this.sizeDirty = true;
+  }
+
+  // Assigning the canvas size clears its drawing buffer, so it must happen in the same frame, just before drawing, never between frames.
+  private applySize(): void {
+    this.renderer.setPixelRatio(this.adaptive.ratio);
+    this.renderer.setSize(Math.max(1, this.canvas.clientWidth), Math.max(1, this.canvas.clientHeight), false);
+    this.sizeDirty = false;
   }
 
   private tick(nowMs: number): void {
+    if (this.sizeDirty) this.applySize();
     const dt = Math.min(0.1, Math.max(0.001, (nowMs - this.last) / 1000));
     this.last = nowMs;
     this.time += dt;
@@ -571,9 +580,6 @@ export class World {
     }
 
     const next = this.adaptive.push(dt * 1000);
-    if (next !== null) {
-      this.renderer.setPixelRatio(next);
-      this.resize();
-    }
+    if (next !== null) this.sizeDirty = true;
   }
 }
