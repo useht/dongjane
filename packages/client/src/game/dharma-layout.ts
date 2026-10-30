@@ -49,10 +49,7 @@ export const FLAME_HEIGHT = 0.56;
 export const SIDE_PILLARS_Z: readonly number[] = [-5.7, -2.85, 0, 2.85, 5.7];
 export const FRONT_PILLARS_X: readonly number[] = [-5.9, -2.05, 2.05, 5.9];
 
-// The windows: openings cut through the room's wall and the shell's plaster at the same places, so you see through them from
-// either side. `along` is where the middle of one stands along its wall, in the room's frame: x on the front wall, z on the east
-// and west walls. They sit in the bays between the room's pillars and clear of the shell's columns; the back wall has none,
-// because the altar, the Buddha and the mural stand against it.
+// Window openings, cut at the same places in the room's wall and the shell's plaster; `along` is x on the front wall, z on the sides.
 export const WINDOW_BAND = { low: 1.5, high: 4.5 } as const;
 
 export type WindowWall = "front" | "east" | "west";

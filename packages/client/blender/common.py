@@ -100,12 +100,7 @@ def wall_openings(inputs):
 
 
 def wall_pieces(left, right, bottom, top, openings, band):
-    """The rectangles (x0, x1, y0, y1, reveals) that cover a wall from `left` to `right` and `bottom` to `top` except its openings.
-
-    `openings` are (centre, width) pairs along the wall, sorted and inside it, cut through the heights `band` = (low, high). Between
-    two openings the wall stands full height; under each opening is a sill (up to `low`) and over it a lintel (from `high`). `reveals`
-    names the sides ('-x', '+x', '-y', '+y') of a rectangle that face an opening, which a wall with thickness has to draw.
-    """
+    """The rectangles (x0, x1, y0, y1, reveals) that cover a wall except its openings; `reveals` names the sides facing an opening."""
     low, high = band
     if not bottom < low < high < top:
         raise ValueError(f"the band {band} does not lie inside the wall's height {bottom}..{top}")

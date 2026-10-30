@@ -181,7 +181,7 @@ def walls(parts, s):
     thick = s.wall
 
     def pierced(part, pieces, offset, along_z, *shown):
-        """A wall made of the pieces round its windows, `thick` deep: centred `offset` out along x if it runs along z, else along z."""
+        """Boxes for wall pieces at `offset` across the wall, running along z (side walls) or x (front)."""
         for a0, a1, y0, y1, reveals in pieces:
             mid, long, tall = (a0 + a1) / 2, a1 - a0, y1 - y0
             if along_z:

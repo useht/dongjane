@@ -49,8 +49,7 @@ describe("the room", () => {
 });
 
 describe("the windows", () => {
-  // The fattest the room's pillars and the shell's columns get, the plaster's gap to the room's wall (GAP in blender/shell.py)
-  // and the doorway's jambs (JAMB there); the Blender build draws them, so they are spelt out here.
+  // Sizes the Blender build draws (blender/shell.py has GAP and JAMB), spelt out here.
   const PILLAR_RADIUS = 0.3;
   const COLUMN_RADIUS = 0.26;
   const GAP = 0.02;
@@ -70,7 +69,8 @@ describe("the windows", () => {
     front: [-hx, -(bay + hx) / 2, -bay, bay, (bay + hx) / 2, hx],
     side: [0, 1, 2, 3, 4].map((i) => z0 + ((z1 - z0) * i) / 4),
   };
-  const half = { front: DHARMA.halfWidth, east: DHARMA.frontZ, west: DHARMA.frontZ };
+  const sideSpan = { min: DHARMA.backZ, max: DHARMA.frontZ };
+  const span = { front: { min: -DHARMA.halfWidth, max: DHARMA.halfWidth }, east: sideSpan, west: sideSpan };
   const onWall = (wall: WindowWall) => WALL_OPENINGS.filter((opening) => opening.wall === wall);
   const kind = (wall: WindowWall) => (wall === "front" ? "front" : "side");
 
@@ -92,7 +92,8 @@ describe("the windows", () => {
       const sorted = [...onWall(wall)].sort((a, b) => a.along - b.along);
       for (const opening of sorted) {
         expect(opening.width).toBeGreaterThan(0);
-        expect(Math.abs(opening.along) + opening.width / 2, `${wall} ${opening.along}`).toBeLessThan(half[wall]);
+        expect(opening.along - opening.width / 2, `${wall} ${opening.along}`).toBeGreaterThan(span[wall].min);
+        expect(opening.along + opening.width / 2, `${wall} ${opening.along}`).toBeLessThan(span[wall].max);
       }
       for (let i = 1; i < sorted.length; i += 1) {
         const [before, after] = [sorted[i - 1], sorted[i]];
