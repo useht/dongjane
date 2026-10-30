@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url));
-const IMAGE_URL = "https://dongjane.sslip.net/og-image.png";
+const IMAGE_URL = "https://dongjane.com/og-image.png";
 
 describe("social share card", () => {
   const html = read("../index.html").toString("utf8");
