@@ -14,7 +14,7 @@ export function isSeated(actor: Pick<HeldActor, "mode" | "seatId">): boolean {
   return actor.seatId >= 0 && (actor.mode === "kneel" || actor.mode === "bow");
 }
 
-// The action that replaces bowing (or, with the rod, jumping): a seated monk with the wooden fish or the beads, or a
+// The action that replaces bowing: a seated monk with the wooden fish or the beads, or a
 // monk with the rod, standing at the water's edge to cast, or already fishing to reel in.
 export function heldAction(actor: HeldActor | null | undefined): HeldAction | null {
   if (!actor) return null;
