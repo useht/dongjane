@@ -35,12 +35,37 @@ export const DHARMA_MESHES = ["floor", "structure", "ceiling", "mural", "lotus",
 // Authored at the origin; the runtime instances them at the seat spots.
 export const DHARMA_PROTOTYPES = ["seat"] as const;
 
+// The casino at the end of the coast road. Outside: the walls, the front wall (with the doorway and the sign tower) and the roof, of
+// which the game hides the front and the roof while a visitor is inside; the paving of the road and the yard; the board of the
+// sign and the lit windows, which glow. Inside: the carpet, the coffered ceiling, two gold columns and the neon strips.
+export const CASINO_MESHES = [
+  "casinoWalls",
+  "casinoFront",
+  "casinoRoof",
+  "casinoSign",
+  "casinoNeon",
+  "casinoYard",
+  "coastRoad",
+  "casinoFloor",
+  "casinoCeiling",
+  "casinoColumns",
+  "slotCabinet",
+  "rouletteTable",
+  "scratchKiosk",
+] as const;
+
+// Authored at the origin, centred on their footprint with the front toward -z; the runtime instances them at the machine spots.
+export const CASINO_PROTOTYPES = ["slotCabinet", "rouletteTable", "scratchKiosk"] as const;
+
 // Carry TEXCOORD_0 and a texture; every other mesh carries COLOR_0 instead.
-export const TEXTURED = ["buddha", "ground", "steps", "rocks", "mat"] as const;
+export const TEXTURED = ["buddha", "ground", "steps", "rocks", "mat", "casinoFloor"] as const;
 
 // Carry TEXCOORD_0 and COLOR_0 but no picture of their own: the game gives them the rock picture of world.glb's steps and
 // rocks, so each picture is stored once in the files the first frame loads.
 export const BORROWS_STONE = ["hatStone", "pedestal"] as const;
+
+// Likewise, the road and the yard carry TEXCOORD_0 and COLOR_0 and are given the paving picture of world.glb's ground.
+export const BORROWS_PAVING = ["casinoYard", "coastRoad"] as const;
 
 export const BUDGET = {
   gatbawi: { bytes: 250_000, tris: 6_000 },
@@ -48,8 +73,10 @@ export const BUDGET = {
   world: { bytes: 2_000_000, tris: 46_000 },
   venue: { bytes: 450_000, tris: 25_000 },
   dharma: { bytes: 1_000_000, tris: 45_000 },
+  casino: { bytes: 800_000, tris: 25_000 },
   // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
   monk: { bytes: 95_000 },
-  // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame.
-  totalBytes: 4_000_000,
+  // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame,
+  // and from 4_000_000 because the casino (787 kB with its two carpet pictures and 12k triangles) loads with them.
+  totalBytes: 4_800_000,
 } as const;

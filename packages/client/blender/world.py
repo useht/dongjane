@@ -7,7 +7,8 @@ the dressing of the hillside (where the far trees and boulders go) is chosen her
 roof come from shell.py, standing on level ground that is sunk a little under the room so the room's
 floor, which is its own mesh, has nothing to fight with. The mat is built last, at the origin, so the
 baked occlusion never sees it. The hillside keeps clear of the plaza, the court, the camera's box
-(x -31..14, z -2.6..30), the stage on the north-east side and the 법당 on the west side.
+(x -31..14, z -2.6..30), the stage on the north-east side and the 법당 on the west side. Far to the south the casino's
+road, yard and building stand on a level pad (from the inputs) pressed into the hillside, which casino.py then paves and builds on.
 """
 
 import math
@@ -82,6 +83,7 @@ class Plan:
         self.origin = layout["DHARMA_ORIGIN"]
         self.yaw = layout["DHARMA_YAW"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
+        self.pad = inputs["casino"]["CASINO_PAD"]
         self.left, self.right = self.plaza["minX"], self.plaza["maxX"]
         self.front = self.plaza["maxZ"] + PLAZA_MARGIN
         self.back = self.platform["minZ"] - PLATFORM_BACK
@@ -138,7 +140,14 @@ class Plan:
         rolling = 0.8 * smoothstep(1.5, 10.0, d) * (0.5 + 0.5 * fbm(x * 0.13, 0.0, z * 0.13, 3.0))
         ridge = 14.0 * smoothstep(24.0, 60.0, d) * (0.55 + 0.45 * fbm(x * 0.06, 0.0, z * 0.06, 9.0))
         slope = 1.5 * smoothstep(0.0, 3.0, behind) + 0.35 * max(0.0, behind - 3.0)
-        return (rolling + ridge + slope) * self.level(x, z) - self.pit_depth(x, z)
+        natural = (rolling + ridge + slope) * self.level(x, z) - self.pit_depth(x, z)
+        flat = smoothstep(0.0, self.pad["blend"], self.pad_distance(x, z))
+        return natural * flat + self.pad["y"] * (1.0 - flat)
+
+    def pad_distance(self, x, z):
+        """How far (x, z) is from the casino's level pad: nothing on the pad and `margin` metres round the road, the yard and the walls."""
+        near = min(self.gap((box["minX"], box["maxX"], box["minZ"], box["maxZ"]), x, z) for box in self.pad["boxes"])
+        return max(near - self.pad["margin"], 0.0)
 
     def level(self, x, z):
         """0 on the stage's and the 법당's footprints and a margin round them, easing to 1 over `blend` metres."""
@@ -205,6 +214,9 @@ def ground(plan):
     rows = refine(rows, plan.stage["z"] - 10.0, plan.plaza["minZ"], 1.2)
     columns = refine(columns, plan.temple["minX"] - 5.0, plan.left, 1.2)
     rows = refine(rows, plan.temple["minZ"] - 5.0, plan.plaza["minZ"], 1.2)
+    # And along the coast road, round the yard and the casino, which stand on a level pad.
+    columns = refine(columns, plan.right, plan.right + 11.5, 1.5)
+    rows = refine(rows, plan.front, plan.pad["boxes"][-1]["maxZ"] + 7.0, 1.5)
     x0, x1, z0, z1 = plan.pit
     columns = pin(pin(columns, x0, 1.0), x1, -1.0)
     rows = pin(pin(rows, z0, 1.0), z1, -1.0)

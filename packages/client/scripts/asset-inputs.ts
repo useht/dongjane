@@ -1,9 +1,30 @@
 import { readFileSync } from "node:fs";
-import { COURT_AREA, DHARMA_ORIGIN, DHARMA_SEAT_SIZE, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_SEAT_TOP, GATBAWI_Z, PLATFORM, PLAZA, STEPS, WORLD_BOUNDS } from "@dongjane/shared";
 import {
+  CASINO_DOOR,
+  CASINO_FLOOR,
+  CASINO_YARD,
+  COAST_ROAD,
+  COURT_AREA,
+  DHARMA_ORIGIN,
+  DHARMA_SEAT_SIZE,
+  DHARMA_YAW,
+  GATBAWI_SEATS,
+  GATBAWI_SEAT_SIZE,
+  GATBAWI_SEAT_TOP,
+  GATBAWI_Z,
+  MACHINE_SIZE,
+  PLATFORM,
+  PLAZA,
+  STEPS,
+  WORLD_BOUNDS,
+} from "@dongjane/shared";
+import {
+  BORROWS_PAVING,
   BORROWS_STONE,
   BUDDHA,
   BUDDHA_MESHES,
+  CASINO_MESHES,
+  CASINO_PROTOTYPES,
   DHARMA_MESHES,
   DHARMA_PROTOTYPES,
   GATBAWI_MESHES,
@@ -13,6 +34,7 @@ import {
   WORLD_MESHES,
   WORLD_PROTOTYPES,
 } from "../src/assets/contract.ts";
+import { CASINO_COLUMNS, CASINO_PAD, CASINO_PAVING, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, FLOOR_Y, MACHINE_HEIGHT, PAVING_Y } from "../src/game/casino-layout.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FRONT_PILLARS_X, LOTUS_EMBED, SIDE_PILLARS_Z, WALL_OPENINGS, WINDOW_BAND, hangingLanterns } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW } from "../src/game/venue-layout.ts";
@@ -67,6 +89,23 @@ export function assetInputs() {
       WALL_OPENINGS,
       lanterns: hangingLanterns(),
     },
+    casino: {
+      CASINO_SHELL,
+      CASINO_ROOM,
+      CASINO_SIGN,
+      CASINO_TOP,
+      CASINO_PAVING,
+      CASINO_PAD,
+      CASINO_COLUMNS,
+      CASINO_DOOR,
+      CASINO_FLOOR,
+      CASINO_YARD,
+      COAST_ROAD,
+      MACHINE_SIZE,
+      MACHINE_HEIGHT,
+      FLOOR_Y,
+      PAVING_Y,
+    },
     material: THEME.material,
     names: {
       GATBAWI_MESHES,
@@ -77,8 +116,11 @@ export function assetInputs() {
       VENUE_PROTOTYPES,
       DHARMA_MESHES,
       DHARMA_PROTOTYPES,
+      CASINO_MESHES,
+      CASINO_PROTOTYPES,
       TEXTURED,
       BORROWS_STONE,
+      BORROWS_PAVING,
     },
   };
 }

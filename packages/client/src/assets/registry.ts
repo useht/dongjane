@@ -1,17 +1,18 @@
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { BUDDHA_EXTRAS, BUDDHA_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
+import { BUDDHA_EXTRAS, BUDDHA_MESHES, CASINO_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
 import buddhaUrl from "./models/buddha.glb?url";
+import casinoUrl from "./models/casino.glb?url";
 import dharmaUrl from "./models/dharma.glb?url";
 import gatbawiUrl from "./models/gatbawi.glb?url";
 import venueUrl from "./models/venue.glb?url";
 import worldUrl from "./models/world.glb?url";
 
-export const MODELS = { gatbawi: gatbawiUrl, buddha: buddhaUrl, world: worldUrl, venue: venueUrl, dharma: dharmaUrl } as const;
+export const MODELS = { gatbawi: gatbawiUrl, buddha: buddhaUrl, world: worldUrl, venue: venueUrl, dharma: dharmaUrl, casino: casinoUrl } as const;
 
 export type ModelKey = keyof typeof MODELS;
 
-const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES } as const;
+const NAMES = { gatbawi: GATBAWI_MESHES, buddha: BUDDHA_MESHES, world: WORLD_MESHES, venue: VENUE_MESHES, dharma: DHARMA_MESHES, casino: CASINO_MESHES } as const;
 
 // The glTF materials are placeholders: the game builds its own and only borrows the textures.
 export type ModelMeshes<K extends ModelKey> = { readonly [Name in (typeof NAMES)[K][number]]: Mesh };
@@ -102,11 +103,11 @@ export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Pr
     });
     return collectMeshes(scene, key);
   };
-  const [gatbawi, buddha, world, venue, dharma] = await Promise.all([load("gatbawi"), load("buddha"), load("world"), load("venue"), load("dharma")]);
+  const [gatbawi, buddha, world, venue, dharma, casino] = await Promise.all([load("gatbawi"), load("buddha"), load("world"), load("venue"), load("dharma"), load("casino")]);
   return {
-    models: { gatbawi, buddha, world, venue, dharma },
+    models: { gatbawi, buddha, world, venue, dharma, casino },
     dispose(): void {
-      for (const meshes of [gatbawi, buddha, world, venue, dharma]) disposeMeshes(meshes);
+      for (const meshes of [gatbawi, buddha, world, venue, dharma, casino]) disposeMeshes(meshes);
     },
   };
 }

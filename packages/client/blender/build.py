@@ -10,6 +10,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import buddha  # noqa: E402
+import casino  # noqa: E402
 import common  # noqa: E402
 import dharma  # noqa: E402
 import gatbawi  # noqa: E402
@@ -31,6 +32,8 @@ def main():
     venue.build(inputs, args.out)
     common.reset_scene()
     dharma.build(inputs, args.out, head)
+    common.reset_scene()
+    casino.build(inputs, args.out)
 
 
 main()
