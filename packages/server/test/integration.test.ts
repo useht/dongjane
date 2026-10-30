@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import {
   ARRIVAL,
   BOW_MS,
+  CASINO_FLOOR,
   CHANT_MS,
   DHARMA_SEATS,
   EMOTE_COOLDOWN_MS,
@@ -12,9 +13,7 @@ import {
   JUMP_COOLDOWN_MS,
   SEAT_COUNT,
   SEA_LINE_X,
-  SHORE,
   WORLDS_PATH,
-  WORLD_BOUNDS,
   WORLD_CAPACITY,
   WORLD_SPARE_AT,
   ZONE_CAPACITY,
@@ -690,16 +689,17 @@ describe("hardening", () => {
     expect(monk.z).toBe(z);
     expect(Number.isFinite(monk.x) && Number.isFinite(monk.z)).toBe(true);
 
+    // The far corner is the casino floor's: from the arrival spot the route is about 71 m, some 30 s at the walking pace.
     a.send("move", { x: 1e9, z: 1e9 });
     await waitFor(() => monk.mode === "walk", "valid move accepted");
     await waitFor(
-      () => monk.x > SHORE.maxX - 0.1 && monk.z > WORLD_BOUNDS.maxZ - 0.1,
+      () => monk.x > CASINO_FLOOR.maxX - 0.1 && monk.z > CASINO_FLOOR.maxZ - 0.1,
       "clamped to the walkable corner",
-      30_000,
+      50_000,
     );
-    expect(monk.x).toBeLessThanOrEqual(Math.fround(SHORE.maxX));
-    expect(monk.z).toBeLessThanOrEqual(Math.fround(WORLD_BOUNDS.maxZ));
-  }, 30_000);
+    expect(monk.x).toBeLessThanOrEqual(Math.fround(CASINO_FLOOR.maxX));
+    expect(monk.z).toBeLessThanOrEqual(Math.fround(CASINO_FLOOR.maxZ));
+  }, 60_000);
 
   it("keeps serving a client after a message flood passes the rate window", async () => {
     const a = await rig.enter(1);
