@@ -74,6 +74,8 @@ export const THEME = {
     moktWoodDark: "#3a2112",
     prayerBead: "#6b3f26",
     prayerBeadMark: "#c99a3a",
+    rodCane: "#a8773c",
+    bobberRed: "#d8382a",
     sand: "#ecdcae",
     sandWet: "#b8a074",
     seaShallow: "#86d6cc",

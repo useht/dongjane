@@ -35,6 +35,7 @@ export interface MonkView {
   chanting: boolean;
   item: number;
   jumpSeq: number;
+  bite: boolean;
 }
 
 export interface WorldCallbacks {
@@ -309,6 +310,7 @@ export class World {
       const isSelf = view.id === this.selfId;
       entry.avatar.chanting = view.chanting;
       entry.avatar.item = view.item;
+      entry.avatar.bite = view.bite;
       entry.avatar.seatTop = zoneAt(view.x, view.z) === "dharma" ? SEAT_TOP : GATBAWI_SEAT_TOP;
       // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
       if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {

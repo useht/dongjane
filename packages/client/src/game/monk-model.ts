@@ -1,10 +1,11 @@
 import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
-import { BOW_MS, ITEM_CHANT, ITEM_MOKT, JUMP_MS } from "@dongjane/shared";
+import { BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
 import type { MonkAssets } from "./monk-assets.ts";
+import { ROD, ROD_POSE } from "./monk-items.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
 
-// The body parts come from the baked monk.glb; the held items (mokt, beads) are built in monk-items.ts.
+// The body parts come from the baked monk.glb; the held items (mokt, beads, rod) and the line and float of a fishing monk are built in monk-items.ts.
 export const BODY_PART_NAMES = [
   "head",
   "face",
@@ -19,7 +20,7 @@ export const BODY_PART_NAMES = [
   "leg",
   "trousers",
 ] as const;
-export const ITEM_PART_NAMES = ["mokt", "beads"] as const;
+export const ITEM_PART_NAMES = ["mokt", "beads", "rod", "fishLine", "bobber"] as const;
 export const PART_NAMES = [...BODY_PART_NAMES, ...ITEM_PART_NAMES] as const;
 export type BodyPartName = (typeof BODY_PART_NAMES)[number];
 export type ItemPartName = (typeof ITEM_PART_NAMES)[number];
@@ -40,6 +41,9 @@ const PART_COPIES: Record<PartName, number> = {
   trousers: 2,
   mokt: 1,
   beads: 1,
+  rod: 1,
+  fishLine: 1,
+  bobber: 1,
 };
 
 // The jacket (torso, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
@@ -82,12 +86,26 @@ const CHANT_SWAY_HZ = 0.4;
 const CHANT_SWAY = 0.025;
 const HOP_HEIGHT = 0.35;
 const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
+const UP = new Vector3(0, 1, 0);
+// The float lands this far past the waterline and floats on the water's face (WATER_Y in shore.ts).
+const FLOAT_PAST_SEA_LINE = 1.8;
+const FLOAT_WATER_Y = 0.01;
+const FLOAT_DIP = 0.055;
+const CAST_FLIGHT_MS = 520;
+const CAST_ARC = 0.9;
+const ROD_SWAY_HZ = 0.35;
+const ROD_SWAY = 0.02;
+const TUG_HZ = 7;
+const TUG = 0.07;
+const TUG_REDUCED_SHARE = 0.3;
 
 interface Binding {
   part: PartName;
   copy: number;
   node: Object3D;
   item?: number;
+  // Shown only while the monk has a line out.
+  fishing?: boolean;
 }
 
 export class MonkAvatar {
@@ -102,6 +120,8 @@ export class MonkAvatar {
   slot = -1;
   chanting = false;
   item = 0;
+  // A fish is on the line: the float dips and the rod pulls.
+  bite = false;
   // A monk in another part of the world than the camera's is still animated but not drawn.
   hidden = false;
   // How high the seat under this monk is: a kneeling monk is lifted by it.
@@ -115,6 +135,9 @@ export class MonkAvatar {
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly beadsNode = new Object3D();
+  private readonly rodTip = new Object3D();
+  private readonly lineNode = new Object3D();
+  private readonly floatNode = new Object3D();
   private readonly feet: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly legs: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private phase = 0;
@@ -125,6 +148,9 @@ export class MonkAvatar {
   private knockAt = Number.NEGATIVE_INFINITY;
   private hopStartedAt = -Infinity;
   private readonly headPoint = new Vector3();
+  private readonly tipPoint = new Vector3();
+  private readonly floatPoint = new Vector3();
+  private readonly lineDirection = new Vector3();
 
   constructor(id: string, hue: number, isSelf: boolean) {
     this.id = id;
@@ -148,10 +174,12 @@ export class MonkAvatar {
       (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
     this.beadsNode.position.set(0, BEAD_RING_CENTER.y, BEAD_RING_CENTER.z);
-    (this.handNodes[0] as Object3D).add(this.beadsNode);
+    this.rodTip.position.copy(ROD.tip);
+    (this.handNodes[0] as Object3D).add(this.beadsNode, this.rodTip);
+    this.root.add(this.lineNode, this.floatNode);
 
-    const bind = (part: PartName, node: Object3D, copy = 0, item?: number): void => {
-      this.bindings.push({ part, copy, node, item });
+    const bind = (part: PartName, node: Object3D, copy = 0, item?: number, fishing?: boolean): void => {
+      this.bindings.push({ part, copy, node, item, fishing });
     };
     bind("head", this.headNode);
     bind("face", this.headNode);
@@ -169,6 +197,9 @@ export class MonkAvatar {
     }
     bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
     bind("beads", this.beadsNode, 0, ITEM_CHANT);
+    bind("rod", this.handNodes[0], 0, ITEM_ROD);
+    bind("fishLine", this.lineNode, 0, ITEM_ROD, true);
+    bind("bobber", this.floatNode, 0, ITEM_ROD, true);
   }
 
   setMode(mode: string, nowMs: number): void {
@@ -196,7 +227,9 @@ export class MonkAvatar {
     this.pose.update(this.mode, dt, !reduceMotion);
     const kneel = this.pose.kneel;
     const walk = this.pose.walk;
-    this.liftedBy = approach(this.liftedBy, this.mode === "stand" || this.mode === "walk" ? 0 : this.seatTop, dt, reduceMotion ? 1000 : 10);
+    const fish = this.pose.fish;
+    const afoot = this.mode === "stand" || this.mode === "walk" || this.mode === "fish";
+    this.liftedBy = approach(this.liftedBy, afoot ? 0 : this.seatTop, dt, reduceMotion ? 1000 : 10);
 
     if (this.mode === "walk") this.phase += dt * Math.min(speed, 3.5) * 4.4;
     const swing = Math.sin(this.phase);
@@ -222,7 +255,12 @@ export class MonkAvatar {
     this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
     this.pelvisNode.position.y = KNEEL_PELVIS_LIFT * kneel;
 
-    this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012;
+    // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
+    const biting = this.bite && fish > 0.5;
+    const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
+    const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
+
+    this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
     this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
@@ -258,6 +296,13 @@ export class MonkAvatar {
       elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.4;
       elbow.rotation.y = prayTwist * prayMix;
 
+      if (fish > 0) {
+        const hold = side === 0 ? ROD_POSE.lead : ROD_POSE.rear;
+        shoulder.rotation.x += (hold.shoulder + (side === 0 ? rodSway + tug : 0) - shoulder.rotation.x) * fish;
+        shoulder.rotation.z += (-sign * ROD_POSE.roll - shoulder.rotation.z) * fish;
+        elbow.rotation.x += (hold.elbow - elbow.rotation.x) * fish;
+      }
+
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
@@ -277,6 +322,31 @@ export class MonkAvatar {
     }
 
     this.root.updateMatrixWorld(true);
+    if (this.mode === "fish" && this.item === ITEM_ROD) this.castLine(nowMs, reduceMotion);
+  }
+
+  // The float flies out from the rod tip when the line is cast, then rides the water straight out toward the sea; the line is
+  // stretched between the two. Both are placed in the monk's frame, so they stay right while the monk turns toward the sea.
+  private castLine(nowMs: number, reduceMotion: boolean): void {
+    const tip = this.rodTip.getWorldPosition(this.tipPoint);
+    const flight = reduceMotion ? 1 : Math.min(1, Math.max(0, (nowMs - this.modeSince) / CAST_FLIGHT_MS));
+    const dip = this.bite ? FLOAT_DIP : 0;
+    const ripple = reduceMotion ? 0 : Math.sin(this.clock * (this.bite ? 31 : 2.3)) * (this.bite ? 0.012 : 0.008);
+    const landed = this.floatPoint.set(SEA_LINE_X + FLOAT_PAST_SEA_LINE, FLOAT_WATER_Y - dip + ripple, this.root.position.z);
+    landed.x += (tip.x - landed.x) * (1 - flight);
+    landed.y += (tip.y - landed.y) * (1 - flight) + Math.sin(Math.PI * flight) * CAST_ARC;
+    landed.z += (tip.z - landed.z) * (1 - flight);
+
+    this.root.worldToLocal(tip);
+    this.root.worldToLocal(landed);
+    const span = this.lineDirection.copy(landed).sub(tip);
+    const length = span.length();
+    this.lineNode.position.copy(tip).addScaledVector(span, 0.5);
+    this.lineNode.quaternion.setFromUnitVectors(UP, length > 1e-6 ? span.divideScalar(length) : UP);
+    this.lineNode.scale.set(1, length, 1);
+    this.floatNode.position.copy(landed);
+    this.lineNode.updateMatrixWorld(true);
+    this.floatNode.updateMatrixWorld(true);
   }
 
   headTopY(): number {
@@ -365,9 +435,9 @@ export class MonkPool {
 
   flush(): void {
     for (const avatar of this.avatars) {
-      for (const { part, copy, node, item } of avatar.bindings) {
+      for (const { part, copy, node, item, fishing } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
-        const shown = !avatar.hidden && (item === undefined || item === avatar.item);
+        const shown = !avatar.hidden && (item === undefined || item === avatar.item) && (!fishing || avatar.mode === "fish");
         mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, shown ? node.matrixWorld : HIDDEN_MATRIX);
       }
     }

@@ -31,16 +31,20 @@ export function approach(current: number, target: number, dt: number, rate: numb
 export class PoseBlend {
   kneel = 0;
   walk = 0;
+  fish = 0;
 
   update(mode: string, dt: number, smoothed: boolean): void {
     const kneelTarget = mode === "kneel" || mode === "bow" ? 1 : 0;
     const walkTarget = mode === "walk" ? 1 : 0;
+    const fishTarget = mode === "fish" ? 1 : 0;
     if (smoothed) {
       this.kneel = approach(this.kneel, kneelTarget, dt, 9);
       this.walk = approach(this.walk, walkTarget, dt, 12);
+      this.fish = approach(this.fish, fishTarget, dt, 8);
     } else {
       this.kneel = kneelTarget;
       this.walk = walkTarget;
+      this.fish = fishTarget;
     }
   }
 }
