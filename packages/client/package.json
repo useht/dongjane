@@ -1,0 +1,28 @@
+{
+  "name": "@dongjane/client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "icons": "tsx scripts/generate-icons.ts",
+    "assets": "tsx scripts/build-assets.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "sharp": "0.35.5",
+    "vite": "8.3.5",
+    "vite-plugin-pwa": "2.0.0",
+    "workbox-build": "7.4.1",
+    "workbox-window": "7.4.1"
+  },
+  "dependencies": {
+    "@colyseus/schema": "5.0.42",
+    "@colyseus/sdk": "0.18.8",
+    "@dongjane/shared": "workspace:*",
+    "three": "0.186.1"
+  }
+}

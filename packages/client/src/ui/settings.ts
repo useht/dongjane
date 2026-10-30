@@ -1,0 +1,75 @@
+import type { Settings } from "../storage.ts";
+import { CREDITS, creditLine } from "./credits.ts";
+import { h } from "./dom.ts";
+
+export interface SettingsHandlers {
+  onChange(settings: Settings): void;
+}
+
+function toggleRow(label: string, hint: string, checked: boolean, onChange: (value: boolean) => void): HTMLLabelElement {
+  const input = h("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  return h("label", "row toggle", h("span", "row-text", h("strong", "", label), h("small", "", hint)), input, h("span", "switch"));
+}
+
+function creditsList(): HTMLDetailsElement {
+  const items = CREDITS.map((credit) => {
+    const link = h("a", "", creditLine(credit));
+    link.href = credit.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    return h("li", "", link);
+  });
+  return h("details", "credits fine-print", h("summary", "", "소리와 모델 출처"), h("ul", "credit-list", ...items));
+}
+
+// The settings rows; the phone's settings app shows `root`.
+export class SettingsPanel {
+  readonly root = h("div", "settings-app");
+  private readonly ambientVolume = h("input");
+  private readonly effectVolume = h("input");
+  private readonly reduce: HTMLInputElement;
+  private current: Settings;
+
+  constructor(
+    initial: Settings,
+    private readonly handlers: SettingsHandlers,
+  ) {
+    this.current = { ...initial };
+
+    for (const slider of [this.ambientVolume, this.effectVolume]) {
+      slider.type = "range";
+      slider.min = "0";
+      slider.max = "100";
+      slider.step = "1";
+    }
+    this.ambientVolume.setAttribute("aria-label", "배경 소리 크기");
+    this.ambientVolume.addEventListener("input", () => this.update({ ambientVolume: Number(this.ambientVolume.value) / 100 }));
+    this.effectVolume.setAttribute("aria-label", "효과음 크기");
+    this.effectVolume.addEventListener("input", () => this.update({ effectVolume: Number(this.effectVolume.value) / 100 }));
+    const ambientRow = h("div", "row", h("span", "row-text", h("strong", "", "배경 소리 크기")), this.ambientVolume);
+    const effectRow = h("div", "row", h("span", "row-text", h("strong", "", "효과음 크기")), this.effectVolume);
+
+    const reduceRow = toggleRow("움직임 줄이기", "카메라 흔들림과 부드러운 절 동작을 꺼요", initial.reduceMotion, (reduceMotion) =>
+      this.update({ reduceMotion }),
+    );
+    this.reduce = reduceRow.querySelector("input") as HTMLInputElement;
+
+    this.root.append(ambientRow, effectRow, reduceRow, h("p", "fine-print", "설정은 이 기기에만 저장돼요."), creditsList());
+    this.sync(initial);
+  }
+
+  sync(settings: Settings): void {
+    this.current = { ...settings };
+    this.ambientVolume.value = String(Math.round(settings.ambientVolume * 100));
+    this.effectVolume.value = String(Math.round(settings.effectVolume * 100));
+    this.reduce.checked = settings.reduceMotion;
+  }
+
+  private update(patch: Partial<Settings>): void {
+    this.current = { ...this.current, ...patch };
+    this.handlers.onChange({ ...this.current });
+  }
+}

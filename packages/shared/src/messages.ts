@@ -1,0 +1,112 @@
+import { BOW_MAX_TIMES } from "./constants.ts";
+import { isValidEmote } from "./emote.ts";
+import { type Item, isValidItem } from "./item.ts";
+import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
+import { isValidWorld } from "./world.ts";
+
+export const MSG = {
+  move: "move",
+  sit: "sit",
+  stand: "stand",
+  bow: "bow",
+  emote: "emote",
+  knock: "knock",
+  chant: "chant",
+  equip: "equip",
+  jump: "jump",
+  relocate: "relocate",
+} as const;
+
+export interface MoveMessage {
+  x: number;
+  z: number;
+  seq?: number;
+}
+export interface SitMessage {
+  zone: Zone;
+  seatId: number;
+}
+export type StandMessage = Record<string, never>;
+export interface BowMessage {
+  times: 1 | 2 | 3;
+}
+export interface EmoteMessage {
+  id: number;
+}
+export type KnockMessage = Record<string, never>;
+export interface ChantMessage {
+  on: boolean;
+}
+export interface EquipMessage {
+  item: Item;
+}
+export interface ClientToServerMessages {
+  move: MoveMessage;
+  sit: SitMessage;
+  stand: StandMessage;
+  bow: BowMessage;
+  emote: EmoteMessage;
+  knock: KnockMessage;
+  chant: ChantMessage;
+  equip: EquipMessage;
+  jump: Record<string, never>;
+}
+
+export interface RelocateMessage {
+  world: number;
+}
+
+export interface JoinOptions {
+  hue?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+const MAX_MOVE_SEQ = 0xffffffff;
+
+export function parseMove(payload: unknown): (MoveMessage & { seq: number }) | null {
+  if (!isRecord(payload) || !finite(payload.x) || !finite(payload.z)) return null;
+  const seq = payload.seq;
+  const valid = typeof seq === "number" && Number.isInteger(seq) && seq >= 0 && seq <= MAX_MOVE_SEQ;
+  return { x: payload.x, z: payload.z, seq: valid ? seq : 0 };
+}
+
+export function parseSit(payload: unknown): SitMessage | null {
+  if (!isRecord(payload) || !isZone(payload.zone) || !finite(payload.seatId)) return null;
+  const id = payload.seatId;
+  if (!Number.isInteger(id) || id < 0 || id >= SEAT_COUNT) return null;
+  return { zone: payload.zone, seatId: id };
+}
+
+export function parseBow(payload: unknown): BowMessage | null {
+  if (!isRecord(payload) || !finite(payload.times)) return null;
+  const times = payload.times;
+  if (!Number.isInteger(times) || times < 1 || times > BOW_MAX_TIMES) return null;
+  return { times: times as 1 | 2 | 3 };
+}
+
+export function parseEmote(payload: unknown): EmoteMessage | null {
+  if (!isRecord(payload) || !isValidEmote(payload.id)) return null;
+  return { id: payload.id };
+}
+
+export function parseChant(payload: unknown): ChantMessage | null {
+  if (!isRecord(payload) || typeof payload.on !== "boolean") return null;
+  return { on: payload.on };
+}
+
+export function parseEquip(payload: unknown): EquipMessage | null {
+  if (!isRecord(payload) || !isValidItem(payload.item)) return null;
+  return { item: payload.item };
+}
+
+export function parseRelocate(payload: unknown): RelocateMessage | null {
+  if (!isRecord(payload) || !isValidWorld(payload.world)) return null;
+  return { world: payload.world };
+}
