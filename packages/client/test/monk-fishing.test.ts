@@ -143,12 +143,40 @@ describe("the rod", () => {
 
   it("is modelled along that line, from a thick butt in the hand to a thin tip", () => {
     const avatar = steadyAngler(AT_ORIGIN);
-    const hand = nodeOf(avatar, "hand", 0);
-    const origin = positionOf(hand);
-    const vertices = worldVertices(hand, buildItemGeometries().rod);
+    const origin = positionOf(nodeOf(avatar, "hand", 0));
+    const vertices = worldVertices(nodeOf(avatar, "rod"), buildItemGeometries().rod);
     const farthest = vertices.reduce((far, v) => (v.distanceTo(origin) > far.distanceTo(origin) ? v : far));
     expect(farthest.distanceTo(rodTipOf(avatar)), "the longest reach of the model is the tip").toBeLessThan(0.02);
     expect(Math.max(...vertices.map((v) => v.y)), "the tip stands high above the ground").toBeGreaterThan(1.4);
+  });
+
+  it("is carried leaning forward and up when the monk walks or stands with it, not hanging behind", () => {
+    for (const mode of ["stand", "walk"]) {
+      const avatar = new MonkAvatar("walker", 0, false);
+      avatar.item = ITEM_ROD;
+      avatar.setMode(mode, 0);
+      avatar.place(0, 0, 0);
+      avatar.animate(0.016, 5000, mode === "walk" ? 1.5 : 0, true);
+      const rod = nodeOf(avatar, "rod");
+      const grip = positionOf(rod);
+      const tip = new Vector3(0, ROD.reach, 0).applyMatrix4(rod.matrixWorld);
+      expect(tip.y - grip.y, `${mode}: the tip is well above the hand`).toBeGreaterThan(0.6);
+      expect(grip.z - tip.z, `${mode}: the tip is ahead of the hand`).toBeGreaterThan(0.4);
+    }
+  });
+
+  it("is folded away while the monk kneels", async () => {
+    const pool = new MonkPool(new Group(), await loadAssets(), 4);
+    const monk = new MonkAvatar("kneeler", 0, false);
+    monk.item = ITEM_ROD;
+    monk.setMode("kneel", 0);
+    monk.animate(0.016, 5000, 0, true);
+    pool.add(monk);
+    pool.flush();
+    const matrix = new Matrix4();
+    (pool.group.getObjectByName("monk-rod") as InstancedMesh).getMatrixAt(0, matrix);
+    expect(matrix.determinant()).toBe(0);
+    pool.dispose();
   });
 
   it("is shown only to a monk holding it, and the line and float only while a line is out", async () => {

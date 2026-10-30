@@ -135,6 +135,7 @@ export class MonkAvatar {
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly handNodes: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly beadsNode = new Object3D();
+  private readonly rodNode = new Object3D();
   private readonly rodTip = new Object3D();
   private readonly lineNode = new Object3D();
   private readonly floatNode = new Object3D();
@@ -174,8 +175,10 @@ export class MonkAvatar {
       (this.feet[side] as Object3D).position.set(sign * FOOT_X, FOOT_Y, 0);
     }
     this.beadsNode.position.set(0, BEAD_RING_CENTER.y, BEAD_RING_CENTER.z);
-    this.rodTip.position.copy(ROD.tip);
-    (this.handNodes[0] as Object3D).add(this.beadsNode, this.rodTip);
+    this.rodNode.position.copy(ROD.grip);
+    this.rodTip.position.set(0, ROD.reach, 0);
+    this.rodNode.add(this.rodTip);
+    (this.handNodes[0] as Object3D).add(this.beadsNode, this.rodNode);
     this.root.add(this.lineNode, this.floatNode);
 
     const bind = (part: PartName, node: Object3D, copy = 0, item?: number, fishing?: boolean): void => {
@@ -197,7 +200,7 @@ export class MonkAvatar {
     }
     bind("mokt", this.handNodes[0], 0, ITEM_MOKT);
     bind("beads", this.beadsNode, 0, ITEM_CHANT);
-    bind("rod", this.handNodes[0], 0, ITEM_ROD);
+    bind("rod", this.rodNode, 0, ITEM_ROD);
     bind("fishLine", this.lineNode, 0, ITEM_ROD, true);
     bind("bobber", this.floatNode, 0, ITEM_ROD, true);
   }
@@ -320,6 +323,10 @@ export class MonkAvatar {
       leg.rotation.x = Math.atan2(-reachZ, -reachY);
       leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
     }
+
+    // Fished, the rod rises toward the sea; otherwise it is carried leaning forward, and folded away while kneeling.
+    this.rodNode.quaternion.slerpQuaternions(ROD.carry, ROD.aim, fish);
+    this.rodNode.scale.setScalar(kneel > 0.5 ? 0 : 1);
 
     this.root.updateMatrixWorld(true);
     if (this.mode === "fish" && this.item === ITEM_ROD) this.castLine(nowMs, reduceMotion);
