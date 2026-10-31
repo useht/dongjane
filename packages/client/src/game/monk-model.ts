@@ -57,6 +57,8 @@ export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "sk
 // so the model and the animation always agree. Only pose angles and walk timing live in animate().
 const HIP_STAND = rig.hipStand;
 const HIP_KNEEL = rig.hipKneel;
+const JACKET_DROP = rig.jacketDrop;
+const PELVIS_DROP = rig.pelvisDrop;
 const NECK_Y = rig.neckY;
 const SHOULDER_X = rig.shoulderX;
 const SHOULDER_Y = rig.shoulderY;
@@ -65,21 +67,30 @@ const FORE_ARM = rig.foreArm;
 const FOOT_X = rig.footX;
 const FOOT_Y = rig.footY;
 const FOOT_FORWARD = rig.footForward;
+const FOOT_KNEEL_X = rig.footKneelX;
 const FOOT_KNEEL_Z = rig.footKneelZ;
 const FOOT_KNEEL_Y = rig.footKneelY;
 const FOOT_KNEEL_TILT = rig.footKneelTilt;
+const FOOT_KNEEL_YAW = rig.footKneelYaw;
+const FOOT_OVER_TILT = rig.footOverTilt;
+const FOOT_OVER_LIFT = rig.footOverLift;
+const FOOT_OVER_SHIFT = rig.footOverShift;
 const LEG_KNEEL_LIFT = rig.legKneelLift;
 const LEG_TOP_DROP = rig.legTopDrop;
 const LEG_KNEEL_TOP_DROP = rig.legKneelTopDrop;
 const LEG_KNEEL_TOP_FORWARD = rig.legKneelTopForward;
+const LEG_KNEEL_TOP_X = rig.legKneelTopX;
 const LEG_KNEEL_FLAT = rig.legKneelFlat;
 const LEG_LENGTH = rig.legLength;
 const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
 const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
 const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
-const BOW_HIP_FORWARD = rig.bowHipForward;
-const BOW_SEAT_BACK = rig.bowSeatBack;
-const BOW_SKIRT_SHARE = rig.bowSkirtShare;
+const BOW_LEAN = rig.bowLean;
+const BOW_HEAD = rig.bowHead;
+const BOW_HIP_JOINT = rig.bowHipJoint;
+const BOW_SKIRT_FOLLOW = rig.bowSkirtFollow;
+const BOW_SKIRT_SQUASH = rig.bowSkirtSquash;
+const BOW_PELVIS_SQUASH = rig.bowPelvisSquash;
 const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
@@ -266,31 +277,40 @@ export class MonkAvatar {
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
     this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
-    this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006;
-    this.hips.position.z = -depth * BOW_HIP_FORWARD;
+    // Bowing, the chest folds about the hip joint, BOW_HIP_JOINT below the waist pivot: the waist swings forward (and a little down) while
+    // the seat of the trousers stays on the heels and the skirt on the thighs.
+    const theta = BOW_LEAN * depth;
+    const waistDown = BOW_HIP_JOINT * (1 - Math.cos(theta));
+    const waistForward = BOW_HIP_JOINT * Math.sin(theta);
+    this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006 - waistDown;
+    this.hips.position.z = -waistForward;
 
-    // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing, the hips and
-    // everything on them slide forward, but the seat stays on the heels, so the folded arms have room between it and the head.
+    // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing, it presses
+    // down with its underside on the heels, under the settled skirt.
     const pelvisY = 1 + (KNEEL_PELVIS_SCALE_Y - 1) * kneel;
+    const pelvisSquash = 1 + (BOW_PELVIS_SQUASH - 1) * depth;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
-    this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
-    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel, BOW_SEAT_BACK * depth);
+    this.pelvisNode.scale.set(pelvisXZ, pelvisY * pelvisSquash, pelvisXZ);
+    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash), waistForward);
 
     // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
     const biting = this.bite && fish > 0.5;
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    // The jacket bends at the hip pivot: the chest bows with the torso, and the skirt below it follows only part of the way (and, kneeling,
-    // is gathered a little), so the back is a curve from the hip to the neck, not one rigid wedge that swings the hem up behind.
+    // The jacket is cut at the hip pivot: the chest bows with the torso in one straight line from the hip joint to the neck, and the
+    // skirt below it keeps its place on the thighs (gathered a little kneeling, and settling lower still bowing, its hem fixed).
     const lean = -0.05 * walk + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     const sway = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
-    this.torsoNode.rotation.x = lean - 1.648 * depth;
+    this.torsoNode.rotation.x = lean - theta;
     this.torsoNode.rotation.z = sway;
-    this.skirtNode.rotation.x = lean - 1.648 * BOW_SKIRT_SHARE * depth;
+    const skirtY = 1 + (KNEEL_SKIRT_SCALE - 1) * kneel;
+    const skirtSquash = 1 + (BOW_SKIRT_SQUASH - 1) * depth;
+    this.skirtNode.rotation.x = lean;
     this.skirtNode.rotation.z = sway;
-    this.skirtNode.scale.y = 1 + (KNEEL_SKIRT_SCALE - 1) * kneel;
-    this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
+    this.skirtNode.position.set(0, waistDown * (1 - BOW_SKIRT_FOLLOW) - JACKET_DROP * skirtY * (1 - skirtSquash), waistForward * (1 - BOW_SKIRT_FOLLOW));
+    this.skirtNode.scale.y = skirtY * skirtSquash;
+    this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -300,8 +320,9 @@ export class MonkAvatar {
       const armSwing = (side === 0 ? swing : swingBack) * 0.5 * walk;
 
       // The arm hangs straight at rest, splayed about 35 degrees out from the shoulder so the sleeve clears the wide robe; praying swings
-      // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing lays both hands together on the seat under
-      // the face (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
+      // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing reaches both arms forward and down, the
+      // forearms rolled over so the hands lie together on the cushion under the face (a copy of POSE in
+      // packages/client/assets/monk/build_monk.py, keep both in step).
       const idleX = 0.08 + breathe * 0.02;
       const idleZ = sign * 0.61;
       const idleElbow = 0.1;
@@ -310,19 +331,23 @@ export class MonkAvatar {
       const prayZ = -sign * 0.185;
       const prayElbow = 1.301;
       const prayTwist = -sign * 1.478;
-      const bowX = 1.261;
-      const bowZ = -sign * 0.2;
-      const bowElbow = 0.44;
+      const bowX = 0.9667;
+      const bowY = sign * 0.3012;
+      const bowZ = -sign * 0.1159;
+      const bowElbow = 1.5347;
+      const bowTwist = sign * 2.0646;
 
-      const prayMix = kneel * (1 - depth);
+      // The arms get out of the prayer ahead of the chest, so the cuffs leave the chest as it starts to fold.
+      const armBow = 1 - (1 - depth) * (1 - depth);
+      const prayMix = kneel * (1 - armBow);
       const baseX = idleX + (prayX - idleX) * kneel;
       const strike = side === 1 ? knock * prayMix : 0;
-      shoulder.rotation.x = baseX + (bowX - baseX) * depth + armSwing * (1 - kneel) + strike * 0.12;
-      shoulder.rotation.y = prayY * prayMix;
-      shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * depth * kneel;
+      shoulder.rotation.x = baseX + (bowX - baseX) * armBow + armSwing * (1 - kneel) + strike * 0.12;
+      shoulder.rotation.y = prayY * prayMix + bowY * armBow * kneel;
+      shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * armBow * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;
-      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * depth + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.4;
-      elbow.rotation.y = prayTwist * prayMix;
+      elbow.rotation.x = baseElbow + (bowElbow - baseElbow) * armBow + Math.max(0, -armSwing) * 0.5 * (1 - kneel) - strike * 0.4;
+      elbow.rotation.y = prayTwist * prayMix + bowTwist * armBow * kneel;
 
       if (fish > 0) {
         const hold = side === 0 ? ROD_POSE.lead : ROD_POSE.rear;
@@ -334,22 +359,29 @@ export class MonkAvatar {
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
-      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel;
-      foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
-      foot.rotation.x = kneel * FOOT_KNEEL_TILT;
+      // Kneeling (정좌) the feet lie sole-up under the seat, the heels apart and the toes pointing back and in, the right foot's toes over
+      // the left's.
+      const over = side === 1 ? kneel : 0;
+      foot.position.x = sign * (FOOT_X + (FOOT_KNEEL_X - FOOT_X) * kneel);
+      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel + FOOT_OVER_SHIFT * over;
+      foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + FOOT_OVER_LIFT * over + lift * 0.07;
+      foot.rotation.set(kneel * FOOT_KNEEL_TILT - FOOT_OVER_TILT * over, sign * FOOT_KNEEL_YAW * kneel, 0);
 
       // The leg (and the trouser leg hung on it) hangs from a pivot inside the pelvis and is stretched to the ankle, so it follows
-      // strides, bobbing and the folded kneel. Kneeling, the pivot sits low and forward so the thigh runs flat under the skirt to a knee
-      // in front of the hip, and the shin folds back from it, flattened, to the ankle.
+      // strides, bobbing and the folded kneel. Kneeling, the pivot sits low, forward and wide so the thigh runs flat under the skirt to a
+      // knee a hand-span from the other in front of the hip, and the shin folds back from it, flattened, to the ankle.
       const leg = this.legs[side] as Object3D;
-      const topY = this.hips.position.y - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * kneel);
+      const topY = this.hips.position.y + waistDown - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * kneel);
+      const topX = sign * (FOOT_X + (LEG_KNEEL_TOP_X - FOOT_X) * kneel);
+      const reachX = foot.position.x - topX;
       const reachY = foot.position.y + LEG_KNEEL_LIFT * kneel - topY;
-      const walkTopZ = this.hips.position.z - stride * WALK_HIP_SHIFT;
+      const walkTopZ = -stride * WALK_HIP_SHIFT;
       const topZ = walkTopZ + (-LEG_KNEEL_TOP_FORWARD - walkTopZ) * kneel;
       const reachZ = foot.position.z - topZ;
-      leg.position.set(sign * FOOT_X, topY, topZ);
-      leg.rotation.x = Math.atan2(-reachZ, -reachY);
-      leg.scale.set(1, Math.hypot(reachY, reachZ) / LEG_LENGTH, 1 + (LEG_KNEEL_FLAT - 1) * kneel);
+      const reach = Math.hypot(reachX, reachY, reachZ);
+      leg.position.set(topX, topY, topZ);
+      leg.rotation.set(Math.atan2(-reachZ, -reachY), 0, Math.asin(reachX / reach));
+      leg.scale.set(1, reach / LEG_LENGTH, 1 + (LEG_KNEEL_FLAT - 1) * kneel);
     }
 
     // Fished, the rod rises toward the sea; otherwise it is carried leaning forward, and folded away while kneeling.

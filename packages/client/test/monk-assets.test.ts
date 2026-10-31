@@ -28,7 +28,10 @@ const TROUSER_PARTS: BodyPartName[] = ["pelvis", "trousers"];
 const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
 // monk-poses.json, written by build_monk.py: world bounds [min x, y, z, max x, y, z] of one copy of each part, per probed pose.
-type BowProbe = { bows: number[] } & Record<"head" | "pelvis" | "torso" | "skirt" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
+// The right (second) copy of the arm and leg parts is probed too: a pose is right only if both sides are.
+const BOW_PROBED = ["head", "pelvis", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const;
+const BOW_PROBED_RIGHT = ["sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const;
+type BowProbe = { bows: number[] } & Record<(typeof BOW_PROBED)[number] | `${(typeof BOW_PROBED_RIGHT)[number]}Right`, number[][]>;
 type WalkProbe = { phases: number[] } & Record<"head" | "torso" | "skirt" | "sleeveUpper" | "sleeveLower" | "hand" | "foot" | "trousers", number[][]>;
 type FishProbe = Record<"head" | "torso" | "skirt" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
 // animate() advances the walk phase by dt * min(speed, 3.5) * 4.4 radians, so dt = phase / this puts a fresh walker at that phase.
@@ -230,17 +233,27 @@ describe("monk assets", () => {
       "footX",
       "footY",
       "footForward",
+      "footKneelX",
       "footKneelZ",
       "footKneelTilt",
+      "footKneelYaw",
+      "footOverTilt",
+      "footOverLift",
+      "footOverShift",
       "legKneelLift",
       "legTopDrop",
       "legKneelTopDrop",
       "legKneelTopForward",
+      "legKneelTopX",
       "legKneelFlat",
       "legLength",
       "kneelPelvisGrow",
       "kneelPelvisScaleY",
-      "bowSkirtShare",
+      "bowHipJoint",
+      "bowSkirtSquash",
+      "bowPelvisSquash",
+      "bowLean",
+      "bowHead",
       "kneelSkirtScale",
       "seatTop",
       "robeTintSaturation",
@@ -250,7 +263,9 @@ describe("monk assets", () => {
     }
     expect(Math.abs(monkRig.footKneelY), "the folded flat foot rests with its pivot on the seat").toBeLessThan(0.01);
     expect(monkRig.kneelPelvisLift).toBeGreaterThanOrEqual(0);
-    expect(monkRig.bowSkirtShare, "the skirt bends back less than the chest bows, not more").toBeLessThan(1);
+    expect(monkRig.bowSkirtFollow, "the skirt stays on the thighs when bowing: it does not turn with the chest").toBe(0);
+    expect(monkRig.bowSkirtSquash, "the skirt is squashed against its hem when bowing, not stretched").toBeLessThanOrEqual(1);
+    expect(monkRig.bowPelvisSquash, "the seat of the trousers is squashed when bowing, not stretched").toBeLessThanOrEqual(1);
     expect(monkRig.kneelSkirtScale, "the skirt is gathered kneeling, not stretched").toBeLessThanOrEqual(1);
     expect(monkRig.robeTintSaturation).toBeLessThanOrEqual(1);
     expect(monkRig.robeTintLightness).toBeLessThanOrEqual(1);
@@ -340,11 +355,14 @@ describe("monk assets", () => {
     expect(Math.abs((kneeWorld - ankleWorld) / H - 0.74), "shin").toBeLessThanOrEqual(0.02);
 
     // The head keeps its size; the body is 3.4 heads (1.122 standing). Kneeling, the seat of the trousers (pelvisDrop below the hip)
-    // rests on the seat, so the hip drops to seat + pelvisDrop and the crown to about 0.88 of the standing crown (0.99).
+    // rests on the heels, which lie flat on the cushion a heel thick (0.069) under it: the hip drops to the cushion + hipKneel and the crown
+    // to about 0.94 of the standing crown (0.99 for a seat that rested on the cushion itself, plus the heels).
     const kneelingCrown = monkRig.seatTop + monkRig.hipKneel + monkRig.neckY + crown;
     expect(Math.abs(crownWorld - 1.122), "standing crown").toBeLessThanOrEqual(0.03);
-    expect(Math.abs(kneelingCrown - 0.99), "kneeling crown").toBeLessThanOrEqual(0.03);
-    expect(monkRig.hipKneel - monkRig.pelvisDrop * monkRig.kneelPelvisScaleY, "the seat rests on the seat").toBeLessThan(0.02);
+    expect(Math.abs(kneelingCrown - (0.99 + 0.069)), "kneeling crown").toBeLessThanOrEqual(0.03);
+    const seatAbove = monkRig.hipKneel - monkRig.pelvisDrop * monkRig.kneelPelvisScaleY;
+    expect(seatAbove, "the buttocks rest on the heels, which lie on the cushion: the seat of the trousers is a heel thick above it").toBeGreaterThan(0.06);
+    expect(seatAbove, "the buttocks rest on the heels, which lie on the cushion: the seat of the trousers is a heel thick above it").toBeLessThan(0.075);
   });
 
   it("dresses the 동자승 in a knee-length jacket over baggy trousers gathered above the ankle, the foot showing below the cuff", async () => {
@@ -477,7 +495,7 @@ describe("monk assets", () => {
     }
   });
 
-  it("bows exactly as build_monk.py checked it: the seat stays on the heels while the arms fold between it and the head", async () => {
+  it("bows exactly as build_monk.py checked it, both sides: the seat stays on the heels and the skirt on the thighs while the chest folds forward", async () => {
     const parts = await loadParts();
     const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { bow: BowProbe };
     expect(probe.bow.bows, "the probe covers the whole bow").toEqual([0, 0.25, 0.5, 0.75, 1]);
@@ -485,12 +503,16 @@ describe("monk assets", () => {
       const avatar = new MonkAvatar("bower", 0, false);
       avatar.setMode("bow", 0);
       avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
-      for (const part of ["head", "pelvis", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand"] as const) {
-        const box = new Box3().setFromPoints(worldVertices(nodeOf(avatar, part, 0), parts[part]));
-        const want = probe.bow[part][index] as number[];
+      const probed: [BodyPartName, number, string][] = [
+        ...BOW_PROBED.map((part): [BodyPartName, number, string] => [part, 0, part]),
+        ...BOW_PROBED_RIGHT.map((part): [BodyPartName, number, string] => [part, 1, `${part}Right`]),
+      ];
+      for (const [part, copy, key] of probed) {
+        const box = new Box3().setFromPoints(worldVertices(nodeOf(avatar, part, copy), parts[part]));
+        const want = (probe.bow as Record<string, number[][]>)[key]?.[index] as number[];
         const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
         for (const [axis, value] of got.entries()) {
-          expect(Math.abs(value - (want[axis] as number)), `${part} bounds[${axis}] at bow ${depth}`).toBeLessThan(0.002);
+          expect(Math.abs(value - (want[axis] as number)), `${key} bounds[${axis}] at bow ${depth}`).toBeLessThan(0.002);
         }
       }
     }
@@ -644,7 +666,8 @@ describe("monk assets", () => {
     expect(hemStanding, "the hem hangs about 0.95 H (0.31 m) above the ground").toBeLessThan(0.34);
     const seatKneeling = monkRig.seatTop + monkRig.hipKneel + monkRig.kneelPelvisLift + pelvis.min.y * monkRig.kneelPelvisScaleY;
     expect(seatKneeling).toBeGreaterThanOrEqual(monkRig.seatTop);
-    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the seat").toBeLessThan(0.02);
+    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the cushion").toBeGreaterThan(0.06);
+    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the cushion").toBeLessThan(0.075);
     const hemKneeling = monkRig.seatTop + monkRig.hipKneel + jacket.min.y * monkRig.kneelSkirtScale;
     expect(hemKneeling - monkRig.seatTop, "the jacket hem stays above the spread seat").toBeGreaterThan(0.05);
 
@@ -665,58 +688,120 @@ describe("monk assets", () => {
     };
     for (const part of ["pelvis", "trousers", "leg", "foot"] as const) {
       expect(lowest(part), `${part} rests on the seat, not in it`).toBeGreaterThanOrEqual(monkRig.seatTop - 0.002);
-      expect(lowest(part) - monkRig.seatTop, `${part} sits right on the seat`).toBeLessThan(0.03);
+      expect(lowest(part) - monkRig.seatTop, `${part} sits right on the seat`).toBeLessThan(part === "pelvis" ? 0.075 : 0.03);
     }
+    expect(lowest("pelvis") - monkRig.seatTop, "the buttocks rest on the heels, not on the cushion").toBeGreaterThan(0.06);
     const jacketHem = Math.min(...worldVertices(nodeOf(avatar, "skirt", 0), parts.skirt).map((v) => v.y));
     expect(jacketHem, "the jacket hangs clear above the seat").toBeGreaterThan(monkRig.seatTop + 0.05);
 
-    // The trouser cuff folds back with the foot: behind the knee (toward +Z, the back), not out in front of the monk.
+    // The trouser cuff folds back with the foot: from the knee (toward -Z, the front) back to the ankle under the seat, not out in front.
     for (const side of [0, 1]) {
-      const cuffZ = Math.max(...worldVertices(nodeOf(avatar, "trousers", side), parts.trousers).map((v) => v.z));
-      expect(cuffZ, `trouser leg ${side} folds back`).toBeGreaterThan(0.1);
+      const legZ = worldVertices(nodeOf(avatar, "trousers", side), parts.trousers).map((v) => v.z);
+      expect(Math.max(...legZ), `trouser leg ${side} folds back behind the hip`).toBeGreaterThan(0);
+      expect(Math.max(...legZ) - Math.min(...legZ), `trouser leg ${side} runs from the knee back to the ankle`).toBeGreaterThan(0.15);
     }
   });
 
-  it("bends the jacket at the waist when bowing: the chest goes over, the skirt follows only part of the way, and the hem stays off the seat", async () => {
+  it("folds the chest forward at the hip joint when bowing: one straight back at 85 to 90 degrees, the skirt stays on the thighs, and the hem stays off the seat", async () => {
     const parts = await loadParts();
+    const kneeling = posedAvatar("kneel");
     const avatar = new MonkAvatar("bower", 0, false);
     avatar.setMode("bow", 0);
     avatar.animate(0.016, BOW_MS * 0.32, 0, true);
     const chest = nodeOf(avatar, "torso", 0);
     const skirt = nodeOf(avatar, "skirt", 0);
+    const pelvis = nodeOf(avatar, "pelvis", 0);
     const tilt = (node: Object3D): number => {
       const up = new Vector3(0, 1, 0).transformDirection(node.matrixWorld);
       return Math.atan2(up.z, up.y);
     };
-    expect(Math.abs(tilt(chest)), "the chest bows well over").toBeGreaterThan(1.4);
-    expect(Math.abs(tilt(skirt)) / Math.abs(tilt(chest)), "the skirt bends by its share of the chest's bow").toBeCloseTo(monkRig.bowSkirtShare, 1);
-    const hinge = (node: Object3D): Vector3 => new Vector3().setFromMatrixPosition(node.matrixWorld);
-    expect(hinge(chest).distanceTo(hinge(skirt)), "the chest and the skirt meet at one pivot").toBeLessThan(1e-6);
-    // Both ends of the jacket's waist are closed over the pivot, so no gap opens between them however far the chest goes.
+    expect(Math.abs(tilt(chest)), "the chest bows well over, about 88 degrees at the deepest").toBeCloseTo(monkRig.bowLean, 2);
+    expect(Math.abs(tilt(chest)), "the chest bows at least 85 degrees").toBeGreaterThanOrEqual((85 * Math.PI) / 180);
+    expect(Math.abs(tilt(chest)), "the chest bows at most 90 degrees").toBeLessThanOrEqual(Math.PI / 2);
+    expect(Math.abs(tilt(skirt)), "the skirt does not turn with the chest: it lies on the thighs").toBeLessThan(0.01);
+    expect(Math.abs(tilt(pelvis)), "the seat of the trousers stays level on the heels").toBeLessThan(0.01);
+    // The back is one straight line: the chest is one rigid piece turned about the hip joint, with no kink at the waist.
     expect(bounds(parts.torso).min.y, "the chest rounds off below the pivot").toBeLessThan(-0.05);
-    expect(bounds(parts.skirt).max.y, "the skirt rounds off above the pivot").toBeGreaterThan(0.04);
+    expect(bounds(parts.skirt).max.y, "the skirt's flat crown lies just above the pivot, level with the back of the chest at the deepest").toBeGreaterThan(0.02);
     const hem = Math.min(...worldVertices(skirt, parts.skirt).map((v) => v.y));
+    const hemKneeling = Math.min(...worldVertices(nodeOf(kneeling, "skirt", 0), parts.skirt).map((v) => v.y));
     expect(hem - monkRig.seatTop, "the hem of the bowing skirt stays off the seat").toBeGreaterThanOrEqual(-0.0005);
+    expect(Math.abs(hem - hemKneeling), "the hem stays where it hung kneeling, on the thighs").toBeLessThan(0.002);
+    // The hip joint is the pivot of the chest, so the waist swings forward about it, and a little down.
+    const waist = new Vector3().setFromMatrixPosition(chest.matrixWorld);
+    const waistKneeling = new Vector3().setFromMatrixPosition(nodeOf(kneeling, "torso", 0).matrixWorld);
+    expect(waistKneeling.z - waist.z, "the waist swings forward about the hip joint").toBeCloseTo(monkRig.bowHipJoint * Math.sin(monkRig.bowLean), 2);
+    expect(waistKneeling.y - waist.y, "and a little down").toBeCloseTo(monkRig.bowHipJoint * (1 - Math.cos(monkRig.bowLean)), 2);
   });
 
-  it("folds the kneeling leg under the body: a thigh in front, a knee, a flattened shin back to the foot, and the foot showing behind", async () => {
+  it("folds the kneeling leg under the body: a thigh in front, a knee, a flattened shin back to the foot, and the foot lying under the seat", async () => {
     const parts = await loadParts();
     const avatar = posedAvatar("kneel");
     for (const side of [0, 1]) {
       const leg = nodeOf(avatar, "leg", side);
       const top = new Vector3().setFromMatrixPosition(leg.matrixWorld);
       const foot = new Vector3().setFromMatrixPosition(nodeOf(avatar, "foot", side).matrixWorld);
+      const toes = worldVertices(nodeOf(avatar, "foot", side), parts.foot);
       expect(top.z, `the thigh of leg ${side} starts in front of the hip`).toBeLessThan(-0.05);
-      expect(foot.z, `the foot of leg ${side} lies behind the hip`).toBeGreaterThan(0.1);
+      expect(Math.abs(foot.z), `the heel of foot ${side} lies under the seat, not out behind it`).toBeLessThan(0.08);
+      expect(Math.max(...toes.map((v) => v.z)), `the toes of foot ${side} point back past the seat`).toBeGreaterThan(0.1);
       expect(top.y - monkRig.seatTop, `the thigh of leg ${side} lies low over the seat`).toBeLessThan(0.12);
       const worldZ = worldVertices(nodeOf(avatar, "trousers", side), parts.trousers).map((v) => v.z);
       expect(Math.min(...worldZ), `the knee of leg ${side} reaches in front of the hip`).toBeLessThan(-0.1);
       expect(leg.scale.z, `the shin of leg ${side} is flattened`).toBeCloseTo(monkRig.legKneelFlat, 3);
-      const skirt = worldVertices(nodeOf(avatar, "skirt", 0), parts.skirt);
-      expect(Math.max(...skirt.map((v) => v.z)), `the foot of leg ${side} shows past the back of the skirt`).toBeLessThan(
-        Math.max(...worldVertices(nodeOf(avatar, "foot", side), parts.foot).map((v) => v.z)),
-      );
+      const hem = Math.min(...worldVertices(nodeOf(avatar, "skirt", 0), parts.skirt).map((v) => v.y));
+      expect(Math.max(...toes.map((v) => v.y)), `foot ${side} lies under the hem of the skirt`).toBeLessThan(hem);
     }
+  });
+
+  it("sits in the 정좌: buttocks on the heels, insteps flat on the cushion, the toes back and crossed right over left, the knees a hand-span apart", async () => {
+    const parts = await loadParts();
+    const avatar = posedAvatar("kneel");
+    const H = monkRig.headHeight;
+    const feet = [0, 1].map((side) => worldVertices(nodeOf(avatar, "foot", side), parts.foot));
+    const lowest = feet.map((points) => Math.min(...points.map((v) => v.y)) - monkRig.seatTop);
+    for (const [side, low] of lowest.entries()) {
+      expect(low, `the instep of foot ${side} does not sink into the cushion`).toBeGreaterThanOrEqual(-0.0005);
+      expect(low, `the instep of foot ${side} lies flat on the cushion`).toBeLessThan(0.004);
+    }
+    expect(lowest[1] as number, "the right foot lies over the left").toBeGreaterThan(lowest[0] as number);
+    expect(Math.max(...(feet[1] as Vector3[]).map((v) => v.y)), "the right foot's toes ride up over the left").toBeGreaterThan(Math.max(...(feet[0] as Vector3[]).map((v) => v.y)));
+
+    // The toes point back and in: the big toes overlap past the middle, each toe tip further in than its heel.
+    const tips = feet.map((points) => points.reduce((back, v) => (v.z > back.z ? v : back)));
+    const heels = feet.map((points) => points.reduce((front, v) => (v.z < front.z ? v : front)));
+    for (const side of [0, 1]) {
+      const sign = side === 0 ? -1 : 1;
+      const tip = tips[side] as Vector3;
+      const heel = heels[side] as Vector3;
+      expect(tip.z - heel.z, `the toes of foot ${side} lie well behind its heel`).toBeGreaterThan(0.12);
+      expect(sign * tip.x, `the toes of foot ${side} point in toward the middle`).toBeLessThan(sign * heel.x - 0.05);
+    }
+    const leftIn = Math.max(...(feet[0] as Vector3[]).map((v) => v.x));
+    const rightIn = Math.min(...(feet[1] as Vector3[]).map((v) => v.x));
+    expect(leftIn - rightIn, "the big toes overlap").toBeGreaterThan(0.01);
+    expect(leftIn - rightIn, "the big toes overlap by a toe, not a foot").toBeLessThan(0.04);
+    expect(Math.abs((heels[1] as Vector3).x - (heels[0] as Vector3).x), "the heels are apart, the buttocks between them").toBeGreaterThan(0.04);
+
+    // The buttocks (the seat of the trousers) rest on the heels, not on the cushion, and the back is straight up from them.
+    const pelvis = worldVertices(nodeOf(avatar, "pelvis", 0), parts.pelvis);
+    expect(Math.min(...pelvis.map((v) => v.y)) - monkRig.seatTop, "the buttocks sit a heel thick above the cushion").toBeGreaterThan(0.06);
+    const torso = nodeOf(avatar, "torso", 0);
+    const up = new Vector3(0, 1, 0).transformDirection(torso.matrixWorld);
+    expect(Math.abs(up.z), "the back is straight, no lean").toBeLessThan(0.01);
+    expect(Math.abs(new Vector3().setFromMatrixPosition(nodeOf(avatar, "head", 0).matrixWorld).z), "the head sits over the seat").toBeLessThan(0.01);
+
+    // The knees are about a hand-span apart (0.2 m, 0.6 H), neither pressed together nor wide.
+    const kneeInner = [0, 1].map((side) => {
+      const leg = worldVertices(nodeOf(avatar, "trousers", side), parts.trousers);
+      const front = Math.min(...leg.map((v) => v.z));
+      return Math.min(...leg.filter((v) => v.z < front + 0.015).map((v) => (side === 0 ? -v.x : v.x)));
+    });
+    const kneeGap = (kneeInner[0] as number) + (kneeInner[1] as number);
+    expect(kneeGap, "the knees are about 0.2 m apart").toBeGreaterThan(0.18);
+    expect(kneeGap, "the knees are about 0.2 m apart").toBeLessThan(0.24);
+    expect(kneeGap / H, "the knees are about 0.6 H apart").toBeGreaterThan(0.55);
+    expect(kneeGap / H, "the knees are about 0.6 H apart").toBeLessThan(0.7);
   });
 
   it("makes the trouser cuff follow the foot while walking", async () => {

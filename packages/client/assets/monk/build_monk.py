@@ -67,7 +67,7 @@ import os
 import sys
 import tempfile
 import warnings
-from math import atan2, cos, pi, radians, sin, sqrt
+from math import asin, atan2, cos, degrees, pi, radians, sin, sqrt
 from mathutils import Euler, Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
@@ -100,7 +100,7 @@ PELVIS_DEPTH = 1.04  # in H: the crotch of the trousers hangs this far below the
 
 RIG = {  # pivots and lengths the animation code uses
     "hipStand": round(RATIO["waist_to_sole"] * HEAD_H, 3),
-    "hipKneel": 0.0,  # set below: the kneeling pelvis rests on the cushion
+    "hipKneel": 0.0,  # set below: the kneeling seat of the trousers rests on the heels
     "jacketDrop": round(JACKET_HEM * HEAD_H, 3),  # the jacket hem hangs this far below the hip pivot
     "pelvisDrop": round(PELVIS_DEPTH * HEAD_H, 3),  # the crotch of the trousers hangs this far below the hip pivot
     "shoulderX": 0.11,
@@ -110,26 +110,31 @@ RIG = {  # pivots and lengths the animation code uses
     "footX": round(RATIO["hip_joints"] / 2 * HEAD_H, 4),  # half the distance between the hip joints
     "footY": round(RATIO["ankle"] * HEAD_H, 4),  # the ankle pivot above the sole; the flat sock's top reaches it
     "footForward": 0.03,  # standing: the ankle sits this far in front of the hip, the toes reach a hand further
-    "footKneelZ": 0.17,  # kneeling: the foot folds sole-up behind the hip, toes peeking out behind the trousers
+    "footKneelX": 0.1,  # kneeling (정좌): the ankles sit this far either side of the middle, the heels apart under the seat ...
+    "footKneelZ": 0.013,  # ... the sole-up foot's heel pad right under the hip, the toes pointing back past the trousers ...
     "footKneelTilt": pi,
+    "footKneelYaw": 0.76,  # ... each foot turned in this far, so the big toes meet behind the seat ...
+    "footOverTilt": 0.155,  # ... and the right foot's toes lie over the left's: it is pitched up by this much at the toes ...
+    "footOverShift": 0.039,  # ... moved this much back ...
+    "footOverLift": 0.0065,  # ... and held this much higher, resting on the left foot's instep
     "legKneelLift": 0.046,  # kneeling: the leg lower end lies this far above the foot pivot, on top of the folded foot, so the trouser cuff clears the cushion
     "legTopDrop": 0.12,  # the leg's top pivot hangs this far below the hip pivot, inside the pelvis of the trousers
     "legKneelTopY": 0.085,  # kneeling: the top pivot becomes the knee, this far above the seat (the leg folds: thigh under the jacket, shin along the cushion) ...
-    "legKneelTopForward": 0.12,  # ... and this far in front of the hip
+    "legKneelTopForward": 0.12,  # ... this far in front of the hip ...
+    "legKneelTopX": 0.166,  # ... and this far either side of the middle: the knees a hand-span (0.2 m, 0.6 H) apart
     "legKneelFlat": 0.62,  # kneeling: the shin is pressed to this share of its standing depth, so it lies on the cushion instead of standing on its edge
     "kneelPelvisGrow": 0.25,  # kneeling spreads the trousers' pelvis sideways ...
-    "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the cushion
+    "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the heels
     "kneelPelvisLift": 0.0,
-    "bowHipForward": 0.1,  # the deepest bow carries the hip pivot (torso, head, arms and the tops of the legs) this far forward ...
-    "bowSeatBack": 0.1,  # ... and the seat of the trousers back by this much, so it stays on the heels instead of reaching under the folded arms
-    "bowSkirtShare": 0.45,  # the jacket bends at the waist: the skirt below the hip pivot follows this share of the chest's bow, so the back line rounds over the hip instead of kinking
-    "kneelSkirtScale": 0.7,  # kneeling gathers the skirt to this share of its length, so the hem rides up off the knees and the folded legs show below it
+    "bowHipJoint": 0.17,  # bowing, the chest folds at the hip joint, this far below the waist pivot, so the waist swings forward (and a little down) while the seat stays on the heels
+    "bowSkirtFollow": 0.0,  # the skirt does not turn with the chest: it keeps this share of the waist's swing, 0 = it stays put on the thighs
+    "bowSkirtSquash": 0.76,  # ... only it settles: the hem stays where it is and the tunic above it presses down to this share of its kneeling height, so it no longer stands over the level back
+    "bowPelvisSquash": 0.75,  # ... and the seat of the trousers presses down (its underside stays on the heels) to this share of its height, under the settled tunic
+    "kneelSkirtScale": 0.86,  # kneeling gathers the skirt to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
     "seatTop": 0.13,
     "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
     "robeTintLightness": 0.78,
 }
-RIG["hipKneel"] = round(RIG["pelvisDrop"] * RIG["kneelPelvisScaleY"] + 0.007, 3)  # the kneeling crotch hangs 7 mm over the cushion
-RIG["legKneelTopDrop"] = round(RIG["hipKneel"] - RIG["legKneelTopY"], 4)  # the kneeling knee hangs this far below the hip pivot
 RIG["shoulderDrop"] = round((RATIO["chin_to_shoulder"] - RATIO["neck"]) * HEAD_H, 4)
 RIG["legLength"] = round(RIG["hipStand"] - RIG["legTopDrop"] - RIG["footY"], 4)  # top pivot down to the ankle pivot, standing
 CUFF_ABOVE_ANKLE = round(RATIO["cuff"] * HEAD_H - RIG["footY"], 4)  # the trouser cuff stops this far above the ankle pivot, so the foot shows below it
@@ -164,11 +169,13 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "pray_z": 0.185,
     "pray_elbow": 1.301,
     "pray_twist": 1.478,
-    "bow_lean": 1.648,
-    "bow_head": 0.0,
-    "bow_x": 1.261,
-    "bow_z": 0.2,
-    "bow_elbow": 0.44,
+    "bow_lean": 1.54,  # 88 degrees: the back is level at the deepest
+    "bow_head": 0.2866,  # the head tucks down this far more at the deepest
+    "bow_x": 0.9667,  # the arms reach forward and down, the hands together on the cushion under the face
+    "bow_z": 0.1159,
+    "bow_y": 0.3012,
+    "bow_twist": -2.0646,
+    "bow_elbow": 1.5347,
 }
 
 LEG = {
@@ -621,7 +628,7 @@ def build_torso():
     return p.to_object()
 
 
-HINGE_CROWN = [(0.025, 0.85), (0.052, 0.50)]  # how the skirt rounds off above the hinge, inside the chest: z, and its share of the hinge ring
+HINGE_CROWN = [(0.012, 0.93), (0.020, 0.62)]  # how the skirt rounds off above the hinge, inside the chest: z, and its share of the hinge ring
 
 
 def build_skirt():
@@ -631,7 +638,7 @@ def build_skirt():
     hinge = next(ring for ring in TORSO_PROFILE if ring[0] == HINGE_Z)
     tunic = [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE if z <= HINGE_Z]
     crown = [ring_xy(0.0, 0.0, z, hinge[1] * k, hinge[2] * k, n, hinge[3]) for z, k in HINGE_CROWN]
-    p.loft(tunic + crown, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, 0.07)))
+    p.loft(tunic + crown, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, 0.026)))
     return p.to_object()
 
 
@@ -642,10 +649,28 @@ def build_jacket_whole():
     return p.to_object()
 
 
+PARITY_RAY = Vector((0.371, 0.613, 0.696)).normalized()
+
+
+def inside_surface(tree, point):
+    """True when the point is inside the closed surface: a ray from it crosses the surface an odd number of times."""
+    origin = point.copy()
+    crossings = 0
+    while True:
+        hit = tree.ray_cast(origin, PARITY_RAY)[0]
+        if hit is None:
+            return crossings % 2 == 1
+        crossings += 1
+        origin = hit + PARITY_RAY * 1e-6
+
+
 def clearance_of(tree, point):
-    """Signed distance from a closed surface's BVH tree (positive = outside)."""
+    """Signed distance from a closed surface's BVH tree (positive = outside). Beside a rim the nearest face can face away from a point
+    that is plainly outside (the hem's underside against a point just above it), so a negative sign is confirmed by counting crossings."""
     hit, normal, _, dist = tree.find_nearest(point)
-    return dist if (point - hit).dot(normal) >= 0 else -dist
+    if (point - hit).dot(normal) >= 0:
+        return dist
+    return -dist if inside_surface(tree, point) else dist
 
 
 class TorsoSurface:
@@ -1000,12 +1025,17 @@ def build_leg():
     return p.to_object()
 
 
-def foot_top():
+def foot_low(tilt):
+    """How far below its pivot the foot reaches (negative) once it is turned about the pivot's sideways axis by `tilt`, in three.js axes."""
     rings, heel, toe = foot_geometry()
-    return max(max(v.z for ring in rings for v in ring), heel.z, toe.z)
+    points = [v for ring in rings for v in ring] + [heel, toe]
+    return min(v.z * cos(tilt) + v.y * sin(tilt) for v in points)  # three.js y' = y cos - z sin, with y = Blender z and z = -Blender y
 
 
-RIG["footKneelY"] = round(foot_top() + 0.001, 4)  # folded sole-up, the top of the sock rests on the cushion
+RIG["footKneelY"] = round(0.001 - foot_low(RIG["footKneelTilt"]), 4)  # folded sole-up, the top of the sock rests on the cushion
+RIG["heelTop"] = round(RIG["footKneelY"] + RIG["footY"], 4)  # ... which puts the soles of the folded feet this high over the cushion
+RIG["hipKneel"] = round(RIG["pelvisDrop"] * RIG["kneelPelvisScaleY"] + RIG["heelTop"], 3)  # the kneeling seat of the trousers rests on the heels
+RIG["legKneelTopDrop"] = round(RIG["hipKneel"] - RIG["legKneelTopY"], 4)  # the kneeling knee hangs this far below the hip pivot
 
 
 BUILDERS = {
@@ -1237,7 +1267,7 @@ def check_proportions(parts):
 
 
 def check_kneel_clearance(parts):
-    """Nothing may sink into the cushion when kneeling, and the hem must rest on it."""
+    """Nothing may sink into the cushion when kneeling, and the seat rests on the heels, a heel's height above it."""
     cushion = RIG["seatTop"]
     lowest = {}
     for part, matrices in pose_matrices(1.0, cushion).items():
@@ -1246,7 +1276,7 @@ def check_kneel_clearance(parts):
     for part, z in lowest.items():
         print("KNEEL lowest %-12s %.4f above the cushion" % (part, z - cushion))
         assert z >= cushion - 0.0005, "%s sinks %.4f into the cushion" % (part, cushion - z)
-    assert lowest["pelvis"] - cushion < 0.02, "the kneeling seat of the trousers hovers over the cushion"
+    assert 0.06 < lowest["pelvis"] - cushion < 0.075, "the kneeling seat of the trousers is %.4f above the cushion, not on the heels" % (lowest["pelvis"] - cushion)
 
 
 def check_kneel_hands(parts):
@@ -1325,7 +1355,119 @@ def check_bow(parts):
             print("BOW cuffs cross the middle by %.4f (prayer %.4f), hands %.4f apart" % (cuffs, prayer_cuffs, gap))
 
 
-WALK_POSES = (None,) + tuple(k * pi / 8 for k in range(16))  # standing, then the walk cycle in sixteenths (a leg's swing, a lifted foot and the bob all peak within it)
+def down_gap(tree, point):
+    """How far straight down from the point to the surface below it (None when there is none)."""
+    hit = tree.ray_cast(point, Vector((0.0, 0.0, -1.0)))[0]
+    return None if hit is None else point.z - hit.z
+
+
+KNEEL_SEAT = {  # the seat on the heels and the feet under it, in metres
+    "rest": (-0.002, 0.004),  # the underside of the seat above the top of each heel: resting on it, not sunk into it, not hovering
+    "instep": (-0.0005, 0.004),  # the lowest point of each instep above the cushion: laid flat on it
+    "toes_back": 0.12,  # each foot's toe tip lies this far behind its heel at least
+    "overlap": (0.01, 0.04),  # how far the toes of the two feet overlap across the middle, the heels staying apart
+    "over": (0.0, 0.01),  # the right foot lies on the left, never sunk into it and never lifted more than this off it
+    "upright": 0.005,  # the seated back is straight: the head sits this near above the middle of the seat, at most
+}
+
+
+def check_kneel_seat(parts):
+    """The seated pose (정좌): the buttocks rest on both heels, each instep lies flat on the cushion with the toes pointing back, the
+    big toes cross with the right foot over the left, and the back stands straight up from the seat to the head."""
+    cushion = RIG["seatTop"]
+    mats = pose_matrices(1.0, cushion)
+    feet = [world_bvh(parts["foot"], m) for m in mats["foot"]]
+    pelvis = [mats["pelvis"][0] @ v.co for v in parts["pelvis"].data.vertices]
+    seat = min(p.z for p in pelvis)
+    low, high = KNEEL_SEAT["rest"]
+    for side, tree in enumerate(feet):
+        rest = min(g for g in (down_gap(tree, p) for p in pelvis if p.z < seat + 0.004) if g is not None)
+        print("SEAT rests on the %s heel by %.4f (it needs %.4f to %.4f)" % ("left" if side == 0 else "right", rest, low, high))
+        assert low <= rest <= high, "the seat is %.4f off the %s heel (it needs %.4f to %.4f)" % (rest, "left" if side == 0 else "right", low, high)
+    points = [[m @ v.co for v in parts["foot"].data.vertices] for m in mats["foot"]]
+    for side, pts in enumerate(points):
+        name = "left" if side == 0 else "right"
+        flat = min(p.z for p in pts) - cushion
+        toes = max(p.y for p in pts) - min(p.y for p in pts)
+        print("SEAT %s instep %.4f above the cushion, the toes %.4f behind the heel, foot x %.4f to %.4f" % (name, flat, toes, min(p.x for p in pts), max(p.x for p in pts)))
+        assert KNEEL_SEAT["instep"][0] <= flat <= KNEEL_SEAT["instep"][1], "the %s instep is %.4f off the cushion (it needs %.4f to %.4f)" % ((name, flat) + KNEEL_SEAT["instep"])
+        assert toes >= KNEEL_SEAT["toes_back"], "the %s toes reach only %.4f behind the heel (it needs %.4f)" % (name, toes, KNEEL_SEAT["toes_back"])
+        toe = min(pts, key=lambda p: p.y)
+        heel = max(pts, key=lambda p: p.y)
+        assert (toe.x - heel.x) * (1 if side == 0 else -1) > 0, "the %s toes point away from the middle, so the big toes cannot meet" % name
+    overlap = max(p.x for p in points[0]) - min(p.x for p in points[1])
+    gap = min(g for g in (down_gap(feet[0], p) for p in points[1]) if g is not None)
+    print("SEAT the toes overlap %.4f, the right foot lies %.4f over the left" % (overlap, gap))
+    assert KNEEL_SEAT["overlap"][0] <= overlap <= KNEEL_SEAT["overlap"][1], "the feet overlap by %.4f (it needs %.4f to %.4f)" % ((overlap,) + KNEEL_SEAT["overlap"])
+    assert KNEEL_SEAT["over"][0] <= gap <= KNEEL_SEAT["over"][1], "the right foot is %.4f off the left (it needs %.4f to %.4f)" % ((gap,) + KNEEL_SEAT["over"])
+    assert all(down_gap(feet[1], p) is None for p in points[0]), "the left foot lies over the right"
+    head, pelvis_at = mats["head"][0].translation, mats["pelvis"][0].translation
+    lean = max(abs(head.x - pelvis_at.x), abs(head.y - pelvis_at.y))
+    print("SEAT the head is %.4f off the middle of the seat" % lean)
+    assert lean <= KNEEL_SEAT["upright"], "the seated back leans: the head is %.4f off the middle of the seat" % lean
+
+
+CHEST_SKIRT = {  # the chest against the skirt and the legs, at every depth of the bow, in metres
+    "poke": 0.02,  # the part of the chest below the hinge shows outside the tunic by this much at most
+    "buried": 0.05,  # and its lowest edge lies this deep inside the tunic at least, so no seam shows
+    "legs": 0.02,  # the chest stays this far from the thighs at least
+    "step": 0.004,  # at the deepest bow the top of the skirt is level with the back of the chest within this
+    "arc": 0.012,  # the back of the chest departs from the straight line from the hinge to the neck by this much at most (the jacket's own taper, the same standing)
+    "lean": (radians(85), radians(90)),  # the chest lies this far over at the deepest bow
+}
+LEG_SKIRT = (0.005, 0.02)  # the thighs against the skirt, kneeling and bowing: the skirt lies on them, this far off at least, and no further than this
+
+
+def check_chest_skirt(parts):
+    """The chest bows about the hip joint while the skirt stays on the thighs: the part of the chest below the hinge sits inside the
+    tunic (it shows outside it by a few millimetres at most), the chest never sinks into the thighs, and at the deepest bow the back
+    runs level across the top of the skirt."""
+    cushion = RIG["seatTop"]
+    tail = [v.co for v in parts["torso"].data.vertices if v.co.z < 0.0]
+    low_edge = min(v.z for v in tail)
+    worst_poke, worst_buried, worst_legs = {}, {}, {}
+    for bow in (0.0,) + BOW_DEPTHS:
+        mats = pose_matrices(1.0, cushion, bow=bow)
+        skirt = world_bvh(parts["skirt"], mats["skirt"][0])
+        poke = max(clearance_of(skirt, mats["torso"][0] @ p) for p in tail)
+        buried = -max(clearance_of(skirt, mats["torso"][0] @ p) for p in tail if p.z <= low_edge + 0.01)
+        thighs = [world_bvh(parts["trousers"], m) for m in mats["trousers"]]
+        legs = min(clearance_of(tree, mats["torso"][0] @ v.co) for tree in thighs for v in parts["torso"].data.vertices)
+        worst_poke[bow], worst_buried[bow], worst_legs[bow] = poke, buried, legs
+        assert poke <= CHEST_SKIRT["poke"], "the chest shows %.4f outside the skirt at bow %.3f (it may show %.4f)" % (poke, bow, CHEST_SKIRT["poke"])
+        assert buried >= CHEST_SKIRT["buried"], "the chest's lower edge is only %.4f inside the skirt at bow %.3f (it needs %.4f)" % (buried, bow, CHEST_SKIRT["buried"])
+        assert legs >= CHEST_SKIRT["legs"], "the chest comes within %.4f of the thighs at bow %.3f (it needs %.4f)" % (legs, bow, CHEST_SKIRT["legs"])
+        if bow == BOW_DEPTHS[-1]:
+            top_chest = max((mats["torso"][0] @ v.co).z for v in parts["torso"].data.vertices)
+            top_skirt = max((mats["skirt"][0] @ v.co).z for v in parts["skirt"].data.vertices)
+            print("BOW the chest shows %.4f outside the skirt (it may show %.4f), its lower edge %.4f inside (it needs %.4f), %.4f from the thighs (it needs %.4f), the skirt top %.4f off the back's"
+                  % (poke, CHEST_SKIRT["poke"], buried, CHEST_SKIRT["buried"], legs, CHEST_SKIRT["legs"], top_skirt - top_chest))
+            assert abs(top_skirt - top_chest) <= CHEST_SKIRT["step"], "the skirt top is %.4f off the back of the chest at the deepest bow (it may be %.4f)" % (top_skirt - top_chest, CHEST_SKIRT["step"])
+            back = [mats["torso"][0] @ min(ring, key=lambda v: v.y) for ring in torso_rings() if ring[0].z >= HINGE_Z]
+            (y0, z0), (y1, z1) = (back[0].y, back[0].z), (back[-1].y, back[-1].z)
+            length = math.hypot(y1 - y0, z1 - z0)
+            arc = max(abs((p.y - y0) * (z1 - z0) - (p.z - z0) * (y1 - y0)) / length for p in back)
+            lean = POSE["bow_lean"]
+            print("BOW the chest lies %.1f degrees over (it needs %.0f to %.0f), its back %.4f off straight (it may be %.4f)" % (degrees(lean), degrees(CHEST_SKIRT["lean"][0]), degrees(CHEST_SKIRT["lean"][1]), arc, CHEST_SKIRT["arc"]))
+            assert arc <= CHEST_SKIRT["arc"], "the back of the chest is %.4f off a straight line at the deepest bow (it may be %.4f)" % (arc, CHEST_SKIRT["arc"])
+            assert CHEST_SKIRT["lean"][0] <= lean <= CHEST_SKIRT["lean"][1], "the chest lies %.1f degrees over at the deepest bow" % degrees(lean)
+    print("KNEEL the chest shows %.4f outside the skirt, its lower edge %.4f inside, %.4f from the thighs" % (worst_poke[0.0], worst_buried[0.0], worst_legs[0.0]))
+
+
+def check_leg_skirt(parts):
+    """The skirt lies on the thighs, kneeling and at every depth of the bow: the legs never sink into it, and it never hovers above them."""
+    cushion = RIG["seatTop"]
+    low, high = LEG_SKIRT
+    for bow in (0.0,) + BOW_DEPTHS:
+        mats = pose_matrices(1.0, cushion, bow=bow)
+        skirt = world_bvh(parts["skirt"], mats["skirt"][0])
+        near = min(clearance_of(skirt, m @ v.co) for m in mats["trousers"] for v in parts["trousers"].data.vertices)
+        if bow in (0.0, BOW_DEPTHS[-1]):
+            print("%s the thighs lie %.4f from the skirt (it needs %.4f to %.4f)" % ("KNEEL" if bow == 0.0 else "BOW", near, low, high))
+        assert low <= near <= high, "the thighs are %.4f from the skirt at bow %.3f (it needs %.4f to %.4f)" % (near, bow, low, high)
+
+
+WALK_POSES =(None,) + tuple(k * pi / 8 for k in range(16))  # standing, then the walk cycle in sixteenths (a leg's swing, a lifted foot and the bob all peak within it)
 HEM_LIP = 0.004  # the jacket's hem rolls under, so the trousers below this much above its lower edge are free to show
 WALK_CLEARANCE = {  # what each arm part must stay clear of at every point of the walk, in metres (about half of what the walk leaves today)
     "head": {"hand": 0.1, "sleeveLower": 0.05, "sleeveUpper": 0.004},
@@ -1501,21 +1643,30 @@ def rig_dict():
         "footX": RIG["footX"],
         "footY": RIG["footY"],
         "footForward": RIG["footForward"],
+        "footKneelX": RIG["footKneelX"],
         "footKneelZ": RIG["footKneelZ"],
         "footKneelY": RIG["footKneelY"],
         "footKneelTilt": round(RIG["footKneelTilt"], 5),
+        "footKneelYaw": RIG["footKneelYaw"],
+        "footOverTilt": RIG["footOverTilt"],
+        "footOverLift": RIG["footOverLift"],
+        "footOverShift": RIG["footOverShift"],
         "legKneelLift": RIG["legKneelLift"],
         "legTopDrop": RIG["legTopDrop"],
         "legKneelTopDrop": RIG["legKneelTopDrop"],
         "legKneelTopForward": RIG["legKneelTopForward"],
+        "legKneelTopX": RIG["legKneelTopX"],
         "legKneelFlat": RIG["legKneelFlat"],
         "legLength": RIG["legLength"],
         "kneelPelvisGrow": RIG["kneelPelvisGrow"],
         "kneelPelvisScaleY": RIG["kneelPelvisScaleY"],
         "kneelPelvisLift": RIG["kneelPelvisLift"],
-        "bowHipForward": RIG["bowHipForward"],
-        "bowSeatBack": RIG["bowSeatBack"],
-        "bowSkirtShare": RIG["bowSkirtShare"],
+        "bowHipJoint": RIG["bowHipJoint"],
+        "bowSkirtFollow": RIG["bowSkirtFollow"],
+        "bowSkirtSquash": RIG["bowSkirtSquash"],
+        "bowPelvisSquash": RIG["bowPelvisSquash"],
+        "bowLean": POSE["bow_lean"],
+        "bowHead": POSE["bow_head"],
         "kneelSkirtScale": RIG["kneelSkirtScale"],
         "seatTop": RIG["seatTop"],
         "robeTintSaturation": RIG["robeTintSaturation"],
@@ -1523,7 +1674,8 @@ def rig_dict():
     }
 
 
-PROBE_PARTS = ("head", "pelvis", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand")
+PROBE_PARTS = ("head", "pelvis", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
+PROBE_RIGHT = ("sleeveUpper", "sleeveLower", "hand", "foot", "trousers")  # the second copy of these too, the right side (sign +1) of the arms and legs
 PROBE_BOWS = (0.0, 0.25, 0.5, 0.75, 1.0)
 PROBE_WALK_PARTS = ("head", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
 PROBE_PHASES = tuple(k * pi / 4 for k in range(8))  # a copy walks the other half of the cycle half a turn on, so these cover both
@@ -1545,6 +1697,8 @@ def pose_probe(parts):
     bow = {"bows": list(PROBE_BOWS)}
     for part in PROBE_PARTS:
         bow[part] = [probe_bounds(parts, part, pose_matrices(1.0, RIG["seatTop"], bow=b)[part][0]) for b in PROBE_BOWS]
+    for part in PROBE_RIGHT:
+        bow[part + "Right"] = [probe_bounds(parts, part, pose_matrices(1.0, RIG["seatTop"], bow=b)[part][1]) for b in PROBE_BOWS]
     walk = {"phases": [round(p, 5) for p in PROBE_PHASES]}
     for part in PROBE_WALK_PARTS:
         walk[part] = [probe_bounds(parts, part, pose_matrices(0.0, 0.0, p)[part][0]) for p in PROBE_PHASES]
@@ -1585,53 +1739,67 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
 def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
     phase (radians, standing only) puts the monk at that point of the walk cycle: the swings, the foot lifts, the bob and the lean
-    of animate() at sin(phase); bow (0 .. 1, kneeling only) tips the torso and head forward with the arms reaching out, like the bow
-    animation, and slides the hips forward while the seat stays on the heels; fish (0 .. 1, standing) holds the rod, and jerk
-    (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-)."""
+    of animate() at sin(phase); bow (0 .. 1, kneeling only) folds the chest and head forward at the hip joint with the arms reaching
+    out, like the bow animation: the seat stays on the heels and the skirt on the thighs while the waist swings forward; fish (0 .. 1,
+    standing) holds the rod, and jerk (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-)."""
     lift = cushion * kneel
     walking = phase is not None
     swing = sin(phase) if walking else 0.0
-    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel) + abs(swing) * POSE["walk_bob"], -RIG["bowHipForward"] * bow))
+    theta = POSE["bow_lean"] * bow
+    waist_down = RIG["bowHipJoint"] * (1 - cos(theta))  # the chest turns about the hip joint, bowHipJoint below the waist pivot: the waist goes forward and a little down
+    waist_forward = RIG["bowHipJoint"] * sin(theta)
+    rest_y = lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel) + abs(swing) * POSE["walk_bob"]
+    hips = tmat((0, rest_y - waist_down, -waist_forward))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
-    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, RIG["bowSeatBack"] * bow), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
+    pelvis_y = lerp(1, RIG["kneelPelvisScaleY"], kneel)
+    pelvis_squash = lerp(1, RIG["bowPelvisSquash"], bow)
+    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel + waist_down - PELVIS_DROP * pelvis_y * (1 - pelvis_squash), waist_forward), scale=(grow, pelvis_y * pelvis_squash, grow))
     fish_lean = POSE["fish_lean"] + jerk * POSE["fish_tug"] * POSE["fish_tug_lean"]
     lean = -POSE["walk_lean"] * walking + fish_lean * fish
-    torso = hips @ tmat((0, 0, 0), (lean - POSE["bow_lean"] * bow, 0, 0))
-    skirt = hips @ tmat((0, 0, 0), (lean - POSE["bow_lean"] * RIG["bowSkirtShare"] * bow, 0, 0), (1, lerp(1, RIG["kneelSkirtScale"], kneel), 1))
+    torso = hips @ tmat((0, 0, 0), (lean - theta, 0, 0))
+    stay = 1 - RIG["bowSkirtFollow"]
+    skirt_y = lerp(1, RIG["kneelSkirtScale"], kneel)
+    skirt_squash = lerp(1, RIG["bowSkirtSquash"], bow)
+    skirt = hips @ tmat((0, waist_down * stay - JACKET_DROP * skirt_y * (1 - skirt_squash), waist_forward * stay), (lean, 0, 0), (1, skirt_y * skirt_squash, 1))
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "skirt": [skirt], "trim": [torso], "skirtTrim": [skirt]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
-        pray = kneel * (1 - bow)
+        reach = 1 - (1 - bow) ** 2  # the arms get out of the prayer ahead of the chest, so the cuffs leave the chest as it starts to fold
+        pray = kneel * (1 - reach)
         stride = swing if side == 0 else -swing  # the leg and the arm of a side swing together, opposite each other
         arm_swing = POSE["walk_swing"] * stride
         arm_x = lerp(POSE["idle_x"], POSE["pray_x"], kneel)
-        arm_x = arm_x + (POSE["bow_x"] - arm_x) * bow + arm_swing
-        arm_y = sign * POSE["pray_y"] * pray
-        arm_z = -sign * (POSE["idle_z"] + (POSE["pray_z"] - POSE["idle_z"]) * pray + (POSE["bow_z"] - POSE["idle_z"]) * bow * kneel)
+        arm_x = arm_x + (POSE["bow_x"] - arm_x) * reach + arm_swing
+        arm_y = sign * (POSE["pray_y"] * pray + POSE["bow_y"] * reach * kneel)
+        arm_z = -sign * (POSE["idle_z"] + (POSE["pray_z"] - POSE["idle_z"]) * pray + (POSE["bow_z"] - POSE["idle_z"]) * reach * kneel)
         hold = "fish_lead" if side == 0 else "fish_rear"  # the lead hand grips the rod, the rear hand steadies the butt
         lead_jerk = jerk * (POSE["fish_tug"] + POSE["fish_sway"]) if side == 0 else 0.0
         arm_x += (POSE[hold + "_x"] + lead_jerk - arm_x) * fish
         arm_z += (-sign * POSE["fish_roll"] - arm_z) * fish
         shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
         elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
-        elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * bow + max(0.0, -arm_swing) * POSE["walk_elbow"]
+        elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * reach + max(0.0, -arm_swing) * POSE["walk_elbow"]
         elbow_x += (POSE[hold + "_elbow"] - elbow_x) * fish
-        elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (elbow_x, -sign * POSE["pray_twist"] * pray, 0))
+        elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (elbow_x, -sign * (POSE["pray_twist"] * pray + POSE["bow_twist"] * reach * kneel), 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
         foot_up = max(0.0, cos(phase + (0 if side == 0 else pi))) * POSE["walk_lift"] if walking else 0.0
-        foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel) + foot_up
-        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * POSE["walk_stride"]
-        foot = tmat((sign * RIG["footX"], foot_y, foot_z), (RIG["footKneelTilt"] * kneel, 0, 0))
-        top_y = hips.translation.y - lerp(RIG["legTopDrop"], RIG["legKneelTopDrop"], kneel)
-        top_z = lerp(hips.translation.z - stride * POSE["walk_hip_shift"], -RIG["legKneelTopForward"], kneel)
-        reach_y, reach_z = foot_y + RIG["legKneelLift"] * kneel - top_y, foot_z - top_z
-        leg = tmat(
-            (sign * RIG["footX"], top_y, top_z),
-            (atan2(-reach_z, -reach_y), 0, 0),
-            (1, sqrt(reach_y**2 + reach_z**2) / RIG["legLength"], lerp(1, RIG["legKneelFlat"], kneel)),
+        over = kneel if side == 1 else 0.0  # the right foot's toes lie over the left's
+        foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel) + RIG["footOverLift"] * over + foot_up
+        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + RIG["footOverShift"] * over + stride * POSE["walk_stride"]
+        foot_x = sign * lerp(RIG["footX"], RIG["footKneelX"], kneel)
+        foot = tmat((foot_x, foot_y, foot_z), (RIG["footKneelTilt"] * kneel - RIG["footOverTilt"] * over, sign * RIG["footKneelYaw"] * kneel, 0))
+        top_y = rest_y - lerp(RIG["legTopDrop"], RIG["legKneelTopDrop"], kneel)
+        top_z = lerp(-stride * POSE["walk_hip_shift"], -RIG["legKneelTopForward"], kneel)
+        top_x = sign * lerp(RIG["footX"], RIG["legKneelTopX"], kneel)
+        reach_x, reach_y, reach_z = foot_x - top_x, foot_y + RIG["legKneelLift"] * kneel - top_y, foot_z - top_z
+        reach = sqrt(reach_x**2 + reach_y**2 + reach_z**2)
+        leg = tmat(  # turned about the sideways axis to the ankle's height and depth, then leaned to its side
+            (top_x, top_y, top_z),
+            (atan2(-reach_z, -reach_y), 0, asin(reach_x / reach)),
+            (1, reach / RIG["legLength"], lerp(1, RIG["legKneelFlat"], kneel)),
         )
         out["leg"].append(leg)
         out["trousers"].append(leg)
@@ -1705,9 +1873,9 @@ def setup_preview_scene():
     return cam
 
 
-def render_view(cam, name, azimuth_deg, target, scale):
+def render_view(cam, name, azimuth_deg, target, scale, rise=0.12):
     az = radians(azimuth_deg)
-    direction = Vector((sin(az), cos(az), 0.12)).normalized()  # azimuth 0 = from the front (+Y)
+    direction = Vector((sin(az), cos(az), rise)).normalized()  # azimuth 0 = from the front (+Y)
     cam.location = Vector(target) + direction * 4.0
     cam.rotation_euler = (Vector(target) - cam.location).to_track_quat("-Z", "Y").to_euler()
     cam.data.ortho_scale = scale
@@ -1740,12 +1908,15 @@ def render_previews(parts):
     walking.hide_render = True
     kneeling.hide_render = False
     kmid = (0, 0, 0.66)
-    for name, az in (("monk_kneel_front", 0), ("monk_kneel_three_quarter", 38), ("monk_kneel_side", 90)):
+    for name, az in (("monk_kneel_front", 0), ("monk_kneel_three_quarter", 38), ("monk_kneel_side", 90), ("monk_kneel_back", 180)):
         render_view(cam, name, az, kmid, 1.7)
+    for name, az, rise in (("monk_kneel_feet_top", 0, 40.0), ("monk_kneel_feet_back", 180, 0.5)):  # the seat on the heels and the insteps under it
+        render_view(cam, name, az, (0, 0, 0.16), 0.8, rise)
     kneeling.hide_render = True
     bowing.hide_render = False
-    for name, az in (("monk_bow_front", 0), ("monk_bow_three_quarter", 38), ("monk_bow_side", 90)):
+    for name, az in (("monk_bow_front", 0), ("monk_bow_three_quarter", 38), ("monk_bow_side", 90), ("monk_bow_back", 160)):
         render_view(cam, name, az, (0, 0.3, 0.4), 1.7)
+    render_view(cam, "monk_bow_top", 0, (0, 0.3, 0.2), 1.3, 40.0)
     for coll in (standing, walking, kneeling, bowing):
         for obj in list(coll.objects):
             bpy.data.objects.remove(obj)
@@ -1769,7 +1940,10 @@ def main():
     check_face_on_head(parts)
     check_kneel_clearance(parts)
     check_kneel_hands(parts)
+    check_kneel_seat(parts)
     check_bow(parts)
+    check_chest_skirt(parts)
+    check_leg_skirt(parts)
     check_walk(parts)
     check_fish(parts)
     check_sleeves_clear_head(parts)
