@@ -974,7 +974,7 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the two soundtracks: the sutra only inside the 법당, the concert's share the rest of the way.
+  // Where the visitor stands sets the two soundtracks: the sutra only inside the 법당, the concert by its areaMix share.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;

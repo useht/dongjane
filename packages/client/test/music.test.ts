@@ -136,7 +136,7 @@ describe("areaMix", () => {
   it("counts the court beside the door and the plaza as outdoors", () => {
     expect(areaMix(doorX + 1, doorZ + DHARMA_DOOR.halfWidth + 5)).toBeLessThan(0.1);
     expect(areaMix(0, 0)).toBe(0);
-    // The plaza's near edge is only the court's width from the porch, so the chant still reaches it a little.
+    // The plaza's near edge is only the court's width from the porch, so the room's share still reaches it a little.
     expect(areaMix(WORLD_BOUNDS.minX, doorZ)).toBeLessThan(0.3);
   });
 

@@ -20,8 +20,7 @@ export function aimAhead(target: number, durationSeconds: number): number {
   return durationSeconds > 0 ? (target + SEEK_LOOKAHEAD_SECONDS) % durationSeconds : target;
 }
 
-// Both soundtracks run all the time and only their loudness changes with where the visitor stands. areaMix is 1 for the
-// sutra alone, 0 for the concert alone: 0.5 in the doorway, 1 from DEEP_METRES inside, 0 from OUTSIDE_METRES out.
+// Both soundtracks always run; where the visitor stands only sets their loudness (areaMix, and chantMix for the sutra).
 export const DEEP_METRES = 3;
 export const OUTSIDE_METRES = 6;
 
