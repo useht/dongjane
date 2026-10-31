@@ -48,9 +48,9 @@ export interface DharmaQuality {
 // The room's air is clear: the fog only has to hide where the walls end.
 export const DHARMA_FOG = { near: 40, far: 90 } as const;
 
-const WINDOW_LIGHT_AT = [9, 6.5, 1] as const;
+const WINDOW_LIGHT_AT = [10.5, 7.5, 1] as const;
 const WINDOW_LIGHT_TARGET = [0, 0, -2] as const;
-const SHADOW_HALF_EXTENT = 14;
+const SHADOW_HALF_EXTENT = 16;
 const CANDLE_LIGHT_AT = [0, ALTAR.topY + 0.95, ALTAR.maxZ + 0.35] as const;
 const CANDLE_LIGHT = { intensity: 9, distance: 11, decay: 2 } as const;
 const HEMISPHERE_LIGHT = 1.35;
@@ -88,7 +88,7 @@ function buildEnvironment(renderer: WebGLRenderer): Texture {
   const lampGeometry = new PlaneGeometry(5, 4);
   const lampMaterial = new MeshBasicMaterial({ color: new Color(palette.envLamp).multiplyScalar(7), side: DoubleSide });
   const lamp = new Mesh(lampGeometry, lampMaterial);
-  lamp.position.set(8, 4, 0);
+  lamp.position.set(9, 4.5, 0);
   lamp.rotation.y = -Math.PI / 2;
   const candleGeometry = new PlaneGeometry(3, 2);
   const candleMaterial = new MeshBasicMaterial({ color: new Color(palette.envCandle).multiplyScalar(4), side: DoubleSide });
@@ -171,7 +171,7 @@ export class DharmaScene {
       shadowCamera.top = SHADOW_HALF_EXTENT;
       shadowCamera.bottom = -SHADOW_HALF_EXTENT;
       shadowCamera.near = 1;
-      shadowCamera.far = 32;
+      shadowCamera.far = 36;
       window.shadow.bias = -0.0006;
       window.shadow.normalBias = 0.03;
     }
@@ -372,8 +372,8 @@ export class DharmaScene {
       const along = (a + drift * 0.012 * speed) % 1;
       attribute.setXYZ(
         i,
-        6 - along * 8 + Math.sin(drift * 0.3 * speed + phase) * 0.4,
-        3.4 - along * 3.1 + Math.sin(drift * 0.5 * speed + phase * 2) * 0.35 + c * 0.6,
+        8.5 - along * 10.5 + Math.sin(drift * 0.3 * speed + phase) * 0.4,
+        4.4 - along * 3.9 + Math.sin(drift * 0.5 * speed + phase * 2) * 0.35 + c * 0.7,
         -2 + c * 4.6 + along * 1.4 + Math.cos(drift * 0.25 * speed + phase) * 0.4,
       );
     }

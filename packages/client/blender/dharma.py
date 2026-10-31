@@ -35,8 +35,10 @@ FLOOR_PLANK = 0.5
 SQUASH = 0.78  # the lotus is shallower than it is wide
 LOTUS_FOOT, LOTUS_TOP = -0.45, -0.12  # the lotus is drawn from its foot to its flat top between these heights
 DRAWN_FOR = 2.75  # the halo and glow are drawn for a Buddha this tall; they are scaled to the one in the game
-HALO_BEHIND = 0.5  # how far behind the statue's middle the halo's plane stands
-GLOW_BEHIND = 0.57
+LOTUS_DRAWN_FOR = 2.2  # the lotus is as wide as a Buddha this tall needs; a taller one gets it spread this much wider (not deeper: the altar is as deep as it is)
+MURAL_DRAWN_HALF = 9.2  # the painting is composed across this half-width of wall, and grown to the wall the room has
+HALO_BEHIND = 0.625  # how far behind the statue's middle the halo's plane stands, for a Buddha DRAWN_FOR tall (a taller one is deeper, and so is the gap)
+GLOW_BEHIND = 0.7125
 GLOW_RADIUS = 2.3
 
 
@@ -65,6 +67,7 @@ class Plan:
         self.fit = height / DRAWN_FOR
         # The lotus is scaled so that its flat top stands LOTUS_EMBED above the statue's base, with its foot on the altar.
         self.lotus_scale = (self.buddha_at[1] - d["ALTAR"]["topY"] + d["LOTUS_EMBED"]) / (LOTUS_TOP - LOTUS_FOOT)
+        self.lotus_spread = max(1.0, height / LOTUS_DRAWN_FOR)
         self.door = d["DHARMA_DOOR"]
         self.openings, self.band = wall_openings(inputs)
         self.candles = d["CANDLE_SPOTS"]
@@ -325,13 +328,21 @@ LAYER = 0.0016  # how far a painted layer of the mural stands in front of the on
 
 
 class Brush:
-    """Flat colour laid on the mural's plane; a higher layer is painted over a lower one."""
+    """Flat colour laid on the mural's plane; a higher layer is painted over a lower one.
 
-    def __init__(self, part, z):
-        self.part, self.z = part, z
+    What is drawn is composed at one size and grown by `grow` about the middle of the wall at the height `floor`,
+    lines and all: the same painting for a wider, taller wall.
+    """
+
+    def __init__(self, part, z, grow=1.0, floor=0.0):
+        self.part, self.z, self.grow, self.floor = part, z, grow, floor
+
+    def grown(self, points):
+        return [(x * self.grow, self.floor + (y - self.floor) * self.grow) for x, y in points]
 
     def fill(self, points, color, layer):
         """A flat polygon, wound to face the viewer whichever way round `points` runs."""
+        points = self.grown(points)
         turn = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(points, [*points[1:], points[0]]))
         ordered = points if turn > 0.0 else points[::-1]
         self.part.polygon([(x, y, self.z + LAYER * layer) for x, y in ordered], color)
@@ -339,12 +350,15 @@ class Brush:
     def glow(self, points, middle, edge, layer):
         """A polygon whose colour fades from `middle` (its centre) to `edge` (its rim)."""
         z = self.z + LAYER * layer
+        points = self.grown(points)
         x = sum(p[0] for p in points) / len(points)
         y = sum(p[1] for p in points) / len(points)
         self.part.fan((x, y, z), [(px, py, z) for px, py in points], middle, edge)
 
     def stroke(self, points, width, color, layer, closed=False):
         """A line along `points`; `width` is a number, or a function of the distance 0..1 along it."""
+        points = self.grown(points)
+        width = (lambda t, w=width: w(t) * self.grow) if callable(width) else width * self.grow
         line = [*points, points[0]] if closed else list(points)
         last = len(line) - 1
         z = self.z + LAYER * layer
@@ -650,23 +664,28 @@ def mural(plan):
     c = plan.c
     part = Part("mural", frame=GAME)
     z = plan.back + 0.02
-    brush = Brush(part, z)
     left, right = -plan.half + 0.8, plan.half - 0.8
     low, high = 0.9, plan.wall - BEAM_BAND
-    centre = (0.0, plan.head[1])
+    # The painting is composed for a wall MURAL_DRAWN_HALF wide each side and grown to this one; `brush` takes the
+    # composed sizes, `plain` the real ones (the frame and the bands along its edges), and `drawn` is a real height as composed.
+    grow = right / MURAL_DRAWN_HALF
+    brush, plain = Brush(part, z, grow, low), Brush(part, z)
+    drawn = lambda y: low + (y - low) / grow  # noqa: E731
+    centre = (0.0, drawn(plan.head[1]))
+    head_y = plan.head[1]
 
     def field(co):
-        glow_amount = 1.0 - smoothstep(0.0, 8.5, math.hypot(co.x - centre[0], (co.y - centre[1]) * 1.3))
-        base = mix(scaled(c["muralGround"], 0.62), c["muralGround"], smoothstep(low, 3.0, co.y))
-        base = scaled(base, 1.0 - 0.3 * smoothstep(6.0, right, abs(co.x)))
+        glow_amount = 1.0 - smoothstep(0.0, 8.5 * grow, math.hypot(co.x, (co.y - head_y) * 1.3))
+        base = mix(scaled(c["muralGround"], 0.62), c["muralGround"], smoothstep(low, low + (3.0 - low) * grow, co.y))
+        base = scaled(base, 1.0 - 0.3 * smoothstep(6.0 * grow, right, abs(co.x)))
         return mix(base, scaled(c["muralHalo"], 0.55), 0.3 * glow_amount)
 
     columns, rows = round((right - left) / STEP), round((high - low) / STEP)
     part.grid((left, low, z), (right - left, 0.0, 0.0), (0.0, high - low, 0.0), columns, rows, field)
 
-    ymin, ymax = low + 0.29, high - 0.29
+    ymin, ymax = drawn(low + 0.29), drawn(high - 0.29)
     aura(brush, c, centre, ymin, ymax)
-    peaks(brush, c, right - 0.12, low + 0.29)
+    peaks(brush, c, (right - 0.12) / grow, drawn(low + 0.29))
     for i, (x, y, width, height, lobes, tone) in enumerate(CLOUDS):
         for side in (-1.0, 1.0):
             cloud_bank(brush, c, side * x, y, width, height, lobes, i + side, c[tone], 10)
@@ -694,15 +713,15 @@ def mural(plan):
     part.box((0.0, low + 0.1, z + 0.016), (right - left - 0.1, 0.03, 0.02), c["muralInk"], skip=hidden("+z"))
     band = (c["dancheongBlue"], c["dancheongRed"], c["dancheongGreen"])
     for y, edge in ((high - 0.2, high - 0.28), (low + 0.2, low + 0.28)):
-        lozenges(brush, left + 0.15, right - 0.15, y, band)
-        brush.stroke([(left + 0.15, edge), (right - 0.15, edge)], 0.02, c["muralLine"], 1)
+        lozenges(plain, left + 0.15, right - 0.15, y, band)
+        plain.stroke([(left + 0.15, edge), (right - 0.15, edge)], 0.02, c["muralLine"], 1)
     return part
 
 
 def halo(plan):
     mat = plan.c
     gold, pale, deep = mat["buddhaGold"], mat["buddhaGoldPale"], mat["buddhaGoldDeep"]
-    part = Part("halo", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - HALO_BEHIND) @ Matrix.Scale(plan.fit, 4))
+    part = Part("halo", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - HALO_BEHIND * plan.fit) @ Matrix.Scale(plan.fit, 4))
     for radius, thickness, steps, color in ((1.62, 0.06, 48, gold), (1.2, 0.04, 40, pale), (0.86, 0.035, 32, deep)):
         ring = [(radius * math.cos(math.tau * i / steps), radius * math.sin(math.tau * i / steps), 0.0) for i in range(steps)]
         part.tube(ring, [thickness] * steps, 5, color, up=(0.0, 0.0, 1.0), closed=True)
@@ -727,7 +746,8 @@ def lotus(plan):
     base = mat["buddhaGoldDeep"]
     x, _, z = plan.buddha_at
     s = plan.lotus_scale
-    part = Part("lotus", frame=GAME @ at(x, plan.altar["topY"] - LOTUS_FOOT * s, z) @ Matrix.Scale(s, 4))
+    wide = Matrix.Scale(plan.lotus_spread, 4, Vector((1.0, 0.0, 0.0)))
+    part = Part("lotus", frame=GAME @ at(x, plan.altar["topY"] - LOTUS_FOOT * s, z) @ Matrix.Scale(s, 4) @ wide)
     rows = (
         (20, 0.0, deep, pale, (1.1, -0.2), (1.62, -0.04)),
         (26, 0.12, pale, deep, (0.95, 0.0), (1.42, 0.22)),
@@ -755,7 +775,7 @@ def glow(plan):
     mat = plan.c
     core, middle, edge = mat["flameCore"], mat["flameMid"], mat["flameEdge"]
     radius = GLOW_RADIUS * plan.fit
-    part = Part("glow", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - GLOW_BEHIND))
+    part = Part("glow", frame=GAME @ at(plan.head[0], plan.head[1], plan.buddha_at[2] - GLOW_BEHIND * plan.fit))
 
     def spot(co):
         d = min(co.length / radius, 1.0)

@@ -76,8 +76,9 @@ export const BORROWS_PAVING = ["casinoYard", "coastRoad"] as const;
 export const BUDGET = {
   gatbawi: { bytes: 250_000, tris: 6_000 },
   buddha: { bytes: 750_000, tris: BUDDHA.maxTriangles },
-  // Raised from 2_000_000 to what world.glb measures now (2_056_000): the hillside behind the 29 m deep casino needs more terrain rows.
-  world: { bytes: 2_060_000, tris: 46_000 },
+  // Raised from 2_000_000 to 2_060_000 for the hillside behind the 29 m deep casino, which needs more terrain rows, and again to what
+  // world.glb measures now (2_085_180): the 법당's shell grew to 22 m wide and 18 m deep, with walls and pillars 7.5 m high.
+  world: { bytes: 2_090_000, tris: 46_000 },
   venue: { bytes: 450_000, tris: 25_000 },
   dharma: { bytes: 1_000_000, tris: 45_000 },
   // Triangles count every machine the game lays out: 44 slot cabinets, 3 roulette tables and 8 scratch kiosks are instanced, so they cost
@@ -92,6 +93,7 @@ export const BUDGET = {
   monk: { bytes: 95_000 },
   // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame,
   // and from 4_000_000 because the casino loads with them; raised again to 5_010_000, which is what they measure now (5_009_136) because
-  // the casino is 29 m deep (casino.glb 962 kB) and the hillside behind it needs more terrain rows (world.glb 2.06 MB).
-  totalBytes: 5_010_000,
+  // the casino is 29 m deep (casino.glb 962 kB) and the hillside behind it needs more terrain rows (world.glb 2.06 MB); and to 5_080_000
+  // for the 법당 at 22 x 18 m and 9 m under its ceiling (dharma.glb 984 kB, world.glb 2.09 MB), which measure 5_070_144 together.
+  totalBytes: 5_080_000,
 } as const;

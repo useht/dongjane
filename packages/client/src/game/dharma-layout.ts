@@ -7,11 +7,11 @@
 import type { Point3 } from "./venue-layout.ts";
 
 export const DHARMA = {
-  halfWidth: 10,
+  halfWidth: 11,
   backZ: -9,
   frontZ: 9,
-  wallHeight: 6,
-  ceilingHeight: 7.5,
+  wallHeight: 7.5,
+  ceilingHeight: 9,
   inset: 0.45,
 } as const;
 
@@ -20,7 +20,7 @@ export const ALTAR = { halfWidth: 4, minZ: -7.9, maxZ: -5.3, topY: 1 } as const;
 
 // The scanned Buddha (buddha.glb, which is 1 m tall and stands on its own origin) is scaled to `BUDDHA_HEIGHT` and stood at
 // `BUDDHA_AT`: the middle of his base, `LOTUS_EMBED` below the lotus' flat top, which dharma.glb draws with its foot on the altar.
-export const BUDDHA_HEIGHT = 2.2;
+export const BUDDHA_HEIGHT = 3;
 export const LOTUS_EMBED = 0.1;
 export const BUDDHA_AT = { x: 0, y: ALTAR.topY + 0.2, z: -6.6 } as const;
 
@@ -31,7 +31,7 @@ export const DHARMA_DOOR = { halfWidth: 1.6, height: 3.4 } as const;
 // the room's own surfaces, columns on their outer face, a granite plinth `plinth` wide round the walls that runs out to
 // `porchZ` in front, the beams at `beamTop`, and a gable roof whose ridge runs along x, whose eaves reach `eave` past the
 // columns and whose ridge stands `rise` above the eaves.
-export const DHARMA_SHELL = { wall: 0.4, plinth: 0.82, porchZ: 9.9, baseHeight: 0.14, beamTop: 6.9, eave: 1.6, rise: 4.2 } as const;
+export const DHARMA_SHELL = { wall: 0.4, plinth: 0.82, porchZ: 9.9, baseHeight: 0.14, beamTop: 8.4, eave: 1.6, rise: 4.2 } as const;
 
 // Candlesticks along the altar's front edge: x and z of each.
 export const CANDLE_SPOTS: readonly (readonly [number, number])[] = [
@@ -48,10 +48,10 @@ export const FLAME_HEIGHT = 0.56;
 
 // The engaged pillars along the side walls (z) and the front wall (x), clear of the corners listed separately.
 export const SIDE_PILLARS_Z: readonly number[] = [-5.7, -2.85, 0, 2.85, 5.7];
-export const FRONT_PILLARS_X: readonly number[] = [-5.9, -2.05, 2.05, 5.9];
+export const FRONT_PILLARS_X: readonly number[] = [-6.6, -2.05, 2.05, 6.6];
 
 // Window openings, cut at the same places in the room's wall and the shell's plaster; `along` is x on the front wall, z on the sides.
-export const WINDOW_BAND = { low: 1.5, high: 4.5 } as const;
+export const WINDOW_BAND = { low: 1.8, high: 5.4 } as const;
 
 export type WindowWall = "front" | "east" | "west";
 
@@ -62,10 +62,10 @@ export interface WallOpening {
 }
 
 export const WALL_OPENINGS: readonly WallOpening[] = [
-  { wall: "front", along: -7.8, width: 2.2 },
-  { wall: "front", along: -4, width: 2.2 },
-  { wall: "front", along: 4, width: 2.2 },
-  { wall: "front", along: 7.8, width: 2.2 },
+  { wall: "front", along: -8.7, width: 2.4 },
+  { wall: "front", along: -4.3, width: 2.4 },
+  { wall: "front", along: 4.3, width: 2.4 },
+  { wall: "front", along: 8.7, width: 2.4 },
   { wall: "east", along: -7.1, width: 2 },
   { wall: "east", along: -1.425, width: 2 },
   { wall: "east", along: 1.425, width: 2 },
@@ -77,8 +77,10 @@ export const WALL_OPENINGS: readonly WallOpening[] = [
 ];
 
 // Lines of lanterns hang along the room from its ceiling: x of each line, and where they hang along z.
-const LANTERN_LINES_X: readonly number[] = [-8.4, -5.6, -2.8, 2.8, 5.6, 8.4];
+const LANTERN_LINES_X: readonly number[] = [-9.3, -6.2, -3.1, 3.1, 6.2, 9.3];
 const LANTERN_COUNT_PER_LINE = 8;
+// How far below the ceiling the lowest lantern hangs; the others hang up to 0.5 m higher.
+const LANTERN_DROP = 2.3;
 
 export interface HangingLantern extends Point3 {
   readonly yaw: number;
@@ -101,7 +103,7 @@ export function hangingLanterns(): readonly HangingLantern[] {
       const index = spots.length;
       spots.push({
         x,
-        y: 5.35 + 0.5 * jitter(index, 1),
+        y: DHARMA.ceilingHeight - LANTERN_DROP + 0.5 * jitter(index, 1),
         z: first + ((last - first) * k) / (LANTERN_COUNT_PER_LINE - 1),
         yaw: jitter(index, 2) * Math.PI * 2,
         scale: 1.05 + 0.2 * jitter(index, 3),

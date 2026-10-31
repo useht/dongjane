@@ -49,10 +49,12 @@ export function worldToDharma(x: number, z: number): FloorPoint {
   return { x: DHARMA_ORIGIN.z - z, z: x - DHARMA_ORIGIN.x };
 }
 
-// The room is 20 m wide and 18 m deep, so its front wall is at 9 m and the granite porch runs out to 9.9 m from the
-// middle (DHARMA_SHELL.porchZ). What a visitor can walk on is the floor between the walls and the altar's step, in the room frame.
+// The room is 22 m wide and 18 m deep, so its front wall is at 9 m and the granite porch runs out to 9.9 m from the
+// middle (DHARMA_SHELL.porchZ). What a visitor can walk on is the floor between the walls and the altar's step, in the room frame;
+// it ends 0.55 m short of the front pillars (their faces are at 8.25) so that nobody stands in one, and the camera behind them is
+// never squeezed between a pillar and the wall.
 export const DHARMA_PORCH_Z = 9.9;
-export const DHARMA_ROOM: Bounds = { minX: -9.2, maxX: 9.2, minZ: -4.8, maxZ: 8.4 };
+export const DHARMA_ROOM: Bounds = { minX: -10.2, maxX: 10.2, minZ: -4.8, maxZ: 7.7 };
 const roomCorners = [dharmaToWorld(DHARMA_ROOM.minX, DHARMA_ROOM.minZ), dharmaToWorld(DHARMA_ROOM.maxX, DHARMA_ROOM.maxZ)];
 export const DHARMA_BOUNDS: Bounds = {
   minX: Math.min(...roomCorners.map((corner) => corner.x)),

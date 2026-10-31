@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Raycaster, Vector2, Vector3 } from "three";
-import { ARRIVAL, CASINO_AISLE_EAST, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, MACHINE_SPOTS, PLATFORM, type MachineSpot, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
+import { ARRIVAL, CASINO_AISLE_EAST, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_ROOM, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, MACHINE_SPOTS, PLATFORM, type MachineSpot, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
 import {
   CAMERA_CLEARANCE,
   CASINO_MACHINE_BOXES,
@@ -10,8 +10,10 @@ import {
   DHARMA_KEEP_OUT,
   DHARMA_KEEP_OUTS,
   DHARMA_PILLARS_KEEP_OUT,
+  DHARMA_SILLS,
   KEEP_OUTS,
   SWAY,
+  WORLD_SOLIDS,
   casinoRegion,
   configureCamera,
   distanceBefore,
@@ -27,7 +29,7 @@ import {
 } from "../src/game/camera-rig.ts";
 import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, CASINO_ROOM, CASINO_SHELL, CASINO_TOP, machineHeight } from "../src/game/casino-layout.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
-import { BUDDHA_AT, DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "../src/game/dharma-layout.ts";
+import { BUDDHA_AT, DHARMA, DHARMA_SHELL, FRONT_PILLARS_X, WALL_OPENINGS } from "../src/game/dharma-layout.ts";
 import { loadGlb, triangleCorners } from "./glb.ts";
 
 const box = { minX: -6, maxX: 6, minY: 0.5, maxY: 5, minZ: -6, maxZ: 7 };
@@ -213,7 +215,7 @@ describe("the 법당's camera clearance", () => {
       [390, 844],
     ] as const) {
       const camera = new PerspectiveCamera();
-      const rig = new CameraRig(camera, bounds, limits, keepOut);
+      const rig = new CameraRig(camera, bounds, limits, keepOut, WORLD_SOLIDS);
       rig.reduceMotion = true;
       rig.distance = view.distance;
       configureCamera(camera, rig, width, height, 100, 112);
@@ -264,6 +266,32 @@ describe("the 법당's camera clearance", () => {
       expect(pillar.maxZ - across).toBeGreaterThanOrEqual(CAMERA_CLEARANCE + 0.28);
       expect(pillar.maxX).toBe(DHARMA_ORIGIN.x + DHARMA.frontZ);
     });
+  });
+
+  it("lifts the lens out of the front pillars and the window sills when a monk stands along the front wall", () => {
+    const front = [...DHARMA_PILLARS_KEEP_OUT, ...DHARMA_SILLS];
+    expect(DHARMA_SILLS).toHaveLength(WALL_OPENINGS.filter((opening) => opening.wall === "front").length);
+    expect(WORLD_SOLIDS).toEqual(expect.arrayContaining(front));
+    const inside = (solids: readonly Box[]): number => {
+      const view = viewFor("dharma", 1);
+      const region = regionFor("dharma");
+      let count = 0;
+      for (const x of span(-DHARMA.halfWidth + 1, DHARMA.halfWidth - 1, 0.1)) {
+        const rig = new CameraRig(new PerspectiveCamera(), region.bounds, region.limits, DHARMA_KEEP_OUTS, solids);
+        rig.reduceMotion = true;
+        rig.yaw = view.yaw;
+        rig.pitch = view.pitch;
+        rig.distance = view.distance;
+        const monk = dharmaToWorld(x, DHARMA_ROOM.maxZ);
+        rig.follow(monk.x, monk.z, 0, true);
+        rig.update(0);
+        const { position } = rig.camera;
+        if (front.some((box) => position.x > box.minX && position.x < box.maxX && position.y > box.minY && position.y < box.maxY && position.z > box.minZ && position.z < box.maxZ)) count += 1;
+      }
+      return count;
+    };
+    expect(inside([]), "without the solids the lens ends up in them").toBeGreaterThan(0);
+    expect(inside(WORLD_SOLIDS)).toBe(0);
   });
 });
 

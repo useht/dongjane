@@ -1,13 +1,13 @@
 {
   "blender": "Blender 5.2.3 LTS",
-  "inputsHash": "d3b3b4be3e4825ae842b68d20d16c4d38ef1709fc7f5fbe12ae54c7967ecd0f5",
+  "inputsHash": "efc0722dc42536e6bb740a70c6838d33e8386d82904e292a5ec569c1bb25aa96",
   "outputs": {
     "buddha.glb": "14075527b22c802761bf7298ee6cd41bb1c6a55e04001ab07a322faa07687998",
     "casino.glb": "3933b928cc82021cc81cf5b3e62fca5065f404c657ef8e97bc8aba4599bb87f1",
-    "dharma.glb": "7f14814666f6b9fd76c234dcabd242f046dd279836d27ef05649ee932516fd5f",
+    "dharma.glb": "60635119de0d463ab9fc1476cf0bf915ac1680a508b25033c1733405ed1374ed",
     "gatbawi.glb": "426a7fe415c53a9de2cb2a6333d9739a166ac47155687476f83fa771e93ede69",
     "venue.glb": "f4854711e322b6aeeedac7540c63484b81cf2ce89b2e565b331cc0cbaf6318a6",
-    "world.glb": "8ca3b4fc8d236c025b941fb3f53e7140ae446ee6e97432397c48df68da36342a",
+    "world.glb": "ce7e02f94b762a397dac3df19e9471968baa2459878229e78f5610de0f503219",
     "venues/bathhouse.glb": "67332d702ce6b8edd7ccb02f39ce380d9693bb77d89b7cc4233caef62c027efd",
     "venues/bonfire.glb": "501a2aa7aff580f9d504d27db1a7325288216f354a3a771c95ba1c73b9f9342e",
     "venues/church.glb": "dc6af456d6f4f8f9da75766e2a8dc0fbb8d3aea4fe7989534dcf48882713ccdc",

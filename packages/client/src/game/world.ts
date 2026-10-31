@@ -3,7 +3,7 @@ import { ARRIVAL, DHARMA_VENUE, GATBAWI_VENUE, INDOOR, type MachineSpot, NPC_COU
 import type { GameAssets, KitModel } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
-import { CASINO_MACHINE_BOXES, CameraRig, WORLD_KEEP_OUTS, casinoRegion, configureCamera, pointInRoom, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
+import { CameraRig, WORLD_KEEP_OUTS, WORLD_SOLIDS, casinoRegion, configureCamera, pointInRoom, projectToCanvas, projectUnclipped, regionFor, startViewFor } from "./camera-rig.ts";
 import { CASINO_FOG, CasinoScene } from "./casino.ts";
 import { CASINO_SHELL, casinoNearness, insideBounds } from "./casino-layout.ts";
 import { DHARMA_FOG, DharmaScene } from "./dharma.ts";
@@ -188,7 +188,7 @@ export class World {
     this.pool = new MonkPool(this.scene, monkAssets, MAX_MONKS);
 
     const region = regionFor(this.area);
-    this.rig = new CameraRig(this.camera, region.bounds, region.limits, WORLD_KEEP_OUTS, CASINO_MACHINE_BOXES);
+    this.rig = new CameraRig(this.camera, region.bounds, region.limits, WORLD_KEEP_OUTS, WORLD_SOLIDS);
     this.resetCamera();
     this.rig.follow(ARRIVAL.x, ARRIVAL.z, 0, true);
 

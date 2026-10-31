@@ -28,7 +28,7 @@ JAMB = 0.14
 RIB = 0.4  # tile ribs along the roof's length
 SLOPE_STEPS = 12
 PLAQUE_X = 0.0  # the board hangs over the middle of the doorway
-PLAQUE_Y = 4.9
+PLAQUE_Y = 5.5
 
 
 class Shape:

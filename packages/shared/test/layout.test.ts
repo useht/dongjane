@@ -172,9 +172,9 @@ describe("the 법당's quarter turn", () => {
 
   it("stands the room on the west side, its front wall on the plaza side of the floor", () => {
     expect(DHARMA_BOUNDS.minX).toBeCloseTo(-23.8, 9);
-    expect(DHARMA_BOUNDS.maxX).toBeCloseTo(-10.6, 9);
-    expect(DHARMA_BOUNDS.minZ).toBeCloseTo(-9.2, 9);
-    expect(DHARMA_BOUNDS.maxZ).toBeCloseTo(9.2, 9);
+    expect(DHARMA_BOUNDS.maxX).toBeCloseTo(-11.3, 9);
+    expect(DHARMA_BOUNDS.minZ).toBeCloseTo(-10.2, 9);
+    expect(DHARMA_BOUNDS.maxZ).toBeCloseTo(10.2, 9);
   });
 });
 

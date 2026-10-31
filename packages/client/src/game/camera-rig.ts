@@ -1,7 +1,7 @@
 import { PerspectiveCamera, Vector3 } from "three";
 import { DHARMA_VENUE, DHARMA_YAW, MACHINE_SPOTS, type Zone, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
 import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, machineHeight } from "./casino-layout.ts";
-import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
+import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X, WALL_OPENINGS, WINDOW_BAND } from "./dharma-layout.ts";
 import { KITS, kitById } from "./kits/index.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
@@ -84,8 +84,8 @@ function inWorld(room: { minX: number; maxX: number; minZ: number; maxZ: number 
   return { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minY, maxY, minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
 }
 
-// Below the beam band (underside at 5.2) and inside the side pillars (faces at 9.27).
-export const DHARMA_CAMERA_BOUNDS: Box = inWorld({ minX: -8.9, maxX: 8.9, minZ: -5, maxZ: 8.8 }, 0.5, 4.9);
+// Below the beam band (underside at 6.7) and the hanging lanterns (hooks from 6.7) and inside the side pillars (faces at 10.25).
+export const DHARMA_CAMERA_BOUNDS: Box = inWorld({ minX: -9.9, maxX: 9.9, minZ: -5, maxZ: 8.8 }, 0.5, 5.6);
 
 // The 법당's solid outside, up to the finials on its ridge: a camera that follows someone along its front may not swing into it.
 export const DHARMA_KEEP_OUT: Box = inWorld(
@@ -96,7 +96,7 @@ export const DHARMA_KEEP_OUT: Box = inWorld(
     maxZ: DHARMA_SHELL.porchZ,
   },
   -1,
-  13,
+  15,
 );
 
 // Whether a world point is inside the room itself: between its walls and under its ceiling.
@@ -149,7 +149,27 @@ export const CASINO_MACHINE_BOXES: readonly Box[] = MACHINE_SPOTS.map((spot) => 
   };
 });
 
-// How much steeper the camera's pitch gets at a time while it is raised out of a machine's body.
+// The sill under each front window juts 0.29 m out of the wall, 0.16 m wider than the opening, and its top is 0.03 m under the
+// opening's foot (dharma.py): a box round it, widened by the clearance on every side but the wall's and up.
+const SILL = { out: 0.3, wider: 0.08, below: 0.03 };
+export const DHARMA_SILLS: readonly Box[] = WALL_OPENINGS.filter((opening) => opening.wall === "front").map((opening) =>
+  inWorld(
+    {
+      minX: opening.along - opening.width / 2 - SILL.wider - CAMERA_CLEARANCE,
+      maxX: opening.along + opening.width / 2 + SILL.wider + CAMERA_CLEARANCE,
+      minZ: DHARMA.frontZ - SILL.out - CAMERA_CLEARANCE,
+      maxZ: DHARMA.frontZ,
+    },
+    0,
+    WINDOW_BAND.low - SILL.below + CAMERA_CLEARANCE,
+  ),
+);
+
+// Everything the camera is raised out of rather than held in front of: the machines, and what a monk at the front wall can stand
+// beside, nearer than the camera may come to it: the front pillars and the window sills. The lens is lifted to look down from short of them.
+export const WORLD_SOLIDS: readonly Box[] = [...CASINO_MACHINE_BOXES, ...DHARMA_PILLARS_KEEP_OUT, ...DHARMA_SILLS];
+
+// How much steeper the camera's pitch gets at a time while it is raised out of a solid.
 const LIFT_STEP = 0.05;
 
 function insideAny(point: { x: number; y: number; z: number }, boxes: readonly Box[]): boolean {

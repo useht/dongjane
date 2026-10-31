@@ -56,7 +56,7 @@ BOULDERS = (
 # (x, z, height); every tree stands outside the plaza, the court, the camera's box, the stage and the 법당
 NEAR_PINES = ((-12.6, -14.6, 8.8), (18.0, -3.4, 9.0), (-33.4, 2.0, 7.0), (18.4, 9.0, 7.6), (-22.0, -15.2, 9.0), (-33.0, 14.2, 7.8))
 # (x, z, size, colour index into the maple palette)
-NEAR_MAPLES = ((-33.6, -7.0, 1.15, 0), (19.4, 3.0, 1.2, 1), (-32.6, 20.0, 1.0, 2), (19.6, 14.4, 1.1, 0), (-30.0, -13.0, 1.0, 1))
+NEAR_MAPLES = ((-33.6, -7.0, 1.15, 0), (19.4, 3.0, 1.2, 1), (-32.6, 20.0, 1.0, 2), (19.6, 14.4, 1.1, 0), (-31.5, -14.5, 1.0, 1))
 FAR_PINES = 11
 FAR_MAPLES = 9
 
