@@ -12,7 +12,7 @@ export class MachineHint {
   private shown = false;
 
   constructor(host: HTMLElement, onPlay: () => void) {
-    this.node = h("button", "machine-hint hidden", icon("play"), h("kbd", "machine-hint-key", "E"));
+    this.node = h("button", "machine-hint hidden", icon("play"));
     this.node.type = "button";
     this.node.setAttribute("aria-label", LABEL);
     this.node.title = LABEL;

@@ -806,9 +806,19 @@ describe("casino.glb", () => {
     near(mesh("casinoRoof").positions.min[1], CASINO_SHELL.topY);
     const shell = mesh("casinoFront").positions;
     near(shell.min[0], CASINO_SHELL.minX);
-    // Only the finial on the ridge of the sign's eave stands past the east wall, by less than the 0.5 m to the sea.
-    expect(shell.max[0]).toBeGreaterThanOrEqual(CASINO_SHELL.maxX - TOLERANCE);
-    expect(shell.max[0]).toBeLessThanOrEqual(CASINO_SHELL.maxX + 0.2);
+    // The piers, the lintel and the sign's eave end at the shell's east face exactly. Only the gilt finial that caps the eave's ridge
+    // (a 0.05 m tail of the ridge tube and a sphere of 0.12 m radius) stands out past it: by 0.17 m, short of the 0.5 m to the sea.
+    const front = positions(glb, "casinoFront");
+    const ridgeBand = CASINO_TOP - 0.15;
+    let bodyEast = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < front.count; i += 1) {
+      const x = front.values[i * 3] as number;
+      const y = front.values[i * 3 + 1] as number;
+      if (y < ridgeBand) bodyEast = Math.max(bodyEast, x);
+      if (x > CASINO_SHELL.maxX + TOLERANCE) expect(y, `vertex ${i} past the east face stands on the ridge`).toBeGreaterThanOrEqual(ridgeBand);
+    }
+    near(bodyEast, CASINO_SHELL.maxX);
+    near(shell.max[0], CASINO_SHELL.maxX + 0.17, 0.02);
     near(mesh("casinoWalls").positions.min[0], CASINO_SHELL.minX, 0.3);
     near(mesh("casinoWalls").positions.max[2], CASINO_SHELL.maxZ, 0.3);
   });
@@ -820,9 +830,16 @@ describe("casino.glb", () => {
     expect(mesh("casinoRoof").positions.max[1]).toBeLessThanOrEqual(CASINO_KEEP_OUT.maxY);
     // The sign's marquee bulbs stand a little above the board's frame.
     near(board.max[1], CASINO_SIGN.bottom + CASINO_SIGN.height, 0.3);
-    // The board's east end is the sign's; its west end is the lit glass of the front wall's windows, which casinoSign carries too.
-    near(board.max[0], CASINO_LINE_X + CASINO_SIGN.halfWidth, 0.3);
-    expect(board.min[0]).toBeLessThanOrEqual(CASINO_WINDOWS.xs[0] as number);
+    // The board hangs on the door's centre line, not on the middle of the shell (the shell is not symmetric about it). casinoSign also
+    // carries the lit glass of the front wall's windows, which stand below the board, so only what is at the board's height is measured.
+    const sign = positions(glb, "casinoSign");
+    const boardX: number[] = [];
+    for (let i = 0; i < sign.count; i += 1) if ((sign.values[i * 3 + 1] as number) >= CASINO_SIGN.bottom - 0.05) boardX.push(sign.values[i * 3] as number);
+    const boardMin = Math.min(...boardX);
+    const boardMax = Math.max(...boardX);
+    near((boardMin + boardMax) / 2, CASINO_LINE_X);
+    near(boardMax, CASINO_LINE_X + CASINO_SIGN.halfWidth, 0.3);
+    expect(Math.min(...Array.from({ length: sign.count }, (_, i) => sign.values[i * 3] as number)), "the windows' glass reaches further west").toBeLessThanOrEqual(CASINO_WINDOWS.xs[0] as number);
     expect(board.max[0] - board.min[0], "the board is at least as wide as its frame").toBeGreaterThanOrEqual(CASINO_SIGN.halfWidth * 2);
   });
 

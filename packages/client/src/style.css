@@ -1628,28 +1628,6 @@ noscript {
   height: 26px;
 }
 
-/* The key cap sits on the button's rim, outside the round hit area. */
-.machine-hint-key {
-  position: absolute;
-  right: -8px;
-  bottom: -6px;
-  display: none;
-  min-width: 18px;
-  padding: 0 4px;
-  border: 1px solid color-mix(in srgb, var(--gold-pale) 50%, transparent);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--cream);
-  font: 700 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
-  text-align: center;
-}
-
-@media (pointer: fine) {
-  .machine-hint-key {
-    display: inline-block;
-  }
-}
-
 .sheet.casino-sheet {
   max-height: min(94vh, 820px);
 }
