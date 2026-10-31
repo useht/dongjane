@@ -180,7 +180,7 @@ describe("the machines", () => {
     for (const a of MACHINE_SPOTS) {
       for (const b of MACHINE_SPOTS) {
         if (a === b || a.frontX !== b.frontX) continue;
-        expect(Math.abs(a.frontZ - b.frontZ), `${a.id} and ${b.id}`).toBeGreaterThanOrEqual(1 - 1e-9);
+        expect(Math.abs(a.frontZ - b.frontZ), `${a.id} and ${b.id}`).toBeGreaterThanOrEqual(1);
       }
     }
   });

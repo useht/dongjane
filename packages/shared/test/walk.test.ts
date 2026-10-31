@@ -564,7 +564,7 @@ describe("the casino", () => {
     expect(toWest.every((p) => p.z <= CASINO_CROSS.minZ)).toBe(true);
     assertWalkableRoute(door, toWest);
     const toEast = planPath(door, { x: CASINO_LINE_X, z: 63 });
-    expect(toEast.every((p) => p.x >= CASINO_AISLE_EAST.minX - 1e-9)).toBe(true);
+    expect(toEast.every((p) => p.x >= CASINO_AISLE_EAST.minX)).toBe(true);
     assertWalkableRoute(door, toEast);
     const across = planPath({ x: 8.8, z: 63 }, { x: CASINO_LINE_X, z: 63 });
     expect(across.some((p) => p.z >= CASINO_CROSS.minZ)).toBe(true);
