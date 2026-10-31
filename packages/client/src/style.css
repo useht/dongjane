@@ -247,7 +247,7 @@ button:disabled {
 .world-button:active,
 .clock-button:active,
 .quest-strip:active,
-.stage-hint:active {
+.hint.tappable:active {
   opacity: 0.7;
 }
 
@@ -689,8 +689,7 @@ button:disabled {
   }
 }
 
-.seat-hints,
-.machine-hints,
+.hints,
 .visitor-titles {
   position: absolute;
   inset: 0;
@@ -698,7 +697,7 @@ button:disabled {
   pointer-events: none;
 }
 
-.seat-hint {
+.hint {
   position: absolute;
   left: 0;
   top: 0;
@@ -718,11 +717,11 @@ button:disabled {
   will-change: transform;
 }
 
-.stage-hint {
+.hint.tappable {
   pointer-events: auto;
 }
 
-.seat-hint svg {
+.hint svg {
   filter: drop-shadow(0 1px 1px color-mix(in srgb, black 90%, transparent)) drop-shadow(0 1px 4px color-mix(in srgb, black 60%, transparent));
 }
 
@@ -1604,30 +1603,7 @@ noscript {
   }
 }
 
-/* The casino: the hint over a machine, and the panel a machine opens. */
-.machine-hint {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--gold-pale) 55%, transparent);
-  border-radius: 50%;
-  background: var(--panel);
-  box-shadow: 0 2px 10px color-mix(in srgb, black 35%, transparent);
-  color: var(--gold);
-  pointer-events: none;
-  will-change: transform;
-}
-
-.machine-hint svg {
-  width: 26px;
-  height: 26px;
-}
-
+/* The casino: the panel a machine opens. */
 .sheet.casino-sheet {
   max-height: min(94vh, 820px);
 }
