@@ -302,7 +302,7 @@ describe("monk assets", () => {
     expect(Math.abs((shoulderWorld - soleWorld) / H - 2.375), "shoulder joint height").toBeLessThanOrEqual(0.02);
     expect(Math.abs((elbowWorld - soleWorld) / H - 1.835), "elbow height").toBeLessThanOrEqual(0.02);
     expect(Math.abs((wristWorld - soleWorld) / H - 1.425), "wrist height").toBeLessThanOrEqual(0.02);
-    expect(Math.abs((fingertipWorld - soleWorld) / H - 1.304), "fingertip height: just above the knee").toBeLessThanOrEqual(0.02);
+    expect(Math.abs((fingertipWorld - soleWorld) / H - 1.304), "fingertip height: about 1.3 H, the fingertips of the arms hanging straight").toBeLessThanOrEqual(0.02);
     expect(Math.abs(upper / H - 0.54), "upper arm").toBeLessThanOrEqual(0.01);
     expect(Math.abs(monkRig.foreArm / H - 0.41), "forearm").toBeLessThanOrEqual(0.01);
     expect(Math.abs(hand / H - 0.12), "hand").toBeLessThanOrEqual(0.01);
@@ -350,7 +350,7 @@ describe("monk assets", () => {
     // The jacket is a tunic ending at the knee (not a robe down to the shins), the crotch hangs lower, and the cuff is just above the ankle.
     expect(Math.abs((hem - sole) / H - 0.95), "jacket hem above the sole (0.95 H, a tunic ending at the knee, 0.9 H below the hip at 1.85 H)").toBeLessThanOrEqual(0.03);
     expect(hem, "the hem is below the hip pivot").toBeLessThan(monkRig.hipStand);
-    expect(monkRig.hipStand - hem, "the hem hangs a tunic's length below the hip pivot").toBeLessThan(1.0 * H);
+    expect(Math.abs((monkRig.hipStand - hem) / H - 0.9), "the hem hangs 0.9 H below the hip pivot (knee length)").toBeLessThanOrEqual(0.03);
     expect(crotch, "the crotch hangs below the jacket hem").toBeLessThan(hem);
     expect(Math.abs((crotch - sole) / H - 0.81), "crotch above the sole").toBeLessThanOrEqual(0.03);
     expect(Math.abs((cuff - sole) / H - 0.26), "trouser cuff above the sole").toBeLessThanOrEqual(0.01);

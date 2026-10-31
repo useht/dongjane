@@ -263,9 +263,9 @@ export class MonkAvatar {
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    this.torsoNode.rotation.x = -0.05 * walk - 1.61 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
+    this.torsoNode.rotation.x = -0.05 * walk - 1.648 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
-    this.headNode.rotation.x = -0.1 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
+    this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -285,9 +285,9 @@ export class MonkAvatar {
       const prayZ = -sign * 0.185;
       const prayElbow = 1.301;
       const prayTwist = -sign * 1.478;
-      const bowX = 1.245;
-      const bowZ = -sign * 0.187;
-      const bowElbow = 0.471;
+      const bowX = 1.261;
+      const bowZ = -sign * 0.267;
+      const bowElbow = 0.44;
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;

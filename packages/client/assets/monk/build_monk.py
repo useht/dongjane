@@ -38,7 +38,7 @@ rounded shoes are not copied: the outfit stays the ash-grey jacket, grey trouser
 (crown of the skull to the chin); everything is laid out in H (H = 0.33, so the monk is 1.122 high), listed as the height above the sole:
     standing height, skull top           3.40
     chin                                 2.40
-    shoulder joint                       2.375    (chin to shoulder 0.025; the neck is 0.02 and the shoulder sits just under its base)
+    shoulder joint                       2.36     (chin to shoulder 0.04; the neck is 0.02 and the shoulder sits just under its base)
     elbow, arm hanging                   1.835
     wrist                                1.425
     fingertip                            1.305
@@ -55,8 +55,6 @@ rounded shoes are not copied: the outfit stays the ash-grey jacket, grey trouser
 The face has closed upturned eyes (^^), a small smile and two blush ovals; no nose, no brows.
 The arms hang straight, splayed about 35 degrees (POSE idle_z) so the sleeves clear the wide robe. Praying folds the arms until the
 fingertips meet just under the chin; bowing tips the torso almost flat and lays both hands on the seat together, under the face (POSE below).
-(Earlier versions: 4 heads (4등신) with a 1.32 standing height and an adult's limbs squeezed under the head, the shoulder at 2.79 H and
-a hip-length jacket; before that 3.47 heads, 3.18 heads and a 4-head child with a short arm.)
 """
 
 import bmesh
@@ -85,7 +83,7 @@ RATIO = {  # in units of HEAD_H, measured from the sansatemple.com player charac
     "shoulder_breadth": 1.9,  # sleeve to sleeve with the arms hanging: a silhouette, measured by check_proportions
     "hip_joints": 0.50,  # the two hip joints (and the two feet) this far apart: 0.165 absolute
     "neck": 0.02,  # chin down to the base of the neck (chibi: almost none), 0.0066 absolute
-    "chin_to_shoulder": 0.025,  # chin down to the shoulder joint: just under the base of the neck
+    "chin_to_shoulder": 0.04,  # chin down to the shoulder joint: a hair under the base of the neck, so the sleeve root tucks under the jaw
     "chin_to_hip": 0.55,  # chin down to the hip pivot
     "waist_to_sole": 1.85,  # hip pivot height when standing
     "upper_arm": 0.54,  # shoulder joint to elbow pivot
@@ -104,7 +102,7 @@ RIG = {  # pivots and lengths the animation code uses
     "hipKneel": 0.0,  # set below: the kneeling pelvis rests on the cushion
     "jacketDrop": round(JACKET_HEM * HEAD_H, 3),  # the jacket hem hangs this far below the hip pivot
     "pelvisDrop": round(PELVIS_DEPTH * HEAD_H, 3),  # the crotch of the trousers hangs this far below the hip pivot
-    "shoulderX": 0.10,
+    "shoulderX": 0.11,
     "shoulderDrop": 0.0,  # set below: shoulder joint below the neck base
     "upperArm": round(RATIO["upper_arm"] * HEAD_H, 3),
     "foreArm": round(RATIO["fore_arm"] * HEAD_H, 3),
@@ -140,11 +138,11 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "pray_z": 0.185,
     "pray_elbow": 1.301,
     "pray_twist": 1.478,
-    "bow_lean": 1.61,
-    "bow_head": 0.1,
-    "bow_x": 1.245,
-    "bow_z": 0.187,
-    "bow_elbow": 0.471,
+    "bow_lean": 1.648,
+    "bow_head": 0.0,
+    "bow_x": 1.261,
+    "bow_z": 0.267,
+    "bow_elbow": 0.44,
 }
 
 LEG = {
@@ -214,7 +212,7 @@ NECK_LEN = RATIO["neck"] * H
 TORSO_H = RATIO["chin_to_hip"] * H - NECK_LEN
 NECK_Y = TORSO_H
 SHOULDER_Y = TORSO_H - RIG["shoulderDrop"]
-SHOULDER_R = 0.040  # sleeve radius at the shoulder joint: slim, so the 35 degree splay of the arms stays inside the 1.9 H silhouette
+SHOULDER_R = 0.036  # sleeve radius just below the shoulder joint: slim, so the 35 degree splay of the arms stays inside the 1.9 H silhouette and the sleeve clears the head
 
 CHIN_Z = NECK_LEN  # head frame: origin at the base of the neck. The lowest ring of the skull (the jaw) sits exactly here
 CROWN_Z = NECK_LEN + H
@@ -785,7 +783,9 @@ def dome_rings(radius, n, steps, z_centre=0.0, squash=1.0):
     return rings
 
 
-SHOULDER_DOME = 0.5  # height of the shoulder cap over the joint, as a fraction of the sleeve radius
+SHOULDER_CAP_R = 0.020  # radius of the shoulder cap at the joint: the sleeve narrows to it from SHOULDER_R, so the root tucks under the jaw
+SHOULDER_TAPER = 0.3  # how far from the cap radius to the sleeve radius the sleeve has widened a fifth of the way down the upper arm (0 = the cap radius, 1 = SHOULDER_R)
+SHOULDER_DOME = 0.5  # height of the shoulder cap over the joint, as a fraction of the cap radius
 SLEEVE_FLARE = 0.010  # how much wider the cuff is than the sleeve at the elbow
 ELBOW_BILLOW = 1.2  # sleeve width at the elbow relative to the shoulder
 ELBOW_R = SHOULDER_R * ELBOW_BILLOW
@@ -799,10 +799,10 @@ def build_sleeve_upper():
     tube = [
         ring_xy(0.0, 0.0, -arm, ELBOW_R, ELBOW_R, n),
         ring_xy(0.0, 0.0, -arm * 0.6, lerp(r, ELBOW_R, 0.5), lerp(r, ELBOW_R, 0.5), n),
-        ring_xy(0.0, 0.0, -arm * 0.2, r, r, n),
+        ring_xy(0.0, 0.0, -arm * 0.2, lerp(SHOULDER_CAP_R, r, SHOULDER_TAPER), lerp(SHOULDER_CAP_R, r, SHOULDER_TAPER), n),
     ]
-    dome = dome_rings(r, n, 3, squash=SHOULDER_DOME)
-    p.loft(tube + dome, "jacket", cap_last=Vector((0.0, 0.0, r * SHOULDER_DOME)))  # no cap at the elbow: its flat normal would shade the last ring dark
+    dome = dome_rings(SHOULDER_CAP_R, n, 3, squash=SHOULDER_DOME)
+    p.loft(tube + dome, "jacket", cap_last=Vector((0.0, 0.0, SHOULDER_CAP_R * SHOULDER_DOME)))  # no cap at the elbow: its flat normal would shade the last ring dark
     return p.to_object()
 
 
@@ -1188,10 +1188,7 @@ def check_bow(parts):
     head = world_bvh(parts["head"], mats["head"][0])
     torso = world_bvh(parts["torso"], mats["torso"][0])
     for part, margin in (("hand", 0.004), ("sleeveLower", 0.0), ("sleeveUpper", 0.0)):
-        # The sleeve's root ball sits at the shoulder, which in this chibi is right under the jaw, so it tucks into the cheek even
-        # standing; the test is for the arm itself, so the root (within the ball and a little more) is left out.
-        root = SHOULDER_R + 0.02 if part == "sleeveUpper" else 0.0
-        near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices if v.co.length >= root)
+        near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
         print("BOW %-12s clearance from the head %.4f" % (part, near_head))
         assert near_head >= margin, "the bowing %s sinks %.4f into the head" % (part, margin - near_head)
     for part in ("hand", "sleeveLower"):
@@ -1201,6 +1198,19 @@ def check_bow(parts):
     cross = max(max((m @ v.co).x * (1 if side == 0 else -1) for v in parts["hand"].data.vertices) for side, m in enumerate(mats["hand"]))
     print("BOW hands cross the middle by %.4f" % cross)
     assert cross <= 0.012, "the bowing hands cross the middle by %.4f" % cross
+
+
+def check_sleeves_clear_head(parts):
+    """The whole sleeves and the hands stay out of the head standing, at either end of a stride, and kneeling in prayer (the bow is
+    in check_bow). The shoulder is right under the jaw in this chibi, so this holds the root of the sleeve to it too."""
+    cushion = RIG["seatTop"]
+    for label, kneel, stride in (("standing", 0.0, 0.0), ("stride forward", 0.0, 1.0), ("stride back", 0.0, -1.0), ("praying", 1.0, 0.0)):
+        mats = pose_matrices(kneel, cushion if kneel else 0.0, stride)
+        head = world_bvh(parts["head"], mats["head"][0])
+        for part in ("sleeveUpper", "sleeveLower", "hand"):
+            near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
+            print("HEAD %-14s %-12s clearance from the head %.4f" % (label, part, near_head))
+            assert near_head >= 0.0, "the %s %s sinks %.4f into the head" % (label, part, -near_head)
 
 
 def check_standing_hands(parts):
@@ -1449,6 +1459,7 @@ def main():
     check_kneel_clearance(parts)
     check_kneel_hands(parts)
     check_bow(parts)
+    check_sleeves_clear_head(parts)
     check_standing_hands(parts)
 
     glb = os.path.join(HERE, "monk.glb")

@@ -18,7 +18,7 @@ export const ROD_POSE = {
   lean: 0.06,
   roll: 0.3,
   lead: { shoulder: 0.9, elbow: 0.9 },
-  rear: { shoulder: 0.35, elbow: 1.05 },
+  rear: { shoulder: 0.42, elbow: 1.05 },
   elevation: 0.8,
 } as const;
 
