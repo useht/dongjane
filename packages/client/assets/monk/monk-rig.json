@@ -25,6 +25,8 @@
   "kneelPelvisGrow": 0.25,
   "kneelPelvisScaleY": 1.0,
   "kneelPelvisLift": 0.0,
+  "bowHipForward": 0.1,
+  "bowSeatBack": 0.1,
   "seatTop": 0.13,
   "robeTintSaturation": 1.0,
   "robeTintLightness": 0.78

@@ -25,6 +25,9 @@ const JACKET_PARTS: BodyPartName[] = ["torso", "sleeveUpper", "sleeveLower"];
 const TROUSER_PARTS: BodyPartName[] = ["pelvis", "trousers"];
 const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
+// monk-poses.json, written by build_monk.py: world bounds [min x, y, z, max x, y, z] of one copy of each part, per probed pose.
+type PoseProbe = { bows: number[] } & Record<"head" | "pelvis" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
+
 function readGlb(): ArrayBuffer {
   const file = readFileSync(new URL("../assets/monk/monk.glb", import.meta.url));
   return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
@@ -458,6 +461,25 @@ describe("monk assets", () => {
       expect(Math.min(...hand.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeGreaterThan(-0.012);
       expect(Math.min(...hand.map((v) => v.y)) - monkRig.seatTop, `hand ${side} rests on the seat`).toBeLessThan(0.05);
       expect(Math.max(...hand.map((v) => v.z)), `hand ${side} lies in front of the knees`).toBeLessThan(-0.1);
+    }
+  });
+
+  it("bows exactly as build_monk.py checked it: the seat stays on the heels while the arms fold between it and the head", async () => {
+    const parts = await loadParts();
+    const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { bow: PoseProbe };
+    expect(probe.bow.bows, "the probe covers the whole bow").toEqual([0, 0.25, 0.5, 0.75, 1]);
+    for (const [index, depth] of probe.bow.bows.entries()) {
+      const avatar = new MonkAvatar("bower", 0, false);
+      avatar.setMode("bow", 0);
+      avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
+      for (const part of ["head", "pelvis", "sleeveUpper", "sleeveLower", "hand"] as const) {
+        const box = new Box3().setFromPoints(worldVertices(nodeOf(avatar, part, 0), parts[part]));
+        const want = probe.bow[part][index] as number[];
+        const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+        for (const [axis, value] of got.entries()) {
+          expect(Math.abs(value - (want[axis] as number)), `${part} bounds[${axis}] at bow ${depth}`).toBeLessThan(0.002);
+        }
+      }
     }
   });
 

@@ -70,6 +70,8 @@ const LEG_LENGTH = rig.legLength;
 const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
 const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
 const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
+const BOW_HIP_FORWARD = rig.bowHipForward;
+const BOW_SEAT_BACK = rig.bowSeatBack;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
 // The lift of a kneeling monk on a 방석; on a 돗자리 it is less.
@@ -250,13 +252,14 @@ export class MonkAvatar {
     this.root.position.y = this.liftedBy * kneel + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
     this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006;
-    this.hips.position.z = -depth * 0.1;
+    this.hips.position.z = -depth * BOW_HIP_FORWARD;
 
-    // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs.
+    // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing, the hips and
+    // everything on them slide forward, but the seat stays on the heels, so the folded arms have room between it and the head.
     const pelvisY = 1 + (KNEEL_PELVIS_SCALE_Y - 1) * kneel;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
     this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
-    this.pelvisNode.position.y = KNEEL_PELVIS_LIFT * kneel;
+    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel, BOW_SEAT_BACK * depth);
 
     // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
     const biting = this.bite && fish > 0.5;
@@ -286,7 +289,7 @@ export class MonkAvatar {
       const prayElbow = 1.301;
       const prayTwist = -sign * 1.478;
       const bowX = 1.261;
-      const bowZ = -sign * 0.267;
+      const bowZ = -sign * 0.2;
       const bowElbow = 0.44;
 
       const prayMix = kneel * (1 - depth);

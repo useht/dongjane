@@ -116,6 +116,8 @@ RIG = {  # pivots and lengths the animation code uses
     "kneelPelvisGrow": 0.25,  # kneeling spreads the trousers' pelvis sideways ...
     "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the cushion
     "kneelPelvisLift": 0.0,
+    "bowHipForward": 0.1,  # the deepest bow carries the hip pivot (torso, head, arms and the tops of the legs) this far forward ...
+    "bowSeatBack": 0.1,  # ... and the seat of the trousers back by this much, so it stays on the heels instead of reaching under the folded arms
     "seatTop": 0.13,
     "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
     "robeTintLightness": 0.78,
@@ -141,7 +143,7 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "bow_lean": 1.648,
     "bow_head": 0.0,
     "bow_x": 1.261,
-    "bow_z": 0.267,
+    "bow_z": 0.2,
     "bow_elbow": 0.44,
 }
 
@@ -1199,28 +1201,50 @@ def world_bvh(obj, matrix):
     return tree
 
 
+BOW_DEPTHS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)  # the bow's way down (and back up), from the first tilt to the deepest
+BOW_CLEARANCE = {  # what each arm part must stay clear of, in metres: a margin of 0 only forbids sinking in
+    "head": {"hand": 0.004, "sleeveLower": 0.0, "sleeveUpper": 0.001},
+    "torso": {"hand": 0.0, "sleeveLower": 0.0},
+    "pelvis": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # the seat of the trousers
+    "trousers": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # both trouser legs
+}
+BOW_HANDS_GAP = 0.06  # the hands, palm to palm across the middle, stay at most this far apart: together under the face
+BOW_CUFFS_CROSS = 0.002  # from the half bow on, a cuff crosses the middle by at most this much (before that, by no more than the prayer does)
+
+
+def middle_cross(parts, mats, part):
+    """How far the part, either copy, reaches past the middle of the body (negative: it stays clear by that much)."""
+    return max(max((m @ v.co).x * (1 if side == 0 else -1) for v in parts[part].data.vertices) for side, m in enumerate(mats[part]))
+
+
 def check_bow(parts):
-    """The deepest bow: nothing sinks into the seat (a cushion, or a thinner mat: the plane at the seat top is the safe bound for
-    both), the arms and hands stay clear of the head and torso, and the hands lie together under the face without crossing."""
+    """Every depth of the bow: nothing sinks into the seat (a cushion, or a thinner mat: the plane at the seat top is the safe bound
+    for both), the arms and hands stay clear of the head, the torso, the seat of the trousers and both trouser legs, the two forearms
+    do not go through each other (the praying cuffs overlap a little where they meet, and the bow never more than that), and the
+    hands lie side by side, together under the face and never across the middle."""
     cushion = RIG["seatTop"]
-    mats = pose_matrices(1.0, cushion, bow=1.0)
-    for part, matrices in mats.items():
-        low = min((m @ v.co).z - cushion for m in matrices for v in parts[part].data.vertices)
-        print("BOW lowest %-12s %.4f above the seat" % (part, low))
-        assert low >= -0.0005, "%s sinks %.4f into the seat in the bow" % (part, -low)
-    head = world_bvh(parts["head"], mats["head"][0])
-    torso = world_bvh(parts["torso"], mats["torso"][0])
-    for part, margin in (("hand", 0.004), ("sleeveLower", 0.0), ("sleeveUpper", 0.0)):
-        near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
-        print("BOW %-12s clearance from the head %.4f" % (part, near_head))
-        assert near_head >= margin, "the bowing %s sinks %.4f into the head" % (part, margin - near_head)
-    for part in ("hand", "sleeveLower"):
-        near_torso = min(clearance_of(torso, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
-        print("BOW %-12s clearance from the torso %.4f" % (part, near_torso))
-        assert near_torso >= 0.0, "the bowing %s sinks %.4f into the torso" % (part, -near_torso)
-    cross = max(max((m @ v.co).x * (1 if side == 0 else -1) for v in parts["hand"].data.vertices) for side, m in enumerate(mats["hand"]))
-    print("BOW hands cross the middle by %.4f" % cross)
-    assert cross <= 0.012, "the bowing hands cross the middle by %.4f" % cross
+    prayer_cuffs = middle_cross(parts, pose_matrices(1.0, cushion), "sleeveLower")
+    for bow in BOW_DEPTHS:
+        mats = pose_matrices(1.0, cushion, bow=bow)
+        for part, matrices in mats.items():
+            low = min((m @ v.co).z - cushion for m in matrices for v in parts[part].data.vertices)
+            assert low >= -0.0005, "%s sinks %.4f into the seat at bow %.3f" % (part, -low, bow)
+        for target, margins in BOW_CLEARANCE.items():
+            trees = [world_bvh(parts[target], m) for m in mats[target]]
+            for part, margin in margins.items():
+                near = min(clearance_of(tree, m @ v.co) for tree in trees for m in mats[part] for v in parts[part].data.vertices)
+                if bow == BOW_DEPTHS[-1]:
+                    print("BOW %-12s clearance from the %s %.4f" % (part, target, near))
+                assert near >= margin, "the %s at bow %.3f comes within %.4f of the %s (it needs %.4f)" % (part, bow, near, target, margin)
+        cuffs = middle_cross(parts, mats, "sleeveLower")
+        assert cuffs <= prayer_cuffs + 0.0005, "the cuffs cross the middle by %.4f at bow %.3f, more than in prayer (%.4f)" % (cuffs, bow, prayer_cuffs)
+        assert bow < 0.5 or cuffs <= BOW_CUFFS_CROSS, "the forearms go through each other by %.4f at bow %.3f" % (cuffs, bow)
+        hands = middle_cross(parts, mats, "hand")
+        assert hands <= 0.0, "the bowing hands cross the middle by %.4f at bow %.3f" % (hands, bow)
+        gap = -2 * hands
+        assert gap <= BOW_HANDS_GAP, "the bowing hands are %.4f apart at bow %.3f" % (gap, bow)
+        if bow == BOW_DEPTHS[-1]:
+            print("BOW cuffs cross the middle by %.4f (prayer %.4f), hands %.4f apart" % (cuffs, prayer_cuffs, gap))
 
 
 def check_sleeves_clear_head(parts):
@@ -1279,10 +1303,32 @@ def rig_dict():
         "kneelPelvisGrow": RIG["kneelPelvisGrow"],
         "kneelPelvisScaleY": RIG["kneelPelvisScaleY"],
         "kneelPelvisLift": RIG["kneelPelvisLift"],
+        "bowHipForward": RIG["bowHipForward"],
+        "bowSeatBack": RIG["bowSeatBack"],
         "seatTop": RIG["seatTop"],
         "robeTintSaturation": RIG["robeTintSaturation"],
         "robeTintLightness": RIG["robeTintLightness"],
     }
+
+
+PROBE_PARTS = ("head", "pelvis", "sleeveUpper", "sleeveLower", "hand")
+PROBE_BOWS = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+
+def pose_probe(parts):
+    """The world bounds (three.js axes: min x, y, z then max x, y, z) of the first copy of a few parts, kneeling at each bow depth.
+    The checks above run on pose_matrices, a copy of animate() in monk-model.ts; a test replays the bow there and holds it to these."""
+    out = {"bows": list(PROBE_BOWS)}
+    for part in PROBE_PARTS:
+        rows = []
+        for bow in PROBE_BOWS:
+            m = pose_matrices(1.0, RIG["seatTop"], bow=bow)[part][0]
+            points = [m @ v.co for v in parts[part].data.vertices]
+            low = (min(p.x for p in points), min(p.z for p in points), -max(p.y for p in points))
+            high = (max(p.x for p in points), max(p.z for p in points), -min(p.y for p in points))
+            rows.append([round(c, 4) for c in low + high])
+        out[part] = rows
+    return out
 
 
 def export_glb(parts_coll, path):
@@ -1320,9 +1366,9 @@ def pose_matrices(kneel, cushion, stride=0.0, bow=0.0):
     stride (-1 .. 1) swings the feet and arms like the walk cycle does, so the stretched legs can be checked; bow (0 .. 1, kneeling
     only) tips the torso and head forward with the arms reaching out, like the bow animation at its deepest."""
     lift = cushion * kneel
-    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), -0.1 * bow))
+    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), -RIG["bowHipForward"] * bow))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
-    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, 0), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
+    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, RIG["bowSeatBack"] * bow), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
     torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow, 0, 0))
     head = torso @ tmat((0, NECK_Y, 0), (-POSE["bow_head"] * bow, 0, 0))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "trim": [torso]}
@@ -1498,6 +1544,12 @@ def main():
         json.dump(rig_dict(), fh, indent=2)
         fh.write("\n")
     print("WROTE", rig_path)
+
+    poses_path = os.path.join(HERE, "monk-poses.json")
+    with open(poses_path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump({"_source": "packages/client/assets/monk/build_monk.py", "bow": pose_probe(parts)}, fh, separators=(",", ":"))
+        fh.write("\n")
+    print("WROTE", poses_path)
 
     standing = build_pose("monk_pose_standing", parts, 0.0)
     layer_collection(parts_coll).hide_viewport = True
