@@ -55,8 +55,7 @@ function windBody(ctx: AudioContext, out: AudioNode): void {
   sweep.start();
 }
 
-// Waves: a low rumble of noise whose lowpass opens and closes about every ten seconds as each wave rolls in and draws back,
-// under a faint high hiss of foam that swells on a slightly different beat so the two never settle into a pattern.
+// Surf: a noise rumble whose lowpass opens and closes with each wave, under a foam hiss on a different beat.
 function seaBody(ctx: AudioContext, out: AudioNode): void {
   const source = ctx.createBufferSource();
   source.buffer = noiseBuffer(ctx, 8);
@@ -162,8 +161,7 @@ export const BED_SPECS: Readonly<Record<Bed, BedSpec>> = {
   water: { peak: 0.25, follow: 0.4, drops: WATER_DROPS },
 };
 
-// One ambient sound on the ambience bus. Its level (0 to 1, from where the monk is) is remembered from before the audio context
-// exists; the single drops are scheduled by a timer that runs only while the level is high enough to hear them.
+// One ambient sound on the ambience bus; its level is kept from before audio starts, and drops are timed only while audible.
 export class AmbientBed {
   private ctx: AudioContext | null = null;
   private gain: GainNode | null = null;

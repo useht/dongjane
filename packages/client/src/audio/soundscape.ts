@@ -7,8 +7,7 @@ export type Ambience = Record<Bed, number>;
 
 export const SILENCE: Readonly<Ambience> = { wind: 0, sea: 0, rain: 0, fire: 0, water: 0 };
 
-// What each place lets the visitor hear, as a share (0 to 1) of every bed's loudest. A venue with no entry for a bed does not have
-// it: a roofed one has no wind, rain or surf, and a new venue does not compile until it is listed here.
+// Each place's share (0 to 1) of every bed; a missing bed is silent, and a new venue must be listed here.
 export const VENUE_SOUNDS: Readonly<Record<VenueId, Readonly<Partial<Record<Bed, number>>>>> = {
   gatbawi: { wind: 1, sea: 1, rain: 1 },
   shore: { wind: 1, sea: 1, rain: 1 },
@@ -43,8 +42,7 @@ export function placeAt(x: number, z: number): VenueId {
 
 const share = (value: number | undefined): number => (value !== undefined && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
 
-// How loud each bed is, 0 to 1, for a monk standing at (x, z) in `place`. The surf also depends on how near the water is, the
-// rain on the weather, and the open air on whether a video is playing over it.
+// Surf follows the water's distance, rain the weather, and the open air is muted under a concert video.
 export function ambienceAt(place: VenueId, x: number, z: number, weather: Weather | null, videoAudible: boolean): Ambience {
   const profile = VENUE_SOUNDS[place];
   const level = (bed: Bed): number => (videoAudible && OPEN_AIR.has(bed) ? 0 : share(profile[bed]));

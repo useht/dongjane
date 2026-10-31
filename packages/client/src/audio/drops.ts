@@ -1,5 +1,4 @@
-// The single drops over an ambient bed (rain on the ground, crackle in a fire, drips in a bath): when they fall and how each one
-// sounds, apart from any audio graph.
+// Single drops over an ambient bed: when they fall and how each one sounds, apart from any audio graph.
 export interface DropProfile {
   // seconds between drops, exponentially spread; no two ever fall closer than the minimum, and the mean is exact
   meanGap: number;
@@ -92,8 +91,7 @@ export class DropPlanner {
 
   constructor(private readonly profile: DropProfile) {}
 
-  // The drops that fall before `now` plus the look-ahead and were not handed out yet. After a stall (a background tab, a
-  // pause, a bed that was switched off) the schedule starts afresh from `now`, so no backlog of drops lands in one go.
+  // Restarts from now after a stall, so no backlog of drops lands at once.
   plan(now: number, random: Random): Drop[] {
     if (!(this.next >= now)) this.next = now + dropGap(random, this.profile);
     const drops: Drop[] = [];

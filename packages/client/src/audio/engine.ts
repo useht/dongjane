@@ -32,8 +32,7 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// The bell and the ambient beds (beds.ts) are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
-// recording. Other recordings, the 법당 sutra, are played by other modules into `output`, so the ambient volume covers them.
+// The bell and the beds are synthesized; only the knock is a recording. The sutra plays into `output`, under the ambient volume.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private effects: GainNode | null = null;
@@ -69,8 +68,7 @@ export class AudioEngine {
     this.unlockListeners.add(listener);
   }
 
-  // How loud each ambient bed is, 0 to 1, from where the monk is (see soundscape.ts). They ride on the ambience bus, and the
-  // levels set before audio is unlocked are the ones the beds start at.
+  // The beds ride on the ambience bus; levels set before unlock are the ones they start at.
   setAmbience(levels: Ambience): void {
     for (const bed of this.beds) bed.set(levels[bed.name]);
   }

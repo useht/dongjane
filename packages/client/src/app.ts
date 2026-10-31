@@ -653,8 +653,7 @@ export class App {
     this.seatOwners = perZone(() => new Map());
   }
 
-  // The concert video waits (poster on the screen) in a live world until the visitor plays it, and the sutra runs for as long as
-  // they are in the world; where they stand (see tickMix) only decides which of the two is heard.
+  // The sutra runs for as long as the visitor is in a live world; where they stand (see tickMix) decides what is heard.
   private syncZoneSound(): void {
     const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
@@ -1003,8 +1002,7 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the soundtracks: the sutra only inside the 법당, the concert by its areaMix share, and the beds of
-  // the place (wind, surf, rain, fire, water) by what the place and the weather give.
+  // Where the visitor stands sets the sutra, the concert and the place's ambient beds.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
