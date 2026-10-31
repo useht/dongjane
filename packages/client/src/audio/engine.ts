@@ -32,7 +32,7 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// The bell and the beds are synthesized; only the knock is a recording. The sutra plays into `output`, under the ambient volume.
+// The bell and the beds are synthesized; only the knock is a recording.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private effects: GainNode | null = null;

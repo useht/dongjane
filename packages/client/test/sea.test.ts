@@ -57,7 +57,7 @@ describe("seaLevel", () => {
   });
 });
 
-// The surf is the looping noise that feeds both a lowpass (the rumble) and a highpass (the foam); no other bed has a highpass.
+// The surf is the only looping noise with a highpass branch (the foam).
 function surfSource(): FakeNode | undefined {
   return graph.nodes.find((node) => node.kind === "bufferSource" && node.loop && (node.outputs as FakeNode[]).some((out) => out.type === "highpass"));
 }

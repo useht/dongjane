@@ -45,7 +45,6 @@ export class FakeNode {
   stop(): void {}
 }
 
-// Every node the engine has made since the last resetGraph, and the context it made them in.
 export const graph: { nodes: FakeNode[]; context: FakeAudioContext | null } = { nodes: [], context: null };
 
 export function resetGraph(): void {

@@ -5,7 +5,7 @@ import { AudioEngine } from "../src/audio/engine.ts";
 import { type Ambience, BEDS, type Bed, SILENCE } from "../src/audio/soundscape.ts";
 import { FakeAudioContext, type FakeNode, ambienceBus, bedGains, droplets, graph, resetGraph } from "./fake-audio.ts";
 
-// How loud each bed is at its fullest and how fast it follows its level; the sound of the world is tuned against these.
+// Pinned so that retuning a bed is a deliberate edit.
 const TUNING: Readonly<Record<Bed, { peak: number; follow: number }>> = {
   wind: { peak: 0.55, follow: 0.4 },
   sea: { peak: 0.6, follow: 0.35 },

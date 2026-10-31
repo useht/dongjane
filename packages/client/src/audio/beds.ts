@@ -21,7 +21,6 @@ export function noiseBuffer(ctx: AudioContext, seconds: number): AudioBuffer {
   return buffer;
 }
 
-// Wires a bed's looping sound into `out`, the bed's own gain.
 type Body = (ctx: AudioContext, out: AudioNode) => void;
 
 function windBody(ctx: AudioContext, out: AudioNode): void {
@@ -98,7 +97,7 @@ function seaBody(ctx: AudioContext, out: AudioNode): void {
   foamBeat.start();
 }
 
-// Rain: a bandpass hiss over a lowpass body of looped noise; the single drops fall over it (see drops.ts).
+// Rain: a bandpass hiss over a lowpass body; the single drops fall over it (drops.ts).
 function rainBody(ctx: AudioContext, out: AudioNode): void {
   const source = ctx.createBufferSource();
   source.buffer = noiseBuffer(ctx, 8);
@@ -123,7 +122,6 @@ function rainBody(ctx: AudioContext, out: AudioNode): void {
   source.start();
 }
 
-// A fire's low roar, flickering slowly under the crackle.
 function fireBody(ctx: AudioContext, out: AudioNode): void {
   const source = ctx.createBufferSource();
   source.buffer = noiseBuffer(ctx, 6);
@@ -146,7 +144,7 @@ function fireBody(ctx: AudioContext, out: AudioNode): void {
 }
 
 export interface BedSpec {
-  // the bed's gain at its full level, and how fast (seconds, as a time constant) that gain follows the level
+  // peak is the gain at level 1; follow is the time constant of the gain, in seconds
   peak: number;
   follow: number;
   body?: Body;
@@ -161,7 +159,7 @@ export const BED_SPECS: Readonly<Record<Bed, BedSpec>> = {
   water: { peak: 0.25, follow: 0.4, drops: WATER_DROPS },
 };
 
-// One ambient sound on the ambience bus; its level is kept from before audio starts, and drops are timed only while audible.
+// One ambient sound on the ambience bus; it keeps its level from before audio starts.
 export class AmbientBed {
   private ctx: AudioContext | null = null;
   private gain: GainNode | null = null;

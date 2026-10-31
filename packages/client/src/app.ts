@@ -653,7 +653,7 @@ export class App {
     this.seatOwners = perZone(() => new Map());
   }
 
-  // The sutra runs for as long as the visitor is in a live world; where they stand (see tickMix) decides what is heard.
+  // The sutra runs while the visitor is in a live world; where they stand (see tickMix) decides what is heard.
   private syncZoneSound(): void {
     const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();

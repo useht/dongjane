@@ -19,7 +19,7 @@ export const VENUE_SOUNDS: Readonly<Record<VenueId, Readonly<Partial<Record<Bed,
   casino: {},
 };
 
-// The beds out in the open air, which a concert video playing over the plaza drowns out.
+// The beds a concert video drowns out.
 const OPEN_AIR: ReadonlySet<Bed> = new Set<Bed>(["wind", "rain", "fire"]);
 
 // The casino's footprint also holds its coast road and its yard; only the floor inside is a room.
@@ -34,7 +34,7 @@ export const PLACES: readonly { readonly id: VenueId; readonly areas: readonly B
   areas: ROOMS[venue.id] ?? [venue.footprint],
 }));
 
-// The venue a point is in, over every venue (venueAt in the rules only knows the ones with seats); the open ground otherwise.
+// Unlike venueAt, which only knows the seated venues, this covers every venue.
 export function placeAt(x: number, z: number): VenueId {
   for (const place of PLACES) if (place.areas.some((area) => holds(area, x, z))) return place.id;
   return DEFAULT_ZONE;
@@ -42,7 +42,6 @@ export function placeAt(x: number, z: number): VenueId {
 
 const share = (value: number | undefined): number => (value !== undefined && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0);
 
-// Surf follows the water's distance, rain the weather, and the open air is muted under a concert video.
 export function ambienceAt(place: VenueId, x: number, z: number, weather: Weather | null, videoAudible: boolean): Ambience {
   const profile = VENUE_SOUNDS[place];
   const level = (bed: Bed): number => (videoAudible && OPEN_AIR.has(bed) ? 0 : share(profile[bed]));

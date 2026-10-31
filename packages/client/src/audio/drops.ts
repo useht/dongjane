@@ -33,7 +33,6 @@ export const RAIN_DROPS: DropProfile = {
   q: RAIN_DROP_Q,
 };
 
-// Dry wood popping in a fire: close, short and mid-high.
 export const FIRE_DROPS: DropProfile = {
   meanGap: 0.1,
   minGap: 0.012,
@@ -45,7 +44,6 @@ export const FIRE_DROPS: DropProfile = {
   q: 1.2,
 };
 
-// A drip into still water: far apart, higher and narrower, with a longer ring.
 export const WATER_DROPS: DropProfile = {
   meanGap: 1.8,
   minGap: 0.35,
@@ -57,7 +55,7 @@ export const WATER_DROPS: DropProfile = {
   q: 9,
 };
 
-// Drops are scheduled this far ahead, by a timer that fires every DROP_TICK_MS and only while the bed is above DROP_AUDIBLE_LEVEL.
+// Drops are scheduled this far ahead by a timer that runs only while the bed is audible.
 export const DROP_AHEAD_SECONDS = 0.6;
 export const DROP_TICK_MS = 250;
 export const DROP_AUDIBLE_LEVEL = 0.01;
