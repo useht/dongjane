@@ -578,10 +578,11 @@ def build_hair():
 
 JACKET_DROP = RIG["jacketDrop"]
 PELVIS_DROP = RIG["pelvisDrop"]
+HEM_ROLL = {"height": 0.030, "side": 0.022, "front": 0.022, "back": 0.040}  # the hem turns under over this height, and this far in at the sides, the front and the back (the back tucks the furthest, where the thighs are not): a bevel, so the lower edge shades into the trousers below it instead of ending in a flat shelf, and the thighs still lie inside it walking
 
 TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: a long tunic that flares from a narrow, shallow yoke under the head to its widest (1.2 H) over the lower body, so the splayed arms stay clear of it and the praying hands fit in front of the chest
-    (-JACKET_DROP, 0.198, 0.176, 2.4),
-    (-JACKET_DROP + 0.014, 0.197, 0.175, 2.4),
+    (-JACKET_DROP, 0.198 - HEM_ROLL["side"], 0.176 - HEM_ROLL["front"], 2.4),
+    (-JACKET_DROP + HEM_ROLL["height"], 0.198, 0.176, 2.4),
     (-0.150, 0.197, 0.172, 2.4),
     (-0.050, 0.188, 0.143, 2.4),
     (0.000, 0.1705, 0.1218, 2.46),  # the hinge: the chest and the skirt meet here, at the hip pivot (on the line between its neighbours)
@@ -592,6 +593,9 @@ TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: 
     (0.170, 0.086, 0.052, 2.2),
     (TORSO_H, 0.060, 0.044, 2.0),
 ]
+
+
+SKIRT_REAR = TORSO_PROFILE[1][2]  # the back wall of the tunic, the widest it runs behind the pivot: the anchor the skirt spreads forward from
 
 
 def torso_at(z):
@@ -610,7 +614,8 @@ def torso_front(x, z):
     return hd * (1 - xn**power) ** (1 / power)
 
 
-BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the skirt's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie
+BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the skirt's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie. The hem's own back tucks in further than its front
+    -JACKET_DROP: (HEM_ROLL["front"] - HEM_ROLL["back"], 2.4),
     -0.050: (0.0, 2.8),
     0.000: (0.0, 3.6),
     0.030: (0.010, 3.4),
@@ -1683,7 +1688,7 @@ def rig_dict():
         "bowSkirtFollow": RIG["bowSkirtFollow"],
         "bowSkirtSquash": RIG["bowSkirtSquash"],
         "bowSkirtSpread": RIG["bowSkirtSpread"],
-        "skirtRear": TORSO_PROFILE[0][2],
+        "skirtRear": SKIRT_REAR,
         "bowPelvisSquash": RIG["bowPelvisSquash"],
         "bowLean": POSE["bow_lean"],
         "bowHead": POSE["bow_head"],
@@ -1782,7 +1787,7 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     skirt_squash = lerp(1, RIG["bowSkirtSquash"], bow)
     skirt_spread = 1 + RIG["bowSkirtSpread"] * bow
     skirt = hips @ tmat((0, waist_down * stay - JACKET_DROP * skirt_y * (1 - skirt_squash), waist_forward * stay), (lean, 0, 0), (1, skirt_y * skirt_squash, 1))
-    skirt = skirt @ tmat((0, 0, TORSO_PROFILE[0][2] * (1 - skirt_spread)), scale=(1, 1, skirt_spread))  # spread forward from the back wall, which stays put
+    skirt = skirt @ tmat((0, 0, SKIRT_REAR * (1 - skirt_spread)), scale=(1, 1, skirt_spread))  # spread forward from the back wall, which stays put
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "skirt": [skirt], "trim": [torso], "skirtTrim": [skirt]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):

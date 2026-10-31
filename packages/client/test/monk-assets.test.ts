@@ -211,6 +211,20 @@ describe("monk assets", () => {
     expect(bounds(parts.pelvis).min.y, "the seat of the trousers reaches pelvisDrop below the hip pivot").toBeCloseTo(-monkRig.pelvisDrop, 3);
   });
 
+  it("rolls the hem under, so its lower edge is a bevel the trousers below shade into and not a flat shelf", async () => {
+    const parts = await loadParts();
+    const box = bounds(parts.skirt);
+    const position = parts.skirt.getAttribute("position");
+    const edge: Vector3[] = [];
+    for (let i = 0; i < position.count; i += 1) {
+      const v = new Vector3().fromBufferAttribute(position, i);
+      if (v.y < box.min.y + 0.002) edge.push(v);
+    }
+    expect(edge.length, "the hem has a lower ring").toBeGreaterThan(8);
+    expect(Math.max(...edge.map((v) => v.z)), "the back of the hem tucks in from the back wall").toBeLessThan(box.max.z - 0.03);
+    expect(Math.max(...edge.map((v) => Math.abs(v.x))), "the sides of the hem tuck in from the widest of the skirt").toBeLessThan(box.max.x - 0.015);
+  });
+
   it("keeps the whole monk within the triangle budget", async () => {
     const parts = await loadParts();
     let total = 0;
