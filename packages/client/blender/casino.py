@@ -32,23 +32,27 @@ class Plan:
         self.paving = k["CASINO_PAVING"]
         self.columns = k["CASINO_COLUMNS"]
         self.door = k["CASINO_DOOR"]
-        self.floor = k["CASINO_FLOOR"]
+        self.areas = k["CASINO_AREAS"]
+        self.aisle_west = k["CASINO_AISLE_WEST"]
+        self.aisle_east = k["CASINO_AISLE_EAST"]
         self.size = k["MACHINE_SIZE"]
         self.height = k["MACHINE_HEIGHT"]
         self.floor_y = k["FLOOR_Y"]
         self.paving_y = k["PAVING_Y"]
+        self.kerb = k["KERB_WIDTH"]
         self.c = {name: rgb(value) for name, value in inputs["material"].items()}
         s = self.shell
+        # The door, the sign over it and the yard's runner are all on the game's centre line.
         self.cx = (self.door["minX"] + self.door["maxX"]) / 2
-        self.half_door = (self.door["maxX"] - self.door["minX"]) / 2
-        self.mid_x = (s["minX"] + s["maxX"]) / 2
+        self.mid_x = (self.room["minX"] + self.room["maxX"]) / 2
         self.front_z = s["minZ"]
         self.inner_front = s["minZ"] + s["wall"]
         self.inner_back = s["maxZ"] - s["wall"]
-        self.lamps = [(9.75, 36.8), (16.7, 36.8), (12.8, 24.5), (12.8, 19.5), (16.7, 22.0)]
-        # The lit windows either side of the door, centred between the door's jamb and the building's corner.
-        self.windows = ((s["minX"] + self.door["minX"]) / 2, (self.door["maxX"] + s["maxX"]) / 2)
-        self.window_half, self.window_low, self.window_high = 0.8, 1.2, 3.2
+        self.posts = k["CASINO_POSTS"]
+        # The lit windows in the front wall's west pier.
+        windows = k["CASINO_WINDOWS"]
+        self.windows = windows["xs"]
+        self.window_half, self.window_low, self.window_high = windows["half"], windows["low"], windows["high"]
 
 
 def cuts(span, step=STEP):
@@ -171,7 +175,7 @@ def walls(plan):
     outer_dressing(part, plan, "+z", back, s["minX"], s["maxX"])
     inner_dressing(part, plan, "-z", inner_back, plan.room["minX"], plan.room["maxX"])
     flat(part, "+y", top, s["minX"], s["maxX"], inner_back, back, scaled(c["casinoRedDeep"], 1.1), cuts(s["maxX"] - s["minX"]), 1)
-    for x, z in plan.lamps:
+    for x, z in plan.posts:
         lamp_post(part, plan, x, z)
     return part
 
@@ -225,7 +229,7 @@ def front(plan):
     panel(part, "+z", z1, door["minX"], door["maxX"], h, cap, paper, 2, 2)
     moulding(part, "+z", z1, door["minX"], door["maxX"], s["ceilingY"] - 0.2, s["ceilingY"], 0.06, c["gilt"])
     # The parapet's top and ends, and the doorway's gold frame.
-    for x0, x1 in ((s["minX"], plan.cx - sg["halfWidth"] - 0.25), (plan.cx + sg["halfWidth"] + 0.25, s["maxX"])):
+    for x0, x1 in ((s["minX"], plan.cx - sg["halfWidth"] - sg["side"]), (plan.cx + sg["halfWidth"] + sg["side"], s["maxX"])):
         flat(part, "+y", cap, x0, x1, z0, z1, scaled(c["casinoRedDeep"], 1.1))
     panel(part, "-x", s["minX"], z0, z1, s["topY"], cap, scaled(c["casinoRed"], 0.9))
     panel(part, "+x", s["maxX"], z0, z1, s["topY"], cap, scaled(c["casinoRed"], 0.9))
@@ -233,7 +237,7 @@ def front(plan):
         block(part, (x, BOTTOM, z0 - 0.1), (x + 0.2, h + 0.2, z0), c["gilt"], "-z", "-x", "+x")
     block(part, (door["minX"] - 0.2, h, z0 - 0.1), (door["maxX"] + 0.2, h + 0.2, z0), c["gilt"], "-z", "+y", "-y")
     # The sign tower: a dark red tower with a gold frame, a tiled eave on its head.
-    half = sg["halfWidth"] + 0.25
+    half = sg["halfWidth"] + sg["side"]
     tx0, tx1 = plan.cx - half, plan.cx + half
     tower = scaled(c["casinoRedDeep"], 0.9)
     panel(part, "-z", z0, tx0, tx1, cap, tower_top, tower, cuts(tx1 - tx0), 3)
@@ -244,9 +248,9 @@ def front(plan):
         block(part, (x, cap, z0 - 0.1), (x + 0.2, tower_top, z0), c["gilt"], "-z", "-x", "+x", "+y")
     block(part, (tx0 - 0.08, tower_top - 0.16, z0 - 0.14), (tx1 + 0.08, tower_top, z0), c["gilt"], "-z", "-y", "+y", "-x", "+x")
     block(part, (tx0 - 0.08, cap - 0.01, z0 - 0.14), (tx1 + 0.08, cap + 0.16, z0), c["gilt"], "-z", "-y", "+y", "-x", "+x")
-    tiled_roof(part, plan, tx0 - 0.45, tx1 + 0.45, tower_top, plan.top, z0 - 0.7, (z0 + z1) / 2, z1 + 0.4)
-    # Window frames either side of the door; the lit glass is in casinoSign.
-    for wx in (plan.windows):
+    tiled_roof(part, plan, tx0 - sg["overhang"], tx1 + sg["overhang"], tower_top, plan.top, z0 - 0.7, (z0 + z1) / 2, z1 + 0.4)
+    # Window frames in the west pier; the lit glass is in casinoSign.
+    for wx in plan.windows:
         x0, x1 = wx - plan.window_half, wx + plan.window_half
         y0, y1 = plan.window_low, plan.window_high
         for lo, hi in (((x0 - 0.12, y0 - 0.12, z0 - 0.08), (x1 + 0.12, y0, z0)), ((x0 - 0.12, y1, z0 - 0.08), (x1 + 0.12, y1 + 0.12, z0)),
@@ -287,13 +291,15 @@ def roof(plan):
         block(part, lo, hi, c["gilt"], "+y", "-x", "+x", "+z", "-z")
     # A gilded dome on a red drum, over the middle of the room.
     dome_z = (z0 + z1) / 2
-    with part.placed(spun(plan.cx, top, dome_z)):
+    with part.placed(spun(plan.mid_x, top, dome_z)):
         part.lathe(((1.8, 0.0), (1.8, 0.45), (1.7, 0.5), (1.7, 0.52)), 16, lambda co: scaled(c["casinoRed"], 0.8 + 0.3 * smoothstep(0.0, 0.5, co.z)), cap_bottom=False)
         part.lathe(((1.86, 0.4), (1.86, 0.5), (1.7, 0.5)), 16, c["gilt"])
         dome = ((1.7, 0.52), (1.62, 0.8), (1.42, 1.18), (1.05, 1.52), (0.58, 1.78), (0.2, 1.93), (0.0, 1.97))
         part.lathe(common.smooth_profile(dome, 2), 16, lambda co: scaled(mix(c["brass"], c["gilt"], smoothstep(0.5, 1.9, co.z)), 0.85 + 0.25 * smoothstep(0.5, 1.9, co.z)))
         part.lathe(((0.05, 1.95), (0.09, 2.1), (0.05, 2.4), (0.0, 2.55)), 8, c["gilt"])
-    for vx, vz in ((7.4, 41.5), (15.2, 52.6)):
+    # Four vents, in a staggered row down either side of the dome.
+    for share_x, share_z in ((0.14, 0.1), (0.86, 0.3), (0.14, 0.7), (0.86, 0.9)):
+        vx, vz = x0 + (x1 - x0) * share_x, z0 + (z1 - z0) * share_z
         block(part, (vx - 0.5, top, vz - 0.35), (vx + 0.5, top + 0.55, vz + 0.35), scaled(c["steelDark"], 1.5), "+y", "+x", "-x", "+z", "-z")
         block(part, (vx - 0.56, top + 0.55, vz - 0.41), (vx + 0.56, top + 0.62, vz + 0.41), c["steelLight"], "+y", "+x", "-x", "+z", "-z")
     return part
@@ -301,18 +307,20 @@ def roof(plan):
 
 # ---- the inside --------------------------------------------------------------------------------------------------------------------
 BEAM_DROP, BEAM_WIDTH = 0.3, 0.32
+COFFER = 3.5  # about how big a panel of the ceiling is, between its beams
 
 
 def coffers(plan):
     """The beam lines of the ceiling (xs, zs) and the panel between each pair, as (i, j, x0, x1, z0, z1)."""
     room = plan.room
-    xs = [room["minX"] + (room["maxX"] - room["minX"]) * i / 3 for i in range(4)]
-    zs = [plan.inner_front + (plan.inner_back - plan.inner_front) * i / 5 for i in range(6)]
+    nx, nz = cuts(room["maxX"] - room["minX"], COFFER), cuts(plan.inner_back - plan.inner_front, COFFER)
+    xs = [room["minX"] + (room["maxX"] - room["minX"]) * i / nx for i in range(nx + 1)]
+    zs = [plan.inner_front + (plan.inner_back - plan.inner_front) * j / nz for j in range(nz + 1)]
     half = BEAM_WIDTH / 2
     cells = []
     for i, (xa, xb) in enumerate(zip(xs, xs[1:])):
         for j, (za, zb) in enumerate(zip(zs, zs[1:])):
-            cells.append((i, j, xa + (half if i else 0.0), xb - (half if i < 2 else 0.0), za + (half if j else 0.0), zb - (half if j < 4 else 0.0)))
+            cells.append((i, j, xa + (half if i else 0.0), xb - (half if i < nx - 1 else 0.0), za + (half if j else 0.0), zb - (half if j < nz - 1 else 0.0)))
     return xs, zs, cells
 
 
@@ -343,7 +351,7 @@ def ceiling(plan):
 
 
 def columns(plan):
-    """Two gold columns standing in gaps between the machines, floor to ceiling."""
+    """The gold columns at the corners of the floor's ring, floor to ceiling."""
     part = Part("casinoColumns", frame=GAME)
     c, s = plan.c, plan.shell
     y0, y1 = plan.floor_y, s["ceilingY"]
@@ -399,7 +407,7 @@ def sign(plan):
     half, bottom, top = sg["halfWidth"], sg["bottom"], sg["bottom"] + sg["height"]
     x0, x1 = plan.cx - half, plan.cx + half
     panel(part, "-z", z0 - 0.04, x0, x1, bottom, top, lambda co: scaled(mix(c["casinoRedDeep"], c["casinoBlack"], 0.5 + 0.5 * smoothstep(bottom, top, co.y)), 0.9), 4, 2)
-    lettering(part, "CASINO", 0.17, plan.cx, (bottom + top) / 2, z0 - 0.045, scaled(c["casinoCream"], 1.0), c["casinoNeonPink"])
+    lettering(part, "CASINO", sg["cell"], plan.cx, (bottom + top) / 2, z0 - 0.045, scaled(c["casinoCream"], 1.0), c["casinoNeonPink"])
     # A frame of gold and a ring of bulbs on its inside edge.
     for lo, hi in (((x0 - 0.12, bottom - 0.12, z0 - 0.12), (x1 + 0.12, bottom, z0 - 0.04)), ((x0 - 0.12, top, z0 - 0.12), (x1 + 0.12, top + 0.12, z0 - 0.04)),
                    ((x0 - 0.12, bottom, z0 - 0.12), (x0, top, z0 - 0.04)), ((x1, bottom, z0 - 0.12), (x1 + 0.12, top, z0 - 0.04))):
@@ -431,7 +439,7 @@ def sign(plan):
 def neon(plan):
     """What glows all the time: the ceiling's lamp discs, the cove and floor tubes, the lucky seven and the yard's lamp globes."""
     part = Part("casinoNeon", frame=GAME)
-    c, s, room, aisle = plan.c, plan.shell, plan.room, plan.floor
+    c, s, room = plan.c, plan.shell, plan.room
     y = s["ceilingY"]
     pink, cyan = c["casinoNeonPink"], c["casinoNeonCyan"]
     _, _, cells = coffers(plan)
@@ -442,18 +450,19 @@ def neon(plan):
     front, back = plan.inner_front + 0.1, plan.inner_back - 0.09
     part.tube([(room["minX"] + 0.09, cove, front), (room["minX"] + 0.09, cove, back)], [0.035, 0.035], 6, pink, smooth=False)
     part.tube([(room["maxX"] - 0.09, cove, front), (room["maxX"] - 0.09, cove, back)], [0.035, 0.035], 6, cyan, smooth=False)
-    part.tube([(room["minX"] + 0.1, cove, back), (plan.cx, cove, back)], [0.035, 0.035], 6, pink, smooth=False)
-    part.tube([(plan.cx, cove, back), (room["maxX"] - 0.1, cove, back)], [0.035, 0.035], 6, cyan, smooth=False)
-    # Low strips along the aisle's two edges, flat on the carpet.
-    for x, tint in ((aisle["minX"] - 0.05, pink), (aisle["maxX"] + 0.05, cyan)):
-        part.tube([(x, plan.floor_y + 0.03, aisle["minZ"]), (x, plan.floor_y + 0.03, aisle["maxZ"])], [0.05, 0.05], 6, tint, up=(0.0, 1.0, 0.0), flat=0.5, smooth=False)
+    part.tube([(room["minX"] + 0.1, cove, back), (plan.mid_x, cove, back)], [0.035, 0.035], 6, pink, smooth=False)
+    part.tube([(plan.mid_x, cove, back), (room["maxX"] - 0.1, cove, back)], [0.035, 0.035], 6, cyan, smooth=False)
+    # Low strips along the two edges of each aisle, flat on the carpet: pink along the west aisle, cyan along the east one.
+    for aisle, tint in ((plan.aisle_west, pink), (plan.aisle_east, cyan)):
+        for x in (aisle["minX"] - 0.05, aisle["maxX"] + 0.05):
+            part.tube([(x, plan.floor_y + 0.03, aisle["minZ"]), (x, plan.floor_y + 0.03, aisle["maxZ"])], [0.05, 0.05], 6, tint, up=(0.0, 1.0, 0.0), flat=0.5, smooth=False)
     # The lucky seven on the back wall, in pink with a cyan shadow, and a cyan frame round it.
     zb = plan.inner_back - 0.03
-    lettering(part, "7", 0.22, plan.cx, 2.7, zb, pink, cyan)
-    fx0, fx1, fy0, fy1 = plan.cx - 1.0, plan.cx + 1.0, 1.7, 3.7
+    lettering(part, "7", 0.22, plan.mid_x, 2.7, zb, pink, cyan)
+    fx0, fx1, fy0, fy1 = plan.mid_x - 1.0, plan.mid_x + 1.0, 1.7, 3.7
     part.tube([(fx0, fy0, zb), (fx0, fy1, zb), (fx1, fy1, zb), (fx1, fy0, zb)], [0.03] * 4, 6, cyan, closed=True, smooth=False)
     # The glass globes of the street lamps.
-    for x, z in plan.lamps:
+    for x, z in plan.posts:
         part.sphere((x, 2.88, z), (0.23, 0.23, 0.23), 10, 6, c["casinoCream"])
     return part
 
@@ -488,10 +497,13 @@ def yard(plan):
         flat(part, "+y", y + 0.02, x, x + 0.07, start, sill["minZ"], c["gilt"], 1, cuts(sill["minZ"] - start, 1.5))
     # The doorsill, stone through the thickness of the front wall, a little proud of the paving.
     block(part, (sill["minX"], y - 0.01, sill["minZ"]), (sill["maxX"], y + 0.03, sill["maxZ"]), scaled(c["steelLight"], 0.9), "+y", "-z", "+z")
-    kerb(part, plan, box["minX"], box["minX"] + 0.2, box["minZ"], box["maxZ"])
-    kerb(part, plan, box["maxX"] - 0.2, box["maxX"], box["minZ"], box["maxZ"])
+    k = plan.kerb
+    kerb(part, plan, box["minX"], box["minX"] + k, box["minZ"], box["maxZ"])
+    kerb(part, plan, box["maxX"] - k, box["maxX"], box["minZ"], box["maxZ"])
+    # The yard is wider than the road: a kerb along its south edge on either side of where the road comes in.
     road = plan.paving["road"]
-    kerb(part, plan, box["minX"] + 0.2, road["minX"], box["minZ"], box["minZ"] + 0.2)
+    kerb(part, plan, box["minX"] + k, road["minX"], box["minZ"], box["minZ"] + k)
+    kerb(part, plan, road["maxX"], box["maxX"] - k, box["minZ"], box["minZ"] + k)
     part.project_uv(GROUND_TILE)
     return part
 
@@ -507,16 +519,18 @@ def road(plan):
     while z + 0.9 <= box["maxZ"] - 0.5:
         flat(part, "+y", y + 0.012, middle - 0.06, middle + 0.06, z, z + 0.9, scaled(c["casinoCream"], 0.85), 1, 2)
         z += 1.8
-    kerb(part, plan, box["minX"], box["minX"] + 0.2, box["minZ"], box["maxZ"])
-    kerb(part, plan, box["maxX"] - 0.2, box["maxX"], box["minZ"], box["maxZ"])
+    kerb(part, plan, box["minX"], box["minX"] + plan.kerb, box["minZ"], box["maxZ"])
+    kerb(part, plan, box["maxX"] - plan.kerb, box["maxX"], box["minZ"], box["maxZ"])
     part.project_uv(GROUND_TILE)
     return part
 
 
 def floor(plan):
-    """The carpet: one picture, tinted rose in the aisle and darker in the bays under the machines."""
+    """The carpet: one picture, tinted rose where a visitor walks (the doorway, the lobby, the aisles and the cross room) and darker
+    in the bays under the machines. The room is cut along every edge of those, so each piece is one tint."""
     part = Part("casinoFloor", frame=GAME)
-    c, room, aisle = plan.c, plan.room, plan.floor
+    c, room = plan.c, plan.room
+    walked = [*plan.areas, plan.door]
     wear = plan.c["carpetTint"]
     bay = mix(wear, c["casinoBlack"], 0.4)
 
@@ -526,9 +540,16 @@ def floor(plan):
     def tiling(co):
         return (co.x / CARPET_TILE, co.z / CARPET_TILE)
 
-    z0, z1 = plan.inner_front, plan.inner_back
-    for x0, x1, base in ((room["minX"], aisle["minX"], bay), (aisle["minX"], aisle["maxX"], wear), (aisle["maxX"], room["maxX"], bay)):
-        flat(part, "+y", plan.floor_y, x0, x1, z0, z1, worn(base), cuts(x1 - x0, 0.75), cuts(z1 - z0, 0.75), uv=tiling)
+    def lines(low, high, edges):
+        return sorted({low, high, *(v for v in edges if low < v < high)})
+
+    xs = lines(room["minX"], room["maxX"], [v for area in walked for v in (area["minX"], area["maxX"])])
+    zs = lines(plan.inner_front, plan.inner_back, [v for area in walked for v in (area["minZ"], area["maxZ"])])
+    for x0, x1 in zip(xs, xs[1:]):
+        for z0, z1 in zip(zs, zs[1:]):
+            mx, mz = (x0 + x1) / 2, (z0 + z1) / 2
+            trodden = any(a["minX"] < mx < a["maxX"] and a["minZ"] < mz < a["maxZ"] for a in walked)
+            flat(part, "+y", plan.floor_y, x0, x1, z0, z1, worn(wear if trodden else bay), cuts(x1 - x0, 0.75), cuts(z1 - z0, 0.75), uv=tiling)
     return part
 
 

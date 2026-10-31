@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Raycaster, Vector2, Vector3 } from "three";
-import { ARRIVAL, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
+import { ARRIVAL, CASINO_AISLE_EAST, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import {
   CAMERA_CLEARANCE,
   CameraRig,
@@ -604,7 +604,7 @@ describe("default framing", () => {
 
 describe("the casino's camera", () => {
   const { bounds, limits } = casinoRegion();
-  const aisle = { x: (CASINO_FLOOR.minX + CASINO_FLOOR.maxX) / 2, z: (CASINO_FLOOR.minZ + CASINO_FLOOR.maxZ) / 2 };
+  const aisle = { x: (CASINO_AISLE_EAST.minX + CASINO_AISLE_EAST.maxX) / 2, z: (CASINO_AISLE_EAST.minZ + CASINO_AISLE_EAST.maxZ) / 2 };
   const inBox = (position: { x: number; y: number; z: number }, within: Box): boolean =>
     position.x >= within.minX && position.x <= within.maxX && position.y >= within.minY && position.y <= within.maxY && position.z >= within.minZ && position.z <= within.maxZ;
 

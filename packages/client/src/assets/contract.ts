@@ -70,13 +70,16 @@ export const BORROWS_PAVING = ["casinoYard", "coastRoad"] as const;
 export const BUDGET = {
   gatbawi: { bytes: 250_000, tris: 6_000 },
   buddha: { bytes: 750_000, tris: BUDDHA.maxTriangles },
-  world: { bytes: 2_000_000, tris: 46_000 },
+  world: { bytes: 2_100_000, tris: 46_000 },
   venue: { bytes: 450_000, tris: 25_000 },
   dharma: { bytes: 1_000_000, tris: 45_000 },
-  casino: { bytes: 800_000, tris: 25_000 },
+  // Triangles count every machine the game lays out: 44 slot cabinets, 3 roulette tables and 8 scratch kiosks are instanced, so they cost
+  // three draw calls, not 55 meshes.
+  casino: { bytes: 1_050_000, tris: 40_000 },
   // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
   monk: { bytes: 95_000 },
   // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame,
-  // and from 4_000_000 because the casino (787 kB with its two carpet pictures and 12k triangles) loads with them.
-  totalBytes: 4_800_000,
+  // and from 4_000_000 because the casino loads with them; raised again to 5_100_000 because the casino is now 29 m deep (962 kB,
+  // 16k triangles, 55 machines instanced from three prototypes) and the hillside behind it needs more terrain rows (world.glb 2.06 MB).
+  totalBytes: 5_100_000,
 } as const;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVAL, CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD, MACHINE_SPOTS, type Bounds, machineFootprint } from "@dongjane/shared";
+import { ARRIVAL, CASINO_AISLE_EAST, CASINO_AISLE_WEST, CASINO_AREAS, CASINO_CROSS, CASINO_DOOR, CASINO_FLOOR, CASINO_LINE_X, CASINO_LOBBY, CASINO_YARD, COAST_ROAD, MACHINE_SPOTS, type Bounds, machineFootprint } from "@dongjane/shared";
 import {
   CASINO_CAMERA_BOUNDS,
   CASINO_COLUMNS,
@@ -9,10 +9,12 @@ import {
   CASINO_NEAR,
   CASINO_PAD,
   CASINO_PAVING,
+  CASINO_POSTS,
   CASINO_ROOM,
   CASINO_SHELL,
   CASINO_SIGN,
   CASINO_TOP,
+  CASINO_WINDOWS,
   casinoNearness,
   distanceToBounds,
   insideBounds,
@@ -24,17 +26,24 @@ const contains = (outer: Bounds, inner: Bounds, slack = 1e-9): boolean =>
 
 describe("the casino's building", () => {
   it("surrounds the walkable floor, the machines and the room's own walls, with its door in the front wall", () => {
-    expect(contains(CASINO_ROOM, CASINO_FLOOR)).toBe(true);
+    for (const area of CASINO_AREAS) expect(contains(CASINO_ROOM, area), "a walkable area is inside the room").toBe(true);
     for (const spot of MACHINE_SPOTS) expect(contains(CASINO_ROOM, machineFootprint(spot)), spot.id).toBe(true);
     expect(CASINO_ROOM.minX).toBeCloseTo(CASINO_SHELL.minX + CASINO_SHELL.wall, 9);
     expect(CASINO_ROOM.maxZ).toBeCloseTo(CASINO_SHELL.maxZ - CASINO_SHELL.wall, 9);
     expect(CASINO_DOOR.minZ).toBe(CASINO_YARD.maxZ);
-    expect(CASINO_DOOR.maxZ).toBe(CASINO_FLOOR.minZ);
+    expect(CASINO_DOOR.maxZ).toBe(CASINO_LOBBY.minZ);
     expect(CASINO_SHELL.minZ).toBeGreaterThan(CASINO_DOOR.minZ);
     expect(CASINO_SHELL.minZ + CASINO_SHELL.wall).toBeLessThan(CASINO_DOOR.maxZ);
     expect(CASINO_DOOR.minX).toBeGreaterThan(CASINO_SHELL.minX);
     expect(CASINO_DOOR.maxX).toBeLessThan(CASINO_SHELL.maxX);
-    expect((CASINO_DOOR.minX + CASINO_DOOR.maxX) / 2, "the door is in line with the middle of the aisle").toBeCloseTo((CASINO_FLOOR.minX + CASINO_FLOOR.maxX) / 2, 9);
+    expect((CASINO_DOOR.minX + CASINO_DOOR.maxX) / 2, "the door is on the centre line the road and the yard are on").toBeCloseTo(CASINO_LINE_X, 9);
+    expect((CASINO_AISLE_EAST.minX + CASINO_AISLE_EAST.maxX) / 2, "the east aisle carries the centre line on into the room").toBeCloseTo(CASINO_LINE_X, 9);
+  });
+
+  it("lays the carpet's walkable floor out as a ring: the lobby, two aisles and the cross room, with the rows of machines between", () => {
+    expect(CASINO_AREAS).toEqual([CASINO_LOBBY, CASINO_AISLE_WEST, CASINO_CROSS, CASINO_AISLE_EAST]);
+    expect(contains(CASINO_FLOOR, CASINO_LOBBY) && contains(CASINO_FLOOR, CASINO_CROSS)).toBe(true);
+    expect(CASINO_AISLE_WEST.maxX, "an island of machines stands between the aisles").toBeLessThan(CASINO_AISLE_EAST.minX);
   });
 
   it("keeps the land it stands on west of the sea, which begins at x = 17.5", () => {
@@ -50,11 +59,39 @@ describe("the casino's building", () => {
     expect(CASINO_SIGN.halfWidth * 2).toBeLessThan(CASINO_SHELL.maxX - CASINO_SHELL.minX);
   });
 
-  it("stands the two columns in the bays, outside the aisle and inside the room", () => {
+  it("stands the sign tower over the door, with its eave inside the shell's east and west faces", () => {
+    const reach = CASINO_SIGN.halfWidth + CASINO_SIGN.side + CASINO_SIGN.overhang;
+    expect(CASINO_LINE_X - reach).toBeGreaterThanOrEqual(CASINO_SHELL.minX);
+    expect(CASINO_LINE_X + reach).toBeLessThanOrEqual(CASINO_SHELL.maxX);
+    expect(CASINO_LINE_X - CASINO_SIGN.halfWidth).toBeLessThanOrEqual(CASINO_DOOR.minX);
+    expect(CASINO_LINE_X + CASINO_SIGN.halfWidth).toBeGreaterThanOrEqual(CASINO_DOOR.maxX);
+  });
+
+  it("puts the front wall's two windows in the west pier, clear of the door's frame and of the corner", () => {
+    expect(CASINO_WINDOWS.xs).toHaveLength(2);
+    for (const x of CASINO_WINDOWS.xs) {
+      expect(x - CASINO_WINDOWS.half - 0.2).toBeGreaterThan(CASINO_SHELL.minX);
+      expect(x + CASINO_WINDOWS.half + 0.2).toBeLessThan(CASINO_DOOR.minX - 0.2);
+    }
+    const [first = 0, second = 0] = CASINO_WINDOWS.xs;
+    expect(second - first).toBeGreaterThan(CASINO_WINDOWS.half * 2 + 0.4);
+    expect(CASINO_WINDOWS.high).toBeGreaterThan(CASINO_WINDOWS.low);
+    expect(CASINO_WINDOWS.high).toBeLessThan(CASINO_SHELL.doorHeight + 0.2);
+  });
+
+  it("plants the street lamps' posts on the kerbs, clear of everything walkable", () => {
+    for (const [x, z] of CASINO_POSTS) {
+      for (const area of [COAST_ROAD, CASINO_YARD, CASINO_DOOR, ...CASINO_AREAS]) expect(distanceToBounds(area, x, z), `post at ${x}, ${z}`).toBeGreaterThanOrEqual(0.15);
+    }
+  });
+
+  it("stands the four columns in the strips of carpet beside the lobby and the cross room, off every walkable area and inside the room", () => {
+    expect(CASINO_COLUMNS).toHaveLength(4);
     for (const column of CASINO_COLUMNS) {
       expect(insideBounds(CASINO_ROOM, column.x, column.z)).toBe(true);
-      expect(insideBounds(CASINO_FLOOR, column.x, column.z)).toBe(false);
-      expect(distanceToBounds(CASINO_FLOOR, column.x, column.z)).toBeGreaterThan(column.radius);
+      for (const area of CASINO_AREAS) expect(distanceToBounds(area, column.x, column.z), `column at ${column.x}, ${column.z}`).toBeGreaterThan(column.radius);
+      expect(column.x - column.radius).toBeGreaterThan(CASINO_ROOM.minX);
+      expect(column.x + column.radius).toBeLessThan(CASINO_ROOM.maxX);
     }
   });
 
@@ -63,6 +100,8 @@ describe("the casino's building", () => {
       expect(insideBounds(CASINO_ROOM, x, z), `lamp at ${x}, ${z}`).toBe(true);
       expect(y).toBeLessThan(CASINO_SHELL.ceilingY);
     }
+    expect(CASINO_LAMPS.pink.every(([x]) => x >= CASINO_AISLE_WEST.minX && x <= CASINO_AISLE_WEST.maxX), "the pink neon hangs over the west aisle").toBe(true);
+    expect(CASINO_LAMPS.cyan.every(([x]) => x >= CASINO_AISLE_EAST.minX && x <= CASINO_AISLE_EAST.maxX), "the cyan neon hangs over the east aisle").toBe(true);
     for (const [x, y, z] of CASINO_LAMPS.sign) {
       expect(z, "the sign's lamp stands in front of the wall").toBeLessThan(CASINO_SHELL.minZ);
       expect(y).toBeGreaterThan(CASINO_SHELL.topY);
@@ -81,7 +120,7 @@ describe("the casino's pad and paving", () => {
 
   it("reaches over the road, the yard and the walls, and so over everything a visitor walks on out there", () => {
     // The doorway runs from the yard into the walls, so it is covered by two of the boxes together: every point is tried.
-    for (const area of [COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR]) {
+    for (const area of [COAST_ROAD, CASINO_YARD, CASINO_DOOR, ...CASINO_AREAS]) {
       for (let i = 0; i <= 10; i += 1) {
         for (let j = 0; j <= 10; j += 1) {
           const x = area.minX + ((area.maxX - area.minX) * i) / 10;
@@ -144,7 +183,7 @@ describe("insideBounds and distanceToBounds", () => {
 
 describe("casinoNearness", () => {
   it("is 1 inside the walls and within the full distance of them, and 0 beyond the far one", () => {
-    expect(casinoNearness((CASINO_FLOOR.minX + CASINO_FLOOR.maxX) / 2, (CASINO_FLOOR.minZ + CASINO_FLOOR.maxZ) / 2)).toBe(1);
+    expect(casinoNearness((CASINO_AISLE_EAST.minX + CASINO_AISLE_EAST.maxX) / 2, (CASINO_AISLE_EAST.minZ + CASINO_AISLE_EAST.maxZ) / 2)).toBe(1);
     expect(casinoNearness(CASINO_SHELL.minX, CASINO_SHELL.minZ)).toBe(1);
     expect(casinoNearness(11.25, CASINO_SHELL.minZ - CASINO_NEAR.full)).toBe(1);
     expect(casinoNearness(11.25, CASINO_SHELL.minZ - CASINO_NEAR.none)).toBe(0);
