@@ -1,4 +1,5 @@
 import { schema, t, type SchemaType } from "@colyseus/schema";
+import { DEFAULT_ZONE } from "./venues/index.ts";
 
 export const Monk = schema(
   {
@@ -27,10 +28,10 @@ export const Monk = schema(
 );
 export type Monk = SchemaType<typeof Monk>;
 
-// One seat of one zone; the state keeps one entry per seat, keyed "gatbawi:12".
+// One seat of one zone; the state keeps one entry per seat, keyed "<zone>:<id>" (seatKey).
 export const Seat = schema(
   {
-    zone: t.string().default("gatbawi"),
+    zone: t.string().default(DEFAULT_ZONE),
     id: t.uint8().default(0),
     occupantId: t.string().default(""),
   },

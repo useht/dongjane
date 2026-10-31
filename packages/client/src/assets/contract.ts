@@ -57,6 +57,12 @@ export const CASINO_MESHES = [
 // Authored at the origin, centred on their footprint with the front toward -z; the runtime instances them at the machine spots.
 export const CASINO_PROTOTYPES = ["slotCabinet", "rouletteTable", "scratchKiosk"] as const;
 
+// The venues south of the plaza are one kit: each is its own glb under models/venues/, built by blender/venue_kit.py from a spec of
+// pieces, and loaded after the first frame. A kit holds any of these meshes (at least one), in world coordinates; "seat" is drawn once
+// per seat, authored at the origin facing -z, and its colours are what the seats show before anyone sits on them.
+export const KIT_MESHES = ["floor", "shell", "roof", "glow", "water", "seat"] as const;
+export const KIT_PROTOTYPES = ["seat"] as const;
+
 // Carry TEXCOORD_0 and a texture; every other mesh carries COLOR_0 instead.
 export const TEXTURED = ["buddha", "ground", "steps", "rocks", "mat", "casinoFloor"] as const;
 
@@ -79,6 +85,9 @@ export const BUDGET = {
   // which come to 36_804 drawn with the 55 machines (the 44 cabinets alone are 18_832). Raised from 800_000 bytes and 25_000 triangles
   // to fit that; 25_000 drawn would need cabinets of about 160 triangles at most instead of 428.
   casino: { bytes: 1_050_000, tris: 37_000 },
+  // One venue kit: loaded when the client is already running, so these are not part of totalBytes. Measured now: the bathhouse is
+  // 197_612 bytes and 2_544 triangles (the 40 mats are instanced, so each is drawn but stored once), the street 58_532 bytes.
+  kit: { bytes: 220_000, tris: 3_000 },
   // The monk is the Korean monk main ships (assets/monk/monk.glb, built by its own script); main.ts loads it before the first frame.
   monk: { bytes: 95_000 },
   // The sum of the actual file sizes of every glb and the monk; raised from 3_000_000 because the room is now part of the first frame,

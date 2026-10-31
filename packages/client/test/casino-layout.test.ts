@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVAL, CASINO_AISLE_EAST, CASINO_AISLE_WEST, CASINO_AREAS, CASINO_CROSS, CASINO_DOOR, CASINO_FLOOR, CASINO_LINE_X, CASINO_LOBBY, CASINO_YARD, COAST_ROAD, MACHINE_SPOTS, type Bounds, machineFootprint } from "@dongjane/shared";
+import { ARRIVAL, CASINO_AISLE_EAST, CASINO_AISLE_WEST, CASINO_AREAS, CASINO_CROSS, CASINO_DOOR, CASINO_FLOOR, CASINO_LINE_X, CASINO_LOBBY, CASINO_YARD, COAST_ROAD, MACHINE_SPOTS, VENUES, type Bounds, machineFootprint } from "@dongjane/shared";
 import {
   CASINO_CAMERA_BOUNDS,
   CASINO_COLUMNS,
@@ -82,6 +82,16 @@ describe("the casino's building", () => {
   it("plants the street lamps' posts on the kerbs, clear of everything walkable", () => {
     for (const [x, z] of CASINO_POSTS) {
       for (const area of [COAST_ROAD, CASINO_YARD, CASINO_DOOR, ...CASINO_AREAS]) expect(distanceToBounds(area, x, z), `post at ${x}, ${z}`).toBeGreaterThanOrEqual(0.15);
+    }
+  });
+
+  it("keeps every post, crown and globe, off the ground a visitor can walk in any venue, the avenue's south-east corner included", () => {
+    // The widest part of a post is its crown, 0.24 across from the middle.
+    const crown = 0.24;
+    for (const [x, z] of CASINO_POSTS) {
+      for (const venue of VENUES) {
+        for (const area of venue.areas) expect(distanceToBounds(area, x, z), `post at ${x}, ${z} and ${venue.id}`).toBeGreaterThanOrEqual(crown);
+      }
     }
   });
 

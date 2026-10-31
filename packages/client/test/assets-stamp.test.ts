@@ -2,6 +2,7 @@ import { statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SOURCE_DIR, assetInputs, buddhaSource } from "../scripts/asset-inputs.ts";
 import { fileHash, inputsHash, modelHashes, readStamp } from "../scripts/asset-stamp.ts";
+import { KIT_IDS } from "../src/game/kits/index.ts";
 
 // The .glb files are build outputs: this fails when a script or game constant changed without
 // `pnpm assets` being re-run, or when a model was edited by hand.
@@ -14,6 +15,14 @@ describe("asset stamp", () => {
 
   it("matches the model files on disk", () => {
     expect(stamp.outputs, "run `pnpm assets`").toEqual(modelHashes());
+  });
+
+  it("covers the venues' models under venues/, one per kit, and sends their pieces to the build", () => {
+    for (const id of KIT_IDS) {
+      expect(Object.keys(stamp.outputs), `venues/${id}.glb is stamped`).toContain(`venues/${id}.glb`);
+      expect(Object.keys(assetInputs().venues), id).toContain(id);
+    }
+    expect(Object.keys(stamp.outputs).filter((file) => file.startsWith("venues/")).sort()).toEqual([...KIT_IDS].map((id) => `venues/${id}.glb`).sort());
   });
 
   it("records the Blender that built them", () => {

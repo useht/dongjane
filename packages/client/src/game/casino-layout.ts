@@ -5,6 +5,7 @@
 // Metres, the game's frame: Y up, +Z toward the viewer. The front of the building faces -z, toward the plaza.
 
 import {
+  AVENUE,
   CASINO_AISLE_EAST,
   CASINO_AISLE_WEST,
   CASINO_CROSS,
@@ -84,13 +85,14 @@ export const CASINO_PAVING = {
   sill: { minX: CASINO_DOOR.minX, maxX: CASINO_DOOR.maxX, minZ: CASINO_SHELL.minZ, maxZ: CASINO_ROOM.minZ },
 } as const;
 
-// The street lamps' posts, as [x, z]: on the kerbs of the yard's two sides and of the road, clear of everything walkable.
+// The street lamps' posts, as [x, z]: on the kerbs of the yard's two sides and of the road, clear of everything walkable. The road's
+// first post stands just south of the avenue, whose south-east corner the road's kerb runs through.
 const POST_MID = KERB_WIDTH / 2;
 export const CASINO_POSTS: readonly (readonly [number, number])[] = [
   [CASINO_PAVING.yard.minX + POST_MID, CASINO_SHELL.minZ - 1.8],
   [CASINO_PAVING.yard.maxX - POST_MID, CASINO_SHELL.minZ - 1.8],
   [CASINO_PAVING.road.minX + POST_MID, 24.5],
-  [CASINO_PAVING.road.minX + POST_MID, 19.5],
+  [CASINO_PAVING.road.minX + POST_MID, AVENUE.maxZ + 0.5],
   [CASINO_PAVING.road.maxX - POST_MID, 22],
 ];
 

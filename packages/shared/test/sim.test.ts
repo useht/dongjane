@@ -23,13 +23,12 @@ import {
   DHARMA_SEAT_SIZE,
   GATBAWI_SEATS,
   SEAT_COUNT,
-  SEAT_YAWS,
   SHORE,
   WORLD_BOUNDS,
-  type Zone,
 } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
-import { COURT_AREA, DOORWAY_AREA, INTERIOR_AREA, resolveWalkable, zoneAt } from "../src/walk.ts";
+import { SEAT_YAWS, ZONES, ZONE_SEATS, type Zone } from "../src/venues/index.ts";
+import { COURT_AREA, DOORWAY_AREA, INTERIOR_AREA, resolveWalkable, venueAt } from "../src/walk.ts";
 
 const T0 = 1_800_000_000_000;
 const PLAZA_SPOT = { x: 0, z: 14 };
@@ -75,14 +74,14 @@ beforeEach(() => {
 
 describe("join and movement", () => {
   it("creates a hundred free seats and spawns monks standing inside the 법당, facing the altar", () => {
-    expect(h.sim.state.seats.size).toBe(2 * SEAT_COUNT);
+    expect(h.sim.state.seats.size).toBe(ZONES.reduce((total, zone) => total + ZONE_SEATS[zone].length, 0));
     expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId === "")).toBe(true);
     expect(h.sim.state.seats.get("gatbawi:49")?.zone).toBe("gatbawi");
     expect(h.sim.state.seats.get("dharma:0")?.zone).toBe("dharma");
     h.sim.join("a", 120);
     const a = h.monk("a");
     expect(a.mode).toBe("stand");
-    expect(zoneAt(a.x, a.z)).toBe("dharma");
+    expect(venueAt(a.x, a.z)).toBe("dharma");
     expect(a.x).toBe(ARRIVAL.x);
     expect(a.z).toBe(ARRIVAL.z);
     expect(a.x).toBeGreaterThan(DHARMA_BOUNDS.minX);
@@ -213,7 +212,7 @@ describe("seats", () => {
     expect(monk.mode).toBe("kneel");
     expect(monk.x).toBeCloseTo(spot.x, 4);
     expect(monk.z).toBeCloseTo(spot.z, 4);
-    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    expect(venueAt(monk.x, monk.z)).toBe("dharma");
     expect(monk.yaw).toBeCloseTo(Math.PI / 2, 5);
     // yaw is atan2(-dx, -dz), so the monk looks along (-sin yaw, -cos yaw): toward -x, at the altar.
     expect(-Math.sin(monk.yaw)).toBeCloseTo(-1, 5);
@@ -236,12 +235,14 @@ describe("seats", () => {
         expect(monk.yaw).toBeCloseTo(SEAT_YAWS[zone], 5);
         expect(monk.x).toBeCloseTo(spot.x, 4);
         expect(monk.z).toBeCloseTo(spot.z, 4);
-        expect(zoneAt(monk.x, monk.z)).toBe(zone);
+        expect(venueAt(monk.x, monk.z)).toBe(zone);
         expect(h.mat(monk.seatId, zone).occupantId).toBe(monk.id);
       }
     }
     expect(h.sim.state.monks.size).toBe(WORLD_CAPACITY);
-    expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId !== "")).toBe(true);
+    const mats = [...h.sim.state.seats.values()].filter((seat) => seat.zone === "gatbawi" || seat.zone === "dharma");
+    expect(mats).toHaveLength(2 * ZONE_CAPACITY);
+    expect(mats.every((seat) => seat.occupantId !== "")).toBe(true);
     expect(new Set(Array.from(h.sim.state.monks.values(), (monk) => monk.slot)).size).toBe(WORLD_CAPACITY);
   });
 
@@ -265,14 +266,14 @@ describe("seats", () => {
 
   it("lets a monk ask for a seat in the other zone from wherever they stand", () => {
     h.sim.join("a", 0);
-    expect(zoneAt(h.monk("a").x, h.monk("a").z)).toBe("dharma");
+    expect(venueAt(h.monk("a").x, h.monk("a").z)).toBe("dharma");
     expect(h.sim.sit("a", "gatbawi", 3)).toBe(true);
     expect(h.mat(3).occupantId).toBe("a");
     expect(h.monk("a").seatId).toBe(3);
     expect(h.monk("a").mode).toBe("walk");
     h.advance(40_000);
     expect(h.monk("a").mode).toBe("kneel");
-    expect(zoneAt(h.monk("a").x, h.monk("a").z)).toBe("gatbawi");
+    expect(venueAt(h.monk("a").x, h.monk("a").z)).toBe("gatbawi");
     expect(h.monk("a").x).toBeCloseTo(GATBAWI_SEATS[3]!.x, 4);
     expect(h.monk("a").z).toBeCloseTo(GATBAWI_SEATS[3]!.z, 4);
 
@@ -283,7 +284,7 @@ describe("seats", () => {
     expect(h.monk("a").mode).toBe("walk");
     h.advance(40_000);
     expect(h.monk("a").mode).toBe("kneel");
-    expect(zoneAt(h.monk("a").x, h.monk("a").z)).toBe("dharma");
+    expect(venueAt(h.monk("a").x, h.monk("a").z)).toBe("dharma");
     expect(h.monk("a").x).toBeCloseTo(DHARMA_SEATS[3]!.x, 4);
     expect(h.monk("a").z).toBeCloseTo(DHARMA_SEATS[3]!.z, 4);
   });
@@ -914,7 +915,7 @@ describe("seat numbers", () => {
 });
 
 describe("one world", () => {
-  const where = (id: string): Zone => zoneAt(h.monk(id).x, h.monk(id).z);
+  const where = (id: string): Zone => venueAt(h.monk(id).x, h.monk(id).z);
 
   it("brings every visitor in inside the 법당", () => {
     h.sim.join("a", 0);
@@ -929,7 +930,7 @@ describe("one world", () => {
     for (const draw of [0, 0.5, 0.999]) {
       const sim = new TempleSim({ clock: () => h.now, random: () => draw });
       const monk = sim.join("a", 0);
-      expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+      expect(venueAt(monk.x, monk.z)).toBe("dharma");
       const solid = resolveWalkable(monk.x, monk.z);
       expect(Math.hypot(solid.x - monk.x, solid.z - monk.z)).toBeLessThan(1e-9);
       for (const seat of DHARMA_SEATS) {
@@ -1003,7 +1004,7 @@ describe("one world", () => {
     const npcs = [...sim.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(NPC_COUNT);
     for (const npc of npcs) {
-      expect(zoneAt(npc.x, npc.z)).toBe("dharma");
+      expect(venueAt(npc.x, npc.z)).toBe("dharma");
       expect(npc.x).toBeGreaterThanOrEqual(INTERIOR_AREA.minX);
       expect(npc.x).toBeLessThanOrEqual(INTERIOR_AREA.maxX);
       expect(npc.z).toBeGreaterThanOrEqual(INTERIOR_AREA.minZ);

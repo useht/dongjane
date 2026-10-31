@@ -34,8 +34,9 @@ import {
   resolveNearby,
   resolveWalkable,
   slideWalkable,
-  zoneAt,
+  venueAt,
 } from "../src/walk.ts";
+import { AVENUE } from "../src/venues/street.ts";
 
 const CHAIN = [
   INTERIOR_AREA,
@@ -128,18 +129,18 @@ describe("walkable areas", () => {
   });
 });
 
-describe("zoneAt", () => {
+describe("venueAt", () => {
   it("is the 법당 only inside its walls", () => {
-    expect(zoneAt(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe("dharma");
-    expect(zoneAt(DHARMA_BOUNDS.minX, DHARMA_BOUNDS.minZ)).toBe("dharma");
-    expect(zoneAt(DHARMA_BOUNDS.maxX + 0.5, DHARMA_ORIGIN.z)).toBe("gatbawi");
-    expect(zoneAt(COURT_AREA.minX + 1, DHARMA_ORIGIN.z)).toBe("gatbawi");
-    expect(zoneAt(0, 14)).toBe("gatbawi");
-    expect(zoneAt(-100, -100)).toBe("gatbawi");
+    expect(venueAt(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe("dharma");
+    expect(venueAt(DHARMA_BOUNDS.minX, DHARMA_BOUNDS.minZ)).toBe("dharma");
+    expect(venueAt(DHARMA_BOUNDS.maxX + 0.5, DHARMA_ORIGIN.z)).toBe("gatbawi");
+    expect(venueAt(COURT_AREA.minX + 1, DHARMA_ORIGIN.z)).toBe("gatbawi");
+    expect(venueAt(0, 14)).toBe("gatbawi");
+    expect(venueAt(-100, -100)).toBe("gatbawi");
   });
 
   it("forgives the float32 rounding of a monk standing on a wall line", () => {
-    expect(zoneAt(Math.fround(DHARMA_BOUNDS.maxX), Math.fround(DHARMA_BOUNDS.maxZ))).toBe("dharma");
+    expect(venueAt(Math.fround(DHARMA_BOUNDS.maxX), Math.fround(DHARMA_BOUNDS.maxZ))).toBe("dharma");
   });
 });
 
@@ -342,8 +343,8 @@ describe("planPath", () => {
 describe("the shore", () => {
   it("is the link of the chain beyond the plaza's east edge", () => {
     expect(CHAIN[CHAIN.indexOf(PLAZA_AREA) + 1]).toBe(SHORE);
-    expect(zoneAt(SHORE.minX + 1, 5)).toBe("gatbawi");
-    expect(zoneAt(SEA_LINE_X - 0.5, 5)).toBe("gatbawi");
+    expect(venueAt(SHORE.minX + 1, 5)).toBe("gatbawi");
+    expect(venueAt(SEA_LINE_X - 0.5, 5)).toBe("gatbawi");
   });
 
   it("walks from the plaza onto the sand in one straight line", () => {
@@ -408,7 +409,7 @@ describe("slideWalkable", () => {
   it("goes in through the doorway and out again", () => {
     const inside = slideWalkable({ x: COURT_AREA.minX + 0.5, z: DHARMA_ORIGIN.z }, -3, 0);
     expect(inside.x).toBeCloseTo(COURT_AREA.minX + 0.5 - 3, 6);
-    expect(zoneAt(inside.x, inside.z)).toBe("dharma");
+    expect(venueAt(inside.x, inside.z)).toBe("dharma");
     const out = slideWalkable(inside, 3, 0);
     expect(out.x).toBeCloseTo(inside.x + 3, 6);
   });
@@ -585,15 +586,22 @@ describe("the casino", () => {
   });
 
   it("stops a keyboard walker at the shore's south edge beside the road and lets one down the road itself", () => {
-    const blocked = slideWalkable({ x: COAST_ROAD.minX - 0.2, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 1);
-    expect(blocked.x).toBeCloseTo(COAST_ROAD.minX - 0.2, 6);
+    const blocked = slideWalkable({ x: COAST_ROAD.maxX + 0.2, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 1);
+    expect(blocked.x).toBeCloseTo(COAST_ROAD.maxX + 0.2, 6);
     expect(blocked.z).toBeCloseTo(WORLD_BOUNDS.maxZ, 6);
     const down = slideWalkable({ x: COAST_ROAD.minX + 0.5, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 4);
     expect(down.z).toBeCloseTo(WORLD_BOUNDS.maxZ + 3.7, 6);
   });
 
+  it("lets a keyboard walker off the plaza's south edge onto the avenue, and no further than the avenue", () => {
+    const onto = slideWalkable({ x: 0, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 2);
+    expect(onto.z).toBeCloseTo(WORLD_BOUNDS.maxZ + 1.7, 6);
+    const stopped = slideWalkable({ x: -28, z: AVENUE.maxZ - 0.3 }, 0, 2);
+    expect(stopped.z).toBeCloseTo(AVENUE.maxZ, 6);
+  });
+
   it("keeps the casino a part of the open ground for zones, and only the lobby, aisles and cross room count as inside it", () => {
-    expect(zoneAt(CASINO_FLOOR.minX + 1, CASINO_FLOOR.minZ + 1)).toBe("gatbawi");
+    expect(venueAt(CASINO_FLOOR.minX + 1, CASINO_FLOOR.minZ + 1)).toBe("gatbawi");
     expect(insideCasino(CASINO_LINE_X, 50)).toBe(true);
     expect(insideCasino(8.8, 50)).toBe(true);
     expect(insideCasino(11.4, CASINO_LOBBY.maxZ - 0.1)).toBe(true);

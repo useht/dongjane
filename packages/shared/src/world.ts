@@ -1,4 +1,4 @@
-import type { Zone } from "./layout.ts";
+import type { Zone } from "./venues/index.ts";
 
 export interface WorldInfo {
   world: number;

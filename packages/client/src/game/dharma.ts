@@ -31,7 +31,7 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { DHARMA_ORIGIN, DHARMA_YAW, SEAT_COUNT, ZONE_SEATS, worldToDharma } from "@dongjane/shared";
+import { DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, SEAT_COUNT, worldToDharma } from "@dongjane/shared";
 import { type ModelMeshes, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, FLAME_HEIGHT, hangingLanterns } from "./dharma-layout.ts";
@@ -285,7 +285,7 @@ export class DharmaScene {
     seats.name = "seats";
     const m = new Matrix4();
     // In the room's frame every seat faces the altar at -z without a turn of its own; the group's turn carries it to -x.
-    for (const spot of ZONE_SEATS.dharma) {
+    for (const spot of DHARMA_SEATS) {
       const place = worldToDharma(spot.x, spot.z);
       m.makeTranslation(place.x, 0, place.z);
       seats.setMatrixAt(spot.id, m);

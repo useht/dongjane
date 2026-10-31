@@ -1,4 +1,4 @@
-import { ARRIVAL, DHARMA_SEATS, SEA_LINE_X, SHORE, WORLD_BOUNDS, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, DHARMA_SEATS, SEA_LINE_X, SHORE, WORLD_BOUNDS, venueAt } from "@dongjane/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AudioEngine, SEA_FOLLOW_SECONDS, SEA_PEAK_GAIN } from "../src/audio/engine.ts";
 import { SEA_FADE_METRES, SEA_FULL_METRES, seaLevel } from "../src/audio/sea-level.ts";
@@ -38,7 +38,7 @@ describe("seaLevel", () => {
   });
 
   it("is zero inside the 법당, wherever the walker is in it", () => {
-    expect(zoneAt(ARRIVAL.x, ARRIVAL.z)).toBe("dharma");
+    expect(venueAt(ARRIVAL.x, ARRIVAL.z)).toBe("dharma");
     expect(seaLevel(ARRIVAL.x, ARRIVAL.z)).toBe(0);
     for (const seat of DHARMA_SEATS) expect(seaLevel(seat.x, seat.z)).toBe(0);
   });

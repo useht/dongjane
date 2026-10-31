@@ -32,9 +32,11 @@ import {
   Vector3,
   type WebGLRenderer,
 } from "three";
-import { GATBAWI_SEATS, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEAT_YAWS, SEA_LINE_X, SHORE } from "@dongjane/shared";
+import { GATBAWI_SEATS, GATBAWI_VENUE, GATBAWI_Z, PLATFORM, SEAT_COUNT, SEA_LINE_X, SHORE } from "@dongjane/shared";
 import { type ModelMeshes, headOf, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
+import { KIT_PADS, PAD_HEIGHT } from "./kits/index.ts";
+import { levelGround } from "./ground-pads.ts";
 import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
@@ -274,7 +276,7 @@ export class Landscape {
 
     const statue = this.buildStatue(gatbawi, buddha.buddha, world.rocks, anisotropy);
     this.group.add(statue);
-    const ground = this.add(this.derived(world.ground, carveGround(world.ground.geometry)), this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
+    const ground = this.add(this.derived(world.ground, levelGround(carveGround(world.ground.geometry), KIT_PADS, PAD_HEIGHT)), this.surface(world.ground, anisotropy, LIFT.ground), { receive: true });
     const steps = this.add(world.steps, this.surface(world.steps, anisotropy, LIFT.stone), { cast: true, receive: true });
     const rocks = this.add(this.derived(world.rocks, withoutEastHillside(world.rocks.geometry)), this.surface(world.rocks, anisotropy, LIFT.stone), { cast: true, receive: true });
     const pine = this.add(this.derived(world.pine, withoutEastHillside(world.pine.geometry)), new MeshLambertMaterial({ vertexColors: true }), { cast: true });
@@ -443,7 +445,7 @@ export class Landscape {
     mats.name = "mats";
     const m = new Matrix4();
     for (const spot of GATBAWI_SEATS) {
-      m.makeRotationY(SEAT_YAWS.gatbawi).setPosition(spot.x, 0, spot.z);
+      m.makeRotationY(GATBAWI_VENUE.seats.yaw).setPosition(spot.x, 0, spot.z);
       mats.setMatrixAt(spot.id, m);
     }
     return mats;

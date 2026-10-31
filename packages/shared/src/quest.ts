@@ -1,5 +1,5 @@
 import { KST_OFFSET_MS } from "./constants.ts";
-import { SEAT_NAMES, ZONES, ZONE_NAMES, ZONE_SEATS, type Zone, seatSpot } from "./layout.ts";
+import { QUEST_ZONES, SEAT_NAMES, ZONE_NAMES, ZONE_SEATS, type Zone, seatSpot } from "./venues/index.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOCATION_TARGETS = [3, 5] as const;
@@ -49,7 +49,7 @@ function pick<T>(random: () => number, options: readonly T[]): T {
 
 export function dailyQuests(day: number): Quest[] {
   const random = mulberry32(day);
-  const zone = pick(random, ZONES);
+  const zone = pick(random, QUEST_ZONES);
   const place: QuestPlace = { zone, row: Math.floor(random() * rowCount(zone)) };
   const locationTarget = pick(random, LOCATION_TARGETS);
   const anywhereTarget = pick(random, ANYWHERE_TARGETS);

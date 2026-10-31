@@ -3,6 +3,7 @@ export * from "./emote.ts";
 export * from "./item.ts";
 export * from "./fish.ts";
 export * from "./layout.ts";
+export * from "./venues/index.ts";
 export * from "./walk.ts";
 export * from "./casino-layout.ts";
 export * from "./casino/index.ts";

@@ -3,6 +3,7 @@ import {
   type SkyPeriod,
   type SkyState,
   type Weather,
+  DEFAULT_ZONE,
   SEAT_NAMES,
   ZONE_NAMES,
   chantEndsAt,
@@ -12,17 +13,30 @@ import {
 } from "@dongjane/shared";
 import type { IconName } from "./icons.ts";
 
-// 갓바위 has 돗자리 and the 법당 has 방석; the particle follows the last sound of the word.
+// 갓바위 has 돗자리 and the 법당 has 방석; the particle follows the last sound of the word: 으로 after a final consonant, 로 after
+// a vowel or a final ㄹ.
+const HANGUL_FIRST = 0xac00;
+const HANGUL_LAST = 0xd7a3;
+const FINAL_RIEUL = 8;
+
+function toward(word: string): string {
+  const last = word.codePointAt(word.length - 1) ?? 0;
+  const final = last >= HANGUL_FIRST && last <= HANGUL_LAST ? (last - HANGUL_FIRST) % 28 : 0;
+  return final === 0 || final === FINAL_RIEUL ? `${word}로` : `${word}으로`;
+}
+
+const zoneOf = (zone: string): keyof typeof ZONE_NAMES => (isZone(zone) ? zone : DEFAULT_ZONE);
+
 export function seatName(zone: string): string {
-  return SEAT_NAMES[isZone(zone) ? zone : "gatbawi"];
+  return SEAT_NAMES[zoneOf(zone)];
 }
 
 export function seatDirection(zone: string): string {
-  return isZone(zone) && zone === "dharma" ? `${SEAT_NAMES.dharma}으로` : `${SEAT_NAMES.gatbawi}로`;
+  return toward(seatName(zone));
 }
 
 export function zoneName(zone: string): string {
-  return ZONE_NAMES[isZone(zone) ? zone : "gatbawi"];
+  return ZONE_NAMES[zoneOf(zone)];
 }
 
 export function modeLabel(mode: string, seatId: number, zone: string): string {

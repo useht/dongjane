@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ARRIVAL, WORLD_CAPACITY, ZONE_CAPACITY, ZONES, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, WORLD_CAPACITY, ZONE_CAPACITY, ZONES, venueAt } from "@dongjane/shared";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
@@ -29,18 +29,18 @@ describe("a hundred visitors", () => {
     expect(everyone).toHaveLength(WORLD_CAPACITY);
     for (const room of everyone) {
       const monk = room.state.monks.get(room.sessionId)!;
-      expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+      expect(venueAt(monk.x, monk.z)).toBe("dharma");
       expect(Math.abs(monk.x - ARRIVAL.x)).toBeLessThanOrEqual(ARRIVAL.spread);
     }
 
     const world = await eventually(() => rig.world(1), (info) => info.clients === WORLD_CAPACITY, "world 1 holds a hundred", 5000);
     expect(world.full).toBe(true);
-    expect(world.zones).toEqual({ gatbawi: 0, dharma: WORLD_CAPACITY });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: WORLD_CAPACITY, bathhouse: 0, church: 0, bonfire: 0 });
 
     const late = await rig.arrive(null);
     expect(late.seat.world).toBe(2);
     const second = await eventually(() => rig.world(2), (info) => info.clients === 1, "world 2 counts the 101st", 3000);
-    expect(second.zones).toEqual({ gatbawi: 0, dharma: 1 });
+    expect(second.zones).toEqual({ gatbawi: 0, dharma: 1, bathhouse: 0, church: 0, bonfire: 0 });
 
     const watcher = everyone[0]!;
     await waitFor(() => humansIn(watcher).length === WORLD_CAPACITY, "the watcher sees everyone", 5000);
@@ -71,7 +71,7 @@ describe("a hundred visitors", () => {
     expect(holders.size).toBe(WORLD_CAPACITY);
 
     const world = await eventually(() => rig.world(1), (info) => info.zones.dharma === ZONE_CAPACITY, "fifty counted indoors", 5000);
-    expect(world.zones).toEqual({ gatbawi: ZONE_CAPACITY, dharma: ZONE_CAPACITY });
+    expect(world.zones).toEqual({ gatbawi: ZONE_CAPACITY, dharma: ZONE_CAPACITY, bathhouse: 0, church: 0, bonfire: 0 });
   }, 90_000);
 
   it("never double-books a seat when a hundred visitors sit at once", async () => {
