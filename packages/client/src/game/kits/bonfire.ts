@@ -1,4 +1,4 @@
-import { AVENUE, BONFIRE_BACK_Z, BONFIRE_FIRE, BONFIRE_PIT, BONFIRE_PIT_HALF, BONFIRE_PLACE_PITCH, BONFIRE_ROOMS, type Bounds, SEAT_TOPS, SLOT_B1 } from "@dongjane/shared";
+import { AVENUE, BENCH_HIPS_BACK, BONFIRE_BACK_Z, BONFIRE_FIRE, BONFIRE_PIT, BONFIRE_PIT_HALF, BONFIRE_PLACE_PITCH, BONFIRE_ROOMS, type Bounds, SEAT_TOPS, SLOT_B1 } from "@dongjane/shared";
 import { THEME } from "../../theme.ts";
 import type { KitCamera, KitLook, KitPiece, KitSpec } from "./kit.ts";
 import { box } from "./walled.ts";
@@ -13,9 +13,9 @@ const BASE = -0.3;
 const ASH_RING = 0.6;
 const LANTERN_TOP = 2.6;
 
-// A place on a log, authored at the origin facing -z: one piece of the trunk, as long as the places are apart, so that the four places
-// of a log make one log. Its top is where a seated monk rests.
-export const LOG_PLACE = { length: BONFIRE_PLACE_PITCH, radius: 0.2 } as const;
+// A place on a log, authored facing -z with the place at the origin: one piece of the trunk, as long as the places are apart, so that the
+// four places of a log make one log. Its top is where a seated monk rests, and the monk sits with its hips that far behind the place, on the log.
+export const LOG_PLACE = { length: BONFIRE_PLACE_PITCH, radius: 0.15, behind: BENCH_HIPS_BACK } as const;
 
 // The hillside rises to the south and the west of the clearing, up to four metres at the corner, so the clearing is cut into it and
 // held back by a dry-stone wall. Each stretch of wall is as high as the ground behind it (the heights of world.glb's ground there)
@@ -181,11 +181,12 @@ function boulders(): KitPiece[] {
   }));
 }
 
-// The trunk piece a visitor sits on, authored at the origin facing -z.
+// The trunk piece a visitor sits on, authored facing -z with the place at the origin and the log behind it.
 function trunk(): KitPiece[] {
   const half = LOG_PLACE.length / 2;
   const middle = SEAT_TOPS.bonfire - LOG_PLACE.radius;
-  return [{ shape: "cylinder", from: [-half, middle, 0], to: [half, middle, 0], radius: LOG_PLACE.radius, sides: 12, paint: c.logBark }];
+  const z = LOG_PLACE.behind;
+  return [{ shape: "cylinder", from: [-half, middle, z], to: [half, middle, z], radius: LOG_PLACE.radius, sides: 12, paint: c.logBark }];
 }
 
 const LOOK: KitLook = {

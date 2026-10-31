@@ -4,14 +4,18 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import {
   AVENUE,
+  BENCH_HIPS_BACK,
   BONFIRE_BACK_Z,
   BONFIRE_FIRE,
+  BONFIRE_LOGS,
   BONFIRE_PIT,
   BONFIRE_ROOMS,
   BONFIRE_SEATS,
   type Bounds,
   CHURCH_CANDLES,
   CHURCH_PEWS,
+  CHURCH_ROOMS,
+  CHURCH_ROWS,
   SEAT_TOPS,
   SEAT_YAWS,
   SLOT_A1,
@@ -25,7 +29,7 @@ import {
 import { BUDGET, KIT_MESHES, KIT_PROTOTYPES } from "../src/assets/contract.ts";
 import { REST_MAT } from "../src/game/kits/bathhouse.ts";
 import { LOG_PLACE } from "../src/game/kits/bonfire.ts";
-import { KNEELER } from "../src/game/kits/church.ts";
+import { CHAIR } from "../src/game/kits/church.ts";
 import { KITS, KIT_IDS, KIT_PADS, type KitPiece, type KitSpec, kitById, meshNames } from "../src/game/kits/index.ts";
 import { type KitLook, PAD_HEIGHT } from "../src/game/kits/kit.ts";
 import { VenueLights, VenueScene, flicker } from "../src/game/venue-scene.ts";
@@ -96,10 +100,11 @@ function floorsOf(spec: KitSpec): Array<Extract<KitPiece, { shape: "floor" }>> {
   return (spec.meshes.floor ?? []).filter((piece): piece is Extract<KitPiece, { shape: "floor" }> => piece.shape === "floor");
 }
 
-// The venues that are a building with a door on the avenue, their slots and the pad a visitor kneels on in each.
+// The venues that are a building with a door on the avenue, their slots and the seat a visitor sits on in each: its size, how far
+// behind the place its middle is, and how far a back rises above its top.
 const BUILDINGS = [
-  { id: "bathhouse", slot: SLOT_A1, pad: REST_MAT, signature: "plaster" },
-  { id: "church", slot: SLOT_A2, pad: KNEELER, signature: "brick" },
+  { id: "bathhouse", slot: SLOT_A1, pad: { ...REST_MAT, behind: 0, back: 0 }, signature: "plaster" },
+  { id: "church", slot: SLOT_A2, pad: CHAIR, signature: "brick" },
 ] as const;
 
 const within = (box: Bounds, x: number, z: number): boolean => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
@@ -260,22 +265,27 @@ describe.each(BUILDINGS)("the $id kit against the shared layout", ({ id, slot, p
     }
   });
 
-  it("draws the pad the layout seats, at the seat's height, inside the area it kneels in", () => {
-    const seat = extentOf(extentPieces(spec, "seat"));
+  it("draws the seat the layout seats, at the seat's height, inside the area it sits in", () => {
+    const pieces = extentPieces(spec, "seat");
+    const seat = extentOf(pieces);
     expect(seat.minX).toBeCloseTo(-size.width / 2, 6);
     expect(seat.maxX).toBeCloseTo(size.width / 2, 6);
-    expect(seat.minZ).toBeCloseTo(-size.depth / 2, 6);
-    expect(seat.maxZ).toBeCloseTo(size.depth / 2, 6);
-    expect(seat.maxY, "the top of the pad is where a seated monk rests").toBeCloseTo(SEAT_TOPS[id], 6);
+    expect(seat.minZ).toBeCloseTo(size.behind - size.depth / 2, 6);
+    expect(seat.maxZ).toBeCloseTo(size.behind + size.depth / 2, 6);
+    expect(seat.maxY, "a back rises above the seat, the rest are as high as it").toBeCloseTo(SEAT_TOPS[id] + size.back, 6);
+    expect(
+      pieces.some((piece) => piece.shape === "box" && Math.abs(piece.max[1] - SEAT_TOPS[id]) < 1e-6 && piece.max[0] - piece.min[0] > size.width / 2),
+      "the top of the seat is where a seated monk rests",
+    ).toBe(true);
     const yaw = SEAT_YAWS[id];
     const [halfX, halfZ] = [Math.abs(Math.cos(yaw)) * size.width / 2 + Math.abs(Math.sin(yaw)) * size.depth / 2, Math.abs(Math.sin(yaw)) * size.width / 2 + Math.abs(Math.cos(yaw)) * size.depth / 2];
-    const pads = ZONE_SEATS[id];
+    const pads = ZONE_SEATS[id].map((spot) => ({ id: spot.id, x: spot.x + Math.sin(yaw) * size.behind, z: spot.z + Math.cos(yaw) * size.behind }));
     expect(pads.length).toBeLessThanOrEqual(40);
     for (const pad of pads) {
-      expect(venue.areas.some((area) => pad.x - halfX >= area.minX - 1e-6 && pad.x + halfX <= area.maxX + 1e-6 && pad.z - halfZ >= area.minZ - 1e-6 && pad.z + halfZ <= area.maxZ + 1e-6), `pad ${pad.id} lies inside one area`).toBe(true);
+      expect(venue.areas.some((area) => pad.x - halfX >= area.minX - 1e-6 && pad.x + halfX <= area.maxX + 1e-6 && pad.z - halfZ >= area.minZ - 1e-6 && pad.z + halfZ <= area.maxZ + 1e-6), `seat ${pad.id} lies inside one area`).toBe(true);
       for (const other of pads.filter((candidate) => candidate.id > pad.id)) {
         const apart = Math.abs(pad.x - other.x) >= 2 * halfX - 1e-6 || Math.abs(pad.z - other.z) >= 2 * halfZ - 1e-6;
-        expect(apart, `pads ${pad.id} and ${other.id} do not overlap`).toBe(true);
+        expect(apart, `seats ${pad.id} and ${other.id} do not overlap`).toBe(true);
       }
     }
   });
@@ -323,13 +333,54 @@ describe("the church kit's furnishings", () => {
   const spec = kitById("church") as KitSpec;
   const boxes = (name: keyof KitSpec["meshes"]): Array<Extract<KitPiece, { shape: "box" }>> => extentPieces(spec, name).filter((piece): piece is Extract<KitPiece, { shape: "box" }> => piece.shape === "box");
 
-  it("sets a bench in front of every strip a visitor kneels on, over the bench's whole length", () => {
+  it("sets a bench in front of every strip a visitor sits in, over the bench's whole length", () => {
     const shell = boxes("shell");
     for (const pew of CHURCH_PEWS) {
       const here = shell.filter((piece) => piece.min[2] >= pew.bench.minZ - 1e-6 && piece.max[2] <= pew.bench.maxZ + 1e-6 && piece.min[0] >= pew.bench.minX - 1e-6 && piece.max[0] <= pew.bench.maxX + 1e-6 && piece.max[1] > 0.7);
       expect(here.length, `pew ${pew.row} ${pew.side}`).toBeGreaterThan(0);
       expect(Math.min(...here.map((piece) => piece.min[0])), `pew ${pew.row} ${pew.side} starts at its bench's end`).toBeCloseTo(pew.bench.minX, 6);
       expect(Math.max(...here.map((piece) => piece.max[0])), `pew ${pew.row} ${pew.side} runs to its bench's end`).toBeCloseTo(pew.bench.maxX, 6);
+    }
+  });
+
+  it("lowers the benches to the height of a pew's back, with a ledge for a book on the side of the monk behind it", () => {
+    for (const pew of CHURCH_PEWS) {
+      const here = boxes("shell").filter((piece) => piece.min[2] >= pew.bench.minZ - 1e-6 && piece.max[2] <= pew.bench.maxZ + 1e-6 && piece.min[0] >= pew.bench.minX - 1e-6 && piece.max[0] <= pew.bench.maxX + 1e-6);
+      const back = Math.max(...here.filter((piece) => piece.max[1] < 0.9).map((piece) => piece.max[1]));
+      expect(back, `pew ${pew.row} ${pew.side}'s back`).toBeGreaterThan(0.7);
+      expect(back, `pew ${pew.row} ${pew.side}'s back is lower than a standing monk's hips`).toBeLessThan(0.75);
+      const ledge = here.find((piece) => piece.max[1] > 0.5 && piece.max[1] < 0.65 && piece.min[2] <= pew.bench.minZ + 1e-6);
+      expect(ledge, `pew ${pew.row} ${pew.side} has a ledge on its near face`).toBeDefined();
+    }
+  });
+
+  it("closes the last row with a bench of its own in the gap between its strips and the narthex", () => {
+    const gap = { minZ: CHURCH_ROOMS.narthex.maxZ, maxZ: Math.min(...CHURCH_PEWS.map((pew) => pew.strip.minZ)) };
+    expect(gap.maxZ - gap.minZ).toBeGreaterThan(0.3);
+    for (const pew of CHURCH_PEWS.filter((candidate) => candidate.row === CHURCH_ROWS - 1)) {
+      const here = boxes("shell").filter((piece) => piece.min[2] >= gap.minZ - 1e-6 && piece.max[2] <= gap.maxZ + 1e-6 && piece.max[1] > 0.7 && piece.min[0] >= pew.strip.minX - 1e-6 && piece.max[0] <= pew.strip.maxX + 1e-6);
+      expect(here.length, `behind pew ${pew.row} ${pew.side}`).toBeGreaterThan(0);
+      expect(Math.min(...here.map((piece) => piece.min[0]))).toBeCloseTo(pew.strip.minX, 6);
+      expect(Math.max(...here.map((piece) => piece.max[0]))).toBeCloseTo(pew.strip.maxX, 6);
+    }
+  });
+
+  it("seats every visitor half a chair's depth in front of the chair's place, the chair in the strip against the bench behind it", () => {
+    const seats = ZONE_SEATS.church;
+    expect(seats).toHaveLength(40);
+    expect(Math.abs(SEAT_YAWS.church), "the seats face the altar").toBeCloseTo(Math.PI, 6);
+    for (const spot of seats) {
+      const strip = CHURCH_PEWS.find((pew) => pew.row === spot.row && (spot.x < (SLOT_A2.minX + SLOT_A2.maxX) / 2 ? "west" : "east") === pew.side)?.strip;
+      expect(strip, `seat ${spot.id} has a strip`).toBeDefined();
+      if (!strip) continue;
+      const front = spot.z;
+      const rear = spot.z - CHAIR.depth;
+      const hips = spot.z - BENCH_HIPS_BACK;
+      expect(hips, `seat ${spot.id}'s hips are over the middle of the chair`).toBeCloseTo((front + rear) / 2, 2);
+      expect(rear, `seat ${spot.id}'s chair stands against the bench behind its strip`).toBeCloseTo(strip.minZ, 2);
+      expect(front, `seat ${spot.id}'s chair is inside its strip`).toBeLessThanOrEqual(strip.maxZ);
+      expect(spot.x - CHAIR.width / 2, `seat ${spot.id}`).toBeGreaterThanOrEqual(strip.minX);
+      expect(spot.x + CHAIR.width / 2, `seat ${spot.id}`).toBeLessThanOrEqual(strip.maxX);
     }
   });
 
@@ -557,15 +608,15 @@ describe.each(BUILDINGS)("venues/$id.glb's seat", ({ id, pad }) => {
   const glb = loadGlb(new URL(`venues/${id}.glb`, MODELS));
   const seat = rootNodes(glb).find((node) => node.name === "seat");
 
-  it("is authored at the origin, as large as the layout seats, with its top at the seat's height", () => {
+  it("is authored at the place, as large as the layout seats, with its top at the seat's height and its middle behind the place", () => {
     expect(seat).toBeDefined();
     if (!seat) return;
     const { min, max } = seat.positions;
     expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs((min[2] + max[2]) / 2)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs((min[2] + max[2]) / 2 - pad.behind)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs(max[0] - min[0] - pad.width)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs(max[2] - min[2] - pad.depth)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[1] - SEAT_TOPS[id])).toBeLessThanOrEqual(0.005);
+    expect(Math.abs(max[1] - SEAT_TOPS[id] - pad.back)).toBeLessThanOrEqual(0.005);
     expect(min[1]).toBeGreaterThanOrEqual(-0.01);
   });
 });
@@ -751,14 +802,14 @@ describe("the bonfire kit against the shared layout", () => {
     expect(sampled).toBeGreaterThan(1000);
   });
 
-  it("draws a log's place at the origin, as long as the places are apart and as thick as a log, its top where a seated monk rests", () => {
+  it("draws a log's place behind the origin, where the hips sit, as long as the places are apart and as thick as a log, its top where a seated monk rests", () => {
     const pieces = extentPieces(spec, "seat");
     expect(pieces).toHaveLength(1);
     const trunk = pieces[0] as KitPiece;
     expect(trunk.shape).toBe("cylinder");
     if (trunk.shape !== "cylinder") return;
-    expect(trunk.from).toEqual([-LOG_PLACE.length / 2, trunk.from[1], 0]);
-    expect(trunk.to).toEqual([LOG_PLACE.length / 2, trunk.from[1], 0]);
+    expect(trunk.from).toEqual([-LOG_PLACE.length / 2, trunk.from[1], LOG_PLACE.behind]);
+    expect(trunk.to).toEqual([LOG_PLACE.length / 2, trunk.from[1], LOG_PLACE.behind]);
     expect(trunk.radius).toBe(LOG_PLACE.radius);
     expect(trunk.from[1] + trunk.radius, "the top of the log is where a seated monk rests").toBeCloseTo(SEAT_TOPS.bonfire, 6);
     expect(trunk.from[1] - trunk.radius, "the log sinks a hand into the earth, no more").toBeGreaterThanOrEqual(-0.06);
@@ -767,12 +818,13 @@ describe("the bonfire kit against the shared layout", () => {
     if (!node) return;
     const { min, max } = node.positions;
     expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs((min[2] + max[2]) / 2)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs((min[2] + max[2]) / 2 - LOG_PLACE.behind)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs(max[0] - min[0] - LOG_PLACE.length)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs(max[2] - min[2] - 2 * LOG_PLACE.radius)).toBeLessThanOrEqual(TOLERANCE);
     // A twelve-sided trunk is a little lower than a round one where a facet, not a corner, is on top.
     expect(Math.abs(max[1] - SEAT_TOPS.bonfire)).toBeLessThanOrEqual(LOG_PLACE.radius * (1 - Math.cos(Math.PI / 12)) + 0.005);
-    expect(min[1]).toBeGreaterThanOrEqual(-0.06);
+    // The model keeps float32 positions, and the log sinks exactly as far as the limit.
+    expect(min[1]).toBeGreaterThanOrEqual(-0.06 - 1e-6);
   });
 
   it("lays every place whole on ground a visitor walks, turned to the fire", () => {
@@ -780,7 +832,7 @@ describe("the bonfire kit against the shared layout", () => {
     for (const spot of BONFIRE_SEATS) {
       const yaw = seatYaw("bonfire", spot.id);
       for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
-        const [lx, lz] = [(sx * LOG_PLACE.length) / 2, sz * LOG_PLACE.radius];
+        const [lx, lz] = [(sx * LOG_PLACE.length) / 2, LOG_PLACE.behind + sz * LOG_PLACE.radius];
         const x = spot.x + lx * Math.cos(yaw) + lz * Math.sin(yaw);
         const z = spot.z - lx * Math.sin(yaw) + lz * Math.cos(yaw);
         expect(
@@ -788,6 +840,22 @@ describe("the bonfire kit against the shared layout", () => {
           `seat ${spot.id}'s corner ${sx},${sz} at ${x.toFixed(2)}, ${z.toFixed(2)}`,
         ).toBe(true);
       }
+    }
+  });
+
+  it("lays every log under its monks' hips: the hips are behind the place, on the log's axis", () => {
+    for (const spot of BONFIRE_SEATS) {
+      const log = BONFIRE_LOGS[spot.row] as (typeof BONFIRE_LOGS)[number];
+      const yaw = seatYaw("bonfire", spot.id);
+      // the monk faces local -z, which the yaw turns to (-sin, -cos); its hips are behind that
+      const hips = { x: spot.x + Math.sin(yaw) * BENCH_HIPS_BACK, z: spot.z + Math.cos(yaw) * BENCH_HIPS_BACK };
+      const [ax, az] = [log.to.x - log.from.x, log.to.z - log.from.z];
+      const length = Math.hypot(ax, az);
+      const off = Math.abs(((hips.x - log.from.x) * az - (hips.z - log.from.z) * ax) / length);
+      expect(off, `seat ${spot.id}'s hips are ${off.toFixed(3)} from the log's axis`).toBeLessThan(LOG_PLACE.radius / 2);
+      const along = ((hips.x - log.from.x) * ax + (hips.z - log.from.z) * az) / length;
+      expect(along, `seat ${spot.id}`).toBeGreaterThan(0);
+      expect(along, `seat ${spot.id}`).toBeLessThan(length);
     }
   });
 

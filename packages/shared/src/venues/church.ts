@@ -6,17 +6,19 @@ import { type ActivitySpot, defineVenue } from "./types.ts";
 
 // 교회 (slot A2, 14 × 14): a nave of five rows of pews on each side of a carpeted aisle, an altar on a dais at the far end and
 // racks of votive candles in front of it, behind one door on the avenue side. The walls are only drawn: the rooms are inset by
-// their thickness, and the door is a narrow area through the north wall. Visitors kneel on the floor of a pew, so each pew is
-// a strip of floor that opens onto the aisle, with the bench in front of it left out of the walkable ground. Measured in
-// metres from the slot's middle (u east, v south): the shell is ±7, the rooms ±6.6.
+// their thickness, and the door is a narrow area through the north wall. Visitors sit on a chair in a pew, so each pew is a
+// strip of floor that opens onto the aisle, with the bench in front of it left out of the walkable ground: the bench is the back
+// of the pew ahead. Measured in metres from the slot's middle (u east, v south): the shell is ±7, the rooms ±6.6.
 const HALF = 7 - WALL;
 export const CHURCH_AISLE = 1;
 export const CHURCH_PEW_OUT = 5.9;
 export const CHURCH_ROWS = 5;
 export const CHURCH_SEATS_PER_SIDE = 4;
-// A pew is the strip a visitor kneels on and the bench in front of it; the first strip starts clear of the narthex so no strip touches it.
+// A pew is the strip a visitor sits in and the bench in front of it; the first strip starts clear of the narthex so no strip touches it.
 export const CHURCH_STRIP = 0.95;
 export const CHURCH_BENCH = 0.45;
+// A chair stands in the back of its strip, against the bench behind it, as wide and as deep as this; a visitor sits on its front edge.
+export const CHURCH_CHAIR = { width: 0.42, depth: 0.4 } as const;
 const NAVE_START = -4.7;
 const NAVE_END = NAVE_START + CHURCH_ROWS * (CHURCH_STRIP + CHURCH_BENCH);
 const NARTHEX_END = -5.1;
@@ -37,7 +39,7 @@ export interface Pew {
   // 0 is the front pew, nearest the altar
   readonly row: number;
   readonly side: "west" | "east";
-  // the strip of floor a visitor kneels on
+  // the strip of floor a visitor's chair stands on
   readonly strip: Bounds;
   // the bench in front of the strip, which is not walkable
   readonly bench: Bounds;
@@ -58,15 +60,17 @@ export const CHURCH_AREAS: readonly Bounds[] = [...Object.values(CHURCH_ROOMS), 
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
-// Four places to a side in each strip, the first beside the aisle, all facing the altar (+z).
+// Four places to a side in each strip, the first beside the aisle, all facing the altar (+z). The place is the front edge of the
+// chair, which stands in the back of the strip; the monk sits half a chair's depth behind it.
 const KNEEL_START = 1.6;
 const KNEEL_PITCH = 1.1;
 const MIDDLE_X = (SLOT_A2.minX + SLOT_A2.maxX) / 2;
 const MIDDLE_Z = (SLOT_A2.minZ + SLOT_A2.maxZ) / 2;
-const FRONT_Z = (CHURCH_PEWS[0] as Pew).strip.minZ + CHURCH_STRIP / 2;
+const chairZ = (row: number): number => round((CHURCH_PEWS[row * 2] as Pew).strip.minZ + CHURCH_CHAIR.depth);
+const FRONT_Z = chairZ(0);
 
 function seatsOf(row: number): SeatSpot[] {
-  const z = round(((CHURCH_PEWS[row * 2] as Pew).strip.minZ + (CHURCH_PEWS[row * 2] as Pew).strip.maxZ) / 2);
+  const z = chairZ(row);
   return Array.from({ length: CHURCH_SEATS_PER_SIDE * 2 }, (_, column) => {
     const side = column < CHURCH_SEATS_PER_SIDE ? -1 : 1;
     const place = column < CHURCH_SEATS_PER_SIDE ? CHURCH_SEATS_PER_SIDE - 1 - column : column - CHURCH_SEATS_PER_SIDE;
@@ -105,7 +109,7 @@ export const CHURCH_VENUE = defineVenue({
     // The rows are counted from the front pew, and the middle of a row is the aisle.
     depth: (spot) => FRONT_Z - spot.z,
     offset: (spot) => Math.abs(spot.x - MIDDLE_X),
-    top: 0.1,
+    top: 0.22,
     pose: "bench",
   },
   activities: CHURCH_CANDLES,
