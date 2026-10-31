@@ -22,7 +22,7 @@ export const ROD_POSE = {
   elevation: 0.8,
 } as const;
 
-const ROD_GRIP_Y = -0.04;
+const ROD_GRIP_Y = -0.016;
 const ROD_BUTT = 0.2;
 const ROD_GRIP_END = 0.12;
 const ROD_REACH = 1.2;
