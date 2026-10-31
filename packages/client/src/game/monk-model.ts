@@ -12,7 +12,9 @@ export const BODY_PART_NAMES = [
   "hair",
   "pelvis",
   "torso",
+  "skirt",
   "trim",
+  "skirtTrim",
   "sleeveUpper",
   "sleeveLower",
   "hand",
@@ -32,7 +34,9 @@ const PART_COPIES: Record<PartName, number> = {
   hair: 1,
   pelvis: 1,
   torso: 1,
+  skirt: 1,
   trim: 1,
+  skirtTrim: 1,
   sleeveUpper: 2,
   sleeveLower: 2,
   hand: 2,
@@ -46,8 +50,8 @@ const PART_COPIES: Record<PartName, number> = {
   bobber: 1,
 };
 
-// The jacket (torso, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
-export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "trousers", "sleeveUpper", "sleeveLower"]);
+// The jacket (chest, skirt, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
+export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "skirt", "trousers", "sleeveUpper", "sleeveLower"]);
 
 // Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
 // so the model and the animation always agree. Only pose angles and walk timing live in animate().
@@ -66,12 +70,17 @@ const FOOT_KNEEL_Y = rig.footKneelY;
 const FOOT_KNEEL_TILT = rig.footKneelTilt;
 const LEG_KNEEL_LIFT = rig.legKneelLift;
 const LEG_TOP_DROP = rig.legTopDrop;
+const LEG_KNEEL_TOP_DROP = rig.legKneelTopDrop;
+const LEG_KNEEL_TOP_FORWARD = rig.legKneelTopForward;
+const LEG_KNEEL_FLAT = rig.legKneelFlat;
 const LEG_LENGTH = rig.legLength;
 const KNEEL_PELVIS_GROW = rig.kneelPelvisGrow;
 const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
 const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
 const BOW_HIP_FORWARD = rig.bowHipForward;
 const BOW_SEAT_BACK = rig.bowSeatBack;
+const BOW_SKIRT_SHARE = rig.bowSkirtShare;
+const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
 // The lift of a kneeling monk on a 방석; on a 돗자리 it is less.
@@ -135,6 +144,7 @@ export class MonkAvatar {
   private readonly hips = new Object3D();
   private readonly pelvisNode = new Object3D();
   private readonly torsoNode = new Object3D();
+  private readonly skirtNode = new Object3D();
   private readonly headNode = new Object3D();
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
@@ -164,7 +174,7 @@ export class MonkAvatar {
     this.isSelf = isSelf;
 
     this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
-    this.hips.add(this.pelvisNode, this.torsoNode);
+    this.hips.add(this.pelvisNode, this.torsoNode, this.skirtNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
@@ -194,7 +204,9 @@ export class MonkAvatar {
     bind("hair", this.headNode);
     bind("pelvis", this.pelvisNode);
     bind("torso", this.torsoNode);
+    bind("skirt", this.skirtNode);
     bind("trim", this.torsoNode);
+    bind("skirtTrim", this.skirtNode);
     for (let side = 0; side < 2; side += 1) {
       bind("sleeveUpper", this.shoulders[side] as Object3D, side);
       bind("sleeveLower", this.elbows[side] as Object3D, side);
@@ -269,8 +281,15 @@ export class MonkAvatar {
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    this.torsoNode.rotation.x = -0.05 * walk - 1.648 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
-    this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
+    // The jacket bends at the hip pivot: the chest bows with the torso, and the skirt below it follows only part of the way (and, kneeling,
+    // is gathered a little), so the back is a curve from the hip to the neck, not one rigid wedge that swings the hem up behind.
+    const lean = -0.05 * walk + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
+    const sway = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
+    this.torsoNode.rotation.x = lean - 1.648 * depth;
+    this.torsoNode.rotation.z = sway;
+    this.skirtNode.rotation.x = lean - 1.648 * BOW_SKIRT_SHARE * depth;
+    this.skirtNode.rotation.z = sway;
+    this.skirtNode.scale.y = 1 + (KNEEL_SKIRT_SCALE - 1) * kneel;
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
@@ -320,15 +339,17 @@ export class MonkAvatar {
       foot.rotation.x = kneel * FOOT_KNEEL_TILT;
 
       // The leg (and the trouser leg hung on it) hangs from a pivot inside the pelvis and is stretched to the ankle, so it follows
-      // strides, bobbing and the folded kneel.
+      // strides, bobbing and the folded kneel. Kneeling, the pivot sits low and forward so the thigh runs flat under the skirt to a knee
+      // in front of the hip, and the shin folds back from it, flattened, to the ankle.
       const leg = this.legs[side] as Object3D;
-      const topY = this.hips.position.y - LEG_TOP_DROP;
+      const topY = this.hips.position.y - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * kneel);
       const reachY = foot.position.y + LEG_KNEEL_LIFT * kneel - topY;
-      const topZ = this.hips.position.z - stride * WALK_HIP_SHIFT;
+      const walkTopZ = this.hips.position.z - stride * WALK_HIP_SHIFT;
+      const topZ = walkTopZ + (-LEG_KNEEL_TOP_FORWARD - walkTopZ) * kneel;
       const reachZ = foot.position.z - topZ;
       leg.position.set(sign * FOOT_X, topY, topZ);
       leg.rotation.x = Math.atan2(-reachZ, -reachY);
-      leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
+      leg.scale.set(1, Math.hypot(reachY, reachZ) / LEG_LENGTH, 1 + (LEG_KNEEL_FLAT - 1) * kneel);
     }
 
     // Fished, the rod rises toward the sea; otherwise it is carried leaning forward, and folded away while kneeling.
