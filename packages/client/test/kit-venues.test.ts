@@ -1016,6 +1016,7 @@ describe("the street at night", () => {
     const model = await loadVenueKit(bonfire, diskLoader(() => scene).loader);
     const view = new VenueScene(bonfire, model, new Texture());
     expect(view.group.getObjectByName("night-lamps")).toBeUndefined();
+    expect(view.group.getObjectByName("lamps")).toBeUndefined();
     expect(() => view.setNight(1)).not.toThrow();
     view.dispose();
     model.dispose();

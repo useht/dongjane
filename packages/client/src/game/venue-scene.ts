@@ -37,7 +37,7 @@ export class VenueScene {
 
   private readonly roof: Mesh | undefined;
   private readonly seats: InstancedMesh | undefined;
-  private readonly lampGlass: MeshLambertMaterial;
+  private readonly lampGlass: MeshLambertMaterial | undefined;
   private readonly nightLamps: NightLamps | undefined;
   private readonly materials: Material[] = [];
   private readonly tint = new Color();
@@ -53,8 +53,10 @@ export class VenueScene {
     const shell = this.add(meshes.shell, lit());
     this.roof = this.add(meshes.roof, lit());
     this.add(meshes.glow, this.keep(vertexGlowMaterial(THEME.material.paper, PANE_GLOW)));
-    this.lampGlass = this.keep(vertexGlowMaterial(THEME.material.paper, nightGlow(STREET_LAMP_GLOW, 0)));
-    this.add(meshes.lamps, this.lampGlass);
+    if (meshes.lamps) {
+      this.lampGlass = this.keep(vertexGlowMaterial(THEME.material.paper, nightGlow(STREET_LAMP_GLOW, 0)));
+      this.add(meshes.lamps, this.lampGlass);
+    }
     const water = this.add(meshes.water, this.keep(new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: WATER_OPACITY, depthWrite: false })));
 
     if (spec.nightLamps) {
@@ -129,7 +131,7 @@ export class VenueScene {
 
   // How dark it is in the open, 0 to 1 (0 by day and wherever the camera is indoors): the lamp globes shine and their halos come up.
   setNight(share: number): void {
-    this.lampGlass.emissiveIntensity = nightGlow(STREET_LAMP_GLOW, share);
+    if (this.lampGlass) this.lampGlass.emissiveIntensity = nightGlow(STREET_LAMP_GLOW, share);
     this.nightLamps?.setNight(share);
   }
 

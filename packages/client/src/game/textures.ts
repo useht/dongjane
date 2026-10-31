@@ -60,7 +60,7 @@ export function flameGlowTexture(): CanvasTexture {
 let lampHalo: CanvasTexture | undefined;
 
 // A soft round glow, white and bright at its middle and gone at its rim, that every night lamp tints and draws additively: as a halo
-// round its globe and as the pool of light on the ground under it. It is made once and shared, so its owner disposes it, not a lamp.
+// round its globe and as the pool of light on the ground under it. Memoised for good: `World.dispose` releases its GPU copy, and a later use uploads it again.
 export function lampHaloTexture(): CanvasTexture {
   if (lampHalo) return lampHalo;
   const [canvas, ctx] = makeCanvas(128, 128);

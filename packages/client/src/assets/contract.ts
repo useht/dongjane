@@ -60,7 +60,7 @@ export const CASINO_PROTOTYPES = ["slotCabinet", "rouletteTable", "scratchKiosk"
 // The venues south of the plaza are one kit: each is its own glb under models/venues/, built by blender/venue_kit.py from a spec of
 // pieces, and loaded after the first frame. A kit holds any of these meshes (at least one), in world coordinates; "seat" is drawn once
 // per seat, authored at the origin facing -z, and its colours are what the seats show before anyone sits on them. "glow" is lit at
-// all hours (windows, flames); "lamps" are the street lamps' globes, which are lit only at night.
+// all hours (windows, flames); "lamps" are the street lamps' globes, which are lit mostly at night.
 export const KIT_MESHES = ["floor", "shell", "roof", "glow", "lamps", "water", "seat"] as const;
 export const KIT_PROTOTYPES = ["seat"] as const;
 
