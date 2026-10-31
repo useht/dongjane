@@ -31,10 +31,10 @@ describe("BowWatcher", () => {
     expect(report.greeters).toEqual([]);
   });
 
-  it("flags the local monk's own bow without greeting itself", () => {
+  it("does not greet the local monk's own bow", () => {
     const watch = new BowWatcher();
     watch.update([monk("me", "kneel")], "me", 0);
-    expect(watch.update([monk("me", "bow")], "me", 100)).toEqual({ selfStarted: true, greeters: [] });
+    expect(watch.update([monk("me", "bow")], "me", 100)).toEqual({ greeters: [] });
   });
 
   it("spaces out several greetings arriving together", () => {

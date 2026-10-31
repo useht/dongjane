@@ -582,7 +582,6 @@ export class App {
     this.syncWorldCount(rows.length, counts);
 
     const report = this.bowWatch.update(watched, selfId, now);
-    if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 
