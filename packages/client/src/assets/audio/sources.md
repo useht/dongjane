@@ -1,6 +1,6 @@
 # Audio sources
 
-The game ships two recordings of its own world, `sutra.mp3`, the chant recording, and `mokt.mp3`, the 목탁 strike (see below), and three short casino sounds (see the end of this file). `sutra.mp3` is a Korean Buddhist chant (염불) with 목탁 strikes, looped under the 법당 roof and heard faintly from the court in front of it.
+The game ships two recordings of its own world, `sutra.mp3`, the chant recording, and `mokt.mp3`, the 목탁 strike (see below), and three short casino sounds (see the end of this file). `sutra.mp3` is a Korean Buddhist chant (염불) with 목탁 strikes, looped under the 법당 roof and heard only inside the 법당.
 
 - Work: 「염불소리1」, 공유마당 (한국저작권위원회).
 - Page: https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?wrtSn=13254274&menuNo=200020

@@ -20,8 +20,8 @@ export function aimAhead(target: number, durationSeconds: number): number {
   return durationSeconds > 0 ? (target + SEEK_LOOKAHEAD_SECONDS) % durationSeconds : target;
 }
 
-// The two soundtracks run all the time and only their loudness changes with where the visitor stands: 1 is the sutra
-// alone, 0 the concert alone. It is 0.5 in the doorway, 1 from DEEP_METRES inside, and back to 0 OUTSIDE_METRES out.
+// Both soundtracks run all the time and only their loudness changes with where the visitor stands. areaMix is 1 for the
+// sutra alone, 0 for the concert alone: 0.5 in the doorway, 1 from DEEP_METRES inside, 0 from OUTSIDE_METRES out.
 export const DEEP_METRES = 3;
 export const OUTSIDE_METRES = 6;
 
@@ -32,13 +32,21 @@ function unit(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+function isInsideRoom(x: number, z: number): boolean {
+  return x >= DHARMA_BOUNDS.minX && x <= DOORWAY.x && z >= DHARMA_BOUNDS.minZ && z <= DHARMA_BOUNDS.maxZ;
+}
+
 export function areaMix(x: number, z: number): number {
   if (!Number.isFinite(x) || !Number.isFinite(z)) return 0;
-  const inside = x >= DHARMA_BOUNDS.minX && x <= DOORWAY.x && z >= DHARMA_BOUNDS.minZ && z <= DHARMA_BOUNDS.maxZ;
-  if (inside) return 0.5 + 0.5 * unit((DOORWAY.x - x) / DEEP_METRES);
+  if (isInsideRoom(x, z)) return 0.5 + 0.5 * unit((DOORWAY.x - x) / DEEP_METRES);
   const beside = Math.max(0, Math.abs(z - DOORWAY.z) - DHARMA_DOOR.halfWidth);
   const away = Math.hypot(beside, Math.max(0, x - DOORWAY.x));
   return 0.5 * (1 - unit(away / OUTSIDE_METRES));
+}
+
+// The sutra's share: areaMix inside the room (the doorway included), silent everywhere outside it.
+export function chantMix(x: number, z: number): number {
+  return Number.isFinite(x) && Number.isFinite(z) && isInsideRoom(x, z) ? areaMix(x, z) : 0;
 }
 
 // How far a recording may stray from its place in the loop before something is done about it, and what.
@@ -85,7 +93,7 @@ export interface SyncedLoopOptions {
 
 // The chant, looped. It runs through the engine's ambience bus, so the one volume slider and the one sound switch also
 // govern it. Nothing is fetched or played before the visitor's first gesture; after that it runs whenever the visitor is
-// in the world, at a loudness set by `setMix`, and is held to the server's place in the loop.
+// in the world, at a loudness set by `setMix` (silent outside the 법당), and is held to the server's place in the loop.
 export class SyncedLoop {
   private audio: HTMLAudioElement | null = null;
   private gain: GainNode | null = null;
