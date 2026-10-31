@@ -1,7 +1,10 @@
 import { h } from "./dom.ts";
+import { icon } from "./icons.ts";
 
-// The "플레이" pill floated above the machine a visitor stands at. Like the seat hints it ignores the pointer (a tap is resolved by
-// `contains`, so the 3D scene under it still gets the tap otherwise) and the DOM is only touched when it appears, vanishes or moves.
+const LABEL = "플레이";
+
+// The round play button floated above the machine a visitor stands at. Like the seat hints it ignores the pointer (a tap is resolved
+// by `contains`, so the 3D scene under it still gets the tap otherwise) and the DOM is only touched when it appears, vanishes or moves.
 export class MachineHint {
   private readonly node: HTMLButtonElement;
   private x = Number.NaN;
@@ -9,9 +12,10 @@ export class MachineHint {
   private shown = false;
 
   constructor(host: HTMLElement, onPlay: () => void) {
-    this.node = h("button", "machine-hint hidden", h("span", "machine-hint-label", "플레이"), h("kbd", "machine-hint-key", "E"));
+    this.node = h("button", "machine-hint hidden", icon("play"), h("kbd", "machine-hint-key", "E"));
     this.node.type = "button";
-    this.node.setAttribute("aria-label", "플레이");
+    this.node.setAttribute("aria-label", LABEL);
+    this.node.title = LABEL;
     this.node.addEventListener("click", onPlay);
     host.append(h("div", "machine-hints", this.node));
   }

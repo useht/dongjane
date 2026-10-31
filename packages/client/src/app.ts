@@ -100,6 +100,8 @@ const JOIN_RETRY_DELAYS_MS: readonly number[] = [500, 1200];
 const TAP_ARRIVE_DISTANCE = 0.1;
 // The hint floats a little above the top of the machine it belongs to.
 const MACHINE_HINT_LIFT = 0.2;
+// Bows pay every few seconds; the toast for it speaks up at most this often.
+const REWARD_TOAST_QUIET_MS = 10_000;
 
 interface SelfSnapshot {
   x: number;
@@ -147,6 +149,7 @@ export class App {
   private profile: Profile | null = loadProfile();
   private bows: number = loadBows();
   private lastSelfBows: number | null = null;
+  private nextRewardToastAt = 0;
   private session: WorldSession | SoloSession | null = null;
   private worlds: WorldInfo[] = [];
   private currentWorld = 0;
@@ -597,6 +600,19 @@ export class App {
     saveBows(this.bows);
     this.hud.setCollection(this.bows);
     for (const title of titlesCrossed(before, this.bows)) this.hud.toast(`‘${title.name}’ 칭호를 얻었어요`);
+    this.payBows(gained);
+  }
+
+  // The bank decides what the bows pay (see payBows in shared); here the visitor is told: the first payment of a run, and the day's cap.
+  private payBows(bows: number): void {
+    const { paid, capped } = this.casinoBank.rewardBows(bows);
+    if (paid <= 0) return;
+    this.casino.coinsAdded();
+    const now = performance.now();
+    const text = capped ? `절 +${paid} 엽전 · 오늘 절 보상 한도에 도달했어요` : now >= this.nextRewardToastAt ? `절 +${paid} 엽전` : null;
+    if (text === null) return;
+    this.hud.toast(text);
+    this.nextRewardToastAt = now + REWARD_TOAST_QUIET_MS;
   }
 
   private syncWorldCount(count: number, zones: Record<Zone, number>): void {

@@ -1609,29 +1609,38 @@ noscript {
   position: absolute;
   left: 0;
   top: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
   border: 1px solid color-mix(in srgb, var(--gold-pale) 55%, transparent);
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--panel);
   box-shadow: 0 2px 10px color-mix(in srgb, black 35%, transparent);
   color: var(--gold);
-  font-size: 14px;
-  font-weight: 800;
   pointer-events: none;
   will-change: transform;
 }
 
+.machine-hint svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* The key cap sits on the button's rim, outside the round hit area. */
 .machine-hint-key {
+  position: absolute;
+  right: -8px;
+  bottom: -6px;
   display: none;
-  min-width: 22px;
-  padding: 1px 6px;
+  min-width: 18px;
+  padding: 0 4px;
   border: 1px solid color-mix(in srgb, var(--gold-pale) 50%, transparent);
   border-radius: 6px;
+  background: var(--panel);
   color: var(--cream);
-  font: 700 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  font: 700 11px/1.4 ui-monospace, Menlo, Consolas, monospace;
   text-align: center;
 }
 
@@ -1655,21 +1664,36 @@ noscript {
   padding-bottom: 0;
 }
 
+/* Stays at the top of the sheet while a tall machine scrolls under it; the shadow hides what passes through the gap below. */
 .casino-balance {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 10px;
   padding: 8px 14px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: color-mix(in srgb, black 22%, transparent);
+  background: color-mix(in srgb, black 22%, var(--wood-soft));
+  box-shadow: 0 8px 0 var(--wood-soft);
 }
 
 .casino-balance-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.casino-balance-label svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--gold);
 }
 
 .casino-balance-amount {

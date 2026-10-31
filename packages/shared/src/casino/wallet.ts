@@ -1,3 +1,4 @@
+import { type BowReward, parseBowReward } from "../bow-reward.ts";
 import { questDay } from "../quest.ts";
 
 export const START_BALANCE = 1000;
@@ -5,10 +6,12 @@ export const MIN_BET = 10;
 export const MAX_BET = 500;
 export const REFILL_BELOW = 100;
 
-// What the client keeps between visits; `refillDay` is the KST day (as questDay counts them) of the last refill.
+// What the client keeps between visits; `refillDay` is the KST day (as questDay counts them) of the last refill, and `bowReward` is
+// what the visitor's bows have paid (a wallet from before that existed has none).
 export interface Wallet {
   balance: number;
   refillDay: number;
+  bowReward?: BowReward;
 }
 
 export interface Settlement {
@@ -22,9 +25,12 @@ export function newWallet(nowMs: number): Wallet {
 
 export function parseWallet(value: unknown): Wallet | null {
   if (typeof value !== "object" || value === null) return null;
-  const { balance, refillDay } = value as Record<string, unknown>;
+  const { balance, refillDay, bowReward } = value as Record<string, unknown>;
   if (!Number.isSafeInteger(balance) || !Number.isSafeInteger(refillDay) || (balance as number) < 0) return null;
-  return { balance: balance as number, refillDay: refillDay as number };
+  const wallet: Wallet = { balance: balance as number, refillDay: refillDay as number };
+  // a damaged bow record costs the visitor nothing but the day's count
+  const bows = parseBowReward(bowReward);
+  return bows ? { ...wallet, bowReward: bows } : wallet;
 }
 
 export function isBetAmount(amount: number): boolean {
@@ -48,5 +54,5 @@ export function applyResult(wallet: Wallet, { stake, payout }: Settlement): Wall
 export function refillDaily(wallet: Wallet, nowMs: number): Wallet {
   const day = questDay(nowMs);
   if (day === wallet.refillDay || wallet.balance >= REFILL_BELOW) return wallet;
-  return { balance: START_BALANCE, refillDay: day };
+  return { ...wallet, balance: START_BALANCE, refillDay: day };
 }

@@ -20,7 +20,7 @@ const SETTINGS_KEY = "dongjane:settings";
 const COLLECTION_KEY = "dongjane:collection";
 const QUESTS_KEY = "dongjane:quests";
 // The casino's wallet. The version is in the key and in the record, so a change to the rules can start every wallet afresh
-// instead of reading an old record as a new one.
+// instead of reading an old record as a new one. `bowReward` came later and stays optional, so older v1 records still load.
 const CASINO_KEY = "dongjane:casino:v1";
 const CASINO_VERSION = 1;
 
@@ -122,5 +122,5 @@ export function loadWallet(): Wallet | null {
 }
 
 export function saveWallet(wallet: Wallet): void {
-  writeJson(CASINO_KEY, { version: CASINO_VERSION, balance: wallet.balance, refillDay: wallet.refillDay });
+  writeJson(CASINO_KEY, { version: CASINO_VERSION, balance: wallet.balance, refillDay: wallet.refillDay, bowReward: wallet.bowReward });
 }

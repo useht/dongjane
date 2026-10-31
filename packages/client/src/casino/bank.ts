@@ -1,4 +1,15 @@
-import { type Settlement, type Wallet, canBet, canStake, applyResult, newWallet, refillDaily } from "@dongjane/shared";
+import {
+  BOW_REWARD_DAILY_CAP,
+  NO_BOW_REWARD,
+  type Settlement,
+  type Wallet,
+  applyResult,
+  canBet,
+  canStake,
+  newWallet,
+  payBows,
+  refillDaily,
+} from "@dongjane/shared";
 
 // What the bank needs of storage: the wallet's last saved state, and a way to save the next.
 export interface WalletStore {
@@ -8,6 +19,12 @@ export interface WalletStore {
 
 // Why the balance jumped when nobody played: a first visit's welcome, or the day's refill for a visitor who ran out.
 export type BankNotice = "welcome" | "refill";
+
+// What bows paid on this call, and whether that brought the day's total to its cap.
+export interface BowPay {
+  paid: number;
+  capped: boolean;
+}
 
 // The visitor's coins. Only the shared rules change the balance (`applyResult`, `refillDaily`); this keeps the wallet, saves it each
 // time it changes and remembers whether the visitor is owed an explanation. A game is settled the moment it starts, so leaving
@@ -70,5 +87,17 @@ export class CasinoBank {
     this.current = applyResult(this.current, result);
     this.store.save(this.current);
     return true;
+  }
+
+  // Pays the visitor for bows completed just now (see payBows). A refill that is already due comes first, so the coins cannot lift
+  // a nearly empty visitor over the refill line and cost them the day's refill.
+  rewardBows(bows: number): BowPay {
+    this.refresh();
+    const before = this.current.bowReward ?? NO_BOW_REWARD;
+    const { paid, state } = payBows(before, bows, this.now());
+    if (state === before) return { paid: 0, capped: false };
+    this.current = { ...applyResult(this.current, { stake: 0, payout: paid }), bowReward: state };
+    this.store.save(this.current);
+    return { paid, capped: paid > 0 && state.earned >= BOW_REWARD_DAILY_CAP };
   }
 }
