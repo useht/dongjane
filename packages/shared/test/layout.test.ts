@@ -37,18 +37,20 @@ import {
 } from "../src/index.ts";
 
 describe("zones", () => {
-  it("names two zones and tells each from the other", () => {
-    expect(ZONES).toEqual(["gatbawi", "dharma"]);
+  it("names the zones and tells each from the other", () => {
+    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse"]);
     expect(isZone("gatbawi")).toBe(true);
     expect(isZone("dharma")).toBe(true);
     expect(isZone("garden")).toBe(false);
     expect(isZone(undefined)).toBe(false);
   });
 
-  it("seats exactly as many as each zone admits", () => {
+  it("seats as many as each zone admits: fifty on the plaza and in the 법당, at most that in the others", () => {
     expect(SEAT_COUNT).toBe(50);
     expect(ZONE_CAPACITY).toBe(50);
-    for (const zone of ZONES) expect(ZONE_SEATS[zone]).toHaveLength(ZONE_CAPACITY);
+    expect(ZONE_SEATS.gatbawi).toHaveLength(ZONE_CAPACITY);
+    expect(ZONE_SEATS.dharma).toHaveLength(ZONE_CAPACITY);
+    for (const zone of ZONES) expect(ZONE_SEATS[zone].length).toBeLessThanOrEqual(ZONE_CAPACITY);
   });
 });
 
@@ -201,7 +203,7 @@ describe("seats", () => {
   it("fills a whole zone one pick at a time without repeating a seat", () => {
     for (const zone of ZONES) {
       const taken = new Set<number>();
-      for (let i = 0; i < ZONE_CAPACITY; i += 1) {
+      for (let i = 0; i < ZONE_SEATS[zone].length; i += 1) {
         const spot = pickSeat(zone, (id) => taken.has(id));
         expect(spot).toBeDefined();
         expect(taken.has(spot!.id)).toBe(false);

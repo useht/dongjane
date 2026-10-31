@@ -1,16 +1,21 @@
 import type { SeatSpot } from "../layout.ts";
+import { BATHHOUSE_VENUE } from "./bathhouse.ts";
 import { CASINO_VENUE } from "./casino.ts";
 import { DHARMA_VENUE } from "./dharma.ts";
 import { GATBAWI_VENUE } from "./gatbawi.ts";
 import { SHORE_VENUE } from "./shore.ts";
+import { STREET_VENUE } from "./street.ts";
 import type { SeatGroup, VenueDef } from "./types.ts";
 
 export type { ActivitySpot, SeatGroup, VenueDef } from "./types.ts";
-export { CASINO_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE };
+export { BATHHOUSE_VENUE, CASINO_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
+export { BATHHOUSE_AREAS, BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL, BATHHOUSE_ROOMS } from "./bathhouse.ts";
+export { DOOR_WIDTH, SLOT_A1, SLOT_A2, SLOT_B1, WALL as SLOT_WALL, inSlot, slotAt } from "./slots.ts";
+export { AVENUE } from "./street.ts";
 
 // Every place in the world, in the order the world lists them. A new venue is a file beside these and a line here: the walk
 // graph, the seats, the computer-driven monks and the client's views are all read from this list.
-export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE] as const satisfies readonly VenueDef[];
+export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE, STREET_VENUE, BATHHOUSE_VENUE] as const satisfies readonly VenueDef[];
 export type VenueId = (typeof VENUES)[number]["id"];
 
 // A zone is a venue with seats. A seat is addressed by its zone (the venue's id) and its number, which is also how the
@@ -20,6 +25,8 @@ export type Zone = SeatedVenue["id"];
 
 export const SEATED_VENUES: readonly SeatedVenue[] = VENUES.filter((venue: VenueDef): venue is SeatedVenue => venue.seats !== undefined);
 export const ZONES: readonly Zone[] = SEATED_VENUES.map((venue) => venue.id);
+// The zones the day's quests may name: the ones whose rows are counted from the Buddha.
+export const QUEST_ZONES: readonly Zone[] = SEATED_VENUES.filter((venue) => venue.quests).map((venue) => venue.id);
 
 // The open ground: where a walker is when no zone's footprint holds them, and the zone a seat message falls back to.
 export const DEFAULT_ZONE: Zone = GATBAWI_VENUE.id;

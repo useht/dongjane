@@ -10,4 +10,5 @@ export const SHORE_VENUE = defineVenue({
   links: ["gatbawi", "casino"],
   npc: { stroll: true, seatWeight: 0 },
   indoor: false,
+  quests: false,
 });

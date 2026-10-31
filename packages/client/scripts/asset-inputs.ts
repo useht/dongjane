@@ -31,6 +31,8 @@ import {
   DHARMA_MESHES,
   DHARMA_PROTOTYPES,
   GATBAWI_MESHES,
+  KIT_MESHES,
+  KIT_PROTOTYPES,
   TEXTURED,
   VENUE_MESHES,
   VENUE_PROTOTYPES,
@@ -39,6 +41,7 @@ import {
 } from "../src/assets/contract.ts";
 import { CASINO_COLUMNS, CASINO_PAD, CASINO_PAVING, CASINO_POSTS, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, CASINO_WINDOWS, FLOOR_Y, KERB_WIDTH, MACHINE_HEIGHT, PAVING_Y } from "../src/game/casino-layout.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FRONT_PILLARS_X, LOTUS_EMBED, SIDE_PILLARS_Z, WALL_OPENINGS, WINDOW_BAND, hangingLanterns } from "../src/game/dharma-layout.ts";
+import { KITS } from "../src/game/kits/index.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW } from "../src/game/venue-layout.ts";
 import { THEME } from "../src/theme.ts";
@@ -115,6 +118,8 @@ export function assetInputs() {
       PAVING_Y,
       KERB_WIDTH,
     },
+    // The venues built from a kit spec (src/game/kits): one model each, drawn by blender/venue_kit.py.
+    venues: Object.fromEntries(KITS.map((kit) => [kit.id, { meshes: kit.meshes }])),
     material: THEME.material,
     names: {
       GATBAWI_MESHES,
@@ -127,6 +132,8 @@ export function assetInputs() {
       DHARMA_PROTOTYPES,
       CASINO_MESHES,
       CASINO_PROTOTYPES,
+      KIT_MESHES,
+      KIT_PROTOTYPES,
       TEXTURED,
       BORROWS_STONE,
       BORROWS_PAVING,

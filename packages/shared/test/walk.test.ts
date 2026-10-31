@@ -36,6 +36,7 @@ import {
   slideWalkable,
   venueAt,
 } from "../src/walk.ts";
+import { AVENUE } from "../src/venues/street.ts";
 
 const CHAIN = [
   INTERIOR_AREA,
@@ -585,11 +586,18 @@ describe("the casino", () => {
   });
 
   it("stops a keyboard walker at the shore's south edge beside the road and lets one down the road itself", () => {
-    const blocked = slideWalkable({ x: COAST_ROAD.minX - 0.2, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 1);
-    expect(blocked.x).toBeCloseTo(COAST_ROAD.minX - 0.2, 6);
+    const blocked = slideWalkable({ x: COAST_ROAD.maxX + 0.2, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 1);
+    expect(blocked.x).toBeCloseTo(COAST_ROAD.maxX + 0.2, 6);
     expect(blocked.z).toBeCloseTo(WORLD_BOUNDS.maxZ, 6);
     const down = slideWalkable({ x: COAST_ROAD.minX + 0.5, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 4);
     expect(down.z).toBeCloseTo(WORLD_BOUNDS.maxZ + 3.7, 6);
+  });
+
+  it("lets a keyboard walker off the plaza's south edge onto the avenue, and no further than the avenue", () => {
+    const onto = slideWalkable({ x: 0, z: WORLD_BOUNDS.maxZ - 0.3 }, 0, 2);
+    expect(onto.z).toBeCloseTo(WORLD_BOUNDS.maxZ + 1.7, 6);
+    const stopped = slideWalkable({ x: -28, z: AVENUE.maxZ - 0.3 }, 0, 2);
+    expect(stopped.z).toBeCloseTo(AVENUE.maxZ, 6);
   });
 
   it("keeps the casino a part of the open ground for zones, and only the lobby, aisles and cross room count as inside it", () => {

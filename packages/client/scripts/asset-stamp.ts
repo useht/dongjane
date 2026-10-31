@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { assetInputs } from "./asset-inputs.ts";
 
 export const BLENDER_DIR = new URL("../blender/", import.meta.url);
@@ -30,9 +30,13 @@ export function fileHash(url: URL): string {
   return createHash("sha256").update(readFileSync(url)).digest("hex");
 }
 
+// Every model the build writes: the ones beside the stamp, and the venues' under `venues/`, keyed `venues/<id>.glb`.
 export function modelHashes(): Record<string, string> {
-  const files = readdirSync(MODELS_DIR).filter((file) => file.endsWith(".glb")).sort();
-  return Object.fromEntries(files.map((file) => [file, fileHash(new URL(file, MODELS_DIR))]));
+  const listed = (dir: string): string[] => {
+    const url = new URL(dir, MODELS_DIR);
+    return existsSync(url) ? readdirSync(url).filter((file) => file.endsWith(".glb")).sort().map((file) => `${dir}${file}`) : [];
+  };
+  return Object.fromEntries([...listed(""), ...listed("venues/")].map((file) => [file, fileHash(new URL(file, MODELS_DIR))]));
 }
 
 export function readStamp(): Stamp {

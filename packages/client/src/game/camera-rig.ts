@@ -1,7 +1,8 @@
 import { PerspectiveCamera, Vector3 } from "three";
-import { DHARMA_YAW, INDOOR, MACHINE_SPOTS, type Zone, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
+import { DHARMA_VENUE, DHARMA_YAW, MACHINE_SPOTS, type Zone, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
 import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, machineHeight } from "./casino-layout.ts";
 import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
+import { KITS, kitById } from "./kits/index.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
 export interface Box {
@@ -126,6 +127,9 @@ export const DHARMA_KEEP_OUTS: readonly Box[] = [DHARMA_KEEP_OUT, ...DHARMA_PILL
 // whose monk is inside one of them is already in its box and is not held back by it.
 export const KEEP_OUTS: readonly Box[] = [...DHARMA_KEEP_OUTS, CASINO_KEEP_OUT];
 
+// The same, with the buildings of the kit venues, which the world's camera is held back from too.
+export const WORLD_KEEP_OUTS: readonly Box[] = [...KEEP_OUTS, ...KITS.flatMap((kit) => (kit.camera ? [kit.camera.keepOut] : []))];
+
 // How far short of a keep-out box the camera stops.
 const KEEP_OUT_MARGIN = 0.4;
 
@@ -168,19 +172,22 @@ const START_DISTANCE = 7;
 
 // A wide window frames the plaza from nearer than a tall one, which needs the distance to fit the plaza's depth.
 export function viewFor(zone: Zone, aspect: number): View {
-  if (INDOOR[zone]) return { ...DHARMA_VIEW };
+  if (zone === DHARMA_VENUE.id) return { ...DHARMA_VIEW };
+  const kit = kitById(zone)?.camera;
+  if (kit) return { ...kit.view };
   return { ...DEFAULT_VIEW, distance: aspect < 1 ? DEFAULT_VIEW.distance : LANDSCAPE_VIEW_WIDE_DISTANCE };
 }
 
 export function startViewFor(zone: Zone, aspect: number): View {
-  if (INDOOR[zone]) return viewFor(zone, aspect);
+  if (zone === DHARMA_VENUE.id || kitById(zone)?.camera) return viewFor(zone, aspect);
   return { ...DEFAULT_VIEW, distance: START_DISTANCE };
 }
 
 export function regionFor(zone: Zone): { bounds: Box; limits: RigLimits } {
-  return INDOOR[zone]
-    ? { bounds: DHARMA_CAMERA_BOUNDS, limits: DHARMA_LIMITS }
-    : { bounds: LANDSCAPE_BOUNDS, limits: GATBAWI_LIMITS };
+  if (zone === DHARMA_VENUE.id) return { bounds: DHARMA_CAMERA_BOUNDS, limits: DHARMA_LIMITS };
+  const kit = kitById(zone)?.camera;
+  if (kit) return { bounds: kit.bounds, limits: kit.limits };
+  return { bounds: LANDSCAPE_BOUNDS, limits: GATBAWI_LIMITS };
 }
 
 // While the followed visitor is inside the casino the camera has the whole room, up over its (hidden) roof.

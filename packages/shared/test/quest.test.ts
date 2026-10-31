@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DHARMA_SEATS, GATBAWI_SEATS, KST_OFFSET_MS, ZONES, dailyQuests, placeLabel, questDay, questMatches, type Quest, type QuestPlace } from "../src/index.ts";
+import { DHARMA_SEATS, GATBAWI_SEATS, KST_OFFSET_MS, QUEST_ZONES, dailyQuests, placeLabel, questDay, questMatches, type Quest, type QuestPlace } from "../src/index.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const kstMidnight = (year: number, month: number, day: number): number => Date.UTC(year, month - 1, day) - KST_OFFSET_MS;
@@ -78,7 +78,7 @@ describe("dailyQuests", () => {
       const rows = (place.zone === "gatbawi" ? GATBAWI_SEATS : DHARMA_SEATS).map((spot) => spot.row);
       expect(rows).toContain(place.row);
     }
-    expect([...seen].sort()).toEqual([...ZONES].sort());
+    expect([...seen].sort()).toEqual([...QUEST_ZONES].sort());
   });
 });
 

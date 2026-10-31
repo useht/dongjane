@@ -15,4 +15,5 @@ export const CASINO_VENUE = defineVenue({
   activities: MACHINE_SPOTS,
   npc: { stroll: false, seatWeight: 0 },
   indoor: true,
+  quests: false,
 });

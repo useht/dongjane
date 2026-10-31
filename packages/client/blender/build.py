@@ -15,6 +15,7 @@ import common  # noqa: E402
 import dharma  # noqa: E402
 import gatbawi  # noqa: E402
 import venue  # noqa: E402
+import venue_kit  # noqa: E402
 import world  # noqa: E402
 
 
@@ -34,6 +35,8 @@ def main():
     dharma.build(inputs, args.out, head)
     common.reset_scene()
     casino.build(inputs, args.out)
+    common.reset_scene()
+    venue_kit.build(inputs, args.out)
 
 
 main()

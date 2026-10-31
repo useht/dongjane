@@ -27,7 +27,7 @@ import {
   WORLD_BOUNDS,
 } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
-import { SEAT_YAWS, type Zone } from "../src/venues/index.ts";
+import { SEAT_YAWS, ZONES, ZONE_SEATS, type Zone } from "../src/venues/index.ts";
 import { COURT_AREA, DOORWAY_AREA, INTERIOR_AREA, resolveWalkable, venueAt } from "../src/walk.ts";
 
 const T0 = 1_800_000_000_000;
@@ -74,7 +74,7 @@ beforeEach(() => {
 
 describe("join and movement", () => {
   it("creates a hundred free seats and spawns monks standing inside the 법당, facing the altar", () => {
-    expect(h.sim.state.seats.size).toBe(2 * SEAT_COUNT);
+    expect(h.sim.state.seats.size).toBe(ZONES.reduce((total, zone) => total + ZONE_SEATS[zone].length, 0));
     expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId === "")).toBe(true);
     expect(h.sim.state.seats.get("gatbawi:49")?.zone).toBe("gatbawi");
     expect(h.sim.state.seats.get("dharma:0")?.zone).toBe("dharma");
@@ -240,7 +240,9 @@ describe("seats", () => {
       }
     }
     expect(h.sim.state.monks.size).toBe(WORLD_CAPACITY);
-    expect([...h.sim.state.seats.values()].every((seat) => seat.occupantId !== "")).toBe(true);
+    const mats = [...h.sim.state.seats.values()].filter((seat) => seat.zone === "gatbawi" || seat.zone === "dharma");
+    expect(mats).toHaveLength(2 * ZONE_CAPACITY);
+    expect(mats.every((seat) => seat.occupantId !== "")).toBe(true);
     expect(new Set(Array.from(h.sim.state.monks.values(), (monk) => monk.slot)).size).toBe(WORLD_CAPACITY);
   });
 

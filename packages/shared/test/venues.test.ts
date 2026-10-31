@@ -36,7 +36,7 @@ describe("the venue registry", () => {
   it("lists each venue once, under an id of its own", () => {
     const ids = VENUES.map((venue) => venue.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(["gatbawi", "dharma", "shore", "casino"]);
+    expect(ids).toEqual(["gatbawi", "dharma", "shore", "casino", "street", "bathhouse"]);
   });
 
   it("links only venues that exist, and links them both ways", () => {
@@ -58,10 +58,12 @@ describe("the venue registry", () => {
   });
 
   it("makes zones of the venues with seats, and nothing else", () => {
-    expect(ZONES).toEqual(["gatbawi", "dharma"]);
+    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse"]);
     expect(VENUES.filter((venue: VenueDef) => venue.seats).map((venue) => venue.id)).toEqual([...ZONES]);
     expect(isZone("gatbawi")).toBe(true);
     expect(isZone("dharma")).toBe(true);
+    expect(isZone("bathhouse")).toBe(true);
+    expect(isZone("street")).toBe(false);
     expect(isZone("shore")).toBe(false);
     expect(isZone("casino")).toBe(false);
     expect(isZone(undefined)).toBe(false);
@@ -69,18 +71,21 @@ describe("the venue registry", () => {
   });
 
   it("reads the deprecated zone tables from the venues", () => {
-    expect(ZONE_NAMES).toEqual({ gatbawi: "갓바위", dharma: "법당" });
-    expect(SEAT_NAMES).toEqual({ gatbawi: "돗자리", dharma: "방석" });
+    expect(ZONE_NAMES).toEqual({ gatbawi: "갓바위", dharma: "법당", bathhouse: "목욕탕" });
+    expect(SEAT_NAMES).toEqual({ gatbawi: "돗자리", dharma: "방석", bathhouse: "찜질 매트" });
     expect(SEAT_YAWS.gatbawi).toBe(0);
-    expect(INDOOR).toEqual({ gatbawi: false, dharma: true });
+    expect(INDOOR).toEqual({ gatbawi: false, dharma: true, bathhouse: true });
     expect(SEAT_TOPS.dharma).toBeGreaterThan(SEAT_TOPS.gatbawi);
     for (const zone of ZONES) expect(SEAT_YAWS[zone]).toBe(venueById(zone)?.seats?.yaw);
   });
 
-  it("keeps the seats numbered from 0 within an int8, ZONE_CAPACITY of them in each zone", () => {
+  it("keeps the seats numbered from 0 within an int8, ZONE_CAPACITY of them on the plaza and in the 법당 and no more in any zone", () => {
+    expect(ZONE_SEATS.gatbawi).toHaveLength(ZONE_CAPACITY);
+    expect(ZONE_SEATS.dharma).toHaveLength(ZONE_CAPACITY);
     for (const zone of ZONES) {
       const seats = ZONE_SEATS[zone];
-      expect(seats.length, zone).toBe(ZONE_CAPACITY);
+      expect(seats.length, zone).toBeGreaterThan(0);
+      expect(seats.length, zone).toBeLessThanOrEqual(ZONE_CAPACITY);
       expect(
         seats.map((spot) => spot.id),
         zone,
@@ -104,12 +109,12 @@ describe("the venue registry", () => {
       const frontDepth = Math.min(...ZONE_SEATS[zone].map(SEAT_DEPTH[zone]));
       expect(SEAT_DEPTH[zone](first as (typeof ZONE_SEATS)[typeof zone][number])).toBe(frontDepth);
       const taken = new Set<number>();
-      for (let n = 0; n < ZONE_CAPACITY; n += 1) {
+      for (let n = 0; n < ZONE_SEATS[zone].length; n += 1) {
         const spot = pickSeat(zone, (id) => taken.has(id));
         expect(spot, `${zone} seat ${n}`).toBeDefined();
         taken.add((spot as { id: number }).id);
       }
-      expect(taken.size).toBe(ZONE_CAPACITY);
+      expect(taken.size).toBe(ZONE_SEATS[zone].length);
       expect(pickSeat(zone, () => true)).toBeUndefined();
     }
   });

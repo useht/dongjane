@@ -18,7 +18,7 @@ export const GATBAWI_VENUE = defineVenue({
   name: "갓바위",
   footprint: boundsOf(AREAS),
   areas: AREAS,
-  links: ["dharma", "shore"],
+  links: ["dharma", "shore", "street"],
   seats: {
     name: "돗자리",
     spots: GATBAWI_SEATS,
@@ -31,4 +31,5 @@ export const GATBAWI_VENUE = defineVenue({
   },
   npc: { stroll: true, seatWeight: 1 },
   indoor: false,
+  quests: true,
 });

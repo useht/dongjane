@@ -49,6 +49,8 @@ export interface VenueDef {
   };
   // walls and a roof: the camera comes in under the roof, and the sea is not heard
   readonly indoor: boolean;
+  // whether the day's quests may ask for a bow on this venue's seats (they name a row "toward the Buddha", which only the first two venues have)
+  readonly quests: boolean;
 }
 
 // A venue's definition keeps its literal id, so the seated ones can be told apart by type.

@@ -1,6 +1,7 @@
 import type { Material, Mesh, MeshStandardMaterial, Object3D, Texture } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { BUDDHA_EXTRAS, BUDDHA_MESHES, CASINO_MESHES, DHARMA_MESHES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
+import { type KitMesh, type KitSpec, meshNames } from "../game/kits/kit.ts";
+import { BUDDHA_EXTRAS, BUDDHA_MESHES, CASINO_MESHES, DHARMA_MESHES, GATBAWI_MESHES, KIT_MESHES, TEXTURED, VENUE_MESHES, WORLD_MESHES } from "./contract.ts";
 import buddhaUrl from "./models/buddha.glb?url";
 import casinoUrl from "./models/casino.glb?url";
 import dharmaUrl from "./models/dharma.glb?url";
@@ -94,6 +95,59 @@ function disposeMeshes(meshes: Readonly<Record<string, Mesh>>): void {
     }
   }
   for (const texture of textures) texture.dispose();
+}
+
+// The venues built from a kit spec: one glb each under models/venues/, fetched after the game has started (their urls are only known
+// to the bundler through this glob, so startup loads none of them).
+const KIT_URLS = import.meta.glob<string>("./models/venues/*.glb", { query: "?url", import: "default" });
+
+const kitMeshNames: readonly string[] = KIT_MESHES;
+
+export type KitMeshes = { readonly [Name in KitMesh]?: Mesh };
+
+export interface KitModel {
+  readonly id: string;
+  readonly meshes: KitMeshes;
+  dispose(): void;
+}
+
+export function venueModelIds(): string[] {
+  return Object.keys(KIT_URLS)
+    .map((path) => /\/([^/]+)\.glb$/.exec(path)?.[1] ?? "")
+    .filter(Boolean)
+    .sort();
+}
+
+// Loads the model of a kit venue and checks it holds exactly the meshes its spec draws.
+export async function loadVenueKit(spec: KitSpec, loader: ModelLoader = new GLTFLoader()): Promise<KitModel> {
+  const resolve = KIT_URLS[`./models/venues/${spec.id}.glb`];
+  if (!resolve) throw new Error(`venues/${spec.id}.glb: there is no such model`);
+  const { scene } = await loader.loadAsync(await resolve()).catch((cause: unknown) => {
+    throw new Error(`venues/${spec.id}.glb: could not be loaded`, { cause });
+  });
+  const found = new Map<string, Mesh>();
+  scene.traverse((object) => {
+    if ((object as Mesh).isMesh) found.set(object.name, object as Mesh);
+  });
+  for (const name of found.keys()) {
+    if (!kitMeshNames.includes(name)) throw new Error(`venues/${spec.id}.glb: unexpected mesh "${name}"`);
+  }
+  const meshes: { -readonly [Name in KitMesh]?: Mesh } = {};
+  for (const name of meshNames(spec)) {
+    const mesh = found.get(name);
+    if (!mesh) throw new Error(`venues/${spec.id}.glb: missing mesh "${name}"`);
+    meshes[name] = mesh;
+  }
+  for (const name of found.keys()) {
+    if (!(name in meshes)) throw new Error(`venues/${spec.id}.glb: has mesh "${name}", which its spec does not draw`);
+  }
+  return {
+    id: spec.id,
+    meshes,
+    dispose(): void {
+      disposeMeshes(meshes as Readonly<Record<string, Mesh>>);
+    },
+  };
 }
 
 export async function loadGameAssets(loader: ModelLoader = new GLTFLoader()): Promise<GameAssets> {

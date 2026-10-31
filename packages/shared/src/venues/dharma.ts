@@ -39,4 +39,5 @@ export const DHARMA_VENUE = defineVenue({
   },
   npc: { stroll: true, seatWeight: 1 },
   indoor: true,
+  quests: true,
 });

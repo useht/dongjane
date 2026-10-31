@@ -27,7 +27,7 @@ import {
   visitorTitle,
   worldName,
 } from "@dongjane/shared";
-import type { GameAssets } from "./assets/registry.ts";
+import { type GameAssets, type KitModel, loadVenueKit } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
 import { ChantBellScheduler } from "./audio/chant-bell.ts";
 import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
@@ -45,6 +45,7 @@ import { BowWatcher, type WatchedMonk } from "./game/bow-watch.ts";
 import { CatchWatcher } from "./game/catch-watch.ts";
 import { machineHeight } from "./game/casino-layout.ts";
 import { heldAction, isSeated } from "./game/held-action.ts";
+import { KITS } from "./game/kits/index.ts";
 import { combineAxes, floorDirection, headingAlong, KeyboardInput } from "./game/input.ts";
 import { MAX_FRAME_DT_S, SelfPrediction } from "./game/prediction.ts";
 import type { MonkAssets } from "./game/monk-assets.ts";
@@ -327,7 +328,18 @@ export class App {
     this.world.start();
   }
 
+  // The venues built from kits come after the game has started. One whose model does not load is left out and the rest are unaffected.
+  private async loadVenues(): Promise<void> {
+    const models: KitModel[] = [];
+    for (const result of await Promise.allSettled(KITS.map((kit) => loadVenueKit(kit)))) {
+      if (result.status === "fulfilled") models.push(result.value);
+      else console.warn(result.reason);
+    }
+    this.world.addVenues(models);
+  }
+
   async start(): Promise<void> {
+    void this.loadVenues();
     this.ensureProfile();
     this.world.setIdleSpin(false);
     const requested = parseWorldParam(this.params.get("world"));
