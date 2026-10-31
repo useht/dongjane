@@ -316,7 +316,7 @@ export class MonkAvatar {
     const theta = BOW_LEAN * depth;
     const waistDown = BOW_HIP_JOINT * (1 - Math.cos(theta));
     const waistForward = BOW_HIP_JOINT * Math.sin(theta);
-    // Kneeling (정좌) the monk sits on its heels, which lie on the cushion; cross-legged or on a bench it sits on the mat, chair or log
+    // Kneeling (정좌) the monk sits on its heels, which lie on the 방석; cross-legged or on a bench it sits on the mat, chair or log
     // itself, with the seat of the trousers just clear of it.
     const seatHeight = bench ? this.liftedBy : 0;
     const sitHips = kneeling ? HIP_KNEEL : seatHeight + PELVIS_DROP * (bench ? BENCH_PELVIS_SCALE_Y : KNEEL_PELVIS_SCALE_Y) + SEAT_CLEARANCE;
@@ -360,7 +360,7 @@ export class MonkAvatar {
 
       // The arm hangs straight at rest, splayed about 35 degrees out from the shoulder so the sleeve clears the wide robe; praying swings
       // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing reaches both arms forward and down, the
-      // forearms rolled over so the hands lie together on the cushion under the face (a copy of POSE in
+      // forearms rolled over so the hands lie together on the 방석 under the face (a copy of POSE in
       // packages/client/assets/monk/build_monk.py, keep both in step).
       const idleX = 0.08 + breathe * 0.02;
       const idleZ = sign * 0.61;

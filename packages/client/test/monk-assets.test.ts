@@ -355,14 +355,14 @@ describe("monk assets", () => {
     expect(Math.abs((kneeWorld - ankleWorld) / H - 0.74), "shin").toBeLessThanOrEqual(0.02);
 
     // The head keeps its size; the body is 3.4 heads (1.122 standing). Kneeling, the seat of the trousers (pelvisDrop below the hip)
-    // rests on the heels, which lie flat on the cushion a heel thick (0.069) under it: the hip drops to the cushion + hipKneel and the crown
-    // to about 0.94 of the standing crown (0.99 for a seat that rested on the cushion itself, plus the heels).
+    // rests on the heels, which lie flat on the 방석 a heel thick (0.069) under it: the hip drops to the 방석 + hipKneel and the crown
+    // to about 0.94 of the standing crown (0.99 for a seat that rested on the 방석 itself, plus the heels).
     const kneelingCrown = monkRig.seatTop + monkRig.hipKneel + monkRig.neckY + crown;
     expect(Math.abs(crownWorld - 1.122), "standing crown").toBeLessThanOrEqual(0.03);
     expect(Math.abs(kneelingCrown - (0.99 + 0.069)), "kneeling crown").toBeLessThanOrEqual(0.03);
     const seatAbove = monkRig.hipKneel - monkRig.pelvisDrop * monkRig.kneelPelvisScaleY;
-    expect(seatAbove, "the buttocks rest on the heels, which lie on the cushion: the seat of the trousers is a heel thick above it").toBeGreaterThan(0.06);
-    expect(seatAbove, "the buttocks rest on the heels, which lie on the cushion: the seat of the trousers is a heel thick above it").toBeLessThan(0.075);
+    expect(seatAbove, "the buttocks rest on the heels, which lie on the 방석: the seat of the trousers is a heel thick above it").toBeGreaterThan(0.06);
+    expect(seatAbove, "the buttocks rest on the heels, which lie on the 방석: the seat of the trousers is a heel thick above it").toBeLessThan(0.075);
   });
 
   it("dresses the 동자승 in a knee-length jacket over baggy trousers gathered above the ankle, the foot showing below the cuff", async () => {
@@ -666,8 +666,8 @@ describe("monk assets", () => {
     expect(hemStanding, "the hem hangs about 0.95 H (0.31 m) above the ground").toBeLessThan(0.34);
     const seatKneeling = monkRig.seatTop + monkRig.hipKneel + monkRig.kneelPelvisLift + pelvis.min.y * monkRig.kneelPelvisScaleY;
     expect(seatKneeling).toBeGreaterThanOrEqual(monkRig.seatTop);
-    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the cushion").toBeGreaterThan(0.06);
-    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the cushion").toBeLessThan(0.075);
+    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the 방석").toBeGreaterThan(0.06);
+    expect(seatKneeling - monkRig.seatTop, "the kneeling seat rests on the heels, a heel thick above the 방석").toBeLessThan(0.075);
     const hemKneeling = monkRig.seatTop + monkRig.hipKneel + jacket.min.y * monkRig.kneelSkirtScale;
     expect(hemKneeling - monkRig.seatTop, "the jacket hem stays above the spread seat").toBeGreaterThan(0.05);
 
@@ -690,7 +690,7 @@ describe("monk assets", () => {
       expect(lowest(part), `${part} rests on the seat, not in it`).toBeGreaterThanOrEqual(monkRig.seatTop - 0.002);
       expect(lowest(part) - monkRig.seatTop, `${part} sits right on the seat`).toBeLessThan(part === "pelvis" ? 0.075 : 0.03);
     }
-    expect(lowest("pelvis") - monkRig.seatTop, "the buttocks rest on the heels, not on the cushion").toBeGreaterThan(0.06);
+    expect(lowest("pelvis") - monkRig.seatTop, "the buttocks rest on the heels, not on the 방석").toBeGreaterThan(0.06);
     const jacketHem = Math.min(...worldVertices(nodeOf(avatar, "skirt", 0), parts.skirt).map((v) => v.y));
     expect(jacketHem, "the jacket hangs clear above the seat").toBeGreaterThan(monkRig.seatTop + 0.05);
 
@@ -754,15 +754,15 @@ describe("monk assets", () => {
     }
   });
 
-  it("sits in the 정좌: buttocks on the heels, insteps flat on the cushion, the toes back and crossed right over left, the knees a hand-span apart", async () => {
+  it("sits in the 정좌: buttocks on the heels, insteps flat on the 방석, the toes back and crossed right over left, the knees a hand-span apart", async () => {
     const parts = await loadParts();
     const avatar = posedAvatar("kneel");
     const H = monkRig.headHeight;
     const feet = [0, 1].map((side) => worldVertices(nodeOf(avatar, "foot", side), parts.foot));
     const lowest = feet.map((points) => Math.min(...points.map((v) => v.y)) - monkRig.seatTop);
     for (const [side, low] of lowest.entries()) {
-      expect(low, `the instep of foot ${side} does not sink into the cushion`).toBeGreaterThanOrEqual(-0.0005);
-      expect(low, `the instep of foot ${side} lies flat on the cushion`).toBeLessThan(0.004);
+      expect(low, `the instep of foot ${side} does not sink into the 방석`).toBeGreaterThanOrEqual(-0.0005);
+      expect(low, `the instep of foot ${side} lies flat on the 방석`).toBeLessThan(0.004);
     }
     expect(lowest[1] as number, "the right foot lies over the left").toBeGreaterThan(lowest[0] as number);
     expect(Math.max(...(feet[1] as Vector3[]).map((v) => v.y)), "the right foot's toes ride up over the left").toBeGreaterThan(Math.max(...(feet[0] as Vector3[]).map((v) => v.y)));
@@ -783,9 +783,9 @@ describe("monk assets", () => {
     expect(leftIn - rightIn, "the big toes overlap by a toe, not a foot").toBeLessThan(0.04);
     expect(Math.abs((heels[1] as Vector3).x - (heels[0] as Vector3).x), "the heels are apart, the buttocks between them").toBeGreaterThan(0.04);
 
-    // The buttocks (the seat of the trousers) rest on the heels, not on the cushion, and the back is straight up from them.
+    // The buttocks (the seat of the trousers) rest on the heels, not on the 방석, and the back is straight up from them.
     const pelvis = worldVertices(nodeOf(avatar, "pelvis", 0), parts.pelvis);
-    expect(Math.min(...pelvis.map((v) => v.y)) - monkRig.seatTop, "the buttocks sit a heel thick above the cushion").toBeGreaterThan(0.06);
+    expect(Math.min(...pelvis.map((v) => v.y)) - monkRig.seatTop, "the buttocks sit a heel thick above the 방석").toBeGreaterThan(0.06);
     const torso = nodeOf(avatar, "torso", 0);
     const up = new Vector3(0, 1, 0).transformDirection(torso.matrixWorld);
     expect(Math.abs(up.z), "the back is straight, no lean").toBeLessThan(0.01);
