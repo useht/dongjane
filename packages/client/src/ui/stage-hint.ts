@@ -7,7 +7,7 @@ const LOOKS: Record<HintAction, { icon: IconName; label: string }> = {
   stop: { icon: "stop", label: "중지" },
 };
 
-// A play button floated over the concert screen while this visitor's video waits, and a stop button while it plays; the DOM is only touched when it appears, vanishes, changes or moves a pixel.
+// A play button hung just under the concert screen while this visitor's video waits, and a stop button while it plays; the DOM is only touched when it appears, vanishes, changes or moves a pixel.
 export class StageHint {
   private readonly root = h("div", "seat-hints");
   private readonly node: HTMLButtonElement;
@@ -33,7 +33,7 @@ export class StageHint {
     if (px === this.x && py === this.y) return;
     this.x = px;
     this.y = py;
-    this.node.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -100%)`;
+    this.node.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, 0)`;
   }
 
   hide(): void {

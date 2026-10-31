@@ -1054,8 +1054,8 @@ export class App {
       this.stageHint.hide();
       return;
     }
-    const left = quad[3];
-    const right = quad[2];
+    const left = quad[0];
+    const right = quad[1];
     this.stageHint.place(action, (left.x + right.x) / 2, (left.y + right.y) / 2);
   }
 
