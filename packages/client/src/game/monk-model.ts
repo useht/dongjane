@@ -263,9 +263,9 @@ export class MonkAvatar {
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    this.torsoNode.rotation.x = -0.05 * walk - 1.32 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
+    this.torsoNode.rotation.x = -0.05 * walk - 1.648 * depth + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     this.torsoNode.rotation.z = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
-    this.headNode.rotation.x = -0.5 * depth + breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
+    this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -274,20 +274,20 @@ export class MonkAvatar {
       const elbow = this.elbows[side] as Object3D;
       const armSwing = (side === 0 ? swing : swingBack) * 0.5 * walk;
 
-      // The arm hangs almost straight at rest (a little out from the hip, so the hand clears the trousers); praying swings it forward,
-      // yaws it inward and rolls the forearm so the palms meet under the chin; bowing lays both hands together on the seat in front of the face
-      // (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
+      // The arm hangs straight at rest, splayed about 35 degrees out from the shoulder so the sleeve clears the wide robe; praying swings
+      // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing lays both hands together on the seat under
+      // the face (a copy of POSE in packages/client/assets/monk/build_monk.py, keep both in step).
       const idleX = 0.08 + breathe * 0.02;
-      const idleZ = sign * 0.12;
+      const idleZ = sign * 0.61;
       const idleElbow = 0.1;
-      const prayX = 0.24;
-      const prayY = sign * 0.35;
-      const prayZ = -sign * 0.05;
-      const prayElbow = 2.28;
-      const prayTwist = -sign * 1.15;
-      const bowX = 0.83;
-      const bowZ = -sign * 0.43;
-      const bowElbow = 1.81;
+      const prayX = 0.924;
+      const prayY = sign * 0.315;
+      const prayZ = -sign * 0.185;
+      const prayElbow = 1.301;
+      const prayTwist = -sign * 1.478;
+      const bowX = 1.261;
+      const bowZ = -sign * 0.267;
+      const bowElbow = 0.44;
 
       const prayMix = kneel * (1 - depth);
       const baseX = idleX + (prayX - idleX) * kneel;

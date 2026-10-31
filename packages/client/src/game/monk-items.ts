@@ -18,11 +18,11 @@ export const ROD_POSE = {
   lean: 0.06,
   roll: 0.3,
   lead: { shoulder: 0.9, elbow: 0.9 },
-  rear: { shoulder: 0.35, elbow: 1.05 },
+  rear: { shoulder: 0.42, elbow: 1.05 },
   elevation: 0.8,
 } as const;
 
-const ROD_GRIP_Y = -0.04;
+const ROD_GRIP_Y = -0.016;
 const ROD_BUTT = 0.2;
 const ROD_GRIP_END = 0.12;
 const ROD_REACH = 1.2;
