@@ -1,46 +1,24 @@
-import { CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD } from "./casino-layout.ts";
-import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, SHORE, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
+import { ARRIVAL, type Bounds } from "./layout.ts";
+import { DEFAULT_ZONE, SEATED_VENUES, VENUES, type Zone } from "./venues/index.ts";
+import { buildWalkGraph, routeBetween } from "./walk-graph.ts";
 
-// Where feet may go. The world is a chain of rectangles: the room inside the 법당, the doorway through its front wall,
-// the court between the doorway and the plaza (the door faces +x, so the court is the strip along the plaza's west
-// edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway and its floor. Every
-// rectangle is convex, so a straight line between two points of the same one is always walkable, and a walk across the
-// world is a few such lines joined at the places where two rectangles touch.
+// Where feet may go. The world is a graph of rectangles, the areas of its venues (venues/): the room inside the 법당, the
+// doorway through its front wall, the court between the doorway and the plaza (the door faces +x, so the court is the strip
+// along the plaza's west edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway
+// and its floor. Two areas that touch along an edge are neighbours (walk-graph.ts). Every rectangle is convex, so a straight
+// line between two points of the same one is always walkable, and a walk across the world is a few such lines joined at the
+// places where two rectangles touch.
 
 export interface Point {
   x: number;
   z: number;
 }
 
-export const PLAZA_AREA: Bounds = WORLD_BOUNDS;
-// The court covers the plaza's whole depth (z) and runs from the porch's edge to the plaza.
-export const COURT_AREA: Bounds = {
-  minX: dharmaToWorld(0, DHARMA_PORCH_Z).x,
-  maxX: WORLD_BOUNDS.minX,
-  minZ: WORLD_BOUNDS.minZ,
-  maxZ: WORLD_BOUNDS.maxZ,
-};
-// The doorway runs through the front wall and the porch, 2.8 m wide, centred on the door.
-export const DOORWAY_AREA: Bounds = {
-  minX: DHARMA_BOUNDS.maxX,
-  maxX: COURT_AREA.minX,
-  minZ: DHARMA_ORIGIN.z - 1.4,
-  maxZ: DHARMA_ORIGIN.z + 1.4,
-};
-export const INTERIOR_AREA: Bounds = DHARMA_BOUNDS;
+export { COURT_AREA, PLAZA_AREA } from "./venues/gatbawi.ts";
+export { DOORWAY_AREA, INTERIOR_AREA } from "./venues/dharma.ts";
 
-// The chain, from the room outward: each area touches the next along a doorstep.
-const CHAIN: readonly Bounds[] = [
-  INTERIOR_AREA,
-  DOORWAY_AREA,
-  COURT_AREA,
-  PLAZA_AREA,
-  SHORE,
-  COAST_ROAD,
-  CASINO_YARD,
-  CASINO_DOOR,
-  CASINO_FLOOR,
-];
+const GRAPH = buildWalkGraph(VENUES, ARRIVAL);
+const AREAS: readonly Bounds[] = GRAPH.map((node) => node.area);
 
 // A walker's body is wider than a point: crossing a doorstep, it stays this far from the edge of the opening.
 const DOORSTEP_MARGIN = 0.35;
@@ -64,9 +42,9 @@ export function randomPointIn(area: Bounds, random: () => number): Point {
   return { x: area.minX + random() * (area.maxX - area.minX), z: area.minZ + random() * (area.maxZ - area.minZ) };
 }
 
-// The computer-driven monks keep to the temple: the room, the doorway, the court, the plaza and the shore. The coast road
-// and the casino stay a visitor's walk alone.
-const STROLL_AREAS: readonly Bounds[] = CHAIN.slice(0, 5);
+// The computer-driven monks keep to the venues that let them stroll: the room, the doorway, the court, the plaza and the
+// shore. The coast road and the casino stay a visitor's walk alone.
+const STROLL_AREAS: readonly Bounds[] = GRAPH.filter((node) => node.stroll).map((node) => node.area);
 const STROLL_SIZES = STROLL_AREAS.map((area) => (area.maxX - area.minX) * (area.maxZ - area.minZ));
 const STROLL_TOTAL = STROLL_SIZES.reduce((sum, area) => sum + area, 0);
 
@@ -83,7 +61,7 @@ export function randomWalkable(random: () => number): Point {
 
 function indexesAt(x: number, z: number): number[] {
   const found: number[] = [];
-  CHAIN.forEach((area, index) => {
+  AREAS.forEach((area, index) => {
     if (contains(area, x, z)) found.push(index);
   });
   return found;
@@ -96,7 +74,7 @@ export function resolveWalkable(x: number, z: number, from?: Point): Point {
   let best: Point = { x, z };
   let bestDistance = Number.POSITIVE_INFINITY;
   let bestIsHome = false;
-  CHAIN.forEach((area, index) => {
+  AREAS.forEach((area, index) => {
     const point = clampTo(area, x, z);
     const distance = (point.x - x) ** 2 + (point.z - z) ** 2;
     const isHome = home.includes(index);
@@ -119,7 +97,7 @@ export function resolveNearby(x: number, z: number, from: Point): Point {
   let best = { x, z };
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const index of here) {
-    const point = clampTo(CHAIN[index] as Bounds, x, z);
+    const point = clampTo(AREAS[index] as Bounds, x, z);
     const distance = (point.x - x) ** 2 + (point.z - z) ** 2;
     if (distance < bestDistance) {
       best = point;
@@ -129,9 +107,11 @@ export function resolveNearby(x: number, z: number, from: Point): Point {
   return best;
 }
 
-// The zone a walker is in: the 법당 inside its front door, the open ground otherwise (the doorstep included).
-export function zoneAt(x: number, z: number): Zone {
-  return contains(INTERIOR_AREA, x, z) ? "dharma" : "gatbawi";
+// The zone a walker is in: the first seated venue whose footprint holds them (the 법당 inside its front door), the open
+// ground otherwise (the doorstep included).
+export function venueAt(x: number, z: number): Zone {
+  for (const venue of SEATED_VENUES) if (contains(venue.footprint, x, z)) return venue.id;
+  return DEFAULT_ZONE;
 }
 
 // The stretch of floor two neighbouring areas share, pulled in from both ends so a monk does not scrape the jamb.
@@ -183,31 +163,14 @@ function shortestCrossings(steps: readonly { from: Point; to: Point }[], start: 
   return corners;
 }
 
-function nearestPair(from: readonly number[], to: readonly number[]): [number, number] {
-  let best: [number, number] = [from[0] ?? 0, to[0] ?? 0];
-  let bestGap = Number.POSITIVE_INFINITY;
-  for (const a of from) {
-    for (const b of to) {
-      if (Math.abs(a - b) < bestGap) {
-        bestGap = Math.abs(a - b);
-        best = [a, b];
-      }
-    }
-  }
-  return best;
-}
-
 // The corners to walk through, in order, to get from `from` to the walkable point nearest `to`; the last one is that
-// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way.
+// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way, along the shortest
+// route through the graph of areas.
 export function planPath(from: Point, to: Point): Point[] {
   const end = resolveWalkable(to.x, to.z, from);
   const start = resolveWalkable(from.x, from.z);
-  const [first, last] = nearestPair(indexesAt(start.x, start.z), indexesAt(end.x, end.z));
-  const direction = first <= last ? 1 : -1;
-  const steps: { from: Point; to: Point }[] = [];
-  for (let index = first; index !== last; index += direction) {
-    steps.push(doorstep(CHAIN[index] as Bounds, CHAIN[index + direction] as Bounds));
-  }
+  const route = routeBetween(GRAPH, indexesAt(start.x, start.z), indexesAt(end.x, end.z));
+  const steps = route.slice(1).map((next, index) => doorstep(AREAS[route[index] as number] as Bounds, AREAS[next] as Bounds));
   const path: Point[] = [];
   let previous: Point = start;
   for (const corner of shortestCrossings(steps, start, end)) {
@@ -244,10 +207,10 @@ function insideArea(area: Bounds, from: Point, dx: number, dz: number): [number,
 // area into the next, and stops on the edge of the last one it can stay in.
 function walkAsFarAsPossible(from: Point, dx: number, dz: number): Point {
   const target = { x: from.x + dx, z: from.z + dz };
-  const spans = CHAIN.map((area) => insideArea(area, from, dx, dz));
+  const spans = AREAS.map((area) => insideArea(area, from, dx, dz));
   if (!spans.some((span) => span !== null && span[0] <= 1e-9)) return resolveWalkable(from.x, from.z);
   let reach = 0;
-  for (let round = 0; round < CHAIN.length; round += 1) {
+  for (let round = 0; round < AREAS.length; round += 1) {
     let grown = reach;
     for (const span of spans) {
       if (span && span[0] <= reach + 1e-9 && span[1] > grown) grown = span[1];

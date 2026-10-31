@@ -19,21 +19,12 @@ import { isValidEmote } from "./emote.ts";
 import { randomHue } from "./identity.ts";
 import { NO_FISH, pickFish } from "./fish.ts";
 import { ITEM_CHANT, ITEM_MOKT, ITEM_ROD, isValidItem } from "./item.ts";
-import {
-  ARRIVAL,
-  SEAT_YAWS,
-  ZONES,
-  ZONE_SEATS,
-  type Zone,
-  canCastAt,
-  seatKey,
-  seatSpot,
-  yawFromDirection,
-} from "./layout.ts";
+import { ARRIVAL, canCastAt, yawFromDirection } from "./layout.ts";
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
-import { INTERIOR_AREA, type Point, planPath, randomPointIn, resolveWalkable, zoneAt } from "./walk.ts";
+import { SEAT_YAWS, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot } from "./venues/index.ts";
+import { INTERIOR_AREA, type Point, planPath, randomPointIn, resolveWalkable, venueAt } from "./walk.ts";
 
 // The corners left to walk, in order; the last is where the walk ends, and `seatId` is the seat it ends on (or -1).
 interface Route {
@@ -114,7 +105,7 @@ export class TempleSim {
   // Visitors standing in a zone right now; the NPCs are not counted, so they never take a visitor's place.
   zoneCount(zone: Zone): number {
     let count = 0;
-    for (const monk of this.state.monks.values()) if (!monk.npc && zoneAt(monk.x, monk.z) === zone) count += 1;
+    for (const monk of this.state.monks.values()) if (!monk.npc && venueAt(monk.x, monk.z) === zone) count += 1;
     return count;
   }
 
@@ -346,7 +337,7 @@ export class TempleSim {
   private visitors(zone: Zone): NpcVisitor[] {
     const visitors: NpcVisitor[] = [];
     for (const monk of this.state.monks.values()) {
-      if (!monk.npc && zoneAt(monk.x, monk.z) === zone) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
+      if (!monk.npc && venueAt(monk.x, monk.z) === zone) visitors.push({ id: monk.id, x: monk.x, z: monk.z, bowCount: monk.bowCount });
     }
     return visitors;
   }
@@ -396,7 +387,7 @@ export class TempleSim {
   }
 
   private think(monk: Monk, brain: NpcBrain, now: number): void {
-    const zone = zoneAt(monk.x, monk.z);
+    const zone = venueAt(monk.x, monk.z);
     const chant = this.state.chant;
     const chanting = now >= chant.startsAt && now < chantEndsAt(chant);
     thinkNpc(
@@ -507,6 +498,6 @@ export class TempleSim {
     const point = resolveWalkable(ARRIVAL.x + (this.random() - 0.5) * ARRIVAL.spread, ARRIVAL.z);
     monk.x = point.x;
     monk.z = point.z;
-    monk.yaw = SEAT_YAWS[zoneAt(point.x, point.z)];
+    monk.yaw = SEAT_YAWS[venueAt(point.x, point.z)];
   }
 }

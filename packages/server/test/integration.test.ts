@@ -22,7 +22,7 @@ import {
   SEAT_PATH,
   isWorldFullError,
   resolveWalkable,
-  zoneAt,
+  venueAt,
 } from "@dongjane/shared";
 import { WorldRoom } from "../src/world-room.ts";
 import { type GameServer, startGameServer } from "../src/server.ts";
@@ -72,7 +72,7 @@ describe("world list", () => {
     const room = await rig.enter(1);
     const npcs = [...room.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(NPC_COUNT);
-    for (const monk of npcs) expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    for (const monk of npcs) expect(venueAt(monk.x, monk.z)).toBe("dharma");
     expect(npcs.every((monk) => monk.slot === 0)).toBe(true);
     expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
     const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "one visitor counted");
@@ -298,7 +298,7 @@ describe("two clients in one world", () => {
     expect(seenByB.slot).toBe(1);
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
-    expect(zoneAt(seenByB.x, seenByB.z)).toBe("dharma");
+    expect(venueAt(seenByB.x, seenByB.z)).toBe("dharma");
     expect(b.state.seats.size).toBe(2 * SEAT_COUNT);
 
     a.send("sit", { zone: "gatbawi", seatId: 46 });
@@ -573,7 +573,7 @@ describe("one world", () => {
   it("brings a visitor in inside the 법당", async () => {
     const { room } = await rig.arrive(1);
     const monk = room.state.monks.get(room.sessionId)!;
-    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    expect(venueAt(monk.x, monk.z)).toBe("dharma");
     expect(monk.z).toBeCloseTo(ARRIVAL.z, 3);
     expect(Math.abs(monk.x - ARRIVAL.x)).toBeLessThanOrEqual(ARRIVAL.spread);
     expect(await eventually(() => rig.world(1), (info) => info.zones.dharma === 1, "the 법당 counted")).toMatchObject({
@@ -600,7 +600,7 @@ describe("one world", () => {
     expect(a.state.seats.get("dharma:4")?.occupantId).toBe(a.sessionId);
     expect(monk.x).toBeCloseTo(DHARMA_SEATS[4]!.x, 1);
     expect(monk.z).toBeCloseTo(DHARMA_SEATS[4]!.z, 1);
-    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    expect(venueAt(monk.x, monk.z)).toBe("dharma");
     expect(await eventually(() => rig.world(1), (info) => info.zones.dharma === 1, "the 법당 counted")).toMatchObject({
       zones: { gatbawi: 0, dharma: 1 },
     });
@@ -618,7 +618,7 @@ describe("one world", () => {
     await waitFor(() => monk.mode === "stand", "A arrives", 20_000, 25);
     expect(monk.x).toBeCloseTo(4, 1);
     expect(monk.z).toBeCloseTo(12, 1);
-    expect(zoneAt(monk.x, monk.z)).toBe("gatbawi");
+    expect(venueAt(monk.x, monk.z)).toBe("gatbawi");
   }, 40_000);
 
   it("lets a seat be asked for from the other side of the world, and refuses one that is taken", async () => {

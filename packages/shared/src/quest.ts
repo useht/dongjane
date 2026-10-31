@@ -1,5 +1,5 @@
 import { KST_OFFSET_MS } from "./constants.ts";
-import { SEAT_NAMES, ZONES, ZONE_NAMES, ZONE_SEATS, type Zone, seatSpot } from "./layout.ts";
+import { SEAT_NAMES, ZONES, ZONE_NAMES, ZONE_SEATS, type Zone, seatSpot } from "./venues/index.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LOCATION_TARGETS = [3, 5] as const;

@@ -43,9 +43,9 @@ describe("terms", () => {
     expect(files.length).toBeGreaterThan(60);
   });
 
-  it("names both zones and both kinds of seat in the shared layout", () => {
-    const layout = readFileSync(new URL("shared/src/layout.ts", ROOT), "utf8");
-    for (const word of ["갓바위", "법당", "돗자리", "방석"]) expect(layout.includes(word), `layout says ${word}`).toBe(true);
+  it("names both zones and both kinds of seat in the shared venues", () => {
+    const venues = ["gatbawi", "dharma"].map((id) => readFileSync(new URL(`shared/src/venues/${id}.ts`, ROOT), "utf8")).join("\n");
+    for (const word of ["갓바위", "법당", "돗자리", "방석"]) expect(venues.includes(word), `venues say ${word}`).toBe(true);
   });
 
   it("uses the new identifiers and file names, never the retired English ones", () => {

@@ -10,7 +10,7 @@ import {
   TICK_MS,
   type TempleState,
   WORLD_BOUNDS,
-  zoneAt,
+  venueAt,
 } from "@dongjane/shared";
 import { SoloSession } from "../src/net/solo.ts";
 
@@ -51,7 +51,7 @@ describe("SoloSession", () => {
     expect(monk.mode).toBe("stand");
     expect(Math.abs(monk.x - SPAWN.x)).toBeLessThanOrEqual(SPAWN.spread);
     expect(monk.z).toBe(SPAWN.z);
-    expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+    expect(venueAt(monk.x, monk.z)).toBe("dharma");
     expect(session.sessionId).toBe("solo");
     void session.leave();
   });
@@ -60,7 +60,7 @@ describe("SoloSession", () => {
     const { session } = open();
     const npcs = [...session.state.monks.values()].filter((monk) => monk.npc);
     expect(npcs).toHaveLength(NPC_COUNT);
-    for (const npc of npcs) expect(zoneAt(npc.x, npc.z)).toBe("dharma");
+    for (const npc of npcs) expect(venueAt(npc.x, npc.z)).toBe("dharma");
     for (const npc of npcs) expect(npc.slot).toBe(0);
     void session.leave();
   });
@@ -122,15 +122,15 @@ describe("SoloSession", () => {
     const seat = DHARMA_SEATS[4]!;
     session.move(PLAZA_SPOT.x, PLAZA_SPOT.z, 1);
     vi.advanceTimersByTime(30_000);
-    expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");
+    expect(venueAt(self(session).x, self(session).z)).toBe("gatbawi");
     session.sit("dharma", seat.id);
     expect(session.state.seats.get(`dharma:${seat.id}`)?.occupantId).toBe("solo");
-    expect(zoneAt(self(session).x, self(session).z)).toBe("gatbawi");
+    expect(venueAt(self(session).x, self(session).z)).toBe("gatbawi");
     vi.advanceTimersByTime(30_000);
     expect(self(session).mode).toBe("kneel");
     expect(self(session).x).toBeCloseTo(seat.x, 1);
     expect(self(session).z).toBeCloseTo(seat.z, 1);
-    expect(zoneAt(self(session).x, self(session).z)).toBe("dharma");
+    expect(venueAt(self(session).x, self(session).z)).toBe("dharma");
     void session.leave();
   });
 

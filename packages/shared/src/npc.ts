@@ -1,6 +1,7 @@
 import { BOW_COOLDOWN_MS, BOW_MAX_TIMES, BOW_MS, WALK_SPEED } from "./constants.ts";
-import { SEAT_DEPTH, ZONE_SEATS, type SeatSpot, type Zone } from "./layout.ts";
+import type { SeatSpot } from "./layout.ts";
 import type { Persona } from "./persona.ts";
+import { SEAT_DEPTH, ZONES, ZONE_SEATS, type Zone, perZone } from "./venues/index.ts";
 import { randomWalkable, resolveNearby, resolveWalkable } from "./walk.ts";
 
 export interface NpcBody {
@@ -98,7 +99,7 @@ const FAR_STROLL_CHANCE = 0.15;
 // A standing monk sits almost every time it thinks; a stroll is the rare exception.
 const SIT_CHANCE = 0.9;
 const CHANT_SIT_BOOST = 0.1;
-// Roaming happens between seats: now and then a monk walks to a seat in the other zone to pray there.
+// Roaming happens between seats: now and then a monk walks to a seat in another zone to pray there.
 const OTHER_ZONE_SEAT_CHANCE = 0.5;
 // Within a zone a monk mostly picks a mat close to where it stands, and only now and then one anywhere.
 const NEAR_SEAT_M = 3;
@@ -367,10 +368,31 @@ function approach(monk: NpcBody, visitor: NpcVisitor, random: () => number): Poi
   return resolveWalkable(visitor.x + side.x * gap, visitor.z + side.z * gap, monk);
 }
 
+// The other zones in the order a roaming monk tries them: a draw by seatWeight, then another among those left, and so on.
+// With a single other zone there is nothing to draw.
+export function weightedOrder<T>(items: readonly T[], weight: (item: T) => number, random: () => number): T[] {
+  const pool = [...items];
+  const order: T[] = [];
+  while (pool.length > 1) {
+    let pick = random() * pool.reduce((sum, item) => sum + weight(item), 0);
+    let index = 0;
+    while (index < pool.length - 1 && pick >= weight(pool[index] as T)) {
+      pick -= weight(pool[index] as T);
+      index += 1;
+    }
+    order.push(...pool.splice(index, 1));
+  }
+  return [...order, ...pool];
+}
+
+const SEAT_WEIGHT = perZone((venue) => venue.npc.seatWeight);
+
 function pickSeat(persona: Persona, monk: NpcBody, world: NpcWorld): { zone: Zone; spot: SeatSpot } | undefined {
   const here = world.zone;
-  const there: Zone = here === "dharma" ? "gatbawi" : "dharma";
-  const order = world.random() < OTHER_ZONE_SEAT_CHANCE * persona.restless ? [there, here] : [here, there];
+  const away = ZONES.filter((zone) => zone !== here && SEAT_WEIGHT[zone] > 0);
+  const roams = world.random() < OTHER_ZONE_SEAT_CHANCE * persona.restless;
+  const others = weightedOrder(away, (zone) => SEAT_WEIGHT[zone], world.random);
+  const order = roams ? [...others, here] : [here, ...others];
   for (const zone of order) {
     const spot = pickSpotIn(zone, persona, monk, world);
     if (spot) return { zone, spot };
@@ -379,13 +401,10 @@ function pickSeat(persona: Persona, monk: NpcBody, world: NpcWorld): { zone: Zon
 }
 
 // "In front" is the half of the zone's rows nearest the Buddha.
-const FRONT_DEPTH: Readonly<Record<Zone, number>> = (() => {
-  const limit = (zone: Zone): number => {
-    const depths = ZONE_SEATS[zone].map(SEAT_DEPTH[zone]);
-    return (Math.min(...depths) + Math.max(...depths)) / 2;
-  };
-  return { gatbawi: limit("gatbawi"), dharma: limit("dharma") };
-})();
+const FRONT_DEPTH = perZone((venue) => {
+  const depths = venue.seats.spots.map(venue.seats.depth);
+  return (Math.min(...depths) + Math.max(...depths)) / 2;
+});
 
 const isFront = (zone: Zone, spot: SeatSpot): boolean => SEAT_DEPTH[zone](spot) <= FRONT_DEPTH[zone];
 const seatDistance = (spot: SeatSpot, monk: NpcBody): number => Math.hypot(spot.x - monk.x, spot.z - monk.z);

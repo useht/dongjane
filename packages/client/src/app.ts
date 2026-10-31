@@ -1,4 +1,5 @@
 import {
+  INDOOR,
   ITEM_CHANT,
   ITEM_MOKT,
   ITEM_NONE,
@@ -18,12 +19,13 @@ import {
   machineNear,
   machineSpot,
   parseWorldParam,
+  perZone,
   planPath,
   seatLabel,
   skyAt,
+  venueAt,
   visitorTitle,
   worldName,
-  zoneAt,
 } from "@dongjane/shared";
 import type { GameAssets } from "./assets/registry.ts";
 import { AudioEngine } from "./audio/engine.ts";
@@ -154,7 +156,7 @@ export class App {
   private self: SelfSnapshot | null = null;
   // The part of the world the camera is in, which the seat hints, the sounds and the greetings belong to.
   private zone: Zone = START_ZONE;
-  private seatOwners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
+  private seatOwners: Record<Zone, Map<number, string>> = perZone(() => new Map());
   private nextKnockAt = 0;
   private readonly prediction = new SelfPrediction();
   private tapPath: { x: number; z: number }[] = [];
@@ -510,7 +512,7 @@ export class App {
     const views: MonkView[] = [];
     const rows: VisitorRow[] = [];
     const watched: WatchedMonk[] = [];
-    const counts: Record<Zone, number> = { gatbawi: 0, dharma: 0 };
+    const counts: Record<Zone, number> = perZone(() => 0);
     const visitorIds = new Set<string>();
     state.monks.forEach((monk) => {
       views.push({
@@ -534,7 +536,7 @@ export class App {
       // computer-driven monks are drawn but are not visitors: no count, no list row, no greeting
       if (monk.npc) return;
       // Where a monk is decides which zone they count in: the 법당 is whoever stands inside its door.
-      const monkZone = zoneAt(monk.x, monk.z);
+      const monkZone = venueAt(monk.x, monk.z);
       counts[monkZone] += 1;
       visitorIds.add(monk.id);
       watched.push({ id: monk.id, slot: monk.slot, x: monk.x, z: monk.z, mode: monk.mode });
@@ -560,8 +562,8 @@ export class App {
     this.lastViews = views;
     this.visitorTitles.retain(visitorIds);
 
-    const owners: Record<Zone, Map<number, string>> = { gatbawi: new Map(), dharma: new Map() };
-    const occupied: Record<Zone, Set<number>> = { gatbawi: new Set(), dharma: new Set() };
+    const owners: Record<Zone, Map<number, string>> = perZone(() => new Map());
+    const occupied: Record<Zone, Set<number>> = perZone(() => new Set());
     state.seats.forEach((seat) => {
       if (!isZone(seat.zone) || seat.occupantId === "") return;
       occupied[seat.zone].add(seat.id);
@@ -619,13 +621,13 @@ export class App {
   }
 
   private clearSeatOwners(): void {
-    this.seatOwners = { gatbawi: new Map(), dharma: new Map() };
+    this.seatOwners = perZone(() => new Map());
   }
 
   // The concert video waits (poster on the screen) in a live world until the visitor plays it, and the sutra runs for as long as
   // they are in the world; where they stand (see tickMix) only decides which of the two is heard. The wind belongs to the open air.
   private syncZoneSound(): void {
-    const outdoors = this.zone === "gatbawi";
+    const outdoors = !INDOOR[this.zone];
     const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();

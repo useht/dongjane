@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARRIVE_DISTANCE, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, SHORE, WALK_SPEED, resolveWalkable, yawFromDirection, zoneAt } from "@dongjane/shared";
+import { ARRIVE_DISTANCE, COURT_AREA, DHARMA_BOUNDS, DHARMA_ORIGIN, SHORE, WALK_SPEED, resolveWalkable, yawFromDirection, venueAt } from "@dongjane/shared";
 import {
   KEY_MOVE_INTERVAL_MS,
   KEY_MOVE_REACH,
@@ -114,7 +114,7 @@ describe("SelfPrediction movement", () => {
     const shown = must(prediction.display());
     expect(shown.z).toBeCloseTo(door, 6);
     expect(shown.x).toBeLessThan(DHARMA_BOUNDS.maxX - 1);
-    expect(zoneAt(shown.x, shown.z)).toBe("dharma");
+    expect(venueAt(shown.x, shown.z)).toBe("dharma");
   });
 
   it("stops at the front wall beside the doorway, and does not let a sidestep through it", () => {
@@ -124,7 +124,7 @@ describe("SelfPrediction movement", () => {
     const shown = must(prediction.display());
     expect(shown.z).toBeCloseTo(beside, 6);
     expect(shown.x).toBeGreaterThanOrEqual(DHARMA_BOUNDS.maxX);
-    expect(zoneAt(shown.x, shown.z)).toBe("gatbawi");
+    expect(venueAt(shown.x, shown.z)).toBe("gatbawi");
   });
 });
 

@@ -1,5 +1,5 @@
 import { PerspectiveCamera, Vector3 } from "three";
-import { DHARMA_YAW, type Zone, dharmaToWorld, worldToDharma } from "@dongjane/shared";
+import { DHARMA_YAW, INDOOR, type Zone, dharmaToWorld, worldToDharma } from "@dongjane/shared";
 import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT } from "./casino-layout.ts";
 import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
@@ -145,17 +145,17 @@ const START_DISTANCE = 7;
 
 // A wide window frames the plaza from nearer than a tall one, which needs the distance to fit the plaza's depth.
 export function viewFor(zone: Zone, aspect: number): View {
-  if (zone === "dharma") return { ...DHARMA_VIEW };
+  if (INDOOR[zone]) return { ...DHARMA_VIEW };
   return { ...DEFAULT_VIEW, distance: aspect < 1 ? DEFAULT_VIEW.distance : LANDSCAPE_VIEW_WIDE_DISTANCE };
 }
 
 export function startViewFor(zone: Zone, aspect: number): View {
-  if (zone === "dharma") return viewFor(zone, aspect);
+  if (INDOOR[zone]) return viewFor(zone, aspect);
   return { ...DEFAULT_VIEW, distance: START_DISTANCE };
 }
 
 export function regionFor(zone: Zone): { bounds: Box; limits: RigLimits } {
-  return zone === "dharma"
+  return INDOOR[zone]
     ? { bounds: DHARMA_CAMERA_BOUNDS, limits: DHARMA_LIMITS }
     : { bounds: LANDSCAPE_BOUNDS, limits: GATBAWI_LIMITS };
 }

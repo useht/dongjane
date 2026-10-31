@@ -22,7 +22,7 @@ import {
   resolveNearby,
   resolveWalkable,
   slideWalkable,
-  zoneAt,
+  venueAt,
 } from "../src/walk.ts";
 
 const CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
@@ -103,18 +103,18 @@ describe("walkable areas", () => {
   });
 });
 
-describe("zoneAt", () => {
+describe("venueAt", () => {
   it("is the 법당 only inside its walls", () => {
-    expect(zoneAt(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe("dharma");
-    expect(zoneAt(DHARMA_BOUNDS.minX, DHARMA_BOUNDS.minZ)).toBe("dharma");
-    expect(zoneAt(DHARMA_BOUNDS.maxX + 0.5, DHARMA_ORIGIN.z)).toBe("gatbawi");
-    expect(zoneAt(COURT_AREA.minX + 1, DHARMA_ORIGIN.z)).toBe("gatbawi");
-    expect(zoneAt(0, 14)).toBe("gatbawi");
-    expect(zoneAt(-100, -100)).toBe("gatbawi");
+    expect(venueAt(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe("dharma");
+    expect(venueAt(DHARMA_BOUNDS.minX, DHARMA_BOUNDS.minZ)).toBe("dharma");
+    expect(venueAt(DHARMA_BOUNDS.maxX + 0.5, DHARMA_ORIGIN.z)).toBe("gatbawi");
+    expect(venueAt(COURT_AREA.minX + 1, DHARMA_ORIGIN.z)).toBe("gatbawi");
+    expect(venueAt(0, 14)).toBe("gatbawi");
+    expect(venueAt(-100, -100)).toBe("gatbawi");
   });
 
   it("forgives the float32 rounding of a monk standing on a wall line", () => {
-    expect(zoneAt(Math.fround(DHARMA_BOUNDS.maxX), Math.fround(DHARMA_BOUNDS.maxZ))).toBe("dharma");
+    expect(venueAt(Math.fround(DHARMA_BOUNDS.maxX), Math.fround(DHARMA_BOUNDS.maxZ))).toBe("dharma");
   });
 });
 
@@ -317,8 +317,8 @@ describe("planPath", () => {
 describe("the shore", () => {
   it("is the link of the chain beyond the plaza's east edge", () => {
     expect(CHAIN[CHAIN.indexOf(PLAZA_AREA) + 1]).toBe(SHORE);
-    expect(zoneAt(SHORE.minX + 1, 5)).toBe("gatbawi");
-    expect(zoneAt(SEA_LINE_X - 0.5, 5)).toBe("gatbawi");
+    expect(venueAt(SHORE.minX + 1, 5)).toBe("gatbawi");
+    expect(venueAt(SEA_LINE_X - 0.5, 5)).toBe("gatbawi");
   });
 
   it("walks from the plaza onto the sand in one straight line", () => {
@@ -383,7 +383,7 @@ describe("slideWalkable", () => {
   it("goes in through the doorway and out again", () => {
     const inside = slideWalkable({ x: COURT_AREA.minX + 0.5, z: DHARMA_ORIGIN.z }, -3, 0);
     expect(inside.x).toBeCloseTo(COURT_AREA.minX + 0.5 - 3, 6);
-    expect(zoneAt(inside.x, inside.z)).toBe("dharma");
+    expect(venueAt(inside.x, inside.z)).toBe("dharma");
     const out = slideWalkable(inside, 3, 0);
     expect(out.x).toBeCloseTo(inside.x + 3, 6);
   });
@@ -502,7 +502,7 @@ describe("the casino", () => {
   });
 
   it("keeps the casino a part of the open ground for zones, and only the floor counts as inside it", () => {
-    expect(zoneAt(CASINO_FLOOR.minX + 1, CASINO_FLOOR.minZ + 1)).toBe("gatbawi");
+    expect(venueAt(CASINO_FLOOR.minX + 1, CASINO_FLOOR.minZ + 1)).toBe("gatbawi");
     expect(insideCasino(11.25, 50)).toBe(true);
     expect(insideCasino(CASINO_FLOOR.minX, CASINO_FLOOR.minZ)).toBe(true);
     expect(insideCasino(Math.fround(CASINO_FLOOR.maxX), Math.fround(CASINO_FLOOR.maxZ))).toBe(true);

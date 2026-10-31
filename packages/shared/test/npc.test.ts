@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CHANT_MS, NPC_COUNT, TICK_MS, ZONE_CAPACITY } from "../src/constants.ts";
-import { GATBAWI_SEATS, ZONES, seatKey, seatSpot, type Zone } from "../src/layout.ts";
+import { GATBAWI_SEATS } from "../src/layout.ts";
 import { type NpcActions, type NpcBody, type NpcVisitor, type NpcWorld, createNpcBrain, thinkNpc } from "../src/npc.ts";
 import type { Persona } from "../src/persona.ts";
 import { TempleSim } from "../src/sim.ts";
-import { INTERIOR_AREA, PLAZA_AREA, resolveWalkable, zoneAt } from "../src/walk.ts";
+import { ZONES, type Zone, seatKey, seatSpot } from "../src/venues/index.ts";
+import { INTERIOR_AREA, PLAZA_AREA, resolveWalkable, venueAt } from "../src/walk.ts";
 
 const CHANT_START = 1_800_000_000_000;
 const QUIET_START = CHANT_START + 5 * 60_000;
@@ -16,7 +17,7 @@ const PRAYER_RUN_MS = 20 * 60_000;
 const ROAM_RUN_MS = 60 * 60_000;
 
 // A computer-driven monk is in the zone its feet are in, and it roams the whole world.
-const zoneOf = (monk: { x: number; z: number }): Zone => zoneAt(monk.x, monk.z);
+const zoneOf = (monk: { x: number; z: number }): Zone => venueAt(monk.x, monk.z);
 
 function seededRandom(seed: number): () => number {
   let a = seed >>> 0;
@@ -434,7 +435,7 @@ describe("npc prayer that is never still", () => {
         const to = seatSpot(zone, seatId)!;
         seen.shifts.push({
           id: call.id,
-          sameZone: zoneAt(call.before.x, call.before.z) === zone,
+          sameZone: venueAt(call.before.x, call.before.z) === zone,
           metres: Math.hypot(to.x - call.before.x, to.z - call.before.z),
         });
       }

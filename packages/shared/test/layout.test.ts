@@ -33,7 +33,7 @@ import {
   worldToDharma,
   wrapAngle,
   yawFromDirection,
-  zoneAt,
+  venueAt,
 } from "../src/index.ts";
 
 describe("zones", () => {
@@ -218,7 +218,7 @@ describe("arrival", () => {
     const lastRowEdge = Math.max(...DHARMA_SEATS.map((seat) => seat.x)) + DHARMA_SEAT_SIZE.x / 2;
     for (const x of [ARRIVAL.x - ARRIVAL.spread / 2, ARRIVAL.x, ARRIVAL.x + ARRIVAL.spread / 2]) {
       expect(resolveWalkable(x, ARRIVAL.z)).toEqual({ x, z: ARRIVAL.z });
-      expect(zoneAt(x, ARRIVAL.z)).toBe("dharma");
+      expect(venueAt(x, ARRIVAL.z)).toBe("dharma");
       expect(x).toBeGreaterThan(lastRowEdge);
       expect(x).toBeLessThan(DHARMA_BOUNDS.maxX);
     }

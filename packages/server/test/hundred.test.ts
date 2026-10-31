@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ARRIVAL, WORLD_CAPACITY, ZONE_CAPACITY, ZONES, zoneAt } from "@dongjane/shared";
+import { ARRIVAL, WORLD_CAPACITY, ZONE_CAPACITY, ZONES, venueAt } from "@dongjane/shared";
 import { type GameServer, startGameServer } from "../src/server.ts";
 import { type WorldClientRoom, TestRig, eventually, sleep, waitFor } from "./helpers.ts";
 
@@ -29,7 +29,7 @@ describe("a hundred visitors", () => {
     expect(everyone).toHaveLength(WORLD_CAPACITY);
     for (const room of everyone) {
       const monk = room.state.monks.get(room.sessionId)!;
-      expect(zoneAt(monk.x, monk.z)).toBe("dharma");
+      expect(venueAt(monk.x, monk.z)).toBe("dharma");
       expect(Math.abs(monk.x - ARRIVAL.x)).toBeLessThanOrEqual(ARRIVAL.spread);
     }
 

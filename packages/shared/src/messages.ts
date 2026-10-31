@@ -1,7 +1,8 @@
 import { BOW_MAX_TIMES } from "./constants.ts";
 import { isValidEmote } from "./emote.ts";
 import { type Item, isValidItem } from "./item.ts";
-import { SEAT_COUNT, type Zone, isZone } from "./layout.ts";
+import { SEAT_COUNT } from "./layout.ts";
+import { type Zone, isZone } from "./venues/index.ts";
 import { isValidWorld } from "./world.ts";
 
 export const MSG = {
