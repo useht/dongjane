@@ -155,11 +155,15 @@ FACE = {  # heights are fractions of HEAD_H above the chin, x is a distance from
     "eye_x": round(0.19 * HEAD_H, 4),  # the eyes' centres are 0.38 H apart
     "eye_halfwidth": round(0.075 * HEAD_H, 4),  # each closed eye is 0.15 H wide
     "eye_arch": round(0.04 * HEAD_H, 4),  # the stroke rises this far in the middle: a ^ shape
-    "eye_radius": 0.0070,
+    "eye_thick": 0.0085,  # the stroke is a flat ribbon this wide in the middle ...
+    "eye_tip": 0.0035,  # ... and this wide at both ends
     "mouth_f": 0.30,
     "mouth_halfwidth": round(0.10 * HEAD_H, 4),  # the smile is 0.20 H wide
     "mouth_sag": round(0.03 * HEAD_H, 4),  # the middle of the smile dips this far below its ends: a u shape
-    "mouth_radius": 0.0058,
+    "mouth_thick": 0.0065,
+    "mouth_tip": 0.0030,
+    "stroke_lift": 0.002,  # the eyes and the smile float this far above the faceted skull (decals, measured along the facet normal) ...
+    "blush_lift": 0.0025,  # ... the blush a little higher: its big flat polygons span facet creases, which dip them about 1.5 mm
     "blush_f": 0.50,
     "blush_x": round(0.265 * HEAD_H, 4),  # just outward of the eyes
     "blush_radii": (round(0.10 * HEAD_H, 4), round(0.058 * HEAD_H, 4)),  # half length (x) and half height (z): the oval is 0.20 H long
@@ -388,16 +392,6 @@ def skull_at(t):
     return z, rx, ry
 
 
-def skull_front(x, z):
-    """y of the skull surface in front at (x, z), plus the outward normal angle about Z."""
-    t = math.asin(clamp((z - SKULL_ZC) / SKULL_A, -0.999, 0.999))
-    _, rx, ry = skull_at(t)
-    xn = clamp(abs(x) / rx, 0.0, 0.999)
-    y = SKULL_CY + ry * sqrt(1 - xn * xn)
-    nx, ny = x / rx**2, (y - SKULL_CY) / ry**2
-    return y, atan2(-nx, ny)
-
-
 def face_z(fraction):
     return CHIN_Z + fraction * H
 
@@ -422,9 +416,7 @@ def scalp_tint(key, co):
     return mix_colors(srgb_to_linear(PALETTE["skin"]), srgb_to_linear(PALETTE["scalp"]), w)
 
 
-def build_head():
-    p = Part("head")
-    p.tint = scalp_tint
+def skull_rings():
     n = SEGMENTS["head"]
     lats = 12
     top = radians(75)
@@ -433,59 +425,81 @@ def build_head():
         t = JAW_LAT0 + (top - JAW_LAT0) * i / (lats - 1)
         z, rx, ry = skull_at(t)
         rings.append(ring_xy(0.0, SKULL_CY, z, rx, ry, n))
-    p.loft(rings, "skin", cap_first=True, cap_last=Vector((0.0, SKULL_CY, CROWN_Z)))
+    return rings
+
+
+class SkullSurface:
+    """The faceted skull mesh itself (not the smooth ellipsoid it is sampled from: its facets lie up to 2.5 mm inside it), so the
+    face can be laid on exactly what the game draws."""
+
+    def __init__(self):
+        self.bm = bmesh.new()
+        vr = [[self.bm.verts.new(v) for v in ring] for ring in skull_rings()]
+        n = len(vr[0])
+        for i in range(len(vr) - 1):
+            for j in range(n):
+                k = (j + 1) % n
+                self.bm.faces.new([vr[i][j], vr[i][k], vr[i + 1][k], vr[i + 1][j]])
+        self.bm.normal_update()
+        self.tree = BVHTree.FromBMesh(self.bm)
+
+    def laid(self, x, z, lift):
+        """The point `lift` above the skull's front surface at (x, z), along that facet's outward normal, and the normal."""
+        hit, normal, _, _ = self.tree.ray_cast(Vector((x, 1.0, z)), Vector((0.0, -1.0, 0.0)))
+        if hit is None:
+            raise RuntimeError("no skull surface at x=%.3f z=%.3f" % (x, z))
+        return hit + normal * lift, normal
+
+
+def build_head():
+    p = Part("head")
+    p.tint = scalp_tint
+    p.loft(skull_rings(), "skin", cap_first=True, cap_last=Vector((0.0, SKULL_CY, CROWN_Z)))
 
     neck = [ring_xy(0.0, 0.004, z, r, r, 12) for z, r in ((-0.025, 0.046), (0.0, 0.043), (CHIN_Z + 0.02, 0.042))]
     p.loft(neck, "skin")
 
-    ex = SKULL_RX
     for side in (-1, 1):
         z = face_z(FACE["ear_f"])
         t = math.asin(clamp((z - SKULL_ZC) / SKULL_A, -0.999, 0.999))
         _, rx, ry = skull_at(t)
-        y, _ = skull_front(side * rx * 0.97, z)
         centre = Vector((side * (rx + FACE["ear_out"] - FACE["ear_radii"][0] * 0.9), SKULL_CY - 0.012, z))
         p.ellipsoid(centre, FACE["ear_radii"], "skin", rot=(0, 0, side * radians(-14)), u=8, v=6)
     return p.to_object()
 
 
-def tube_along(p, points, radius, key, flat=0.7):
-    """A thin tube through points on the skull surface ((position, normal angle about Z) pairs, ordered along x). Its section is
-    squashed to `flat` in the direction of the surface normal, so it reads as a painted stroke rather than a wire."""
-    sides = 6
-    rings = []
-    for i, (pt, ang) in enumerate(points):
-        tangent = (points[min(i + 1, len(points) - 1)][0] - points[max(i - 1, 0)][0]).normalized()
-        normal = Vector((-sin(ang), cos(ang), 0.0))
-        across = tangent.cross(normal).normalized()
-        rings.append([pt + normal * (radius * flat * cos(2 * pi * k / sides)) + across * (radius * sin(2 * pi * k / sides)) for k in range(sides)])
-    mouth_rings(p, rings, key)
+def stroke_inset(halfwidth, rise, tip):
+    """Centre-line half width that leaves the finished stroke, its slanted end cuts included, `halfwidth` wide on each side."""
+    return halfwidth - tip / 2 * sin(atan2(2 * abs(rise), halfwidth))
 
 
-def arc_points(x0, z0, halfwidth, rise, steps):
-    """Points of a stroke across the skull's front: x from x0 - halfwidth to x0 + halfwidth, z = z0 + rise * (1 - u^2): an arch for a
-    positive rise, a bowl for a negative one."""
-    pts = []
+def laid_stroke(p, skull, x0, z0, halfwidth, rise, steps, thick, tip, key, lift):
+    """A flat ribbon across the skull's front, seen from the front (+Y): x runs from x0 - halfwidth to x0 + halfwidth along
+    z = z0 + rise * (1 - u^2) (an arch for a positive rise, a bowl for a negative one). It is `thick` wide in the middle and `tip`
+    wide at both ends, and every vertex is laid `lift` above the facet of the skull under it, so no part of it is buried."""
+    centres = []
     for i in range(steps):
         u = -1 + 2 * i / (steps - 1)
-        x, z = x0 + halfwidth * u, z0 + rise * (1 - u * u)
-        y, ang = skull_front(x, z)
-        pts.append((Vector((x, y - 0.0005, z)), ang))
-    return pts
+        centres.append((x0 + halfwidth * u, z0 + rise * (1 - u * u), u))
+    rows = []
+    for i, (x, z, u) in enumerate(centres):
+        before, after = centres[max(i - 1, 0)], centres[min(i + 1, steps - 1)]
+        dx, dz = after[0] - before[0], after[1] - before[1]
+        length = math.hypot(dx, dz)
+        half = lerp(tip, thick, 1 - u * u) / 2
+        nx, nz = -dz / length * half, dx / length * half
+        rows.append([p.bm.verts.new(skull.laid(x + side * nx, z + side * nz, lift)[0]) for side in (-1, 1)])
+    for (a0, a1), (b0, b1) in zip(rows, rows[1:]):
+        quad = [a0, a1, b1, b0]
+        facing = (a1.co - a0.co).cross(b0.co - a0.co)  # the normal of this winding
+        p.face(quad if facing.y >= 0 else quad[::-1], key)
 
 
-def stroke_inset(halfwidth, rise, radius):
-    """Centre-line half width that leaves the finished stroke, tube ends included, `halfwidth` wide on each side."""
-    return halfwidth - radius * sin(atan2(2 * abs(rise), halfwidth))
-
-
-def surface_oval(p, cx, cz, rx, rz, key, rings=2, sides=10, lift=0.0015):
-    """A flat oval laid over the skull's front: a fan of rings whose points follow the skull surface, lifted a hair above it."""
-    bm = p.bm
+def laid_oval(p, skull, cx, cz, rx, rz, key, lift, rings=2, sides=10):
+    """A flat oval laid over the skull's front: a fan of rings whose points sit `lift` above the facets under them."""
 
     def vert(x, z):
-        y, _ = skull_front(x, z)
-        return bm.verts.new(Vector((x, y + lift, z)))
+        return p.bm.verts.new(skull.laid(x, z, lift)[0])
 
     centre = vert(cx, cz)
     ring_verts = [[vert(cx + rx * (r / rings) * cos(2 * pi * k / sides), cz + rz * (r / rings) * sin(2 * pi * k / sides)) for k in range(sides)] for r in range(1, rings + 1)]
@@ -499,32 +513,18 @@ def surface_oval(p, cx, cz, rx, rz, key, rings=2, sides=10, lift=0.0015):
 
 
 def build_face():
-    """Closed upturned eyes (^ ^), a small u smile and two blush ovals. No nose, no brows."""
+    """Closed upturned eyes (^ ^), a small u smile and two blush ovals. No nose, no brows. All three are decals laid on the skull's
+    facets (SkullSurface), so a stroke keeps one width over the whole head however its facets fall."""
     p = Part("face")
+    skull = SkullSurface()
     z_eye = face_z(FACE["eye_f"]) - FACE["eye_arch"] / 2  # eye_f is the height of the middle of the stroke's box
-    eye_hw = stroke_inset(FACE["eye_halfwidth"], FACE["eye_arch"], FACE["eye_radius"])
+    eye_hw = stroke_inset(FACE["eye_halfwidth"], FACE["eye_arch"], FACE["eye_tip"])
     for side in (-1, 1):
-        tube_along(p, arc_points(side * FACE["eye_x"], z_eye, eye_hw, FACE["eye_arch"], 5), FACE["eye_radius"], "eye")
-        surface_oval(p, side * FACE["blush_x"], face_z(FACE["blush_f"]), FACE["blush_radii"][0], FACE["blush_radii"][1], "blush")
-    tube_along(p, arc_points(0.0, face_z(FACE["mouth_f"]) + FACE["mouth_sag"] / 2, stroke_inset(FACE["mouth_halfwidth"], FACE["mouth_sag"], FACE["mouth_radius"]), -FACE["mouth_sag"], 7), FACE["mouth_radius"], "mouth")
+        laid_stroke(p, skull, side * FACE["eye_x"], z_eye, eye_hw, FACE["eye_arch"], 7, FACE["eye_thick"], FACE["eye_tip"], "eye", FACE["stroke_lift"])
+        laid_oval(p, skull, side * FACE["blush_x"], face_z(FACE["blush_f"]), FACE["blush_radii"][0], FACE["blush_radii"][1], "blush", FACE["blush_lift"])
+    mouth_hw = stroke_inset(FACE["mouth_halfwidth"], FACE["mouth_sag"], FACE["mouth_tip"])
+    laid_stroke(p, skull, 0.0, face_z(FACE["mouth_f"]) + FACE["mouth_sag"] / 2, mouth_hw, -FACE["mouth_sag"], 9, FACE["mouth_thick"], FACE["mouth_tip"], "mouth", FACE["stroke_lift"])
     return p.to_object()
-
-
-def mouth_rings(p, rings, key="mouth"):
-    """Connect tube rings that are stacked sideways (along x); winding chosen so the outside faces out."""
-    bm = p.bm
-    vr = [[bm.verts.new(v) for v in ring] for ring in rings]
-    n = len(vr[0])
-    for i in range(len(vr) - 1):
-        for j in range(n):
-            k = (j + 1) % n
-            p.face([vr[i][k], vr[i][j], vr[i + 1][j], vr[i + 1][k]], key)
-    for ring, flip in ((vr[0], False), (vr[-1], True)):
-        centre = sum((v.co for v in ring), Vector()) / n
-        c = bm.verts.new(centre)
-        for j in range(n):
-            k = (j + 1) % n
-            p.face([c, ring[k], ring[j]] if flip else [c, ring[j], ring[k]], key)
 
 
 def build_hair():
@@ -1061,6 +1061,29 @@ def check_face(parts, chin):
         assert abs(value - want) <= tol, "%s is %.4f, wanted %.4f +- %.3f" % (label, value, want, tol)
 
 
+def check_face_on_head(parts):
+    """The eyes, the smile and the blush are drawn over the head, never in it (a buried stroke breaks into pieces) and never
+    floating off it: every corner, edge middle and centre of their polygons, measured against the finished head mesh, is a hair
+    above it, and each polygon faces the way the skin there does."""
+    head = world_bvh(parts["head"], Matrix.Identity(4))
+    mesh = parts["face"].data
+    slots = [m.name for m in mesh.materials]
+    for key in ("eye", "mouth", "blush"):
+        samples, facing = [], 1.0
+        for poly in mesh.polygons:
+            if poly.material_index != slots.index("monk_" + key):
+                continue
+            corners = [mesh.vertices[i].co for i in poly.vertices]
+            samples += corners + [poly.center] + [(corners[i] + corners[(i + 1) % len(corners)]) / 2 for i in range(len(corners))]
+            normal = head.find_nearest(poly.center)[1]
+            facing = min(facing, poly.normal.dot(normal))
+        heights = [clearance_of(head, point) for point in samples]
+        print("FACE %-6s %3d samples %.4f .. %.4f above the head, facing the skin %.2f" % (key, len(samples), min(heights), max(heights), facing))
+        assert min(heights) >= 0.0008, "the %s sinks %.4f into the head" % (key, 0.0008 - min(heights))
+        assert max(heights) <= 0.004, "the %s floats %.4f off the head" % (key, max(heights))
+        assert facing > 0.8, "a polygon of the %s faces away from the head (%.2f)" % (key, facing)
+
+
 def check_proportions(parts):
     """Measures the finished meshes (not the config numbers) against the reference, in head heights where H is the crown
     to the lowest jaw vertex, and fails the build when a ratio drifts."""
@@ -1426,6 +1449,9 @@ def render_previews(parts):
     mid = (0, 0, 0.66)
     for name, az in (("monk_front", 0), ("monk_side", 90), ("monk_back", 180), ("monk_three_quarter", 38)):
         render_view(cam, name, az, mid, 1.7)
+    face_mid = (0, SKULL_CY, NECK_Y + CHIN_Z + 0.55 * H + RIG["hipStand"])
+    for name, az in (("monk_face_front", 0), ("monk_face_three_quarter", 38), ("monk_face_side", 80)):
+        render_view(cam, name, az, face_mid, 0.5)
     standing.hide_render = True
     walking.hide_render = False
     render_view(cam, "monk_walk_side", 90, mid, 1.7)
@@ -1456,6 +1482,7 @@ def main():
         parts[name] = obj
     total = report_parts(parts)
     check_proportions(parts)
+    check_face_on_head(parts)
     check_kneel_clearance(parts)
     check_kneel_hands(parts)
     check_bow(parts)
