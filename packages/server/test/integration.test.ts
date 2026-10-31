@@ -17,6 +17,7 @@ import {
   WORLD_CAPACITY,
   WORLD_SPARE_AT,
   ZONE_CAPACITY,
+  ZONE_SEATS,
   MSG,
   NPC_COUNT,
   SEAT_PATH,
@@ -63,7 +64,7 @@ describe("world list", () => {
     expect(world.npcs).toBe(NPC_COUNT);
     expect(world.capacity).toBe(WORLD_CAPACITY);
     expect(world.full).toBe(false);
-    expect(world.zones).toEqual({ gatbawi: 0, dharma: 2 });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: 2, bathhouse: 0 });
     expect(world.roomId).toEqual(expect.any(String));
     expect((await rig.worlds()).map((info) => info.world)).toEqual([1]);
   });
@@ -77,7 +78,7 @@ describe("world list", () => {
     expect(room.state.monks.get(room.sessionId)).toMatchObject({ npc: false, slot: 1 });
     const world = await eventually(() => rig.world(1), (info) => info.clients === 1, "one visitor counted");
     expect(world.full).toBe(false);
-    expect(world.zones).toEqual({ gatbawi: 0, dharma: 1 });
+    expect(world.zones).toEqual({ gatbawi: 0, dharma: 1, bathhouse: 0 });
   });
 
   it("closes a world once its last visitor leaves", async () => {
@@ -299,7 +300,7 @@ describe("two clients in one world", () => {
     expect(seenByB.hue).toBe(40);
     expect(seenByB.mode).toBe("stand");
     expect(venueAt(seenByB.x, seenByB.z)).toBe("dharma");
-    expect(b.state.seats.size).toBe(2 * SEAT_COUNT);
+    expect(b.state.seats.size).toBe(Object.values(ZONE_SEATS).reduce((total, spots) => total + spots.length, 0));
 
     a.send("sit", { zone: "gatbawi", seatId: 46 });
     await waitFor(() => seenByB.seatId === 46, "B sees A claim mat 46", 1000);

@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { AVENUE, type Bounds, SEAT_TOPS, SEAT_YAWS, SLOT_A1, VENUES, ZONE_SEATS, venueById } from "@dongjane/shared";
 import { BUDGET, KIT_MESHES, KIT_PROTOTYPES } from "../src/assets/contract.ts";
-import { MAT_SIZE } from "../src/game/kits/bathhouse.ts";
+import { REST_MAT } from "../src/game/kits/bathhouse.ts";
 import { KITS, KIT_IDS, KIT_PADS, type KitPiece, type KitSpec, kitById, meshNames } from "../src/game/kits/index.ts";
 import { PAD_HEIGHT } from "../src/game/kits/kit.ts";
 import { PAD_FALLOFF, levelGround, padWeight } from "../src/game/ground-pads.ts";
@@ -230,13 +230,13 @@ describe("the bathhouse kit against the shared layout", () => {
 
   it("draws the mat the layout seats, at the seat's height, inside the rest room it kneels in", () => {
     const seat = extentOf(extentPieces(spec, "seat"));
-    expect(seat.minX).toBeCloseTo(-MAT_SIZE.width / 2, 6);
-    expect(seat.maxX).toBeCloseTo(MAT_SIZE.width / 2, 6);
-    expect(seat.minZ).toBeCloseTo(-MAT_SIZE.depth / 2, 6);
-    expect(seat.maxZ).toBeCloseTo(MAT_SIZE.depth / 2, 6);
+    expect(seat.minX).toBeCloseTo(-REST_MAT.width / 2, 6);
+    expect(seat.maxX).toBeCloseTo(REST_MAT.width / 2, 6);
+    expect(seat.minZ).toBeCloseTo(-REST_MAT.depth / 2, 6);
+    expect(seat.maxZ).toBeCloseTo(REST_MAT.depth / 2, 6);
     expect(seat.maxY, "the top of the mat is where a seated monk rests").toBeCloseTo(SEAT_TOPS.bathhouse, 6);
     const yaw = SEAT_YAWS.bathhouse;
-    const [halfX, halfZ] = [Math.abs(Math.cos(yaw)) * MAT_SIZE.width / 2 + Math.abs(Math.sin(yaw)) * MAT_SIZE.depth / 2, Math.abs(Math.sin(yaw)) * MAT_SIZE.width / 2 + Math.abs(Math.cos(yaw)) * MAT_SIZE.depth / 2];
+    const [halfX, halfZ] = [Math.abs(Math.cos(yaw)) * REST_MAT.width / 2 + Math.abs(Math.sin(yaw)) * REST_MAT.depth / 2, Math.abs(Math.sin(yaw)) * REST_MAT.width / 2 + Math.abs(Math.cos(yaw)) * REST_MAT.depth / 2];
     const mats = ZONE_SEATS.bathhouse;
     expect(mats.length).toBeLessThanOrEqual(40);
     for (const mat of mats) {
@@ -499,8 +499,8 @@ describe("venues/bathhouse.glb's mat", () => {
     const { min, max } = seat.positions;
     expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs((min[2] + max[2]) / 2)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[0] - min[0] - MAT_SIZE.width)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[2] - min[2] - MAT_SIZE.depth)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[0] - min[0] - REST_MAT.width)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[2] - min[2] - REST_MAT.depth)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs(max[1] - SEAT_TOPS.bathhouse)).toBeLessThanOrEqual(0.005);
     expect(min[1]).toBeGreaterThanOrEqual(-0.01);
   });

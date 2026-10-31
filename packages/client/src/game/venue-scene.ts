@@ -126,7 +126,8 @@ export interface VenueLightsQuality {
 export class VenueLights {
   readonly group = new Group();
 
-  private readonly hemisphere = new HemisphereLight("#ffffff", "#ffffff", 0);
+  // Three starts a light white; `configure` gives it the venue's colours.
+  private readonly hemisphere = new HemisphereLight();
   private readonly lamps: PointLight[] = [];
   private readonly sky = new Color();
   private readonly ground = new Color();
@@ -134,10 +135,14 @@ export class VenueLights {
 
   constructor(quality: VenueLightsQuality) {
     this.group.name = "venue-lights";
+    this.hemisphere.intensity = 0;
     this.group.add(this.hemisphere);
     // A weak device keeps one lamp; every light costs every material in the scene.
     for (let i = 0; i < (quality.weak ? 1 : 2); i += 1) {
-      const lamp = new PointLight("#ffffff", 0, 1, LAMP_DECAY);
+      const lamp = new PointLight();
+      lamp.intensity = 0;
+      lamp.distance = 1;
+      lamp.decay = LAMP_DECAY;
       this.lamps.push(lamp);
       this.group.add(lamp);
     }

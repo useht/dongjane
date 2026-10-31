@@ -21,7 +21,7 @@ const WATER_Y = 0.14;
 const POOL_FLOOR = -0.02;
 
 // The mat a visitor kneels on is 0.85 wide and 0.95 deep, its top at the seat's height.
-export const MAT_SIZE = { width: 0.85, depth: 0.95 } as const;
+export const REST_MAT = { width: 0.85, depth: 0.95 } as const;
 
 const box = (min: Vec3, max: Vec3, paint: Paint, skip?: readonly string[]): KitPiece =>
   skip ? { shape: "box", min, max, paint, skip } : { shape: "box", min, max, paint };
@@ -172,8 +172,8 @@ function roof(): KitPiece[] {
 
 // The mat, authored at the origin facing -z: a bordered rug with a lighter middle, its top at the seat's height.
 function mat(): KitPiece[] {
-  const half = MAT_SIZE.width / 2;
-  const deep = MAT_SIZE.depth / 2;
+  const half = REST_MAT.width / 2;
+  const deep = REST_MAT.depth / 2;
   const top = SEAT_TOPS.bathhouse;
   return [
     box([-half, FLOOR_Y, -deep], [half, top - 0.012, deep], c.matBorder),
