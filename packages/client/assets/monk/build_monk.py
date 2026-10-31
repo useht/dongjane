@@ -91,7 +91,7 @@ RATIO = {  # in units of HEAD_H, measured from the sansatemple.com player charac
     "hand": 0.12,  # wrist pivot down to the fingertip: a stubby mitt
     "knee": 0.95,  # knee height above the sole: thigh 0.90, shin 0.74 plus the ankle
     "ankle": 0.21,  # ankle pivot above the sole
-    "cuff": 0.265,  # the trouser cuff above the sole, just over the ankle (0.26 in the reference; a hair higher so the cuff clears the foot at full stride on the short leg)
+    "cuff": 0.278,  # the trouser cuff above the sole, just over the ankle (0.26 in the reference; higher, so the rim of the cuff of a leg that swings far forward, tilted, still clears the foot)
 }
 STAND_H = 3.4  # standing height in head heights: 3.4등신
 JACKET_HEM = 0.90  # in H: the jacket hem hangs this far below the hip pivot (a long tunic that ends at the knee)
@@ -134,7 +134,21 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "idle_x": 0.08,
     "idle_z": -0.61,  # the arms hang straight, splayed about 35 degrees, so the sleeves clear the wide robe
     "idle_elbow": 0.1,
-    "walk_swing": 0.5,  # the arm swings this far at full stride, opposite the same side's leg; the back swing bends the elbow half as much
+    "walk_swing": 0.5,  # the arm swings this far at full stride, opposite the same side's leg ...
+    "walk_elbow": 0.5,  # ... and the back swing bends the elbow by this share of the swing
+    "walk_stride": 0.2,  # the foot travels this far fore and aft of its rest place at full stride
+    "walk_hip_shift": 0.05,  # the top of a leg slides this far back as its foot swings forward (and forward as it swings back), so the thigh does not push through the jacket
+    "walk_lift": 0.07,  # a foot passing under the body is lifted this high
+    "walk_bob": 0.03,  # the hips bob this high at full stride (twice a cycle)
+    "walk_lean": 0.05,  # the torso leans this far forward (radians) ...
+    "walk_head_tilt": 0.03,  # ... and the head tips back a little against it
+    "walk_head_roll": 0.035,  # the head rolls this far with each step
+    "fish_lean": 0.06,  # holding a rod (a copy of ROD_POSE in monk-items.ts): the monk leans back against the pull ...
+    "fish_roll": 0.3,  # ... both arms roll in toward the middle of the chest ...
+    "fish_lead_x": 0.9,  # ... the lead hand, which grips the rod ...
+    "fish_lead_elbow": 0.9,
+    "fish_rear_x": 0.42,  # ... and the rear hand, which steadies the butt
+    "fish_rear_elbow": 1.05,
     "pray_x": 0.924,
     "pray_y": 0.315,
     "pray_z": 0.185,
@@ -546,11 +560,11 @@ JACKET_DROP = RIG["jacketDrop"]
 PELVIS_DROP = RIG["pelvisDrop"]
 
 TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: a long tunic that flares from a narrow, shallow yoke under the head to its widest (1.2 H) over the lower body, so the splayed arms stay clear of it and the praying hands fit in front of the chest
-    (-JACKET_DROP, 0.198, 0.146, 2.4),
-    (-JACKET_DROP + 0.014, 0.197, 0.145, 2.4),
-    (-0.150, 0.197, 0.142, 2.4),
-    (-0.050, 0.188, 0.128, 2.4),
-    (0.030, 0.160, 0.104, 2.5),
+    (-JACKET_DROP, 0.198, 0.176, 2.4),
+    (-JACKET_DROP + 0.014, 0.197, 0.175, 2.4),
+    (-0.150, 0.197, 0.172, 2.4),
+    (-0.050, 0.188, 0.143, 2.4),
+    (0.030, 0.160, 0.109, 2.5),
     (0.100, 0.132, 0.080, 2.6),
     (0.140, 0.118, 0.068, 2.8),
     (0.160, 0.104, 0.060, 2.5),
@@ -1247,12 +1261,73 @@ def check_bow(parts):
             print("BOW cuffs cross the middle by %.4f (prayer %.4f), hands %.4f apart" % (cuffs, prayer_cuffs, gap))
 
 
+WALK_POSES = (None,) + tuple(k * pi / 8 for k in range(16))  # standing, then the walk cycle in sixteenths (a leg's swing, a lifted foot and the bob all peak within it)
+HEM_LIP = 0.004  # the jacket's hem rolls under, so the trousers below this much above its lower edge are free to show
+WALK_CLEARANCE = {  # what each arm part must stay clear of at every point of the walk, in metres (about half of what the walk leaves today)
+    "head": {"hand": 0.1, "sleeveLower": 0.05, "sleeveUpper": 0.004},
+    "torso": {"hand": 0.03, "sleeveLower": 0.003, "sleeveUpper": -0.0125},  # the root of the sleeve sits 12 mm in the shoulder standing, and the swing sinks it no deeper
+    "pelvis": {"hand": 0.05, "sleeveLower": 0.02, "sleeveUpper": 0.02},  # the seat of the trousers
+    "trousers": {"hand": 0.05, "sleeveLower": 0.04, "sleeveUpper": 0.05},  # both trouser legs
+}
+
+
+def walk_clearances(parts, poses=WALK_POSES):
+    """The least clearance of each arm part from each target, over standing and every sixteenth of the walk cycle."""
+    worst = {}
+    for phase in poses:
+        mats = pose_matrices(0.0, 0.0, phase)
+        for target, margins in WALK_CLEARANCE.items():
+            trees = [world_bvh(parts[target], m) for m in mats[target]]
+            for part in margins:
+                near = min(clearance_of(tree, m @ v.co) for tree in trees for m in mats[part] for v in parts[part].data.vertices)
+                worst[target, part] = min(worst.get((target, part), 1.0), near)
+    return worst
+
+
+def check_walk(parts):
+    """Every point of the walk cycle: the thighs and the seat of the trousers stay inside the jacket (below its hem they show), the
+    arms and hands stay clear of the head, the jacket, the seat and both trouser legs, nothing passes through its other half (the two
+    trouser legs, a foot and the other leg, the two hands), and no foot dips below the ground."""
+    worst = walk_clearances(parts)
+    for (target, part), near in sorted(worst.items()):
+        print("WALK %-12s clearance from the %s %.4f" % (part, target, near))
+        assert near >= WALK_CLEARANCE[target][part], "walking, the %s comes within %.4f of the %s (it needs %.4f)" % (part, near, target, WALK_CLEARANCE[target][part])
+    poke, ground, cuff_above = 0.0, 1.0, 1.0
+    for phase in WALK_POSES:
+        mats = pose_matrices(0.0, 0.0, phase)
+        jacket = world_bvh(parts["torso"], mats["torso"][0])
+        to_jacket = mats["torso"][0].inverted()
+        for part in ("pelvis", "trousers", "leg"):
+            for m in mats[part]:
+                for v in parts[part].data.vertices:
+                    p = m @ v.co
+                    if (to_jacket @ p).z > -JACKET_DROP + HEM_LIP:
+                        poke = max(poke, clearance_of(jacket, p))
+        legs = [world_bvh(parts["trousers"], m) for m in mats["trousers"]]
+        feet = [world_bvh(parts["foot"], m) for m in mats["foot"]]
+        hands = [world_bvh(parts["hand"], m) for m in mats["hand"]]
+        label = "standing" if phase is None else "phase %.2f" % phase
+        assert not legs[0].overlap(legs[1]), "walking (%s), the two trouser legs go through each other" % label
+        assert not (feet[0].overlap(legs[1]) or feet[1].overlap(legs[0])), "walking (%s), a foot goes through the other leg" % label
+        assert not any(foot.overlap(jacket) for foot in feet), "walking (%s), a foot goes through the jacket" % label
+        for side in (0, 1):
+            cuff = min((mats["trousers"][side] @ v.co).z for v in parts["trousers"].data.vertices)
+            ankle = mats["foot"][side].translation.z
+            cuff_above = min(cuff_above, cuff - ankle)
+        assert not hands[0].overlap(hands[1]), "walking (%s), the two hands go through each other" % label
+        ground = min(ground, min((m @ v.co).z for m in mats["foot"] for v in parts["foot"].data.vertices))
+    print("WALK thighs reach %.4f outside the jacket above its hem, the lowest foot is %.4f above the ground, the lowest cuff %.4f above the ankle" % (poke, ground, cuff_above))
+    assert cuff_above >= 0.0, "walking, the rim of a trouser cuff dips %.4f below the ankle" % -cuff_above
+    assert poke <= 0.0, "walking, a thigh pokes %.4f through the jacket" % poke
+    assert ground >= -0.0005, "walking, a foot sinks %.4f into the ground" % -ground
+
+
 def check_sleeves_clear_head(parts):
-    """The whole sleeves and the hands stay out of the head standing, at either end of a stride, and kneeling in prayer (the bow is
-    in check_bow). The shoulder is right under the jaw in this chibi, so this holds the root of the sleeve to it too."""
+    """The whole sleeves and the hands stay out of the head standing and kneeling in prayer (walking is in check_walk, the bow in
+    check_bow). The shoulder is right under the jaw in this chibi, so this holds the root of the sleeve to it too."""
     cushion = RIG["seatTop"]
-    for label, kneel, stride in (("standing", 0.0, 0.0), ("stride forward", 0.0, 1.0), ("stride back", 0.0, -1.0), ("praying", 1.0, 0.0)):
-        mats = pose_matrices(kneel, cushion if kneel else 0.0, stride)
+    for label, kneel in (("standing", 0.0), ("praying", 1.0)):
+        mats = pose_matrices(kneel, cushion if kneel else 0.0)
         head = world_bvh(parts["head"], mats["head"][0])
         for part in ("sleeveUpper", "sleeveLower", "hand"):
             near_head = min(clearance_of(head, m @ v.co) for m in mats[part] for v in parts[part].data.vertices)
@@ -1313,22 +1388,28 @@ def rig_dict():
 
 PROBE_PARTS = ("head", "pelvis", "sleeveUpper", "sleeveLower", "hand")
 PROBE_BOWS = (0.0, 0.25, 0.5, 0.75, 1.0)
+PROBE_WALK_PARTS = ("head", "torso", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
+PROBE_PHASES = tuple(k * pi / 4 for k in range(8))  # a copy walks the other half of the cycle half a turn on, so these cover both
+
+
+def probe_bounds(parts, part, matrix):
+    """The world bounds of a part under a matrix, in three.js axes: min x, y, z then max x, y, z."""
+    points = [matrix @ v.co for v in parts[part].data.vertices]
+    low = (min(p.x for p in points), min(p.z for p in points), -max(p.y for p in points))
+    high = (max(p.x for p in points), max(p.z for p in points), -min(p.y for p in points))
+    return [round(c, 4) for c in low + high]
 
 
 def pose_probe(parts):
-    """The world bounds (three.js axes: min x, y, z then max x, y, z) of the first copy of a few parts, kneeling at each bow depth.
-    The checks above run on pose_matrices, a copy of animate() in monk-model.ts; a test replays the bow there and holds it to these."""
-    out = {"bows": list(PROBE_BOWS)}
+    """The world bounds of the first copy of a few parts, kneeling at each bow depth and walking at each probed phase.
+    The checks above run on pose_matrices, a copy of animate() in monk-model.ts; a test replays both there and holds it to these."""
+    bow = {"bows": list(PROBE_BOWS)}
     for part in PROBE_PARTS:
-        rows = []
-        for bow in PROBE_BOWS:
-            m = pose_matrices(1.0, RIG["seatTop"], bow=bow)[part][0]
-            points = [m @ v.co for v in parts[part].data.vertices]
-            low = (min(p.x for p in points), min(p.z for p in points), -max(p.y for p in points))
-            high = (max(p.x for p in points), max(p.z for p in points), -min(p.y for p in points))
-            rows.append([round(c, 4) for c in low + high])
-        out[part] = rows
-    return out
+        bow[part] = [probe_bounds(parts, part, pose_matrices(1.0, RIG["seatTop"], bow=b)[part][0]) for b in PROBE_BOWS]
+    walk = {"phases": [round(p, 5) for p in PROBE_PHASES]}
+    for part in PROBE_WALK_PARTS:
+        walk[part] = [probe_bounds(parts, part, pose_matrices(0.0, 0.0, p)[part][0]) for p in PROBE_PHASES]
+    return {"bow": bow, "walk": walk}
 
 
 def export_glb(parts_coll, path):
@@ -1361,39 +1442,49 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.Translation(Vector(pos)) @ three_euler @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
-def pose_matrices(kneel, cushion, stride=0.0, bow=0.0):
+def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
-    stride (-1 .. 1) swings the feet and arms like the walk cycle does, so the stretched legs can be checked; bow (0 .. 1, kneeling
-    only) tips the torso and head forward with the arms reaching out, like the bow animation at its deepest."""
+    phase (radians, standing only) puts the monk at that point of the walk cycle: the swings, the foot lifts, the bob and the lean
+    of animate() at sin(phase); bow (0 .. 1, kneeling only) tips the torso and head forward with the arms reaching out, like the bow
+    animation, and slides the hips forward while the seat stays on the heels; fish (0 .. 1, standing) holds the rod."""
     lift = cushion * kneel
-    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel), -RIG["bowHipForward"] * bow))
+    walking = phase is not None
+    swing = sin(phase) if walking else 0.0
+    hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel) + abs(swing) * POSE["walk_bob"], -RIG["bowHipForward"] * bow))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
     pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, RIG["bowSeatBack"] * bow), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
-    torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow, 0, 0))
-    head = torso @ tmat((0, NECK_Y, 0), (-POSE["bow_head"] * bow, 0, 0))
+    torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow - POSE["walk_lean"] * walking + POSE["fish_lean"] * fish, 0, 0))
+    head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "trim": [torso]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
     for side in (0, 1):
         sign = -1 if side == 0 else 1
         pray = kneel * (1 - bow)
-        swing = POSE["walk_swing"] * stride * sign * (1 - kneel)
+        stride = swing if side == 0 else -swing  # the leg and the arm of a side swing together, opposite each other
+        arm_swing = POSE["walk_swing"] * stride
         arm_x = lerp(POSE["idle_x"], POSE["pray_x"], kneel)
-        arm_x = arm_x + (POSE["bow_x"] - arm_x) * bow + swing
+        arm_x = arm_x + (POSE["bow_x"] - arm_x) * bow + arm_swing
         arm_y = sign * POSE["pray_y"] * pray
         arm_z = -sign * (POSE["idle_z"] + (POSE["pray_z"] - POSE["idle_z"]) * pray + (POSE["bow_z"] - POSE["idle_z"]) * bow * kneel)
+        hold = "fish_lead" if side == 0 else "fish_rear"  # the lead hand grips the rod, the rear hand steadies the butt
+        arm_x += (POSE[hold + "_x"] - arm_x) * fish
+        arm_z += (-sign * POSE["fish_roll"] - arm_z) * fish
         shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
         elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
-        elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * bow + max(0.0, -swing) * 0.5
+        elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * bow + max(0.0, -arm_swing) * POSE["walk_elbow"]
+        elbow_x += (POSE[hold + "_elbow"] - elbow_x) * fish
         elbow = shoulder @ tmat((0, -RIG["upperArm"], 0), (elbow_x, -sign * POSE["pray_twist"] * pray, 0))
         hand = elbow @ tmat((0, -RIG["foreArm"], 0))
-        foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel)
-        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * sign * 0.2
+        foot_up = max(0.0, cos(phase + (0 if side == 0 else pi))) * POSE["walk_lift"] if walking else 0.0
+        foot_y = lift + lerp(RIG["footY"], RIG["footKneelY"], kneel) + foot_up
+        foot_z = lerp(-RIG["footForward"], RIG["footKneelZ"], kneel) + stride * POSE["walk_stride"]
         foot = tmat((sign * RIG["footX"], foot_y, foot_z), (RIG["footKneelTilt"] * kneel, 0, 0))
         top_y = hips.translation.y - RIG["legTopDrop"]
-        reach_y, reach_z = foot_y + RIG["legKneelLift"] * kneel - top_y, foot_z - hips.translation.z
+        top_z = hips.translation.z - stride * POSE["walk_hip_shift"]
+        reach_y, reach_z = foot_y + RIG["legKneelLift"] * kneel - top_y, foot_z - top_z
         leg = tmat(
-            (sign * RIG["footX"], top_y, hips.translation.z),
+            (sign * RIG["footX"], top_y, top_z),
             (atan2(-reach_z, -reach_y), 0, 0),
             (1, sqrt(reach_y**2 + reach_z**2) / RIG["legLength"], 1),
         )
@@ -1413,9 +1504,9 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
-def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], stride=0.0, bow=0.0):
+def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], phase=None, bow=0.0):
     coll = new_collection(name)
-    mats = pose_matrices(kneel, cushion, stride, bow)
+    mats = pose_matrices(kneel, cushion, phase, bow)
     robe = {"torso", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
@@ -1486,7 +1577,7 @@ def render_previews(parts):
     os.makedirs(PREVIEW_DIR, exist_ok=True)
     cam = setup_preview_scene()
     standing = build_pose("preview_standing", parts, 0.0, PREVIEW_HUE)
-    walking = build_pose("preview_walking", parts, 0.0, PREVIEW_HUE, stride=0.85)
+    walking = build_pose("preview_walking", parts, 0.0, PREVIEW_HUE, phase=-1.0)
     kneeling = build_pose("preview_kneeling", parts, 1.0, PREVIEW_HUE)
     bowing = build_pose("preview_bowing", parts, 1.0, PREVIEW_HUE, bow=1.0)
     for coll in list(bpy.data.collections):
@@ -1532,6 +1623,7 @@ def main():
     check_kneel_clearance(parts)
     check_kneel_hands(parts)
     check_bow(parts)
+    check_walk(parts)
     check_sleeves_clear_head(parts)
     check_standing_hands(parts)
 
@@ -1547,7 +1639,7 @@ def main():
 
     poses_path = os.path.join(HERE, "monk-poses.json")
     with open(poses_path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump({"_source": "packages/client/assets/monk/build_monk.py", "bow": pose_probe(parts)}, fh, separators=(",", ":"))
+        json.dump({"_source": "packages/client/assets/monk/build_monk.py", **pose_probe(parts)}, fh, separators=(",", ":"))
         fh.write("\n")
     print("WROTE", poses_path)
 

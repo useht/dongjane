@@ -87,6 +87,9 @@ const CHANT_NOD = 0.06;
 const CHANT_SWAY_HZ = 0.4;
 const CHANT_SWAY = 0.025;
 const HOP_HEIGHT = 0.35;
+// The top of a leg slides this far back as its foot swings forward (and forward as it swings back), so the thigh stays inside the
+// jacket (a copy of POSE.walk_hip_shift in packages/client/assets/monk/build_monk.py, which checks the whole walk).
+const WALK_HIP_SHIFT = 0.05;
 const HIDDEN_MATRIX = new Matrix4().makeScale(0, 0, 0);
 const UP = new Vector3(0, 1, 0);
 // The float lands this far past the waterline and floats on the water's face (WATER_Y in shore.ts).
@@ -321,8 +324,9 @@ export class MonkAvatar {
       const leg = this.legs[side] as Object3D;
       const topY = this.hips.position.y - LEG_TOP_DROP;
       const reachY = foot.position.y + LEG_KNEEL_LIFT * kneel - topY;
-      const reachZ = foot.position.z - this.hips.position.z;
-      leg.position.set(sign * FOOT_X, topY, this.hips.position.z);
+      const topZ = this.hips.position.z - stride * WALK_HIP_SHIFT;
+      const reachZ = foot.position.z - topZ;
+      leg.position.set(sign * FOOT_X, topY, topZ);
       leg.rotation.x = Math.atan2(-reachZ, -reachY);
       leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
     }

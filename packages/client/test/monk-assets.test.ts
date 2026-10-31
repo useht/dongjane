@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type BufferGeometry, Box3, Color, type Object3D, SRGBColorSpace, Vector3 } from "three";
+import { type BufferGeometry, Box3, Color, DoubleSide, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BOW_MS } from "@dongjane/shared";
@@ -26,7 +26,10 @@ const TROUSER_PARTS: BodyPartName[] = ["pelvis", "trousers"];
 const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
 // monk-poses.json, written by build_monk.py: world bounds [min x, y, z, max x, y, z] of one copy of each part, per probed pose.
-type PoseProbe = { bows: number[] } & Record<"head" | "pelvis" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
+type BowProbe = { bows: number[] } & Record<"head" | "pelvis" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
+type WalkProbe = { phases: number[] } & Record<"head" | "torso" | "sleeveUpper" | "sleeveLower" | "hand" | "foot" | "trousers", number[][]>;
+// animate() advances the walk phase by dt * min(speed, 3.5) * 4.4 radians, so dt = phase / this puts a fresh walker at that phase.
+const FASTEST_PHASE_RATE = 3.5 * 4.4;
 
 function readGlb(): ArrayBuffer {
   const file = readFileSync(new URL("../assets/monk/monk.glb", import.meta.url));
@@ -356,7 +359,7 @@ describe("monk assets", () => {
     expect(Math.abs((monkRig.hipStand - hem) / H - 0.9), "the hem hangs 0.9 H below the hip pivot (knee length)").toBeLessThanOrEqual(0.03);
     expect(crotch, "the crotch hangs below the jacket hem").toBeLessThan(hem);
     expect(Math.abs((crotch - sole) / H - 0.81), "crotch above the sole").toBeLessThanOrEqual(0.03);
-    expect(Math.abs((cuff - sole) / H - 0.26), "trouser cuff above the sole").toBeLessThanOrEqual(0.01);
+    expect(Math.abs((cuff - sole) / H - 0.275), "trouser cuff above the sole").toBeLessThanOrEqual(0.01);
     expect(footTop, "the foot shows below the cuff").toBeLessThan(cuff);
     expect((cuff - footTop) / H, "the cuff clears the foot by a visible band of ankle").toBeGreaterThan(0.045);
     expect(footTop / H, "the flat foot stays below the ankle pivot (0.21 H)").toBeLessThan(0.21);
@@ -466,7 +469,7 @@ describe("monk assets", () => {
 
   it("bows exactly as build_monk.py checked it: the seat stays on the heels while the arms fold between it and the head", async () => {
     const parts = await loadParts();
-    const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { bow: PoseProbe };
+    const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { bow: BowProbe };
     expect(probe.bow.bows, "the probe covers the whole bow").toEqual([0, 0.25, 0.5, 0.75, 1]);
     for (const [index, depth] of probe.bow.bows.entries()) {
       const avatar = new MonkAvatar("bower", 0, false);
@@ -478,6 +481,52 @@ describe("monk assets", () => {
         const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
         for (const [axis, value] of got.entries()) {
           expect(Math.abs(value - (want[axis] as number)), `${part} bounds[${axis}] at bow ${depth}`).toBeLessThan(0.002);
+        }
+      }
+    }
+  });
+
+  it("walks exactly as build_monk.py checked it: the legs hang from hips that slide against the stride, the arms swing clear", async () => {
+    const parts = await loadParts();
+    const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { walk: WalkProbe };
+    expect(probe.walk.phases, "the probe covers the walk at the eighths of a turn").toHaveLength(8);
+    for (const [index, phase] of probe.walk.phases.entries()) {
+      const avatar = new MonkAvatar("walker", 0, false);
+      avatar.setMode("walk", 0);
+      avatar.animate(phase / FASTEST_PHASE_RATE, 1000, 3.5, true);
+      for (const part of ["head", "torso", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const) {
+        const box = new Box3().setFromPoints(worldVertices(nodeOf(avatar, part, 0), parts[part]));
+        const want = probe.walk[part][index] as number[];
+        const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+        for (const [axis, value] of got.entries()) {
+          expect(Math.abs(value - (want[axis] as number)), `${part} bounds[${axis}] at walk phase ${phase}`).toBeLessThan(0.002);
+        }
+      }
+    }
+  });
+
+  it("keeps the thighs and the seat of the trousers inside the jacket at every point of the walk", async () => {
+    const parts = await loadParts();
+    const hem = bounds(parts.torso).min.y + 0.004;
+    const jacket = new Mesh(parts.torso, new MeshBasicMaterial({ side: DoubleSide }));
+    const aim = new Vector3(0.31, 0.93, 0.19).normalize();
+    const raycaster = new Raycaster();
+    for (let step = 0; step < 16; step += 1) {
+      const avatar = new MonkAvatar("walker", 0, false);
+      avatar.setMode("walk", 0);
+      avatar.animate(((step * Math.PI) / 8) / FASTEST_PHASE_RATE, 1000, 3.5, true);
+      const toJacket = nodeOf(avatar, "torso", 0).matrixWorld.clone().invert();
+      for (const part of ["pelvis", "trousers", "leg"] as const) {
+        for (let copy = 0; copy < COPIES[part]; copy += 1) {
+          // A point is inside the closed, convex jacket when a ray from it crosses the surface an odd number of times.
+          const outside = worldVertices(nodeOf(avatar, part, copy), parts[part])
+            .map((v) => v.applyMatrix4(toJacket))
+            .filter((v) => v.y > hem)
+            .filter((v) => {
+              raycaster.set(v, aim);
+              return raycaster.intersectObject(jacket).length % 2 === 0;
+            });
+          expect(outside.length, `${part} ${copy} pokes through the jacket at walk step ${step}`).toBe(0);
         }
       }
     }
