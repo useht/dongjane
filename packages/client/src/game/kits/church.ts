@@ -183,7 +183,7 @@ function roof(): KitPiece[] {
   ];
 }
 
-// The chair a visitor sits on, authored at the origin facing -z: four legs, a board with a red cushion on it whose top is the seat's
+// The chair a visitor sits on, authored at the origin facing -z: four legs, a board with a red pad on it whose top is the seat's
 // height, and a low back at the rear edge, where the pew behind stands.
 function chair(): KitPiece[] {
   const half = CHAIR.width / 2;

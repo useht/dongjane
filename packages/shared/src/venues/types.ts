@@ -23,7 +23,7 @@ export interface SeatGroup {
   // how far back a spot is from what the venue faces, and how far it is to the side of the middle line
   readonly depth: (spot: SeatSpot) => number;
   readonly offset: (spot: SeatSpot) => number;
-  // how high a seated monk sits above the ground: the top of the cushion, the mat, the chair or the log
+  // how high a seated monk sits above the ground: the top of the 방석, the mat, the chair or the log
   readonly top: number;
   readonly pose: SeatPose;
 }

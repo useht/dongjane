@@ -29,7 +29,7 @@ const hipsOf = (avatar: MonkAvatar): Vector3 => positionOf(nodeOf(avatar, "torso
 const footOf = (avatar: MonkAvatar, side: number): Vector3 => positionOf(nodeOf(avatar, "foot", side));
 
 describe("the seated poses", () => {
-  it("draws the kneeling monk as it always was: lifted by the cushion, hips and feet folded behind", () => {
+  it("draws the kneeling monk as it always was: lifted by the 방석, hips and feet folded behind", () => {
     const avatar = seated("kneel", monkRig.seatTop);
     expect(avatar.root.position.y).toBeCloseTo(monkRig.seatTop, 6);
     expect(hipsOf(avatar).y).toBeCloseTo(monkRig.seatTop + monkRig.hipKneel, 6);
@@ -37,7 +37,7 @@ describe("the seated poses", () => {
     for (const side of [0, 1]) {
       const foot = footOf(avatar, side);
       expect(foot.z, `foot ${side} folds behind`).toBeCloseTo(monkRig.footKneelZ, 6);
-      expect(foot.y, `foot ${side} on the cushion`).toBeCloseTo(monkRig.seatTop + monkRig.footKneelY, 6);
+      expect(foot.y, `foot ${side} on the 방석`).toBeCloseTo(monkRig.seatTop + monkRig.footKneelY, 6);
     }
     expect(nodeOf(avatar, "pelvis").scale.y).toBeCloseTo(monkRig.kneelPelvisScaleY, 6);
   });
