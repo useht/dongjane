@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh, MeshStandardMaterial, PlaneGeometry } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { AVENUE, type Bounds, SEAT_TOPS, SEAT_YAWS, SLOT_A1, VENUES, ZONE_SEATS, venueById } from "@dongjane/shared";
+import { AVENUE, type Bounds, CHURCH_CANDLES, CHURCH_PEWS, SEAT_TOPS, SEAT_YAWS, SLOT_A1, SLOT_A2, VENUES, ZONE_SEATS, venueById } from "@dongjane/shared";
 import { BUDGET, KIT_MESHES, KIT_PROTOTYPES } from "../src/assets/contract.ts";
 import { REST_MAT } from "../src/game/kits/bathhouse.ts";
+import { KNEELER } from "../src/game/kits/church.ts";
 import { KITS, KIT_IDS, KIT_PADS, type KitPiece, type KitSpec, kitById, meshNames } from "../src/game/kits/index.ts";
 import { PAD_HEIGHT } from "../src/game/kits/kit.ts";
 import { PAD_FALLOFF, levelGround, padWeight } from "../src/game/ground-pads.ts";
@@ -74,6 +75,12 @@ function floorsOf(spec: KitSpec): Array<Extract<KitPiece, { shape: "floor" }>> {
   return (spec.meshes.floor ?? []).filter((piece): piece is Extract<KitPiece, { shape: "floor" }> => piece.shape === "floor");
 }
 
+// The venues that are a building with a door on the avenue, their slots and the pad a visitor kneels on in each.
+const BUILDINGS = [
+  { id: "bathhouse", slot: SLOT_A1, pad: REST_MAT, signature: "plaster" },
+  { id: "church", slot: SLOT_A2, pad: KNEELER, signature: "brick" },
+] as const;
+
 const within = (box: Bounds, x: number, z: number): boolean => x >= box.minX && x <= box.maxX && z >= box.minZ && z <= box.maxZ;
 
 function grid(area: Bounds, inset: number, step: number): Array<[number, number]> {
@@ -87,13 +94,15 @@ function grid(area: Bounds, inset: number, step: number): Array<[number, number]
 }
 
 describe("the kit venues", () => {
-  it("are the street and the bathhouse, each a venue of the registry", () => {
-    expect(KIT_IDS).toEqual(["street", "bathhouse"]);
+  it("are the street, the bathhouse and the church, each a venue of the registry", () => {
+    expect(KIT_IDS).toEqual(["street", "bathhouse", "church"]);
     for (const kit of KITS) expect(venueById(kit.id), kit.id).toBeDefined();
     expect(kitById("street")?.look, "the street is only drawn: no light or camera of its own").toBeUndefined();
     expect(kitById("street")?.camera).toBeUndefined();
-    expect(kitById("bathhouse")?.look).toBeDefined();
-    expect(kitById("bathhouse")?.camera).toBeDefined();
+    for (const { id } of BUILDINGS) {
+      expect(kitById(id)?.look, id).toBeDefined();
+      expect(kitById(id)?.camera, id).toBeDefined();
+    }
     expect(kitById("nowhere")).toBeUndefined();
   });
 
@@ -123,9 +132,11 @@ describe("the kit venues", () => {
   it("level the ground under every pad, and the pads cover each venue's footprint", () => {
     expect(KIT_PADS).toEqual(KITS.flatMap((kit) => kit.pads));
     expect(PAD_HEIGHT).toBeLessThan(0);
-    const bathhouse = kitById("bathhouse") as KitSpec;
-    for (const [x, z] of [[SLOT_A1.minX, SLOT_A1.minZ], [SLOT_A1.maxX, SLOT_A1.maxZ], [SLOT_A1.minX, SLOT_A1.maxZ], [SLOT_A1.maxX, SLOT_A1.minZ]] as const) {
-      expect(bathhouse.pads.some((pad) => within(pad, x, z)), `corner ${x}, ${z}`).toBe(true);
+    for (const { id, slot } of BUILDINGS) {
+      const kit = kitById(id) as KitSpec;
+      for (const [x, z] of [[slot.minX, slot.minZ], [slot.maxX, slot.maxZ], [slot.minX, slot.maxZ], [slot.maxX, slot.minZ]] as const) {
+        expect(kit.pads.some((pad) => within(pad, x, z)), `${id}: corner ${x}, ${z}`).toBe(true);
+      }
     }
     const street = kitById("street") as KitSpec;
     expect(street.pads.some((pad) => pad.minX <= AVENUE.minX && pad.maxX >= AVENUE.maxX && pad.minZ <= AVENUE.minZ && pad.maxZ >= AVENUE.maxZ), "the avenue is one pad").toBe(true);
@@ -143,7 +154,7 @@ describe("the street kit", () => {
 
   it("leaves the kerb open at every venue's apron and puts no lamp post in front of one", () => {
     const aprons = VENUES.flatMap((venue) => (venue.id === "street" ? [] : venue.areas.filter((area) => Math.abs(area.minZ - AVENUE.maxZ) < 1e-6)));
-    expect(aprons.length, "the bathhouse's apron meets the avenue").toBeGreaterThan(0);
+    expect(aprons.length, "every building's apron meets the avenue").toBeGreaterThanOrEqual(BUILDINGS.length);
     const shell = extentPieces(street, "shell");
     for (const apron of aprons) {
       for (const piece of shell) {
@@ -159,11 +170,11 @@ function extentPieces(spec: KitSpec, name: keyof KitSpec["meshes"]): readonly Ki
   return spec.meshes[name] ?? [];
 }
 
-describe("the bathhouse kit against the shared layout", () => {
-  const spec = kitById("bathhouse") as KitSpec;
-  const venue = venueById("bathhouse");
-  if (!venue) throw new Error("no bathhouse venue");
-  const slotWithApron: Bounds = { minX: SLOT_A1.minX, maxX: SLOT_A1.maxX, minZ: AVENUE.maxZ, maxZ: SLOT_A1.maxZ };
+describe.each(BUILDINGS)("the $id kit against the shared layout", ({ id, slot, pad: size }) => {
+  const spec = kitById(id) as KitSpec;
+  const venue = venueById(id);
+  if (!venue) throw new Error(`no ${id} venue`);
+  const slotWithApron: Bounds = { minX: slot.minX, maxX: slot.maxX, minZ: AVENUE.maxZ, maxZ: slot.maxZ };
   const nearBy = 0.25;
 
   it("keeps every floor inside its slot and the apron before it", () => {
@@ -178,17 +189,17 @@ describe("the bathhouse kit against the shared layout", () => {
   it("keeps the whole building, up to its eaves and the lit panes, inside the slot and the room round it", () => {
     for (const name of ["shell", "roof", "glow"] as const) {
       const extent = extentOf(extentPieces(spec, name));
-      expect(extent.minX, name).toBeGreaterThanOrEqual(SLOT_A1.minX - 0.6);
-      expect(extent.maxX, name).toBeLessThanOrEqual(SLOT_A1.maxX + 0.6);
-      expect(extent.minZ, name).toBeGreaterThanOrEqual(SLOT_A1.minZ - 0.6);
-      expect(extent.maxZ, name).toBeLessThanOrEqual(SLOT_A1.maxZ + 0.6);
+      expect(extent.minX, name).toBeGreaterThanOrEqual(slot.minX - 0.6);
+      expect(extent.maxX, name).toBeLessThanOrEqual(slot.maxX + 0.6);
+      expect(extent.minZ, name).toBeGreaterThanOrEqual(slot.minZ - 0.6);
+      expect(extent.maxZ, name).toBeLessThanOrEqual(slot.maxZ + 0.6);
     }
     const panes = extentOf(extentPieces(spec, "glow"));
-    expect(panes.minX, "the panes stand out of the wall by a hand, no more").toBeGreaterThanOrEqual(SLOT_A1.minX - nearBy);
-    expect(panes.maxX).toBeLessThanOrEqual(SLOT_A1.maxX + nearBy);
+    expect(panes.minX, "the panes stand out of the wall by a hand, no more").toBeGreaterThanOrEqual(slot.minX - nearBy);
+    expect(panes.maxX).toBeLessThanOrEqual(slot.maxX + nearBy);
   });
 
-  it("lays a floor at walking height under every walkable area, and none of them on the pool", () => {
+  it("lays a floor at walking height under every walkable area, and none of them in the water", () => {
     const floors = floorsOf(spec);
     for (const area of venue.areas) {
       for (const [x, z] of grid(area, 0.05, 0.5)) {
@@ -202,11 +213,11 @@ describe("the bathhouse kit against the shared layout", () => {
     const water = extentOf(extentPieces(spec, "water"));
     for (const area of venue.areas) {
       const overlapsWater = area.minX < water.maxX - 1e-6 && area.maxX > water.minX + 1e-6 && area.minZ < water.maxZ - 1e-6 && area.maxZ > water.minZ + 1e-6;
-      expect(overlapsWater, `walkable ${JSON.stringify(area)} dips into the pool`).toBe(false);
+      expect(overlapsWater, `walkable ${JSON.stringify(area)} dips into the water`).toBe(false);
     }
   });
 
-  it("stands no wall or pool rim where a visitor can walk, and leaves the doorway open", () => {
+  it("stands no wall, rim or bench where a visitor can walk, and leaves the doorway open", () => {
     for (const piece of extentPieces(spec, "shell")) {
       if (piece.shape !== "box") continue;
       const wallLike = piece.max[1] > 0.5 && piece.min[1] < 2.5;
@@ -217,33 +228,33 @@ describe("the bathhouse kit against the shared layout", () => {
         expect(apart, `${JSON.stringify(piece)} stands in ${JSON.stringify(area)}`).toBe(true);
       }
     }
-    const door = venue.areas.find((area) => area.maxX - area.minX < 2.5 && area.minZ <= SLOT_A1.minZ);
+    const door = venue.areas.find((area) => area.maxX - area.minX < 2.5 && area.minZ <= slot.minZ);
     expect(door, "the doorway is an area through the north wall").toBeDefined();
     if (!door) return;
     const middle = (door.minX + door.maxX) / 2;
     for (const piece of extentPieces(spec, "shell")) {
       if (piece.shape !== "box") continue;
-      const crosses = piece.min[0] < middle && piece.max[0] > middle && piece.min[2] < SLOT_A1.minZ + 0.4 && piece.max[2] > SLOT_A1.minZ && piece.min[1] < 2.0;
+      const crosses = piece.min[0] < middle && piece.max[0] > middle && piece.min[2] < slot.minZ + 0.4 && piece.max[2] > slot.minZ && piece.min[1] < 2.0;
       expect(crosses, `${JSON.stringify(piece)} stands in the doorway`).toBe(false);
     }
   });
 
-  it("draws the mat the layout seats, at the seat's height, inside the rest room it kneels in", () => {
+  it("draws the pad the layout seats, at the seat's height, inside the area it kneels in", () => {
     const seat = extentOf(extentPieces(spec, "seat"));
-    expect(seat.minX).toBeCloseTo(-REST_MAT.width / 2, 6);
-    expect(seat.maxX).toBeCloseTo(REST_MAT.width / 2, 6);
-    expect(seat.minZ).toBeCloseTo(-REST_MAT.depth / 2, 6);
-    expect(seat.maxZ).toBeCloseTo(REST_MAT.depth / 2, 6);
-    expect(seat.maxY, "the top of the mat is where a seated monk rests").toBeCloseTo(SEAT_TOPS.bathhouse, 6);
-    const yaw = SEAT_YAWS.bathhouse;
-    const [halfX, halfZ] = [Math.abs(Math.cos(yaw)) * REST_MAT.width / 2 + Math.abs(Math.sin(yaw)) * REST_MAT.depth / 2, Math.abs(Math.sin(yaw)) * REST_MAT.width / 2 + Math.abs(Math.cos(yaw)) * REST_MAT.depth / 2];
-    const mats = ZONE_SEATS.bathhouse;
-    expect(mats.length).toBeLessThanOrEqual(40);
-    for (const mat of mats) {
-      expect(venue.areas.some((area) => mat.x - halfX >= area.minX - 1e-6 && mat.x + halfX <= area.maxX + 1e-6 && mat.z - halfZ >= area.minZ - 1e-6 && mat.z + halfZ <= area.maxZ + 1e-6), `mat ${mat.id} lies inside one room`).toBe(true);
-      for (const other of mats.filter((candidate) => candidate.id > mat.id)) {
-        const apart = Math.abs(mat.x - other.x) >= 2 * halfX - 1e-6 || Math.abs(mat.z - other.z) >= 2 * halfZ - 1e-6;
-        expect(apart, `mats ${mat.id} and ${other.id} do not overlap`).toBe(true);
+    expect(seat.minX).toBeCloseTo(-size.width / 2, 6);
+    expect(seat.maxX).toBeCloseTo(size.width / 2, 6);
+    expect(seat.minZ).toBeCloseTo(-size.depth / 2, 6);
+    expect(seat.maxZ).toBeCloseTo(size.depth / 2, 6);
+    expect(seat.maxY, "the top of the pad is where a seated monk rests").toBeCloseTo(SEAT_TOPS[id], 6);
+    const yaw = SEAT_YAWS[id];
+    const [halfX, halfZ] = [Math.abs(Math.cos(yaw)) * size.width / 2 + Math.abs(Math.sin(yaw)) * size.depth / 2, Math.abs(Math.sin(yaw)) * size.width / 2 + Math.abs(Math.cos(yaw)) * size.depth / 2];
+    const pads = ZONE_SEATS[id];
+    expect(pads.length).toBeLessThanOrEqual(40);
+    for (const pad of pads) {
+      expect(venue.areas.some((area) => pad.x - halfX >= area.minX - 1e-6 && pad.x + halfX <= area.maxX + 1e-6 && pad.z - halfZ >= area.minZ - 1e-6 && pad.z + halfZ <= area.maxZ + 1e-6), `pad ${pad.id} lies inside one area`).toBe(true);
+      for (const other of pads.filter((candidate) => candidate.id > pad.id)) {
+        const apart = Math.abs(pad.x - other.x) >= 2 * halfX - 1e-6 || Math.abs(pad.z - other.z) >= 2 * halfZ - 1e-6;
+        expect(apart, `pads ${pad.id} and ${other.id} do not overlap`).toBe(true);
       }
     }
   });
@@ -252,7 +263,7 @@ describe("the bathhouse kit against the shared layout", () => {
     const look = spec.look;
     expect(look).toBeDefined();
     for (const lamp of look?.lamps ?? []) {
-      expect(within(SLOT_A1, lamp.at[0], lamp.at[2]), `lamp at ${lamp.at.join(",")}`).toBe(true);
+      expect(within(slot, lamp.at[0], lamp.at[2]), `lamp at ${lamp.at.join(",")}`).toBe(true);
       expect(lamp.at[1]).toBeGreaterThan(1);
       expect(lamp.at[1]).toBeLessThan(extentOf(extentPieces(spec, "roof")).maxY);
     }
@@ -265,10 +276,10 @@ describe("the bathhouse kit against the shared layout", () => {
     expect(camera).toBeDefined();
     if (!camera) return;
     const { bounds, limits, view, keepOut } = camera;
-    expect(bounds.minX).toBeGreaterThanOrEqual(SLOT_A1.minX);
-    expect(bounds.maxX).toBeLessThanOrEqual(SLOT_A1.maxX);
-    expect(bounds.minZ).toBeGreaterThanOrEqual(SLOT_A1.minZ);
-    expect(bounds.maxZ).toBeLessThanOrEqual(SLOT_A1.maxZ);
+    expect(bounds.minX).toBeGreaterThanOrEqual(slot.minX);
+    expect(bounds.maxX).toBeLessThanOrEqual(slot.maxX);
+    expect(bounds.minZ).toBeGreaterThanOrEqual(slot.minZ);
+    expect(bounds.maxZ).toBeLessThanOrEqual(slot.maxZ);
     expect(bounds.minY).toBeGreaterThan(0);
     expect(limits.minDistance).toBeLessThan(limits.maxDistance);
     expect(limits.minPitch).toBeLessThan(limits.maxPitch);
@@ -281,21 +292,51 @@ describe("the bathhouse kit against the shared layout", () => {
     expect(keepOut.maxX).toBeGreaterThanOrEqual(solid.maxX);
     expect(keepOut.minZ).toBeLessThanOrEqual(solid.minZ);
     expect(keepOut.maxZ).toBeGreaterThanOrEqual(solid.maxZ);
-    expect(keepOut.maxY, "over the chimney").toBeGreaterThanOrEqual(solid.maxY);
+    expect(keepOut.maxY, "over the tallest point of the building").toBeGreaterThanOrEqual(solid.maxY);
+  });
+});
+
+describe("the church kit's furnishings", () => {
+  const spec = kitById("church") as KitSpec;
+  const boxes = (name: keyof KitSpec["meshes"]): Array<Extract<KitPiece, { shape: "box" }>> => extentPieces(spec, name).filter((piece): piece is Extract<KitPiece, { shape: "box" }> => piece.shape === "box");
+
+  it("sets a bench in front of every strip a visitor kneels on, over the bench's whole length", () => {
+    const shell = boxes("shell");
+    for (const pew of CHURCH_PEWS) {
+      const here = shell.filter((piece) => piece.min[2] >= pew.bench.minZ - 1e-6 && piece.max[2] <= pew.bench.maxZ + 1e-6 && piece.min[0] >= pew.bench.minX - 1e-6 && piece.max[0] <= pew.bench.maxX + 1e-6 && piece.max[1] > 0.7);
+      expect(here.length, `pew ${pew.row} ${pew.side}`).toBeGreaterThan(0);
+      expect(Math.min(...here.map((piece) => piece.min[0])), `pew ${pew.row} ${pew.side} starts at its bench's end`).toBeCloseTo(pew.bench.minX, 6);
+      expect(Math.max(...here.map((piece) => piece.max[0])), `pew ${pew.row} ${pew.side} runs to its bench's end`).toBeCloseTo(pew.bench.maxX, 6);
+    }
+  });
+
+  it("stands a rack on every candle's spot, with a lit flame above it", () => {
+    for (const candle of CHURCH_CANDLES) {
+      const stand = boxes("shell").find((piece) => piece.min[0] < candle.x && piece.max[0] > candle.x && piece.min[2] < candle.z && piece.max[2] > candle.z && piece.max[1] > 0.7);
+      expect(stand, candle.id).toBeDefined();
+      const flames = extentPieces(spec, "glow").filter((piece) => piece.shape === "cylinder" && Math.abs(piece.from[2] - candle.z) < 1e-6 && Math.abs(piece.from[0] - candle.x) < 0.5);
+      expect(flames.length, `${candle.id} has flames`).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the tower and the roof out of the shell, which stays on while the camera is inside", () => {
+    const shell = extentOf(extentPieces(spec, "shell"));
+    expect(shell.maxY, "the walls and the beam under the eaves are the tallest part").toBeLessThanOrEqual(4.3);
+    expect(extentOf(extentPieces(spec, "roof")).maxY, "the tower rises above the nave's roof").toBeGreaterThan(8);
   });
 });
 
 describe("the camera's regions", () => {
-  it("give the bathhouse the kit's own box, zoom range and views", () => {
-    const camera = (kitById("bathhouse") as KitSpec).camera;
+  it.each(BUILDINGS)("give the $id the kit's own box, zoom range and views", ({ id }) => {
+    const camera = (kitById(id) as KitSpec).camera;
     expect(camera).toBeDefined();
     if (!camera) return;
-    const region = regionFor("bathhouse");
+    const region = regionFor(id);
     expect(region.bounds).toBe(camera.bounds);
     expect(region.limits).toBe(camera.limits);
     for (const aspect of [0.5, 1.6]) {
-      expect(viewFor("bathhouse", aspect)).toEqual(camera.view);
-      expect(startViewFor("bathhouse", aspect)).toEqual(camera.view);
+      expect(viewFor(id, aspect)).toEqual(camera.view);
+      expect(startViewFor(id, aspect)).toEqual(camera.view);
     }
   });
 
@@ -307,11 +348,10 @@ describe("the camera's regions", () => {
     expect(startViewFor("gatbawi", 1.6).distance).toBe(7);
   });
 
-  it("hold the world's camera out of the bathhouse as well as the 법당 and the casino, and keep the older boxes as they were", () => {
+  it("hold the world's camera out of every building as well as the 법당 and the casino, and keep the older boxes as they were", () => {
     expect(WORLD_KEEP_OUTS.slice(0, KEEP_OUTS.length)).toEqual(KEEP_OUTS);
-    const camera = (kitById("bathhouse") as KitSpec).camera;
-    expect(WORLD_KEEP_OUTS).toContainEqual(camera?.keepOut);
-    expect(WORLD_KEEP_OUTS).toHaveLength(KEEP_OUTS.length + 1);
+    for (const { id } of BUILDINGS) expect(WORLD_KEEP_OUTS, id).toContainEqual((kitById(id) as KitSpec).camera?.keepOut);
+    expect(WORLD_KEEP_OUTS).toHaveLength(KEEP_OUTS.length + BUILDINGS.length);
   });
 });
 
@@ -479,7 +519,7 @@ describe.each(KITS.map((kit) => [kit.id, kit] as const))("venues/%s.glb", (id, s
       expect(Math.min(...values), `${node.name} darkest`).toBeGreaterThanOrEqual(0);
       expect(Math.max(...values), `${node.name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
     }
-    const signature = id === "street" ? { mesh: "shell", token: "kerb" } : { mesh: "shell", token: "plaster" };
+    const signature = { mesh: "shell", token: BUILDINGS.find((building) => building.id === id)?.signature ?? "kerb" };
     const hex = THEME.venue[signature.token as keyof typeof THEME.venue];
     const linear = linearOf(hex);
     const srgb = [1, 2, 3].map((_, c) => Number.parseInt(hex.slice(1 + c * 2, 3 + c * 2), 16) / 255);
@@ -489,8 +529,8 @@ describe.each(KITS.map((kit) => [kit.id, kit] as const))("venues/%s.glb", (id, s
   });
 });
 
-describe("venues/bathhouse.glb's mat", () => {
-  const glb = loadGlb(new URL("venues/bathhouse.glb", MODELS));
+describe.each(BUILDINGS)("venues/$id.glb's seat", ({ id, pad }) => {
+  const glb = loadGlb(new URL(`venues/${id}.glb`, MODELS));
   const seat = rootNodes(glb).find((node) => node.name === "seat");
 
   it("is authored at the origin, as large as the layout seats, with its top at the seat's height", () => {
@@ -499,9 +539,9 @@ describe("venues/bathhouse.glb's mat", () => {
     const { min, max } = seat.positions;
     expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(TOLERANCE);
     expect(Math.abs((min[2] + max[2]) / 2)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[0] - min[0] - REST_MAT.width)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[2] - min[2] - REST_MAT.depth)).toBeLessThanOrEqual(TOLERANCE);
-    expect(Math.abs(max[1] - SEAT_TOPS.bathhouse)).toBeLessThanOrEqual(0.005);
+    expect(Math.abs(max[0] - min[0] - pad.width)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[2] - min[2] - pad.depth)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[1] - SEAT_TOPS[id])).toBeLessThanOrEqual(0.005);
     expect(min[1]).toBeGreaterThanOrEqual(-0.01);
   });
 });

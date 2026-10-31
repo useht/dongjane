@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { ARRIVAL, type Bounds, WORLD_BOUNDS } from "../src/layout.ts";
 import { BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL } from "../src/venues/bathhouse.ts";
-import { SEAT_YAWS, type VenueDef, VENUES, venueById } from "../src/venues/index.ts";
+import {
+  CHURCH_CANDLES,
+  CHURCH_KNEELERS,
+  CHURCH_PEWS,
+  CHURCH_ROOMS,
+  SEAT_YAWS,
+  type VenueDef,
+  VENUES,
+  pickSeat,
+  venueById,
+} from "../src/venues/index.ts";
 import { AVENUE } from "../src/venues/street.ts";
 import { touches } from "../src/walk-graph.ts";
 import { COURT_AREA, PLAZA_AREA, planPath, venueAt } from "../src/walk.ts";
@@ -140,6 +150,65 @@ describe("the bathhouse", () => {
   });
 
   it("is entered from the avenue by a door in the wall facing it", () => {
+    const [apron, door] = venue.areas as readonly [Bounds, Bounds];
+    expect(touches(AVENUE, apron)).toBe(true);
+    expect(touches(apron, door)).toBe(true);
+    expect(door.minZ).toBe(venue.footprint.minZ);
+    expect(apron.maxZ).toBe(venue.footprint.minZ);
+  });
+});
+
+describe("the church", () => {
+  const venue = venueById("church") as VenueDef;
+  const { aisle, chancel, narthex } = CHURCH_ROOMS;
+
+  it("seats forty on kneelers in five rows of pews, facing the altar, the front row first", () => {
+    expect(CHURCH_KNEELERS).toHaveLength(40);
+    expect(venue.seats?.spots).toBe(CHURCH_KNEELERS);
+    expect(venue.indoor).toBe(true);
+    expect(Math.abs(SEAT_YAWS.church)).toBeCloseTo(Math.PI, 9);
+    expect(new Set(CHURCH_KNEELERS.map((spot) => spot.row))).toEqual(new Set([0, 1, 2, 3, 4]));
+    for (const spot of CHURCH_KNEELERS) expect(spot.id).toBe(spot.row * 8 + spot.column);
+    const rowZ = (row: number): number => CHURCH_KNEELERS.find((spot) => spot.row === row)?.z ?? Number.NaN;
+    for (let row = 1; row < 5; row += 1) expect(rowZ(row), `row ${row} is further from the altar`).toBeLessThan(rowZ(row - 1));
+    for (const spot of CHURCH_KNEELERS) expect(spot.z, `seat ${spot.id} is before the altar`).toBeLessThan(chancel.minZ);
+    const first = pickSeat("church", () => false);
+    expect(first?.row).toBe(0);
+    expect(Math.abs((first?.x ?? 0) - middleOf(venue.footprint).x)).toBeLessThan(2);
+    expect(pickSeat("church", (id) => id < 8)?.row).toBe(1);
+  });
+
+  it("opens each pew onto the aisle alone, and leaves the bench in front of it out of the walkable ground", () => {
+    expect(CHURCH_PEWS).toHaveLength(10);
+    for (const pew of CHURCH_PEWS) {
+      const label = `row ${pew.row} ${pew.side}`;
+      const joined = venue.areas.filter((area) => area !== pew.strip && touches(area, pew.strip));
+      expect(joined, label).toEqual([aisle]);
+      for (const area of venue.areas) expect(overlaps(area, pew.bench), `${label} bench and ${JSON.stringify(area)}`).toBe(false);
+      expect(holds(venue.footprint, pew.bench.minX, pew.bench.minZ), label).toBe(true);
+      expect(holds(venue.footprint, pew.bench.maxX, pew.bench.maxZ), label).toBe(true);
+    }
+    expect(touches(aisle, narthex)).toBe(true);
+    expect(touches(aisle, chancel)).toBe(true);
+    for (const pew of CHURCH_PEWS) expect(touches(narthex, pew.strip) || touches(chancel, pew.strip), `row ${pew.row} ${pew.side} stays clear of the narthex and the chancel`).toBe(false);
+  });
+
+  it("gives the candle racks a place to stand in the chancel, in front of the dais", () => {
+    expect(CHURCH_CANDLES).toHaveLength(4);
+    expect(CHURCH_CANDLES.every((candle) => candle.kind === "candle")).toBe(true);
+    expect(new Set(CHURCH_CANDLES.map((candle) => candle.id)).size).toBe(4);
+    for (const candle of CHURCH_CANDLES) {
+      expect(holds(chancel, candle.frontX, candle.frontZ, 0.3), candle.id).toBe(true);
+      expect(candle.z, `${candle.id} is on the altar side of its front`).toBeGreaterThan(candle.frontZ);
+      expect(holds(venue.footprint, candle.x, candle.z), candle.id).toBe(true);
+      for (const area of venue.areas) expect(holds(area, candle.x, candle.z), `${candle.id} stands in ${JSON.stringify(area)}`).toBe(false);
+    }
+  });
+
+  it("fills its slot of 14 by 14 and is entered from the avenue by a door in the wall facing it", () => {
+    expect(venue.footprint.maxX - venue.footprint.minX).toBeCloseTo(14, 9);
+    expect(venue.footprint.maxZ - venue.footprint.minZ).toBeCloseTo(14, 9);
+    expect(middleOf(venue.footprint)).toEqual({ x: -18, z: 29 });
     const [apron, door] = venue.areas as readonly [Bounds, Bounds];
     expect(touches(AVENUE, apron)).toBe(true);
     expect(touches(apron, door)).toBe(true);

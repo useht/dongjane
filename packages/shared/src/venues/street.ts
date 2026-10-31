@@ -10,7 +10,7 @@ export const STREET_VENUE = defineVenue({
   name: "저잣길",
   footprint: AVENUE,
   areas: [AVENUE],
-  links: ["gatbawi", "bathhouse"],
+  links: ["gatbawi", "bathhouse", "church"],
   npc: { stroll: false, seatWeight: 0 },
   indoor: false,
   quests: false,

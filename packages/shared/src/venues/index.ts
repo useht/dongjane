@@ -1,6 +1,7 @@
 import type { SeatSpot } from "../layout.ts";
 import { BATHHOUSE_VENUE } from "./bathhouse.ts";
 import { CASINO_VENUE } from "./casino.ts";
+import { CHURCH_VENUE } from "./church.ts";
 import { DHARMA_VENUE } from "./dharma.ts";
 import { GATBAWI_VENUE } from "./gatbawi.ts";
 import { SHORE_VENUE } from "./shore.ts";
@@ -8,14 +9,32 @@ import { STREET_VENUE } from "./street.ts";
 import type { SeatGroup, VenueDef } from "./types.ts";
 
 export type { ActivitySpot, SeatGroup, VenueDef } from "./types.ts";
-export { BATHHOUSE_VENUE, CASINO_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
+export { BATHHOUSE_VENUE, CASINO_VENUE, CHURCH_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
 export { BATHHOUSE_AREAS, BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL, BATHHOUSE_ROOMS } from "./bathhouse.ts";
+export {
+  CHURCH_AISLE,
+  CHURCH_AREAS,
+  CHURCH_BENCH,
+  CHURCH_CANDLES,
+  CHURCH_DAIS_FROM,
+  CHURCH_KNEELERS,
+  CHURCH_PEWS,
+  CHURCH_PEW_OUT,
+  CHURCH_RACKS_END,
+  CHURCH_RACK_SIZE,
+  CHURCH_RACK_STEPS,
+  CHURCH_ROOMS,
+  CHURCH_ROWS,
+  CHURCH_SEATS_PER_SIDE,
+  CHURCH_STRIP,
+  type Pew,
+} from "./church.ts";
 export { DOOR_WIDTH, SLOT_A1, SLOT_A2, SLOT_B1, WALL as SLOT_WALL, inSlot, slotAt } from "./slots.ts";
 export { AVENUE } from "./street.ts";
 
 // Every place in the world, in the order the world lists them. A new venue is a file beside these and a line here: the walk
 // graph, the seats, the computer-driven monks and the client's views are all read from this list.
-export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE, STREET_VENUE, BATHHOUSE_VENUE] as const satisfies readonly VenueDef[];
+export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE, STREET_VENUE, BATHHOUSE_VENUE, CHURCH_VENUE] as const satisfies readonly VenueDef[];
 export type VenueId = (typeof VENUES)[number]["id"];
 
 // A zone is a venue with seats. A seat is addressed by its zone (the venue's id) and its number, which is also how the

@@ -1,6 +1,7 @@
-import { AVENUE, BATHHOUSE_POOL, BATHHOUSE_ROOMS, DOOR_WIDTH, SEAT_TOPS, SLOT_A1, SLOT_WALL } from "@dongjane/shared";
+import { AVENUE, BATHHOUSE_POOL, BATHHOUSE_ROOMS, SEAT_TOPS, SLOT_A1, SLOT_WALL } from "@dongjane/shared";
 import { THEME } from "../../theme.ts";
-import type { KitCamera, KitLook, KitPiece, KitSpec, Paint, Vec3 } from "./kit.ts";
+import type { KitCamera, KitLook, KitPiece, KitSpec, Vec3 } from "./kit.ts";
+import { band, box, framedWindow, walls } from "./walled.ts";
 
 const { venue: c } = THEME;
 
@@ -12,7 +13,6 @@ const EAVE = 0.5;
 const RIDGE = 5.3;
 const CHIMNEY_TOP = 6.2;
 const CHIMNEY_CAP = 0.25;
-const DOOR_HALF = DOOR_WIDTH / 2;
 const MIDDLE_X = (X0 + X1) / 2;
 const MIDDLE_Z = (Z0 + Z1) / 2;
 const POOL_RIM = 0.18;
@@ -23,69 +23,17 @@ const POOL_FLOOR = -0.02;
 // The mat a visitor kneels on is 0.85 wide and 0.95 deep, its top at the seat's height.
 export const REST_MAT = { width: 0.85, depth: 0.95 } as const;
 
-const box = (min: Vec3, max: Vec3, paint: Paint, skip?: readonly string[]): KitPiece =>
-  skip ? { shape: "box", min, max, paint, skip } : { shape: "box", min, max, paint };
+const WALLS = { base: WALL_BASE, top: WALL_TOP, lintel: 2.6 };
 
-// The plaster walls, 0.4 thick, with a gap for the door in the north wall.
-function walls(): KitPiece[] {
-  const top = WALL_TOP;
-  const b = WALL_BASE;
-  return [
-    box([X0, b, Z0], [MIDDLE_X - DOOR_HALF, top, Z0 + SLOT_WALL], c.plaster),
-    box([MIDDLE_X + DOOR_HALF, b, Z0], [X1, top, Z0 + SLOT_WALL], c.plaster),
-    box([MIDDLE_X - DOOR_HALF, 2.6, Z0], [MIDDLE_X + DOOR_HALF, top, Z0 + SLOT_WALL], c.plaster),
-    box([X0, b, Z1 - SLOT_WALL], [X1, top, Z1], c.plaster),
-    box([X0, b, Z0 + SLOT_WALL], [X0 + SLOT_WALL, top, Z1 - SLOT_WALL], c.plaster),
-    box([X1 - SLOT_WALL, b, Z0 + SLOT_WALL], [X1, top, Z1 - SLOT_WALL], c.plaster),
-  ];
-}
-
-// A band round the wall, a little proud of it: the stone plinth at its foot and the timber beam under the eaves.
-function band(y0: number, y1: number, grow: number, paint: string, door: boolean): KitPiece[] {
-  const g = grow;
-  const pieces: KitPiece[] = [
-    box([X0 - g, y0, Z1 - SLOT_WALL - g], [X1 + g, y1, Z1 + g], paint),
-    box([X0 - g, y0, Z0 + SLOT_WALL - g], [X0 + SLOT_WALL + g, y1, Z1 - SLOT_WALL + g], paint),
-    box([X1 - SLOT_WALL - g, y0, Z0 + SLOT_WALL - g], [X1 + g, y1, Z1 - SLOT_WALL + g], paint),
-  ];
-  if (door) {
-    pieces.push(box([X0 - g, y0, Z0 - g], [MIDDLE_X - DOOR_HALF, y1, Z0 + SLOT_WALL + g], paint));
-    pieces.push(box([MIDDLE_X + DOOR_HALF, y0, Z0 - g], [X1 + g, y1, Z0 + SLOT_WALL + g], paint));
-  } else {
-    pieces.push(box([X0 - g, y0, Z0 - g], [X1 + g, y1, Z0 + SLOT_WALL + g], paint));
-  }
-  return pieces;
-}
-
-// A framed window, lit from inside the way a bathhouse is at dusk: a pane that stands a little out of both faces of the wall, in a
-// frame of four bars that stands a little further out, with a cross of mullions in front of the pane.
+// Framed windows, lit from inside the way a bathhouse is at dusk.
 function windows(): { frames: KitPiece[]; panes: KitPiece[] } {
   const frames: KitPiece[] = [];
   const panes: KitPiece[] = [];
-  const y0 = 1.5;
-  const y1 = 2.6;
-  const bar = 0.12;
-  const mullion = 0.05;
-  const frameOut = 0.1;
-  const paneOut = 0.04;
+  const style = { y0: 1.5, y1: 2.6, frame: c.doorWood };
   const add = (axis: "x" | "z", wall: number, along: number, width: number): void => {
-    const half = width / 2;
-    const slab = (a0: number, a1: number, b0: number, b1: number, out: number, paint: Paint): KitPiece => {
-      const near = wall - SLOT_WALL / 2 - out;
-      const far = wall + SLOT_WALL / 2 + out;
-      return axis === "z" ? box([a0, b0, near], [a1, b1, far], paint) : box([near, b0, a0], [far, b1, a1], paint);
-    };
-    const wood = (a0: number, a1: number, b0: number, b1: number, out = frameOut): KitPiece => slab(a0, a1, b0, b1, out, c.doorWood);
-    const middle = (y0 + y1) / 2;
-    frames.push(
-      wood(along - half - bar, along + half + bar, y0 - bar, y0),
-      wood(along - half - bar, along + half + bar, y1, y1 + bar),
-      wood(along - half - bar, along - half, y0, y1),
-      wood(along + half, along + half + bar, y0, y1),
-      wood(along - mullion / 2, along + mullion / 2, y0, y1, paneOut + 0.02),
-      wood(along - half, along + half, middle - mullion / 2, middle + mullion / 2, paneOut + 0.02),
-    );
-    panes.push(slab(along - half, along + half, y0, y1, paneOut, c.windowGlow));
+    const window = framedWindow(axis, wall, along, width, style, c.windowGlow);
+    frames.push(...window.frames);
+    panes.push(window.pane);
   };
   // North wall either side of the door, south wall, then east and west.
   for (const x of [MIDDLE_X - 4.8, MIDDLE_X - 3, MIDDLE_X + 3, MIDDLE_X + 4.8]) add("z", Z0 + SLOT_WALL / 2, x, 1.2);
@@ -208,7 +156,7 @@ export function bathhouseKit(): KitSpec {
     id: "bathhouse",
     meshes: {
       floor: floors(),
-      shell: [...walls(), ...band(WALL_BASE, 0.6, 0.04, c.plasterShade, true), ...band(WALL_TOP - 0.25, WALL_TOP, 0.05, c.doorWood, false), ...frames, board.board, ...poolRim(), ...ropes()],
+      shell: [...walls(SLOT_A1, WALLS, c.plaster), ...band(SLOT_A1, WALL_BASE, 0.6, 0.04, c.plasterShade, true), ...band(SLOT_A1, WALL_TOP - 0.25, WALL_TOP, 0.05, c.doorWood, false), ...frames, board.board, ...poolRim(), ...ropes()],
       roof: roof(),
       glow: [...panes, board.strip],
       water: [{ shape: "floor", area: { minX: BATHHOUSE_POOL.minX + POOL_RIM, maxX: BATHHOUSE_POOL.maxX - POOL_RIM, minZ: BATHHOUSE_POOL.minZ + POOL_RIM, maxZ: BATHHOUSE_POOL.maxZ - POOL_RIM }, y: WATER_Y, step: 3, pattern: "fade", along: "z", paint: [c.water, c.waterDeep] }],
