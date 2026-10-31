@@ -1,4 +1,4 @@
-import { AVENUE, CHURCH_AISLE, CHURCH_CANDLES, CHURCH_DAIS_FROM, CHURCH_PEWS, CHURCH_RACK_SIZE, CHURCH_ROOMS, DOOR_WIDTH, SEAT_TOPS, SLOT_A2, SLOT_WALL } from "@dongjane/shared";
+import { AVENUE, BENCH_HIPS_BACK, CHURCH_AISLE, CHURCH_CANDLES, CHURCH_CHAIR, CHURCH_DAIS_FROM, CHURCH_PEWS, CHURCH_PEW_OUT, CHURCH_RACK_SIZE, CHURCH_ROOMS, DOOR_WIDTH, SEAT_TOPS, SLOT_A2, SLOT_WALL } from "@dongjane/shared";
 import { THEME } from "../../theme.ts";
 import type { KitCamera, KitLook, KitPiece, KitSpec } from "./kit.ts";
 import { band, box, framedWindow, walls } from "./walled.ts";
@@ -24,8 +24,15 @@ const DOOR_HALF = DOOR_WIDTH / 2;
 const RUNNER_LIFT = 0.008;
 const TRIM_LIFT = 0.014;
 
-// The pad a visitor kneels on is 0.7 wide and 0.5 deep, its top at the seat's height.
-export const KNEELER = { width: 0.7, depth: 0.5 } as const;
+// A chair is authored at the origin facing -z, with its seat reaching back from the place, as deep as the layout says; the monk sits
+// on it with its hips that far behind the place, so the seat's middle is under them. The seat's top is at the seat's height and the
+// back, a hand's breadth thick against the pew behind, rises a little above it.
+export const CHAIR = { width: CHURCH_CHAIR.width, depth: CHURCH_CHAIR.depth, behind: BENCH_HIPS_BACK, back: 0.3 } as const;
+
+// The pews are a bench in front of each strip: the back of the pew ahead, 0.72 high, with a ledge for a book on the side of the monk
+// behind it and a post at its aisle end. The bench stops short of the post, so no two faces coincide.
+const PEW_TOP = 0.72;
+const LEDGE = { top: 0.58, thick: 0.04, reach: 0.1, lip: 0.04 } as const;
 
 const WALLS = { base: WALL_BASE, top: WALL_TOP, lintel: LINTEL };
 const WINDOW = { y0: 1.3, y1: 3.5, frame: c.pewWoodDark };
@@ -62,15 +69,26 @@ function doorFrame(): KitPiece[] {
   ];
 }
 
-// The pews: a bench in front of each strip, 0.86 high with a post at its aisle end. The bench stops short of the post, so no two faces coincide.
+// The benches: each strip has one in front, and the last row has one in the gap behind it, between the strip and the narthex.
 function pews(): KitPiece[] {
   const pieces: KitPiece[] = [];
   const post = 0.1;
-  for (const { side, bench } of CHURCH_PEWS) {
+  const gap = { minZ: CHURCH_ROOMS.narthex.maxZ, maxZ: Math.min(...CHURCH_PEWS.map((pew) => pew.strip.minZ)) };
+  const benches = [
+    ...CHURCH_PEWS.map(({ side, bench }) => ({ side, bench })),
+    ...(["west", "east"] as const).map((side) => ({
+      side,
+      bench: { minX: MIDDLE_X + (side === "west" ? -CHURCH_PEW_OUT : CHURCH_AISLE), maxX: MIDDLE_X + (side === "west" ? -CHURCH_AISLE : CHURCH_PEW_OUT), ...gap },
+    })),
+  ];
+  for (const { side, bench } of benches) {
     const west = side === "west";
     const body = west ? { minX: bench.minX, maxX: bench.maxX - post } : { minX: bench.minX + post, maxX: bench.maxX };
     const end = west ? { minX: bench.maxX - post, maxX: bench.maxX } : { minX: bench.minX, maxX: bench.minX + post };
-    pieces.push(box([body.minX, FLOOR_Y, bench.minZ], [body.maxX, 0.86, bench.maxZ], [c.pewWoodDark, c.pewWood]));
+    const board = bench.minZ + LEDGE.reach;
+    pieces.push(box([body.minX, FLOOR_Y, board], [body.maxX, PEW_TOP, bench.maxZ], [c.pewWoodDark, c.pewWood]));
+    pieces.push(box([body.minX, LEDGE.top - LEDGE.thick, bench.minZ], [body.maxX, LEDGE.top, board], c.pewWood));
+    pieces.push(box([body.minX, LEDGE.top, bench.minZ], [body.maxX, LEDGE.top + LEDGE.lip, bench.minZ + LEDGE.thick], c.pewWood));
     pieces.push(box([end.minX, FLOOR_Y, bench.minZ], [end.maxX, 1.05, bench.maxZ], c.pewWoodDark));
   }
   return pieces;
@@ -165,14 +183,25 @@ function roof(): KitPiece[] {
   ];
 }
 
-// The pad a visitor kneels on, authored at the origin facing -z: a gold border with a darker red middle, its top at the seat's height.
-function kneeler(): KitPiece[] {
-  const half = KNEELER.width / 2;
-  const deep = KNEELER.depth / 2;
+// The chair a visitor sits on, authored at the origin facing -z: four legs, a board with a red pad on it whose top is the seat's
+// height, and a low back at the rear edge, where the pew behind stands.
+function chair(): KitPiece[] {
+  const half = CHAIR.width / 2;
   const top = SEAT_TOPS.church;
+  const board = top - 0.04;
+  const leg = 0.04;
+  const back = 0.025;
+  const upright = 0.04;
+  const legs = [-half, half - leg].flatMap((x) =>
+    [0, CHAIR.depth - leg].map((z) => box([x, FLOOR_Y, z], [x + leg, board, z + leg], c.pewWoodDark)),
+  );
   return [
-    box([-half, FLOOR_Y, -deep], [half, top - 0.012, deep], c.gold),
-    box([-half + 0.05, top - 0.012, -deep + 0.05], [half - 0.05, top, deep - 0.05], c.kneelerRed, ["-x", "+x", "-z", "+z", "-y"]),
+    ...legs,
+    box([-half, board, 0], [half, top - 0.012, CHAIR.depth], c.pewWood),
+    box([-half + 0.03, top - 0.012, 0.03], [half - 0.03, top, CHAIR.depth - 0.03], c.kneelerRed, ["-x", "+x", "-z", "+z", "-y"]),
+    box([-half, board, CHAIR.depth - back], [-half + upright, top + CHAIR.back, CHAIR.depth], c.pewWoodDark),
+    box([half - upright, board, CHAIR.depth - back], [half, top + CHAIR.back, CHAIR.depth], c.pewWoodDark),
+    box([-half + upright, top + CHAIR.back * 0.4, CHAIR.depth - back], [half - upright, top + CHAIR.back, CHAIR.depth], c.pewWood),
   ];
 }
 
@@ -216,7 +245,7 @@ export function churchKit(): KitSpec {
       ],
       roof: roof(),
       glow: [...panes, ...altar.glow, ...candles.glow],
-      seat: kneeler(),
+      seat: chair(),
     },
     pads: [
       { minX: X0 - 0.8, maxX: X1 + 0.8, minZ: Z0 - 0.8, maxZ: Z1 + 0.8 },

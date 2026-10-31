@@ -4,7 +4,14 @@ import type { Bounds, SeatSpot } from "../layout.ts";
 // its venues (index.ts); the rules, the walk graph and the client read that list and spell no venue's name themselves.
 // A venue file may import layout.ts and casino-layout.ts but never anything that imports the registry.
 
-// Where visitors kneel in a venue: the spots, the way a seated monk faces, and how the rows are counted.
+// How a monk sits on a seat. On the wire every seated monk is "kneel"; the pose is only how the client draws one: on the knees
+// (a 방석, a 돗자리), cross-legged on a mat, or on a chair or a log with the feet on the floor in front.
+export type SeatPose = "kneel" | "cross" | "bench";
+
+// How far behind the seat spot a bench-seated monk's hips are drawn, which is where the middle of the chair or the log lies.
+export const BENCH_HIPS_BACK = 0.2;
+
+// Where visitors sit in a venue: the spots, the way a seated monk faces, and how the rows are counted.
 export interface SeatGroup {
   // what one place is called: 돗자리, 방석
   readonly name: string;
@@ -16,8 +23,9 @@ export interface SeatGroup {
   // how far back a spot is from what the venue faces, and how far it is to the side of the middle line
   readonly depth: (spot: SeatSpot) => number;
   readonly offset: (spot: SeatSpot) => number;
-  // how high a kneeling monk sits above the ground
+  // how high a seated monk sits above the ground: the top of the 방석, the mat, the chair or the log
   readonly top: number;
+  readonly pose: SeatPose;
 }
 
 // Something to do at a spot on the floor: (x, z) is its middle, yaw the way its front faces, and (frontX, frontZ) the point

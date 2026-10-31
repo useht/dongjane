@@ -28,6 +28,7 @@ export const GATBAWI_VENUE = defineVenue({
     depth: (spot) => spot.z,
     offset: (spot) => Math.abs(spot.x),
     top: GATBAWI_SEAT_TOP,
+    pose: "kneel",
   },
   npc: { stroll: true, seatWeight: 1 },
   indoor: false,

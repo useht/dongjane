@@ -2,7 +2,7 @@ import type { Bounds, SeatSpot } from "../layout.ts";
 import { yawFromDirection } from "../layout.ts";
 import { AVENUE } from "./street.ts";
 import { SLOT_A1, SLOT_A2, SLOT_B1 } from "./slots.ts";
-import { type ActivitySpot, defineVenue } from "./types.ts";
+import { type ActivitySpot, BENCH_HIPS_BACK, defineVenue } from "./types.ts";
 
 // 불멍 (slot B1, 10 × 14, in the open): a clearing in the hillside behind the bathhouse with a fire in a ring of stones and five
 // logs round it, four places to a log, every visitor facing the flames. It has no walls and no door. A lane runs down between the
@@ -50,10 +50,11 @@ export const BONFIRE_ROOMS = {
 export const BONFIRE_AREAS: readonly Bounds[] = Object.values(BONFIRE_ROOMS);
 
 // Five logs lie round the fire, each a tangent to the ring a few steps from it, with a gap between them wide enough to walk through;
-// the gap between the last and the first faces the lane. A log seats four, a little under a metre apart.
+// the gap between the last and the first faces the lane. A log seats four, a little under a metre apart. A visitor sits with its
+// hips on the log and its feet toward the fire, so the log lies a hips' depth farther from the fire than the feet do.
 export const BONFIRE_LOG_COUNT = 5;
 export const BONFIRE_PLACES = 4;
-export const BONFIRE_LOG_REACH = 3.2;
+export const BONFIRE_LOG_REACH = 3.4;
 export const BONFIRE_LOG_HALF = 1.65;
 export const BONFIRE_PLACE_PITCH = 0.85;
 
@@ -66,12 +67,13 @@ export interface BonfireLog {
 
 const GAP_ANGLE = Math.atan2(BONFIRE_GATE.z - BONFIRE_FIRE.z, BONFIRE_GATE.x - BONFIRE_FIRE.x);
 const angleOf = (log: number): number => GAP_ANGLE + Math.PI / BONFIRE_LOG_COUNT + (log * 2 * Math.PI) / BONFIRE_LOG_COUNT;
-// A point `along` a log's axis from its middle.
-const onLog = (log: number, along: number): Point => {
+// A point `along` a log's axis from its middle, `toward` the fire from the axis.
+const onLog = (log: number, along: number, toward = 0): Point => {
   const angle = angleOf(log);
+  const reach = BONFIRE_LOG_REACH - toward;
   return {
-    x: round(BONFIRE_FIRE.x + Math.cos(angle) * BONFIRE_LOG_REACH - Math.sin(angle) * along),
-    z: round(BONFIRE_FIRE.z + Math.sin(angle) * BONFIRE_LOG_REACH + Math.cos(angle) * along),
+    x: round(BONFIRE_FIRE.x + Math.cos(angle) * reach - Math.sin(angle) * along),
+    z: round(BONFIRE_FIRE.z + Math.sin(angle) * reach + Math.cos(angle) * along),
   };
 };
 
@@ -81,11 +83,12 @@ export const BONFIRE_LOGS: readonly BonfireLog[] = Array.from({ length: BONFIRE_
   to: onLog(index, BONFIRE_LOG_HALF),
 }));
 
-// The seats are numbered log by log, and along each log in the way the angle grows.
+// The seats are numbered log by log, and along each log in the way the angle grows. A monk sits on the log with its hips on the
+// axis and its feet to the fire, so the place is where the feet are: the hips' distance nearer the fire than the axis.
 export const BONFIRE_SEATS: readonly SeatSpot[] = BONFIRE_LOGS.flatMap((log) =>
   Array.from({ length: BONFIRE_PLACES }, (_, column) => ({
     id: log.index * BONFIRE_PLACES + column,
-    ...onLog(log.index, (column - (BONFIRE_PLACES - 1) / 2) * BONFIRE_PLACE_PITCH),
+    ...onLog(log.index, (column - (BONFIRE_PLACES - 1) / 2) * BONFIRE_PLACE_PITCH, BENCH_HIPS_BACK),
     row: log.index,
     column,
   })),
@@ -119,7 +122,8 @@ export const BONFIRE_VENUE = defineVenue({
     // Nobody sits in front: a visitor nobody chose a place for gets the one nearest the lane.
     depth: (spot) => Math.hypot(spot.x - BONFIRE_GATE.x, spot.z - BONFIRE_GATE.z),
     offset: () => 0,
-    top: 0.35,
+    top: 0.24,
+    pose: "bench",
   },
   activities: BONFIRE_FIRES,
   npc: { stroll: false, seatWeight: 0 },

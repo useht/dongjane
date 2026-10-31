@@ -4,6 +4,7 @@ import { ARRIVAL, type Bounds, WORLD_BOUNDS } from "../src/layout.ts";
 import { TempleSim } from "../src/sim.ts";
 import { BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL } from "../src/venues/bathhouse.ts";
 import {
+  BENCH_HIPS_BACK,
   BONFIRE_FIRE,
   BONFIRE_FIRES,
   BONFIRE_GATE,
@@ -177,7 +178,7 @@ describe("the church", () => {
   const venue = venueById("church") as VenueDef;
   const { aisle, chancel, narthex } = CHURCH_ROOMS;
 
-  it("seats forty on kneelers in five rows of pews, facing the altar, the front row first", () => {
+  it("seats forty on chairs in five rows of pews, facing the altar, the front row first", () => {
     expect(CHURCH_KNEELERS).toHaveLength(40);
     expect(venue.seats?.spots).toBe(CHURCH_KNEELERS);
     expect(venue.indoor).toBe(true);
@@ -270,7 +271,7 @@ describe("the bonfire", () => {
     return Math.hypot(x - (log.from.x + dx * share), z - (log.from.z + dz * share));
   };
 
-  it("seats twenty on five logs, four to a log, the places numbered log by log", () => {
+  it("seats twenty on five logs, four to a log, the places numbered log by log, each monk's hips on its log", () => {
     expect(BONFIRE_SEATS).toHaveLength(20);
     expect(BONFIRE_LOGS).toHaveLength(BONFIRE_LOG_COUNT);
     expect(venue.seats?.spots).toBe(BONFIRE_SEATS);
@@ -278,7 +279,10 @@ describe("the bonfire", () => {
     for (const spot of BONFIRE_SEATS) {
       expect(spot.id).toBe(spot.row * BONFIRE_PLACES + spot.column);
       const log = BONFIRE_LOGS[spot.row] as (typeof BONFIRE_LOGS)[number];
-      expect(distanceToLog(log, spot.x, spot.z), `seat ${spot.id} is on its log`).toBeLessThan(0.02);
+      // the monk looks along (-sin yaw, -cos yaw) and sits with its hips behind the place
+      const yaw = seatYaw("bonfire", spot.id);
+      const hips = { x: spot.x + Math.sin(yaw) * BENCH_HIPS_BACK, z: spot.z + Math.cos(yaw) * BENCH_HIPS_BACK };
+      expect(distanceToLog(log, hips.x, hips.z), `seat ${spot.id}'s hips are on its log`).toBeLessThan(0.03);
     }
     for (const log of BONFIRE_LOGS) {
       const places = BONFIRE_SEATS.filter((spot) => spot.row === log.index);
