@@ -54,7 +54,6 @@ function windBody(ctx: AudioContext, out: AudioNode): void {
   sweep.start();
 }
 
-// Surf: a noise rumble whose lowpass opens and closes with each wave, under a foam hiss on a different beat.
 function seaBody(ctx: AudioContext, out: AudioNode): void {
   const source = ctx.createBufferSource();
   source.buffer = noiseBuffer(ctx, 8);
@@ -97,7 +96,6 @@ function seaBody(ctx: AudioContext, out: AudioNode): void {
   foamBeat.start();
 }
 
-// Rain: a bandpass hiss over a lowpass body; the single drops fall over it (drops.ts).
 function rainBody(ctx: AudioContext, out: AudioNode): void {
   const source = ctx.createBufferSource();
   source.buffer = noiseBuffer(ctx, 8);
@@ -144,7 +142,7 @@ function fireBody(ctx: AudioContext, out: AudioNode): void {
 }
 
 export interface BedSpec {
-  // peak is the gain at level 1; follow is the time constant of the gain, in seconds
+  // peak: the gain at level 1; follow: its time constant, in seconds
   peak: number;
   follow: number;
   body?: Body;

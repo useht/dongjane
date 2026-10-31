@@ -653,7 +653,7 @@ export class App {
     this.seatOwners = perZone(() => new Map());
   }
 
-  // The sutra runs while the visitor is in a live world; where they stand (see tickMix) decides what is heard.
+  // Where the visitor stands (see tickMix) decides which sound is heard.
   private syncZoneSound(): void {
     const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
@@ -1002,7 +1002,6 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the sutra, the concert and the place's ambient beds.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;

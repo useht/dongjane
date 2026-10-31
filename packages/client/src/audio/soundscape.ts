@@ -7,7 +7,7 @@ export type Ambience = Record<Bed, number>;
 
 export const SILENCE: Readonly<Ambience> = { wind: 0, sea: 0, rain: 0, fire: 0, water: 0 };
 
-// Each place's share (0 to 1) of every bed; a missing bed is silent, and a new venue must be listed here.
+// A bed a venue omits is silent there; a new venue must be listed here.
 export const VENUE_SOUNDS: Readonly<Record<VenueId, Readonly<Partial<Record<Bed, number>>>>> = {
   gatbawi: { wind: 1, sea: 1, rain: 1 },
   shore: { wind: 1, sea: 1, rain: 1 },

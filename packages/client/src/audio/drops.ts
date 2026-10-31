@@ -1,4 +1,4 @@
-// Single drops over an ambient bed: when they fall and how each one sounds, apart from any audio graph.
+// Single drops over an ambient bed, planned apart from any audio graph.
 export interface DropProfile {
   // seconds between drops, exponentially spread; no two ever fall closer than the minimum, and the mean is exact
   meanGap: number;
