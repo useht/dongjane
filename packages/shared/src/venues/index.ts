@@ -1,5 +1,6 @@
 import type { SeatSpot } from "../layout.ts";
 import { BATHHOUSE_VENUE } from "./bathhouse.ts";
+import { BONFIRE_VENUE } from "./bonfire.ts";
 import { CASINO_VENUE } from "./casino.ts";
 import { CHURCH_VENUE } from "./church.ts";
 import { DHARMA_VENUE } from "./dharma.ts";
@@ -9,8 +10,27 @@ import { STREET_VENUE } from "./street.ts";
 import type { SeatGroup, VenueDef } from "./types.ts";
 
 export type { ActivitySpot, SeatGroup, VenueDef } from "./types.ts";
-export { BATHHOUSE_VENUE, CASINO_VENUE, CHURCH_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
+export { BATHHOUSE_VENUE, BONFIRE_VENUE, CASINO_VENUE, CHURCH_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
 export { BATHHOUSE_AREAS, BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL, BATHHOUSE_ROOMS } from "./bathhouse.ts";
+export {
+  BONFIRE_AREAS,
+  BONFIRE_BACK_Z,
+  BONFIRE_FIRE,
+  BONFIRE_FIRES,
+  BONFIRE_GATE,
+  BONFIRE_LANE_WIDTH,
+  BONFIRE_LOGS,
+  BONFIRE_LOG_COUNT,
+  BONFIRE_LOG_HALF,
+  BONFIRE_LOG_REACH,
+  BONFIRE_PIT,
+  BONFIRE_PIT_HALF,
+  BONFIRE_PLACES,
+  BONFIRE_PLACE_PITCH,
+  BONFIRE_ROOMS,
+  BONFIRE_SEATS,
+  type BonfireLog,
+} from "./bonfire.ts";
 export {
   CHURCH_AISLE,
   CHURCH_AREAS,
@@ -34,7 +54,7 @@ export { AVENUE } from "./street.ts";
 
 // Every place in the world, in the order the world lists them. A new venue is a file beside these and a line here: the walk
 // graph, the seats, the computer-driven monks and the client's views are all read from this list.
-export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE, STREET_VENUE, BATHHOUSE_VENUE, CHURCH_VENUE] as const satisfies readonly VenueDef[];
+export const VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE, STREET_VENUE, BATHHOUSE_VENUE, CHURCH_VENUE, BONFIRE_VENUE] as const satisfies readonly VenueDef[];
 export type VenueId = (typeof VENUES)[number]["id"];
 
 // A zone is a venue with seats. A seat is addressed by its zone (the venue's id) and its number, which is also how the
@@ -74,12 +94,20 @@ export const SEAT_TOPS = perZone((venue) => venue.seats.top);
 // How far back a seat is from what the zone faces: the rows are counted from the front.
 export const SEAT_DEPTH: Readonly<Record<Zone, (spot: SeatSpot) => number>> = perZone((venue) => venue.seats.depth);
 const SEAT_OFFSET: Readonly<Record<Zone, (spot: SeatSpot) => number>> = perZone((venue) => venue.seats.offset);
+const SEAT_FACING: Readonly<Record<Zone, SeatGroup["facing"]>> = perZone((venue) => (venue.seats as SeatGroup).facing);
 export const INDOOR = perZone((venue) => venue.indoor);
 
 const round = (value: number): number => Math.round(value * 100) / 100;
 
 export function seatSpot(zone: Zone, id: number): SeatSpot | undefined {
   return Number.isInteger(id) ? ZONE_SEATS[zone][id] : undefined;
+}
+
+// The way a monk kneeling on a seat faces: the zone's yaw, unless its seats each look their own way.
+export function seatYaw(zone: Zone, id: number): number {
+  const spot = seatSpot(zone, id);
+  const facing = SEAT_FACING[zone];
+  return spot && facing ? facing(spot) : SEAT_YAWS[zone];
 }
 
 export function seatKey(zone: Zone, id: number): string {

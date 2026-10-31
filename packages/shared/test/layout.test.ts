@@ -38,7 +38,7 @@ import {
 
 describe("zones", () => {
   it("names the zones and tells each from the other", () => {
-    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse", "church"]);
+    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse", "church", "bonfire"]);
     expect(isZone("gatbawi")).toBe(true);
     expect(isZone("dharma")).toBe(true);
     expect(isZone("garden")).toBe(false);

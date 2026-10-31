@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { TICK_MS } from "../src/constants.ts";
 import { ARRIVAL, type Bounds, WORLD_BOUNDS } from "../src/layout.ts";
+import { TempleSim } from "../src/sim.ts";
 import { BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL } from "../src/venues/bathhouse.ts";
 import {
+  BONFIRE_FIRE,
+  BONFIRE_FIRES,
+  BONFIRE_GATE,
+  BONFIRE_LANE_WIDTH,
+  BONFIRE_LOGS,
+  BONFIRE_LOG_COUNT,
+  BONFIRE_PIT,
+  BONFIRE_PLACES,
+  BONFIRE_ROOMS,
+  BONFIRE_SEATS,
   CHURCH_CANDLES,
   CHURCH_KNEELERS,
   CHURCH_PEWS,
@@ -9,7 +21,10 @@ import {
   SEAT_YAWS,
   type VenueDef,
   VENUES,
+  DOOR_WIDTH,
+  ZONE_SEATS,
   pickSeat,
+  seatYaw,
   venueById,
 } from "../src/venues/index.ts";
 import { AVENUE } from "../src/venues/street.ts";
@@ -214,5 +229,152 @@ describe("the church", () => {
     expect(touches(apron, door)).toBe(true);
     expect(door.minZ).toBe(venue.footprint.minZ);
     expect(apron.maxZ).toBe(venue.footprint.minZ);
+  });
+});
+
+describe("the bonfire", () => {
+  const venue = venueById("bonfire") as VenueDef;
+  const { lane, turn, west, north, south, east } = BONFIRE_ROOMS;
+  const onLog = (log: (typeof BONFIRE_LOGS)[number], share: number): { x: number; z: number } => ({
+    x: log.from.x + (log.to.x - log.from.x) * share,
+    z: log.from.z + (log.to.z - log.from.z) * share,
+  });
+  const distanceToLog = (log: (typeof BONFIRE_LOGS)[number], x: number, z: number): number => {
+    const dx = log.to.x - log.from.x;
+    const dz = log.to.z - log.from.z;
+    const share = Math.max(0, Math.min(1, ((x - log.from.x) * dx + (z - log.from.z) * dz) / (dx * dx + dz * dz)));
+    return Math.hypot(x - (log.from.x + dx * share), z - (log.from.z + dz * share));
+  };
+
+  it("seats twenty on five logs, four to a log, the places numbered log by log", () => {
+    expect(BONFIRE_SEATS).toHaveLength(20);
+    expect(BONFIRE_LOGS).toHaveLength(BONFIRE_LOG_COUNT);
+    expect(venue.seats?.spots).toBe(BONFIRE_SEATS);
+    expect(venue.indoor).toBe(false);
+    for (const spot of BONFIRE_SEATS) {
+      expect(spot.id).toBe(spot.row * BONFIRE_PLACES + spot.column);
+      const log = BONFIRE_LOGS[spot.row] as (typeof BONFIRE_LOGS)[number];
+      expect(distanceToLog(log, spot.x, spot.z), `seat ${spot.id} is on its log`).toBeLessThan(0.02);
+    }
+    for (const log of BONFIRE_LOGS) {
+      const places = BONFIRE_SEATS.filter((spot) => spot.row === log.index);
+      expect(places.map((spot) => spot.column)).toEqual([0, 1, 2, 3]);
+    }
+  });
+
+  it("turns every place to the flames, and keeps the pit and the gaps between the logs clear", () => {
+    for (const spot of BONFIRE_SEATS) {
+      const yaw = seatYaw("bonfire", spot.id);
+      const away = Math.hypot(BONFIRE_FIRE.x - spot.x, BONFIRE_FIRE.z - spot.z);
+      // yaw is atan2(-dx, -dz): the monk looks along (-sin yaw, -cos yaw).
+      expect(-Math.sin(yaw), `seat ${spot.id}`).toBeCloseTo((BONFIRE_FIRE.x - spot.x) / away, 5);
+      expect(-Math.cos(yaw), `seat ${spot.id}`).toBeCloseTo((BONFIRE_FIRE.z - spot.z) / away, 5);
+      expect(away, `seat ${spot.id}`).toBeGreaterThan(3);
+      expect(away, `seat ${spot.id}`).toBeLessThan(4);
+      expect(holds(BONFIRE_PIT, spot.x, spot.z, -0.5), `seat ${spot.id} is clear of the pit`).toBe(false);
+    }
+    expect(seatYaw("bonfire", 0)).not.toBeCloseTo(seatYaw("bonfire", 10), 3);
+    expect(seatYaw("gatbawi", 3)).toBe(SEAT_YAWS.gatbawi);
+    expect(seatYaw("bonfire", 99)).toBe(SEAT_YAWS.bonfire);
+    for (const log of BONFIRE_LOGS) {
+      for (let step = 0; step <= 20; step += 1) {
+        const at = onLog(log, step / 20);
+        expect(holds(BONFIRE_PIT, at.x, at.z, -0.5), `log ${log.index} clears the pit`).toBe(false);
+      }
+      const next = BONFIRE_LOGS[(log.index + 1) % BONFIRE_LOG_COUNT] as (typeof BONFIRE_LOGS)[number];
+      let gap = Number.POSITIVE_INFINITY;
+      for (let step = 0; step <= 20; step += 1) {
+        const at = onLog(log, step / 20);
+        gap = Math.min(gap, distanceToLog(next, at.x, at.z));
+      }
+      expect(gap, `the gap after log ${log.index} can be walked through`).toBeGreaterThan(1);
+    }
+  });
+
+  it("leaves the gap between the last log and the first facing the lane, and seats a visitor nobody chose for beside it", () => {
+    const first = pickSeat("bonfire", () => false);
+    expect(first?.row).toBe(BONFIRE_LOG_COUNT - 1);
+    const nearest = Math.min(...BONFIRE_SEATS.map((spot) => Math.hypot(spot.x - BONFIRE_GATE.x, spot.z - BONFIRE_GATE.z)));
+    expect(Math.hypot((first?.x ?? 0) - BONFIRE_GATE.x, (first?.z ?? 0) - BONFIRE_GATE.z)).toBeCloseTo(nearest, 9);
+  });
+
+  it("tends one fire from the lane's side of it, facing it", () => {
+    expect(BONFIRE_FIRES).toHaveLength(1);
+    const [fire] = BONFIRE_FIRES as readonly [(typeof BONFIRE_FIRES)[number]];
+    expect(fire.kind).toBe("fire");
+    expect(venue.activities).toBe(BONFIRE_FIRES);
+    expect({ x: fire.x, z: fire.z }).toEqual(BONFIRE_FIRE);
+    expect(holds(north, fire.frontX, fire.frontZ, 0.3)).toBe(true);
+    expect(holds(BONFIRE_PIT, fire.frontX, fire.frontZ)).toBe(false);
+    // yaw is atan2(-dx, -dz), so the monk looks along (-sin yaw, -cos yaw): toward +z, at the flames.
+    expect(-Math.sin(fire.yaw)).toBeCloseTo(0, 5);
+    expect(-Math.cos(fire.yaw)).toBeCloseTo(Math.sign(fire.z - fire.frontZ), 5);
+  });
+
+  it("fills its slot of 10 by 14 in the open, with the fire in the middle of its width", () => {
+    expect(venue.footprint.maxX - venue.footprint.minX).toBeCloseTo(10, 9);
+    expect(venue.footprint.maxZ - venue.footprint.minZ).toBeCloseTo(14, 9);
+    expect(middleOf(venue.footprint)).toEqual({ x: -2, z: 49 });
+    expect(BONFIRE_FIRE.x).toBe(-2);
+    expect(holds(venue.footprint, BONFIRE_PIT.minX, BONFIRE_PIT.minZ)).toBe(true);
+    expect(holds(venue.footprint, BONFIRE_PIT.maxX, BONFIRE_PIT.maxZ)).toBe(true);
+    for (const other of ALL) for (const area of other.areas) expect(overlaps(area, BONFIRE_PIT), other.id).toBe(false);
+    for (const area of [west, north, south, east]) {
+      expect(holds(venue.footprint, area.minX, area.minZ) && holds(venue.footprint, area.maxX, area.maxZ)).toBe(true);
+    }
+    expect(venue.areas).toEqual([lane, turn, west, north, south, east]);
+  });
+
+  it("is reached by a lane from the avenue, between the church and the bathhouse, that turns into the clearing", () => {
+    expect(venue.areas[0]).toBe(lane);
+    expect(touches(AVENUE, lane)).toBe(true);
+    expect(touches(lane, turn)).toBe(true);
+    expect(touches(turn, west)).toBe(true);
+    expect(touches(west, north) && touches(west, south) && touches(north, east) && touches(south, east), "the strips join round the pit").toBe(true);
+    expect(lane.maxX - lane.minX).toBeCloseTo(BONFIRE_LANE_WIDTH, 9);
+    expect(overlaps(lane, venue.footprint)).toBe(false);
+    const church = venueById("church") as VenueDef;
+    const bathhouse = venueById("bathhouse") as VenueDef;
+    expect(overlaps(lane, church.footprint)).toBe(false);
+    expect(overlaps(lane, bathhouse.footprint)).toBe(false);
+    expect(lane.minX).toBeGreaterThan(church.footprint.maxX);
+    expect(lane.maxX).toBeLessThan(bathhouse.footprint.minX);
+    expect(Math.min(turn.maxZ, west.maxZ) - Math.max(turn.minZ, west.minZ)).toBeGreaterThanOrEqual(DOOR_WIDTH - 1e-9);
+  });
+
+  it("walks from the arrival to every place and the fire by way of the lane, and back", () => {
+    const targets = [...BONFIRE_SEATS, { x: BONFIRE_FIRES[0]?.frontX ?? 0, z: BONFIRE_FIRES[0]?.frontZ ?? 0 }];
+    for (const target of targets) {
+      const path = planPath(ARRIVAL, target);
+      expect(path.at(-1)).toEqual({ x: target.x, z: target.z });
+      expect(
+        path.some((corner) => holds(lane, corner.x, corner.z)),
+        "through the lane",
+      ).toBe(true);
+      expect(planPath(target, ARRIVAL).at(-1)).toEqual({ x: ARRIVAL.x, z: ARRIVAL.z });
+    }
+  });
+
+  it("kneels twenty visitors on the logs, each turned to the fire", () => {
+    let now = 1_800_000_000_000;
+    const sim = new TempleSim({ clock: () => now, random: () => 0.5 });
+    for (let i = 0; i < BONFIRE_SEATS.length; i += 1) {
+      sim.join(`b${i}`, i * 11);
+      expect(sim.sit(`b${i}`, "bonfire", i)).toBe(true);
+    }
+    for (let elapsed = 0; elapsed < 120_000; elapsed += TICK_MS) {
+      now += TICK_MS;
+      sim.tick(TICK_MS);
+    }
+    expect(sim.zoneCount("bonfire")).toBe(20);
+    for (let i = 0; i < BONFIRE_SEATS.length; i += 1) {
+      const monk = sim.state.monks.get(`b${i}`);
+      const spot = ZONE_SEATS.bonfire[i] as (typeof BONFIRE_SEATS)[number];
+      expect(monk?.mode, `b${i}`).toBe("kneel");
+      expect(monk?.x).toBeCloseTo(spot.x, 4);
+      expect(monk?.z).toBeCloseTo(spot.z, 4);
+      expect(monk?.yaw).toBeCloseTo(seatYaw("bonfire", i), 5);
+      expect(venueAt(monk?.x ?? 0, monk?.z ?? 0)).toBe("bonfire");
+    }
   });
 });

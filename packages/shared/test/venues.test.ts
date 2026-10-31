@@ -36,7 +36,7 @@ describe("the venue registry", () => {
   it("lists each venue once, under an id of its own", () => {
     const ids = VENUES.map((venue) => venue.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toEqual(["gatbawi", "dharma", "shore", "casino", "street", "bathhouse", "church"]);
+    expect(ids).toEqual(["gatbawi", "dharma", "shore", "casino", "street", "bathhouse", "church", "bonfire"]);
   });
 
   it("links only venues that exist, and links them both ways", () => {
@@ -58,12 +58,13 @@ describe("the venue registry", () => {
   });
 
   it("makes zones of the venues with seats, and nothing else", () => {
-    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse", "church"]);
+    expect(ZONES).toEqual(["gatbawi", "dharma", "bathhouse", "church", "bonfire"]);
     expect(VENUES.filter((venue: VenueDef) => venue.seats).map((venue) => venue.id)).toEqual([...ZONES]);
     expect(isZone("gatbawi")).toBe(true);
     expect(isZone("dharma")).toBe(true);
     expect(isZone("bathhouse")).toBe(true);
     expect(isZone("church")).toBe(true);
+    expect(isZone("bonfire")).toBe(true);
     expect(isZone("street")).toBe(false);
     expect(isZone("shore")).toBe(false);
     expect(isZone("casino")).toBe(false);
@@ -72,10 +73,10 @@ describe("the venue registry", () => {
   });
 
   it("reads the deprecated zone tables from the venues", () => {
-    expect(ZONE_NAMES).toEqual({ gatbawi: "갓바위", dharma: "법당", bathhouse: "목욕탕", church: "교회" });
-    expect(SEAT_NAMES).toEqual({ gatbawi: "돗자리", dharma: "방석", bathhouse: "찜질 매트", church: "기도 자리" });
+    expect(ZONE_NAMES).toEqual({ gatbawi: "갓바위", dharma: "법당", bathhouse: "목욕탕", church: "교회", bonfire: "불멍" });
+    expect(SEAT_NAMES).toEqual({ gatbawi: "돗자리", dharma: "방석", bathhouse: "찜질 매트", church: "기도 자리", bonfire: "통나무" });
     expect(SEAT_YAWS.gatbawi).toBe(0);
-    expect(INDOOR).toEqual({ gatbawi: false, dharma: true, bathhouse: true, church: true });
+    expect(INDOOR).toEqual({ gatbawi: false, dharma: true, bathhouse: true, church: true, bonfire: false });
     expect(SEAT_TOPS.dharma).toBeGreaterThan(SEAT_TOPS.gatbawi);
     for (const zone of ZONES) expect(SEAT_YAWS[zone]).toBe(venueById(zone)?.seats?.yaw);
   });

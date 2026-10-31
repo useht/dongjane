@@ -23,7 +23,7 @@ import { ARRIVAL, canCastAt, yawFromDirection } from "./layout.ts";
 import { type NpcActions, type NpcBrain, type NpcVisitor, createNpcBrain, disturbNpc, thinkNpc } from "./npc.ts";
 import { type Persona, generatePersona } from "./persona.ts";
 import { Monk, Seat, TempleState } from "./schema.ts";
-import { SEAT_YAWS, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot } from "./venues/index.ts";
+import { SEAT_YAWS, ZONES, ZONE_SEATS, type Zone, seatKey, seatSpot, seatYaw } from "./venues/index.ts";
 import { INTERIOR_AREA, type Point, planPath, randomPointIn, resolveWalkable, venueAt } from "./walk.ts";
 
 // The corners left to walk, in order; the last is where the walk ends, and `seatId` is the seat it ends on (or -1).
@@ -460,7 +460,7 @@ export class TempleSim {
     monk.x = route.end.x;
     monk.z = route.end.z;
     if (route.seatId >= 0 && monk.seatId === route.seatId && runtime.seatZone) {
-      monk.yaw = SEAT_YAWS[runtime.seatZone];
+      monk.yaw = seatYaw(runtime.seatZone, route.seatId);
       monk.mode = "kneel";
     } else {
       monk.mode = "stand";

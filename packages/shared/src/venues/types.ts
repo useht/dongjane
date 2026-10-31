@@ -9,7 +9,10 @@ export interface SeatGroup {
   // what one place is called: 돗자리, 방석
   readonly name: string;
   readonly spots: readonly SeatSpot[];
+  // the way a seated monk faces; the way the venue faces for seats that do not look the same way
   readonly yaw: number;
+  // the way the monk on a spot faces, for a venue whose seats look every which way (round a fire); absent, they face `yaw`
+  readonly facing?: (spot: SeatSpot) => number;
   // how far back a spot is from what the venue faces, and how far it is to the side of the middle line
   readonly depth: (spot: SeatSpot) => number;
   readonly offset: (spot: SeatSpot) => number;

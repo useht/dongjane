@@ -11,7 +11,7 @@ import {
   MeshLambertMaterial,
   PointLight,
 } from "three";
-import { SEAT_YAWS, ZONE_SEATS, isZone } from "@dongjane/shared";
+import { ZONE_SEATS, isZone, seatYaw } from "@dongjane/shared";
 import type { KitModel } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { FloorSurfaces } from "./floor-pick.ts";
@@ -69,12 +69,11 @@ export class VenueScene {
   }
 
   // The seat prototype is modelled at the origin facing -z, with the seat's height in its own geometry; each instance is moved to its
-  // spot and turned to the way the zone's seats face.
+  // spot and turned to the way the monk on it faces.
   private buildSeats(model: KitModel): InstancedMesh | undefined {
     const source = model.meshes.seat;
     if (!source || !isZone(this.spec.id)) return undefined;
     const spots = ZONE_SEATS[this.spec.id];
-    const yaw = SEAT_YAWS[this.spec.id];
     const seats = new InstancedMesh(source.geometry, this.keep(new MeshLambertMaterial({ vertexColors: true })), spots.length);
     seats.instanceColor = new InstancedBufferAttribute(new Float32Array(spots.length * 3).fill(1), 3);
     seats.instanceColor.setUsage(DynamicDrawUsage);
@@ -82,7 +81,7 @@ export class VenueScene {
     seats.name = "seats";
     const m = new Matrix4();
     for (const spot of spots) {
-      m.makeRotationY(yaw).setPosition(spot.x, 0, spot.z);
+      m.makeRotationY(seatYaw(this.spec.id, spot.id)).setPosition(spot.x, 0, spot.z);
       seats.setMatrixAt(spot.id, m);
     }
     this.group.add(seats);
@@ -117,6 +116,11 @@ export class VenueScene {
   }
 }
 
+// How unsteady a fire's light is at a time in seconds, from -1 to 1: three sines that never line up.
+export function flicker(time: number): number {
+  return (Math.sin(time * 7.3) + 0.7 * Math.sin(time * 12.9 + 1.7) + 0.5 * Math.sin(time * 21.1 + 4.2)) / 2.2;
+}
+
 export interface VenueLightsQuality {
   weak: boolean;
 }
@@ -148,14 +152,20 @@ export class VenueLights {
     }
   }
 
-  // `look` is the venue the camera is in, or the last one it was in while the lights go down; `share` is 0 to 1.
-  show(look: KitLook | null, share: number): void {
+  // `look` is the venue the camera is in, or the last one it was in while the lights go down; `share` is 0 to 1. `time` (seconds)
+  // sets how a fire's lamp wavers; without it, or with reduced motion, every lamp burns steadily.
+  show(look: KitLook | null, share: number, time: number | null = null): void {
     if (look !== this.shown && look) this.configure(look);
     this.shown = look;
     this.hemisphere.intensity = look ? look.hemisphere.intensity * share : 0;
     this.lamps.forEach((lamp, index) => {
       const spec = look?.lamps[index];
-      lamp.intensity = spec ? spec.intensity * share : 0;
+      if (!spec) {
+        lamp.intensity = 0;
+        return;
+      }
+      const waver = spec.flicker && time !== null ? 1 + spec.flicker * flicker(time + index * 3.1) : 1;
+      lamp.intensity = spec.intensity * share * waver;
     });
   }
 

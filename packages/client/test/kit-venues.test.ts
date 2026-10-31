@@ -1,18 +1,39 @@
 import { readFileSync } from "node:fs";
-import { BufferGeometry, Float32BufferAttribute, Group, Mesh, MeshStandardMaterial, PlaneGeometry } from "three";
+import { BufferGeometry, Float32BufferAttribute, Group, type InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, PointLight, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { AVENUE, type Bounds, CHURCH_CANDLES, CHURCH_PEWS, SEAT_TOPS, SEAT_YAWS, SLOT_A1, SLOT_A2, VENUES, ZONE_SEATS, venueById } from "@dongjane/shared";
+import {
+  AVENUE,
+  BONFIRE_BACK_Z,
+  BONFIRE_FIRE,
+  BONFIRE_PIT,
+  BONFIRE_ROOMS,
+  BONFIRE_SEATS,
+  type Bounds,
+  CHURCH_CANDLES,
+  CHURCH_PEWS,
+  SEAT_TOPS,
+  SEAT_YAWS,
+  SLOT_A1,
+  SLOT_A2,
+  SLOT_B1,
+  VENUES,
+  ZONE_SEATS,
+  seatYaw,
+  venueById,
+} from "@dongjane/shared";
 import { BUDGET, KIT_MESHES, KIT_PROTOTYPES } from "../src/assets/contract.ts";
 import { REST_MAT } from "../src/game/kits/bathhouse.ts";
+import { LOG_PLACE } from "../src/game/kits/bonfire.ts";
 import { KNEELER } from "../src/game/kits/church.ts";
 import { KITS, KIT_IDS, KIT_PADS, type KitPiece, type KitSpec, kitById, meshNames } from "../src/game/kits/index.ts";
-import { PAD_HEIGHT } from "../src/game/kits/kit.ts";
+import { type KitLook, PAD_HEIGHT } from "../src/game/kits/kit.ts";
+import { VenueLights, VenueScene, flicker } from "../src/game/venue-scene.ts";
 import { PAD_FALLOFF, levelGround, padWeight } from "../src/game/ground-pads.ts";
 import { KEEP_OUTS, WORLD_KEEP_OUTS, regionFor, startViewFor, viewFor, DHARMA_CAMERA_BOUNDS } from "../src/game/camera-rig.ts";
 import { type ModelLoader, loadVenueKit, venueModelIds } from "../src/assets/registry.ts";
 import { THEME } from "../src/theme.ts";
-import { type Glb, type GlbNode, colors, loadGlb, rootNodes } from "./glb.ts";
+import { type Glb, type GlbNode, colors, loadGlb, rootNodes, triangleCorners } from "./glb.ts";
 
 const MODELS = new URL("../src/assets/models/", import.meta.url);
 const TOLERANCE = 0.03;
@@ -94,12 +115,12 @@ function grid(area: Bounds, inset: number, step: number): Array<[number, number]
 }
 
 describe("the kit venues", () => {
-  it("are the street, the bathhouse and the church, each a venue of the registry", () => {
-    expect(KIT_IDS).toEqual(["street", "bathhouse", "church"]);
+  it("are the street, the bathhouse, the church and the bonfire, each a venue of the registry", () => {
+    expect(KIT_IDS).toEqual(["street", "bathhouse", "church", "bonfire"]);
     for (const kit of KITS) expect(venueById(kit.id), kit.id).toBeDefined();
     expect(kitById("street")?.look, "the street is only drawn: no light or camera of its own").toBeUndefined();
     expect(kitById("street")?.camera).toBeUndefined();
-    for (const { id } of BUILDINGS) {
+    for (const id of [...BUILDINGS.map((building) => building.id), "bonfire"]) {
       expect(kitById(id)?.look, id).toBeDefined();
       expect(kitById(id)?.camera, id).toBeDefined();
     }
@@ -287,6 +308,8 @@ describe.each(BUILDINGS)("the $id kit against the shared layout", ({ id, slot, p
     expect(view.distance).toBeLessThanOrEqual(limits.maxDistance);
     expect(view.pitch).toBeGreaterThanOrEqual(limits.minPitch);
     expect(view.pitch).toBeLessThanOrEqual(limits.maxPitch);
+    expect(keepOut, "a building keeps the camera out of its walls and roof").toBeDefined();
+    if (!keepOut) return;
     const solid = extentOf([...extentPieces(spec, "shell"), ...extentPieces(spec, "roof")]);
     expect(keepOut.minX).toBeLessThanOrEqual(solid.minX);
     expect(keepOut.maxX).toBeGreaterThanOrEqual(solid.maxX);
@@ -327,7 +350,7 @@ describe("the church kit's furnishings", () => {
 });
 
 describe("the camera's regions", () => {
-  it.each(BUILDINGS)("give the $id the kit's own box, zoom range and views", ({ id }) => {
+  it.each([...BUILDINGS, { id: "bonfire" as const }])("give the $id the kit's own box, zoom range and views", ({ id }) => {
     const camera = (kitById(id) as KitSpec).camera;
     expect(camera).toBeDefined();
     if (!camera) return;
@@ -351,7 +374,8 @@ describe("the camera's regions", () => {
   it("hold the world's camera out of every building as well as the 법당 and the casino, and keep the older boxes as they were", () => {
     expect(WORLD_KEEP_OUTS.slice(0, KEEP_OUTS.length)).toEqual(KEEP_OUTS);
     for (const { id } of BUILDINGS) expect(WORLD_KEEP_OUTS, id).toContainEqual((kitById(id) as KitSpec).camera?.keepOut);
-    expect(WORLD_KEEP_OUTS).toHaveLength(KEEP_OUTS.length + BUILDINGS.length);
+    expect(WORLD_KEEP_OUTS, "the bonfire is in the open and keeps nothing out").toHaveLength(KEEP_OUTS.length + BUILDINGS.length);
+    expect(kitById("bonfire")?.camera?.keepOut).toBeUndefined();
   });
 });
 
@@ -519,7 +543,7 @@ describe.each(KITS.map((kit) => [kit.id, kit] as const))("venues/%s.glb", (id, s
       expect(Math.min(...values), `${node.name} darkest`).toBeGreaterThanOrEqual(0);
       expect(Math.max(...values), `${node.name} brightest`).toBeLessThanOrEqual(1 + 1e-6);
     }
-    const signature = { mesh: "shell", token: BUILDINGS.find((building) => building.id === id)?.signature ?? "kerb" };
+    const signature = { mesh: "shell", token: BUILDINGS.find((building) => building.id === id)?.signature ?? (id === "bonfire" ? "rock" : "kerb") };
     const hex = THEME.venue[signature.token as keyof typeof THEME.venue];
     const linear = linearOf(hex);
     const srgb = [1, 2, 3].map((_, c) => Number.parseInt(hex.slice(1 + c * 2, 3 + c * 2), 16) / 255);
@@ -616,5 +640,260 @@ describe("loadVenueKit", () => {
     const spare = KIT_MESHES.find((name) => !drawn.includes(name));
     expect(spare, "the street leaves some mesh undrawn").toBeDefined();
     await expect(loadVenueKit(street, diskLoader(() => groupOf([...drawn, spare as string])).loader)).rejects.toThrow(`has mesh "${spare}", which its spec does not draw`);
+  });
+});
+
+describe("the bonfire kit against the shared layout", () => {
+  const spec = kitById("bonfire") as KitSpec;
+  const venue = venueById("bonfire");
+  if (!venue) throw new Error("no bonfire venue");
+  const { lane } = BONFIRE_ROOMS;
+  // The lane from the avenue and the clearing at its end, down to the foot of the hill.
+  const ground: Bounds = { minX: lane.minX, maxX: SLOT_B1.maxX, minZ: AVENUE.maxZ, maxZ: BONFIRE_BACK_Z };
+  const standing = [...extentPieces(spec, "shell"), ...extentPieces(spec, "glow")];
+  const overlapsBox = (box: Box3, area: Bounds): boolean => box.minX < area.maxX - 1e-6 && box.maxX > area.minX + 1e-6 && box.minZ < area.maxZ - 1e-6 && box.maxZ > area.minZ + 1e-6;
+  const insideBox = (box: Box3, area: Bounds): boolean => box.minX >= area.minX - 1e-6 && box.maxX <= area.maxX + 1e-6 && box.minZ >= area.minZ - 1e-6 && box.maxZ <= area.maxZ + 1e-6;
+  const boxes = extentPieces(spec, "shell").filter((piece): piece is Extract<KitPiece, { shape: "box" }> => piece.shape === "box");
+
+  it("lays every floor on the lane or the clearing, one at walking height under every walkable point and none over the pit", () => {
+    const floors = floorsOf(spec);
+    for (const floor of floors) {
+      expect(floor.area.minX, JSON.stringify(floor.area)).toBeGreaterThanOrEqual(ground.minX);
+      expect(floor.area.maxX).toBeLessThanOrEqual(ground.maxX);
+      expect(floor.area.minZ).toBeGreaterThanOrEqual(ground.minZ);
+      expect(floor.area.maxZ).toBeLessThanOrEqual(ground.maxZ);
+    }
+    for (const area of venue.areas) {
+      for (const [x, z] of grid(area, 0.05, 0.5)) {
+        const here = floors.filter((floor) => within(floor.area, x, z));
+        expect(
+          here.some((floor) => floor.y >= 0 && floor.y <= 0.05),
+          `no floor at walking height at ${x.toFixed(2)}, ${z.toFixed(2)}`,
+        ).toBe(true);
+      }
+    }
+    expect(
+      floors.some((floor) => within(floor.area, BONFIRE_FIRE.x, BONFIRE_FIRE.z)),
+      "the pit has no floor",
+    ).toBe(false);
+  });
+
+  it("keeps its dressing to the clearing, the lane and a stone's throw round them, clear of the church's and the bathhouse's slots", () => {
+    for (const name of ["shell", "glow"] as const) {
+      const extent = extentOf(extentPieces(spec, name));
+      expect(extent.minX, name).toBeGreaterThanOrEqual(ground.minX - 0.4);
+      expect(extent.maxX, name).toBeLessThanOrEqual(ground.maxX + 2);
+      expect(extent.minZ, name).toBeGreaterThanOrEqual(SLOT_B1.minZ - 2);
+      expect(extent.maxZ, name).toBeLessThanOrEqual(SLOT_B1.maxZ);
+    }
+    for (const id of ["church", "bathhouse"]) {
+      const footprint = (venueById(id) as { footprint: Bounds }).footprint;
+      for (const piece of standing) expect(overlapsBox(extentOf([piece]), footprint), `${id}: ${JSON.stringify(piece)}`).toBe(false);
+    }
+    for (const pad of spec.pads) {
+      for (const id of ["church", "bathhouse"]) expect(overlapsBox({ ...pad, minY: 0, maxY: 0 }, (venueById(id) as { footprint: Bounds }).footprint), `a pad reaches the ${id}`).toBe(false);
+    }
+  });
+
+  it("stands nothing where a visitor can walk, and keeps the fire and the ring of stones inside the pit", () => {
+    for (const piece of standing) {
+      for (const other of VENUES) {
+        for (const area of other.areas) expect(overlapsBox(extentOf([piece]), area), `${JSON.stringify(piece)} stands in ${other.id}'s ${JSON.stringify(area)}`).toBe(false);
+      }
+    }
+    const stones = extentPieces(spec, "shell").filter((piece) => piece.shape === "sphere" && within(BONFIRE_PIT, piece.at[0], piece.at[2]));
+    expect(stones).toHaveLength(16);
+    for (const stone of stones) expect(insideBox(extentOf([stone]), BONFIRE_PIT), JSON.stringify(stone)).toBe(true);
+    const flames = extentPieces(spec, "glow").filter((piece) => piece.shape === "cylinder");
+    expect(flames.length).toBeGreaterThan(2);
+    for (const flame of flames) expect(insideBox(extentOf([flame]), BONFIRE_PIT), JSON.stringify(flame)).toBe(true);
+  });
+
+  it("holds the hill back with a wall that runs unbroken along the south and west edges and round the turn, and stands above the ground it holds", () => {
+    const walls = boxes.filter((piece) => piece.min[1] < 0 && piece.max[1] > 0.7);
+    const covers = (x: number, z: number): boolean => walls.some((piece) => x >= piece.min[0] - 1e-6 && x <= piece.max[0] + 1e-6 && z >= piece.min[2] - 1e-6 && z <= piece.max[2] + 1e-6);
+    for (let x = SLOT_B1.minX; x <= SLOT_B1.maxX + 1e-9; x += 0.25) expect(covers(x, BONFIRE_BACK_Z + 0.9), `south wall at x ${x}`).toBe(true);
+    for (let z = BONFIRE_ROOMS.turn.maxZ + 1.55; z <= BONFIRE_BACK_Z; z += 0.25) expect(covers(SLOT_B1.minX - 0.5, z), `west wall at z ${z}`).toBe(true);
+    for (let x = BONFIRE_ROOMS.turn.minX; x <= SLOT_B1.minX - 0.1; x += 0.25) expect(covers(x, BONFIRE_ROOMS.turn.maxZ + 0.8), `turn wall at x ${x}`).toBe(true);
+
+    const corners = triangleCorners(loadGlb(new URL("world.glb", MODELS)), "ground");
+    const triangles: number[][] = [];
+    for (let i = 0; i < corners.length; i += 9) {
+      const t = corners.slice(i, i + 9);
+      const [xs, zs] = [[t[0], t[3], t[6]] as number[], [t[2], t[5], t[8]] as number[]];
+      if (Math.max(...xs) < SLOT_B1.minX - 6 || Math.min(...xs) > SLOT_B1.maxX + 2 || Math.max(...zs) < BONFIRE_ROOMS.turn.minZ || Math.min(...zs) > SLOT_B1.maxZ + 1) continue;
+      triangles.push(t);
+    }
+    expect(triangles.length).toBeGreaterThan(50);
+    const heightAt = (x: number, z: number): number | undefined => {
+      for (const t of triangles) {
+        const [x0, y0, z0, x1, y1, z1, x2, y2, z2] = t as [number, number, number, number, number, number, number, number, number];
+        const d = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
+        if (Math.abs(d) < 1e-12) continue;
+        const a = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / d;
+        const b = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / d;
+        const g = 1 - a - b;
+        if (a >= -1e-9 && b >= -1e-9 && g >= -1e-9) return a * y0 + b * y1 + g * y2;
+      }
+      return undefined;
+    };
+    let sampled = 0;
+    for (const wall of walls) {
+      for (let x = wall.min[0]; x <= wall.max[0] + 1e-9; x += 0.1) {
+        for (let z = wall.min[2]; z <= wall.max[2] + 1e-9; z += 0.1) {
+          const ground = heightAt(x, z);
+          if (ground === undefined) continue;
+          sampled += 1;
+          expect(wall.max[1], `the wall at ${x.toFixed(2)}, ${z.toFixed(2)} is lower than the hill (${ground.toFixed(2)})`).toBeGreaterThanOrEqual(ground + 0.05);
+        }
+      }
+    }
+    expect(sampled).toBeGreaterThan(1000);
+  });
+
+  it("draws a log's place at the origin, as long as the places are apart and as thick as a log, its top where a seated monk rests", () => {
+    const pieces = extentPieces(spec, "seat");
+    expect(pieces).toHaveLength(1);
+    const trunk = pieces[0] as KitPiece;
+    expect(trunk.shape).toBe("cylinder");
+    if (trunk.shape !== "cylinder") return;
+    expect(trunk.from).toEqual([-LOG_PLACE.length / 2, trunk.from[1], 0]);
+    expect(trunk.to).toEqual([LOG_PLACE.length / 2, trunk.from[1], 0]);
+    expect(trunk.radius).toBe(LOG_PLACE.radius);
+    expect(trunk.from[1] + trunk.radius, "the top of the log is where a seated monk rests").toBeCloseTo(SEAT_TOPS.bonfire, 6);
+    expect(trunk.from[1] - trunk.radius, "the log sinks a hand into the earth, no more").toBeGreaterThanOrEqual(-0.06);
+    const node = rootNodes(loadGlb(new URL("venues/bonfire.glb", MODELS))).find((candidate) => candidate.name === "seat");
+    expect(node).toBeDefined();
+    if (!node) return;
+    const { min, max } = node.positions;
+    expect(Math.abs((min[0] + max[0]) / 2)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs((min[2] + max[2]) / 2)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[0] - min[0] - LOG_PLACE.length)).toBeLessThanOrEqual(TOLERANCE);
+    expect(Math.abs(max[2] - min[2] - 2 * LOG_PLACE.radius)).toBeLessThanOrEqual(TOLERANCE);
+    // A twelve-sided trunk is a little lower than a round one where a facet, not a corner, is on top.
+    expect(Math.abs(max[1] - SEAT_TOPS.bonfire)).toBeLessThanOrEqual(LOG_PLACE.radius * (1 - Math.cos(Math.PI / 12)) + 0.005);
+    expect(min[1]).toBeGreaterThanOrEqual(-0.06);
+  });
+
+  it("lays every place whole on ground a visitor walks, turned to the fire", () => {
+    expect(ZONE_SEATS.bonfire).toBe(BONFIRE_SEATS);
+    for (const spot of BONFIRE_SEATS) {
+      const yaw = seatYaw("bonfire", spot.id);
+      for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+        const [lx, lz] = [(sx * LOG_PLACE.length) / 2, sz * LOG_PLACE.radius];
+        const x = spot.x + lx * Math.cos(yaw) + lz * Math.sin(yaw);
+        const z = spot.z - lx * Math.sin(yaw) + lz * Math.cos(yaw);
+        expect(
+          venue.areas.some((area) => within(area, x, z)),
+          `seat ${spot.id}'s corner ${sx},${sz} at ${x.toFixed(2)}, ${z.toFixed(2)}`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("turns each instance of the log's place to the fire, the way its monk faces", async () => {
+    const scene = await parsed("bonfire");
+    const { loader } = diskLoader(() => scene);
+    const model = await loadVenueKit(spec, loader);
+    const view = new VenueScene(spec, model);
+    const seats = view.group.getObjectByName("seats") as InstancedMesh;
+    expect(seats.count).toBe(BONFIRE_SEATS.length);
+    const matrix = new Matrix4();
+    const at = new Vector3();
+    const facing = new Vector3();
+    for (const spot of BONFIRE_SEATS) {
+      seats.getMatrixAt(spot.id, matrix);
+      at.setFromMatrixPosition(matrix);
+      expect(at.x).toBeCloseTo(spot.x, 5);
+      expect(at.y).toBeCloseTo(0, 5);
+      expect(at.z).toBeCloseTo(spot.z, 5);
+      facing.set(0, 0, -1).transformDirection(matrix);
+      const away = Math.hypot(BONFIRE_FIRE.x - spot.x, BONFIRE_FIRE.z - spot.z);
+      expect(facing.x, `seat ${spot.id}`).toBeCloseTo((BONFIRE_FIRE.x - spot.x) / away, 5);
+      expect(facing.z, `seat ${spot.id}`).toBeCloseTo((BONFIRE_FIRE.z - spot.z) / away, 5);
+    }
+    view.dispose();
+    model.dispose();
+  });
+
+  it("levels the ground under the lane and the whole clearing", () => {
+    for (const area of venue.areas) {
+      for (const [x, z] of grid(area, 0, 1)) expect(spec.pads.some((pad) => within(pad, x, z)), `no pad at ${x.toFixed(2)}, ${z.toFixed(2)}`).toBe(true);
+    }
+  });
+
+  it("lights the clearing from two lamps at the fire that waver, and holds the camera over the clearing with nothing to keep it out of", () => {
+    const look = spec.look as KitLook;
+    expect(look.lamps).toHaveLength(2);
+    for (const lamp of look.lamps) {
+      expect(Math.hypot(lamp.at[0] - BONFIRE_FIRE.x, lamp.at[2] - BONFIRE_FIRE.z), `lamp at ${lamp.at.join(",")}`).toBeLessThan(1.5);
+      expect(lamp.at[1]).toBeGreaterThan(0.5);
+      expect(lamp.at[1]).toBeLessThan(4);
+      expect(lamp.flicker ?? 0).toBeGreaterThan(0);
+      expect(lamp.flicker ?? 0).toBeLessThanOrEqual(0.5);
+    }
+    expect(look.fog.near).toBeLessThan(look.fog.far);
+    const camera = spec.camera;
+    expect(camera).toBeDefined();
+    if (!camera) return;
+    const { bounds, limits, view } = camera;
+    expect(camera.keepOut).toBeUndefined();
+    expect(bounds.minX).toBeGreaterThanOrEqual(SLOT_B1.minX - 2);
+    expect(bounds.maxX).toBeLessThanOrEqual(SLOT_B1.maxX + 2);
+    expect(bounds.minZ).toBeGreaterThanOrEqual(SLOT_B1.minZ - 4);
+    expect(bounds.maxZ, "the camera stays north of the wall").toBeLessThanOrEqual(BONFIRE_BACK_Z);
+    expect(bounds.minY).toBeGreaterThan(0);
+    expect(limits.minDistance).toBeLessThan(limits.maxDistance);
+    expect(limits.minPitch).toBeLessThan(limits.maxPitch);
+    expect(view.distance).toBeGreaterThanOrEqual(limits.minDistance);
+    expect(view.distance).toBeLessThanOrEqual(limits.maxDistance);
+    expect(view.pitch).toBeGreaterThanOrEqual(limits.minPitch);
+    expect(view.pitch).toBeLessThanOrEqual(limits.maxPitch);
+  });
+});
+
+describe("a fire's lamps", () => {
+  const look = (kitById("bonfire") as KitSpec).look as KitLook;
+  const lampsOf = (lights: VenueLights): PointLight[] => lights.group.children.filter((child): child is PointLight => child instanceof PointLight);
+
+  it("waver between the share of intensity the kit names, never more than flicker() allows", () => {
+    for (let time = 0; time < 200; time += 0.137) expect(Math.abs(flicker(time))).toBeLessThanOrEqual(1 + 1e-9);
+    const lights = new VenueLights({ weak: false });
+    const lamps = lampsOf(lights);
+    expect(lamps).toHaveLength(2);
+    const seen = new Set<number>();
+    for (let time = 0; time < 40; time += 0.37) {
+      lights.show(look, 1, time);
+      lamps.forEach((lamp, index) => {
+        const spec = look.lamps[index] as (typeof look.lamps)[number];
+        const share = spec.flicker ?? 0;
+        expect(lamp.intensity).toBeGreaterThanOrEqual(spec.intensity * (1 - share) - 1e-9);
+        expect(lamp.intensity).toBeLessThanOrEqual(spec.intensity * (1 + share) + 1e-9);
+      });
+      seen.add(Math.round((lamps[0] as PointLight).intensity * 1000));
+    }
+    expect(seen.size, "the light is never steady").toBeGreaterThan(20);
+  });
+
+  it("burn steadily without a time, as under reduced motion, and go out in the dark", () => {
+    const lights = new VenueLights({ weak: false });
+    const lamps = lampsOf(lights);
+    lights.show(look, 1, null);
+    expect(lamps.map((lamp) => lamp.intensity)).toEqual(look.lamps.map((lamp) => lamp.intensity));
+    lights.show(look, 0.5, null);
+    expect(lamps.map((lamp) => lamp.intensity)).toEqual(look.lamps.map((lamp) => lamp.intensity * 0.5));
+    lights.show(look, 0, 12);
+    expect(lamps.map((lamp) => lamp.intensity)).toEqual([0, 0]);
+    lights.show(null, 1, 12);
+    expect(lamps.map((lamp) => lamp.intensity)).toEqual([0, 0]);
+  });
+
+  it("leave a lamp with no flicker as steady as it was, and a weak device keeps one lamp", () => {
+    const steady: KitLook = { ...look, lamps: look.lamps.map(({ flicker: _unsteady, ...lamp }) => lamp) };
+    const lights = new VenueLights({ weak: false });
+    lights.show(steady, 1, 3.3);
+    expect(lampsOf(lights).map((lamp) => lamp.intensity)).toEqual(look.lamps.map((lamp) => lamp.intensity));
+    const weak = new VenueLights({ weak: true });
+    expect(lampsOf(weak)).toHaveLength(1);
   });
 });

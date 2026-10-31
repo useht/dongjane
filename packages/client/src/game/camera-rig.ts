@@ -128,7 +128,7 @@ export const DHARMA_KEEP_OUTS: readonly Box[] = [DHARMA_KEEP_OUT, ...DHARMA_PILL
 export const KEEP_OUTS: readonly Box[] = [...DHARMA_KEEP_OUTS, CASINO_KEEP_OUT];
 
 // The same, with the buildings of the kit venues, which the world's camera is held back from too.
-export const WORLD_KEEP_OUTS: readonly Box[] = [...KEEP_OUTS, ...KITS.flatMap((kit) => (kit.camera ? [kit.camera.keepOut] : []))];
+export const WORLD_KEEP_OUTS: readonly Box[] = [...KEEP_OUTS, ...KITS.flatMap((kit) => (kit.camera?.keepOut ? [kit.camera.keepOut] : []))];
 
 // How far short of a keep-out box the camera stops.
 const KEEP_OUT_MARGIN = 0.4;

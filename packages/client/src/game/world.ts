@@ -548,7 +548,7 @@ export class World {
     this.fog.far = far;
     this.landscape.setIndoor(Math.max(share, casinoShare, airShare));
     this.dharma.setPresence(share);
-    this.venueLights.show(lit?.look ?? null, venueShare);
+    this.venueLights.show(lit?.look ?? null, venueShare, this.reduceMotion ? null : this.time);
   }
 
   private resize(): void {

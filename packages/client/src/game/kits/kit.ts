@@ -25,6 +25,8 @@ export interface KitLamp {
   readonly color: string;
   readonly intensity: number;
   readonly distance: number;
+  // How far the light wavers, as a share of its intensity (a fire's): 0 or absent for a steady lamp.
+  readonly flicker?: number;
 }
 
 // The light and the air of a venue the camera is in. `air` and `fog` replace the sky's only for an indoor venue.
@@ -40,8 +42,9 @@ export interface KitCamera {
   readonly bounds: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number; readonly minZ: number; readonly maxZ: number };
   readonly limits: { readonly minDistance: number; readonly maxDistance: number; readonly minPitch: number; readonly maxPitch: number };
   readonly view: { readonly yaw: number; readonly pitch: number; readonly distance: number };
-  // The building's solid outside up to its roof: a camera that follows someone along its front may not swing into it.
-  readonly keepOut: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number; readonly minZ: number; readonly maxZ: number };
+  // The building's solid outside up to its roof: a camera that follows someone along its front may not swing into it. A venue in
+  // the open has none.
+  readonly keepOut?: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number; readonly minZ: number; readonly maxZ: number };
 }
 
 export interface KitSpec {
