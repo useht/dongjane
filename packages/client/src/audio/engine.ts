@@ -1,3 +1,5 @@
+import { DropPlanner, RAIN_AUDIBLE_LEVEL, RAIN_DROP_Q, RAIN_DROP_SECONDS, RAIN_DROP_TICK_MS } from "./rain-drops.ts";
+
 export interface BellPartial {
   ratio: number;
   gain: number;
@@ -27,6 +29,14 @@ export const SEA_PEAK_GAIN = 0.6;
 export const SEA_FOLLOW_SECONDS = 0.35;
 const SEA_LEVEL_STEP = 0.004;
 
+// The indoor rain's loudest setting, and how fast (seconds, as a time constant) it follows the visitor through the doorway.
+export const RAIN_PEAK_GAIN = 0.15;
+export const RAIN_FOLLOW_SECONDS = 0.4;
+const RAIN_LEVEL_STEP = 0.004;
+// The hiss and the body of the bed are trimmed against each other so the rain reads as rain, not as a low rumble.
+const RAIN_HISS_LEVEL = 1.8;
+const RAIN_BODY_LEVEL = 0.35;
+
 type AudioContextCtor = typeof AudioContext;
 
 function contextClass(): AudioContextCtor | undefined {
@@ -34,7 +44,7 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// The bell, the wind and the sea are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
+// The bell, the wind, the sea and the rain are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
 // recording. Other recordings, the 법당 sutra, are played by other modules into `output`, so the ambient volume covers them.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -47,6 +57,12 @@ export class AudioEngine {
   private seaGain: GainNode | null = null;
   private seaWanted = 0;
   private seaApplied = -1;
+  private rainGain: GainNode | null = null;
+  private rainDrops: AudioBuffer | null = null;
+  private rainTimer: ReturnType<typeof setInterval> | undefined;
+  private rainPlanner = new DropPlanner();
+  private rainWanted = 0;
+  private rainApplied = -1;
   private readonly unlockListeners = new Set<() => void>();
   private moktSample: AudioBuffer | null = null;
   private moktLoad: Promise<void> | null = null;
@@ -87,6 +103,12 @@ export class AudioEngine {
     this.applySea();
   }
 
+  // The indoor rain's share of its loudest, 0 to 1; it sits under the chant, so unlike the wind it is not gated on windAllowed.
+  setRainLevel(level: number): void {
+    this.rainWanted = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
+    this.applyRain();
+  }
+
   configure(ambientVolume: number, effectVolume: number): void {
     this.ambientVolume = Math.min(1, Math.max(0, ambientVolume));
     this.effectVolume = Math.min(1, Math.max(0, effectVolume));
@@ -108,6 +130,7 @@ export class AudioEngine {
       this.ambience.connect(this.ctx.destination);
       this.startWind();
       this.startSea();
+      this.startRain();
       this.applyLevels();
       this.ctx.addEventListener("statechange", () => this.announce());
     }
@@ -171,6 +194,11 @@ export class AudioEngine {
     this.windGain = null;
     this.seaGain = null;
     this.seaApplied = -1;
+    clearInterval(this.rainTimer);
+    this.rainTimer = undefined;
+    this.rainGain = null;
+    this.rainDrops = null;
+    this.rainApplied = -1;
     this.unlockListeners.clear();
     this.moktSample = null;
     this.moktLoad = null;
@@ -325,6 +353,75 @@ export class AudioEngine {
     const now = ctx.currentTime;
     gain.gain.cancelScheduledValues(now);
     gain.gain.setTargetAtTime(this.seaWanted * SEA_PEAK_GAIN, now, SEA_FOLLOW_SECONDS);
+  }
+
+  // Rain: a looped noise bed (a bandpass hiss over a lowpass body) with single drops, quick bursts of noise, falling over it.
+  private startRain(): void {
+    const ctx = this.ctx;
+    const ambience = this.ambience;
+    if (!ctx || !ambience) return;
+    const source = ctx.createBufferSource();
+    source.buffer = this.noise(8);
+    source.loop = true;
+
+    const hiss = ctx.createBiquadFilter();
+    hiss.type = "bandpass";
+    hiss.frequency.value = 3000;
+    hiss.Q.value = 0.6;
+    const body = ctx.createBiquadFilter();
+    body.type = "lowpass";
+    body.frequency.value = 600;
+    body.Q.value = 0.5;
+
+    const hissLevel = ctx.createGain();
+    hissLevel.gain.value = RAIN_HISS_LEVEL;
+    const bodyLevel = ctx.createGain();
+    bodyLevel.gain.value = RAIN_BODY_LEVEL;
+
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = this.rainWanted * RAIN_PEAK_GAIN;
+    this.rainApplied = this.rainWanted;
+    source.connect(hiss).connect(hissLevel).connect(this.rainGain);
+    source.connect(body).connect(bodyLevel).connect(this.rainGain);
+    this.rainGain.connect(ambience);
+    source.start();
+
+    this.rainDrops = this.noise(1);
+    this.rainPlanner = new DropPlanner();
+    clearInterval(this.rainTimer);
+    this.rainTimer = setInterval(() => this.dropRain(), RAIN_DROP_TICK_MS);
+  }
+
+  private applyRain(): void {
+    const ctx = this.ctx;
+    const gain = this.rainGain;
+    if (!ctx || !gain || Math.abs(this.rainWanted - this.rainApplied) < RAIN_LEVEL_STEP) return;
+    this.rainApplied = this.rainWanted;
+    const now = ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(this.rainWanted * RAIN_PEAK_GAIN, now, RAIN_FOLLOW_SECONDS);
+  }
+
+  private dropRain(): void {
+    const ctx = this.ctx;
+    const out = this.rainGain;
+    const noise = this.rainDrops;
+    if (!ctx || !out || !noise || this.rainWanted < RAIN_AUDIBLE_LEVEL) return;
+    for (const drop of this.rainPlanner.plan(ctx.currentTime, Math.random)) {
+      const source = ctx.createBufferSource();
+      source.buffer = noise;
+      const band = ctx.createBiquadFilter();
+      band.type = "bandpass";
+      band.frequency.value = drop.hz;
+      band.Q.value = RAIN_DROP_Q;
+      const envelope = ctx.createGain();
+      envelope.gain.setValueAtTime(0.0001, drop.at);
+      envelope.gain.linearRampToValueAtTime(drop.peak, drop.at + 0.002);
+      envelope.gain.exponentialRampToValueAtTime(0.0001, drop.at + RAIN_DROP_SECONDS);
+      source.connect(band).connect(envelope).connect(out);
+      const burst = RAIN_DROP_SECONDS + 0.01;
+      source.start(drop.at, drop.from * (noise.length / ctx.sampleRate - burst), burst);
+    }
   }
 
   private noise(seconds: number): AudioBuffer {

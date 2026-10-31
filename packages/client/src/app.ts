@@ -990,11 +990,13 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the two soundtracks: the sutra only inside the 법당, the concert by its areaMix share.
+  // Where the visitor stands sets the soundtracks: the sutra and the rain only inside the 법당, the concert by its areaMix share.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
-    this.sutra.setMix(this.session !== null && at ? chantMix(at.x, at.z) : 0);
+    const indoors = this.session !== null && at ? chantMix(at.x, at.z) : 0;
+    this.sutra.setMix(indoors);
+    this.audio.setRainLevel(indoors);
     this.stage.setLevel(1 - mix);
     this.audio.setSeaLevel(this.session !== null && at ? seaLevel(at.x, at.z) : 0);
   }
