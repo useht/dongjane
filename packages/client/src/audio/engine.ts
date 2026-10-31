@@ -1,4 +1,5 @@
-import { DropPlanner, RAIN_AUDIBLE_LEVEL, RAIN_DROP_Q, RAIN_DROP_SECONDS, RAIN_DROP_TICK_MS } from "./rain-drops.ts";
+import { AmbientBed, BED_SPECS, noiseBuffer } from "./beds.ts";
+import { type Ambience, BEDS } from "./soundscape.ts";
 
 export interface BellPartial {
   ratio: number;
@@ -24,19 +25,6 @@ export const MOKT_SAMPLE_URL = "/audio/mokt.mp3";
 // The recording peaks near full scale, far above the synthesized knock, so it is trimmed to sit beside the bell.
 export const MOKT_SAMPLE_GAIN = 0.5;
 
-// The surf's loudest setting, and how fast (seconds, as a time constant) it follows a walker toward or away from the water.
-export const SEA_PEAK_GAIN = 0.6;
-export const SEA_FOLLOW_SECONDS = 0.35;
-const SEA_LEVEL_STEP = 0.004;
-
-// The indoor rain's loudest setting, and how fast (seconds, as a time constant) it follows the visitor through the doorway.
-export const RAIN_PEAK_GAIN = 0.15;
-export const RAIN_FOLLOW_SECONDS = 0.4;
-const RAIN_LEVEL_STEP = 0.004;
-// The hiss and the body of the bed are trimmed against each other so the rain reads as rain, not as a low rumble.
-const RAIN_HISS_LEVEL = 1.8;
-const RAIN_BODY_LEVEL = 0.35;
-
 type AudioContextCtor = typeof AudioContext;
 
 function contextClass(): AudioContextCtor | undefined {
@@ -44,25 +32,14 @@ function contextClass(): AudioContextCtor | undefined {
   return scope.AudioContext ?? scope.webkitAudioContext;
 }
 
-// The bell, the wind, the sea and the rain are synthesized (sine partials with exponential decay, filtered noise); only the knock uses a
-// recording. Other recordings, the 법당 sutra, are played by other modules into `output`, so the ambient volume covers them.
+// The bell and the beds are synthesized; only the knock is a recording.
 export class AudioEngine {
   private ctx: AudioContext | null = null;
   private effects: GainNode | null = null;
   private ambience: GainNode | null = null;
   private ambientVolume = 0.7;
   private effectVolume = 0.7;
-  private windGain: GainNode | null = null;
-  private windAllowed = true;
-  private seaGain: GainNode | null = null;
-  private seaWanted = 0;
-  private seaApplied = -1;
-  private rainGain: GainNode | null = null;
-  private rainDrops: AudioBuffer | null = null;
-  private rainTimer: ReturnType<typeof setInterval> | undefined;
-  private rainPlanner = new DropPlanner();
-  private rainWanted = 0;
-  private rainApplied = -1;
+  private readonly beds = BEDS.map((bed) => new AmbientBed(bed, BED_SPECS[bed]));
   private readonly unlockListeners = new Set<() => void>();
   private moktSample: AudioBuffer | null = null;
   private moktLoad: Promise<void> | null = null;
@@ -91,22 +68,9 @@ export class AudioEngine {
     this.unlockListeners.add(listener);
   }
 
-  // The wind belongs to the open air: it is off indoors and while a recording is playing out there.
-  setWindAllowed(allowed: boolean): void {
-    this.windAllowed = allowed;
-    this.applyLevels();
-  }
-
-  // The surf's share of its loudest, 0 to 1, from how near the monk is to the water (see sea-level.ts). It rides on the ambience bus.
-  setSeaLevel(level: number): void {
-    this.seaWanted = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
-    this.applySea();
-  }
-
-  // The indoor rain's share of its loudest, 0 to 1; it sits under the chant, so unlike the wind it is not gated on windAllowed.
-  setRainLevel(level: number): void {
-    this.rainWanted = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
-    this.applyRain();
+  // The beds ride on the ambience bus; levels set before unlock are the ones they start at.
+  setAmbience(levels: Ambience): void {
+    for (const bed of this.beds) bed.set(levels[bed.name]);
   }
 
   configure(ambientVolume: number, effectVolume: number): void {
@@ -128,9 +92,7 @@ export class AudioEngine {
       this.effects.connect(this.ctx.destination);
       this.ambience = this.ctx.createGain();
       this.ambience.connect(this.ctx.destination);
-      this.startWind();
-      this.startSea();
-      this.startRain();
+      for (const bed of this.beds) bed.start(this.ctx, this.ambience);
       this.applyLevels();
       this.ctx.addEventListener("statechange", () => this.announce());
     }
@@ -191,14 +153,7 @@ export class AudioEngine {
     this.ctx = null;
     this.effects = null;
     this.ambience = null;
-    this.windGain = null;
-    this.seaGain = null;
-    this.seaApplied = -1;
-    clearInterval(this.rainTimer);
-    this.rainTimer = undefined;
-    this.rainGain = null;
-    this.rainDrops = null;
-    this.rainApplied = -1;
+    for (const bed of this.beds) bed.stop();
     this.unlockListeners.clear();
     this.moktSample = null;
     this.moktLoad = null;
@@ -246,7 +201,7 @@ export class AudioEngine {
       }
     }
     const burst = ctx.createBufferSource();
-    burst.buffer = this.noise(0.05);
+    burst.buffer = noiseBuffer(ctx, 0.05);
     const band = ctx.createBiquadFilter();
     band.type = "bandpass";
     band.frequency.value = 1400;
@@ -258,186 +213,6 @@ export class AudioEngine {
     burst.start(at);
   }
 
-  private startWind(): void {
-    const ctx = this.ctx;
-    const ambience = this.ambience;
-    if (!ctx || !ambience) return;
-    const source = ctx.createBufferSource();
-    source.buffer = this.noise(4);
-    source.loop = true;
-    const low = ctx.createBiquadFilter();
-    low.type = "lowpass";
-    low.frequency.value = 520;
-    low.Q.value = 0.4;
-    const band = ctx.createBiquadFilter();
-    band.type = "bandpass";
-    band.frequency.value = 380;
-    band.Q.value = 0.6;
-    const swell = ctx.createGain();
-    swell.gain.value = 0.5;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.07;
-    const lfoDepth = ctx.createGain();
-    lfoDepth.gain.value = 0.35;
-    lfo.connect(lfoDepth).connect(swell.gain);
-    const sweep = ctx.createOscillator();
-    sweep.frequency.value = 0.043;
-    const sweepDepth = ctx.createGain();
-    sweepDepth.gain.value = 140;
-    sweep.connect(sweepDepth).connect(band.frequency);
-
-    this.windGain = ctx.createGain();
-    this.windGain.gain.value = 0;
-    source.connect(low).connect(band).connect(swell).connect(this.windGain).connect(ambience);
-    source.start();
-    lfo.start();
-    sweep.start();
-  }
-
-  // Waves: a low rumble of noise whose lowpass opens and closes about every ten seconds as each wave rolls in and draws back,
-  // under a faint high hiss of foam that swells on a slightly different beat so the two never settle into a pattern.
-  private startSea(): void {
-    const ctx = this.ctx;
-    const ambience = this.ambience;
-    if (!ctx || !ambience) return;
-    const source = ctx.createBufferSource();
-    source.buffer = this.noise(8);
-    source.loop = true;
-
-    const low = ctx.createBiquadFilter();
-    low.type = "lowpass";
-    low.frequency.value = 600;
-    low.Q.value = 0.5;
-    const rumble = ctx.createGain();
-    rumble.gain.value = 0.55;
-    const wave = ctx.createOscillator();
-    wave.frequency.value = 0.1;
-    const waveDepth = ctx.createGain();
-    waveDepth.gain.value = 0.4;
-    wave.connect(waveDepth).connect(rumble.gain);
-    const open = ctx.createOscillator();
-    open.frequency.value = 0.1;
-    const openDepth = ctx.createGain();
-    openDepth.gain.value = 420;
-    open.connect(openDepth).connect(low.frequency);
-
-    const high = ctx.createBiquadFilter();
-    high.type = "highpass";
-    high.frequency.value = 2600;
-    high.Q.value = 0.5;
-    const foam = ctx.createGain();
-    foam.gain.value = 0.06;
-    const foamBeat = ctx.createOscillator();
-    foamBeat.frequency.value = 0.083;
-    const foamDepth = ctx.createGain();
-    foamDepth.gain.value = 0.05;
-    foamBeat.connect(foamDepth).connect(foam.gain);
-
-    this.seaGain = ctx.createGain();
-    this.seaGain.gain.value = this.seaWanted * SEA_PEAK_GAIN;
-    this.seaApplied = this.seaWanted;
-    source.connect(low).connect(rumble).connect(this.seaGain);
-    source.connect(high).connect(foam).connect(this.seaGain);
-    this.seaGain.connect(ambience);
-    source.start();
-    wave.start();
-    open.start();
-    foamBeat.start();
-  }
-
-  private applySea(): void {
-    const ctx = this.ctx;
-    const gain = this.seaGain;
-    if (!ctx || !gain || Math.abs(this.seaWanted - this.seaApplied) < SEA_LEVEL_STEP) return;
-    this.seaApplied = this.seaWanted;
-    const now = ctx.currentTime;
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setTargetAtTime(this.seaWanted * SEA_PEAK_GAIN, now, SEA_FOLLOW_SECONDS);
-  }
-
-  // Rain: a looped noise bed (a bandpass hiss over a lowpass body) with single drops, quick bursts of noise, falling over it.
-  private startRain(): void {
-    const ctx = this.ctx;
-    const ambience = this.ambience;
-    if (!ctx || !ambience) return;
-    const source = ctx.createBufferSource();
-    source.buffer = this.noise(8);
-    source.loop = true;
-
-    const hiss = ctx.createBiquadFilter();
-    hiss.type = "bandpass";
-    hiss.frequency.value = 3000;
-    hiss.Q.value = 0.6;
-    const body = ctx.createBiquadFilter();
-    body.type = "lowpass";
-    body.frequency.value = 600;
-    body.Q.value = 0.5;
-
-    const hissLevel = ctx.createGain();
-    hissLevel.gain.value = RAIN_HISS_LEVEL;
-    const bodyLevel = ctx.createGain();
-    bodyLevel.gain.value = RAIN_BODY_LEVEL;
-
-    this.rainGain = ctx.createGain();
-    this.rainGain.gain.value = this.rainWanted * RAIN_PEAK_GAIN;
-    this.rainApplied = this.rainWanted;
-    source.connect(hiss).connect(hissLevel).connect(this.rainGain);
-    source.connect(body).connect(bodyLevel).connect(this.rainGain);
-    this.rainGain.connect(ambience);
-    source.start();
-
-    this.rainDrops = this.noise(1);
-    this.rainPlanner = new DropPlanner();
-    clearInterval(this.rainTimer);
-    this.rainTimer = setInterval(() => this.dropRain(), RAIN_DROP_TICK_MS);
-  }
-
-  private applyRain(): void {
-    const ctx = this.ctx;
-    const gain = this.rainGain;
-    if (!ctx || !gain || Math.abs(this.rainWanted - this.rainApplied) < RAIN_LEVEL_STEP) return;
-    this.rainApplied = this.rainWanted;
-    const now = ctx.currentTime;
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setTargetAtTime(this.rainWanted * RAIN_PEAK_GAIN, now, RAIN_FOLLOW_SECONDS);
-  }
-
-  private dropRain(): void {
-    const ctx = this.ctx;
-    const out = this.rainGain;
-    const noise = this.rainDrops;
-    if (!ctx || !out || !noise || this.rainWanted < RAIN_AUDIBLE_LEVEL) return;
-    for (const drop of this.rainPlanner.plan(ctx.currentTime, Math.random)) {
-      const source = ctx.createBufferSource();
-      source.buffer = noise;
-      const band = ctx.createBiquadFilter();
-      band.type = "bandpass";
-      band.frequency.value = drop.hz;
-      band.Q.value = RAIN_DROP_Q;
-      const envelope = ctx.createGain();
-      envelope.gain.setValueAtTime(0.0001, drop.at);
-      envelope.gain.linearRampToValueAtTime(drop.peak, drop.at + 0.002);
-      envelope.gain.exponentialRampToValueAtTime(0.0001, drop.at + RAIN_DROP_SECONDS);
-      source.connect(band).connect(envelope).connect(out);
-      const burst = RAIN_DROP_SECONDS + 0.01;
-      source.start(drop.at, drop.from * (noise.length / ctx.sampleRate - burst), burst);
-    }
-  }
-
-  private noise(seconds: number): AudioBuffer {
-    const ctx = this.ctx as AudioContext;
-    const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
-    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < length; i += 1) {
-      const white = Math.random() * 2 - 1;
-      last = last * 0.96 + white * 0.04;
-      data[i] = (white * 0.35 + last * 6) * 0.5;
-    }
-    return buffer;
-  }
-
   private applyLevels(): void {
     const ctx = this.ctx;
     if (!ctx || !this.effects || !this.ambience) return;
@@ -446,9 +221,5 @@ export class AudioEngine {
     this.effects.gain.setTargetAtTime(this.effectVolume, now, 0.05);
     this.ambience.gain.cancelScheduledValues(now);
     this.ambience.gain.setTargetAtTime(this.ambientVolume, now, 0.05);
-    if (this.windGain) {
-      this.windGain.gain.cancelScheduledValues(now);
-      this.windGain.gain.setTargetAtTime(this.windAllowed ? 0.55 : 0, now, 0.4);
-    }
   }
 }

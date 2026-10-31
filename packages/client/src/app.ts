@@ -1,5 +1,4 @@
 import {
-  INDOOR,
   ITEM_CHANT,
   ITEM_MOKT,
   ITEM_NONE,
@@ -10,6 +9,7 @@ import {
   type MachineSpot,
   type SeatResponse,
   type TempleState,
+  type Weather,
   type WorldInfo,
   WALK_SPEED,
   ZONES,
@@ -37,7 +37,7 @@ import jackpotUrl from "./assets/audio/jackpot.mp3?url";
 import sutraUrl from "./assets/audio/sutra.mp3?url";
 import { SyncedLoop, areaMix, chantMix } from "./audio/music.ts";
 import { CasinoSounds } from "./audio/casino.ts";
-import { seaLevel } from "./audio/sea-level.ts";
+import { SILENCE, ambienceAt, placeAt } from "./audio/soundscape.ts";
 import { CasinoBank } from "./casino/bank.ts";
 import { serverHttpBase } from "./config.ts";
 import { gainedBows, titlesCrossed } from "./collection/titles.ts";
@@ -175,6 +175,7 @@ export class App {
   private lastViews: MonkView[] = [];
   private lost = false;
   private videoAudible = false;
+  private weather: Weather | null = null;
   private stageToasted = false;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
@@ -652,16 +653,13 @@ export class App {
     this.seatOwners = perZone(() => new Map());
   }
 
-  // The concert video waits (poster on the screen) in a live world until the visitor plays it, and the sutra runs for as long as
-  // they are in the world; where they stand (see tickMix) only decides which of the two is heard. The wind belongs to the open air.
+  // Where the visitor stands (see tickMix) decides which sound is heard.
   private syncZoneSound(): void {
-    const outdoors = !INDOOR[this.zone];
     const live = this.isLive();
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();
     this.world.setScreenMode(screenModeFor(this.stage.playback, this.settings.reduceMotion));
     this.sutra.setActive(this.session !== null);
-    this.audio.setWindAllowed(outdoors && !this.videoAudible);
   }
 
   private handleLink(link: LinkState): void {
@@ -1004,15 +1002,13 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the soundtracks: the sutra and the rain only inside the 법당, the concert by its areaMix share.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
     const indoors = this.session !== null && at ? chantMix(at.x, at.z) : 0;
     this.sutra.setMix(indoors);
-    this.audio.setRainLevel(indoors);
     this.stage.setLevel(1 - mix);
-    this.audio.setSeaLevel(this.session !== null && at ? seaLevel(at.x, at.z) : 0);
+    this.audio.setAmbience(this.session !== null && at ? ambienceAt(placeAt(at.x, at.z), at.x, at.z, this.weather, this.videoAudible) : SILENCE);
   }
 
   private driveMovement(dt: number, realDt: number, nowMs: number): void {
@@ -1116,6 +1112,7 @@ export class App {
   private tickSky(): void {
     const serverNow = this.world.serverNowAt(performance.now());
     const sky = serverNow === null ? null : skyAt(serverNow);
+    this.weather = sky?.weather ?? null;
     if (sky) this.world.setSky(sky);
     this.hud.setSky(sky);
   }
