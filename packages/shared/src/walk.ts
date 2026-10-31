@@ -1,11 +1,12 @@
-import { CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD } from "./casino-layout.ts";
+import { CASINO_AISLE_EAST, CASINO_AISLE_WEST, CASINO_CROSS, CASINO_DOOR, CASINO_LOBBY, CASINO_YARD, COAST_ROAD } from "./casino-layout.ts";
 import { type Bounds, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_PORCH_Z, SHORE, WORLD_BOUNDS, type Zone, dharmaToWorld } from "./layout.ts";
 
-// Where feet may go. The world is a chain of rectangles: the room inside the 법당, the doorway through its front wall,
+// Where feet may go. The world is a set of rectangles: the room inside the 법당, the doorway through its front wall,
 // the court between the doorway and the plaza (the door faces +x, so the court is the strip along the plaza's west
-// edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway and its floor. Every
-// rectangle is convex, so a straight line between two points of the same one is always walkable, and a walk across the
-// world is a few such lines joined at the places where two rectangles touch.
+// edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway and the casino's
+// floor (a lobby, two aisles and a cross room). Every rectangle is convex, so a straight line between two points of the
+// same one is always walkable, and a walk across the world is a few such lines joined at the places where two rectangles
+// touch.
 
 export interface Point {
   x: number;
@@ -29,7 +30,7 @@ export const DOORWAY_AREA: Bounds = {
 };
 export const INTERIOR_AREA: Bounds = DHARMA_BOUNDS;
 
-// The chain, from the room outward: each area touches the next along a doorstep.
+// The areas, from the room outward.
 const CHAIN: readonly Bounds[] = [
   INTERIOR_AREA,
   DOORWAY_AREA,
@@ -39,8 +40,32 @@ const CHAIN: readonly Bounds[] = [
   COAST_ROAD,
   CASINO_YARD,
   CASINO_DOOR,
-  CASINO_FLOOR,
+  CASINO_LOBBY,
+  CASINO_AISLE_WEST,
+  CASINO_CROSS,
+  CASINO_AISLE_EAST,
 ];
+
+// Which areas touch along a doorstep. From the room to the casino's lobby each area touches the next; the casino floor
+// is a ring (lobby, west aisle, cross room, east aisle, and the east aisle meets the lobby again), so a walk to a machine
+// takes whichever way round is shorter.
+const LINKS: readonly (readonly [Bounds, Bounds])[] = [
+  [INTERIOR_AREA, DOORWAY_AREA],
+  [DOORWAY_AREA, COURT_AREA],
+  [COURT_AREA, PLAZA_AREA],
+  [PLAZA_AREA, SHORE],
+  [SHORE, COAST_ROAD],
+  [COAST_ROAD, CASINO_YARD],
+  [CASINO_YARD, CASINO_DOOR],
+  [CASINO_DOOR, CASINO_LOBBY],
+  [CASINO_LOBBY, CASINO_AISLE_WEST],
+  [CASINO_AISLE_WEST, CASINO_CROSS],
+  [CASINO_CROSS, CASINO_AISLE_EAST],
+  [CASINO_AISLE_EAST, CASINO_LOBBY],
+];
+const NEIGHBOURS: readonly (readonly number[])[] = CHAIN.map((area) =>
+  LINKS.flatMap(([a, b]) => (a === area ? [CHAIN.indexOf(b)] : b === area ? [CHAIN.indexOf(a)] : [])),
+);
 
 // A walker's body is wider than a point: crossing a doorstep, it stays this far from the edge of the opening.
 const DOORSTEP_MARGIN = 0.35;
@@ -183,34 +208,59 @@ function shortestCrossings(steps: readonly { from: Point; to: Point }[], start: 
   return corners;
 }
 
-function nearestPair(from: readonly number[], to: readonly number[]): [number, number] {
-  let best: [number, number] = [from[0] ?? 0, to[0] ?? 0];
-  let bestGap = Number.POSITIVE_INFINITY;
-  for (const a of from) {
-    for (const b of to) {
-      if (Math.abs(a - b) < bestGap) {
-        bestGap = Math.abs(a - b);
-        best = [a, b];
-      }
+// Every way from area `from` to one of the areas `goals` that never visits an area twice, as lists of area indexes.
+function routes(from: number, goals: readonly number[]): number[][] {
+  const found: number[][] = [];
+  const walk = (trail: number[]): void => {
+    const at = trail[trail.length - 1] as number;
+    if (goals.includes(at)) {
+      found.push(trail);
+      return;
     }
+    for (const next of NEIGHBOURS[at] as readonly number[]) if (!trail.includes(next)) walk([...trail, next]);
+  };
+  walk([from]);
+  return found;
+}
+
+function lengthVia(start: Point, corners: readonly Point[], end: Point): number {
+  let total = 0;
+  let previous = start;
+  for (const corner of [...corners, end]) {
+    total += Math.hypot(corner.x - previous.x, corner.z - previous.z);
+    previous = corner;
   }
-  return best;
+  return total;
 }
 
 // The corners to walk through, in order, to get from `from` to the walkable point nearest `to`; the last one is that
-// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way.
+// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way, by the shortest
+// route when there is more than one.
 export function planPath(from: Point, to: Point): Point[] {
   const end = resolveWalkable(to.x, to.z, from);
   const start = resolveWalkable(from.x, from.z);
-  const [first, last] = nearestPair(indexesAt(start.x, start.z), indexesAt(end.x, end.z));
-  const direction = first <= last ? 1 : -1;
-  const steps: { from: Point; to: Point }[] = [];
-  for (let index = first; index !== last; index += direction) {
-    steps.push(doorstep(CHAIN[index] as Bounds, CHAIN[index + direction] as Bounds));
+  const goals = indexesAt(end.x, end.z);
+  const origins = indexesAt(start.x, start.z);
+  if (origins.some((index) => goals.includes(index))) return [end];
+  let best: Point[] = [];
+  let bestLength = Number.POSITIVE_INFINITY;
+  let bestSteps = Number.POSITIVE_INFINITY;
+  for (const origin of origins) {
+    for (const route of routes(origin, goals)) {
+      const steps = route.slice(1).map((index, i) => doorstep(CHAIN[route[i] as number] as Bounds, CHAIN[index] as Bounds));
+      const corners = shortestCrossings(steps, start, end);
+      const length = lengthVia(start, corners, end);
+      const shorter = length < bestLength - TIE;
+      if (shorter || (Math.abs(length - bestLength) <= TIE && steps.length < bestSteps)) {
+        best = corners;
+        bestLength = length;
+        bestSteps = steps.length;
+      }
+    }
   }
   const path: Point[] = [];
   let previous: Point = start;
-  for (const corner of shortestCrossings(steps, start, end)) {
+  for (const corner of best) {
     if (Math.hypot(corner.x - previous.x, corner.z - previous.z) > SAME_POINT) path.push(corner);
     previous = corner;
   }

@@ -30,6 +30,7 @@ PLATFORM_BACK = 0.7  # the platform reaches this far behind the statue's pedesta
 STEP_HALF = 2.6
 STEP_RISE = 0.3
 GROUND_LIMIT = 64.0
+SOUTH_TAIL = (6.0, 15.0, 28.0)  # coarse lines past the casino's pad, so the hillside behind the building runs on out of sight
 PIT_MARGIN = 0.5  # the ground is sunk this far past the room's walls, under the plinth
 PIT_DROP = 0.12  # and this deep, so the room's floor never shares a height with it
 PIT_EDGE = 0.05  # the wall of the pit is this wide: steep, but not a vertical fold
@@ -216,7 +217,9 @@ def ground(plan):
     rows = refine(rows, plan.temple["minZ"] - 5.0, plan.plaza["minZ"], 1.2)
     # And along the coast road, round the yard and the casino, which stand on a level pad.
     columns = refine(columns, plan.right, plan.right + 11.5, 1.5)
-    rows = refine(rows, plan.front, plan.pad["boxes"][-1]["maxZ"] + 7.0, 1.5)
+    pad_end = plan.pad["boxes"][-1]["maxZ"] + plan.pad["margin"] + plan.pad["blend"] + 1.0
+    rows = sorted(rows + [pad_end + tail for tail in (0.0,) + SOUTH_TAIL])
+    rows = refine(rows, plan.front, pad_end, 1.5)
     x0, x1, z0, z1 = plan.pit
     columns = pin(pin(columns, x0, 1.0), x1, -1.0)
     rows = pin(pin(rows, z0, 1.0), z1, -1.0)

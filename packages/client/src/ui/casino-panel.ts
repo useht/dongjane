@@ -1,4 +1,4 @@
-import type { MachineSpot } from "@dongjane/shared";
+import { type MachineSpot, START_BALANCE } from "@dongjane/shared";
 import type { CasinoSounds } from "../audio/casino.ts";
 import { chipsFor } from "../casino/bets.ts";
 import type { BankNotice, CasinoBank } from "../casino/bank.ts";
@@ -8,6 +8,7 @@ import { RouletteView } from "./casino-roulette.ts";
 import { ScratchView } from "./casino-scratch.ts";
 import { SlotsView } from "./casino-slots.ts";
 import { h } from "./dom.ts";
+import { icon } from "./icons.ts";
 import { Sheet } from "./sheet.ts";
 
 export interface CasinoPanelOptions {
@@ -44,7 +45,9 @@ export class CasinoPanel {
     private readonly options: CasinoPanelOptions,
   ) {
     this.sheet = new Sheet(host, "카지노", { onClose: () => this.closed() });
-    const balance = h("div", "casino-balance", h("span", "casino-balance-label", "내 지갑"), this.amount);
+    const balance = h("div", "casino-balance", h("span", "casino-balance-label", icon("coin"), "내 엽전"), this.amount);
+    balance.setAttribute("aria-live", "polite");
+    balance.setAttribute("aria-atomic", "true");
     this.sheet.body.classList.add("casino-body");
     this.sheet.body.closest(".sheet")?.classList.add("casino-sheet");
     this.sheet.body.append(balance, this.notice, this.stage, h("p", "fine-print", FINE_PRINT));
@@ -94,6 +97,14 @@ export class CasinoPanel {
 
   close(): void {
     this.sheet.close();
+  }
+
+  // Coins came from outside the casino (a bow's reward). A game still running holds its balance back until it lands, which then
+  // shows the bank's whole balance.
+  coinsAdded(): void {
+    if (!this.sheet.isOpen || this.current?.busy) return;
+    this.syncBalance();
+    this.current?.refresh();
   }
 
   private closed(): void {
@@ -147,7 +158,7 @@ export class CasinoPanel {
 
   private setNotice(notice: Notice | null): void {
     this.showing = notice;
-    const count = this.options.bank.balance.toLocaleString("en-US");
+    const count = START_BALANCE.toLocaleString("en-US");
     const text =
       notice === "welcome"
         ? `처음 오셨네요! 엽전 ${count}개를 드렸어요. 게임 속에서만 쓰는 가상 재화예요.`

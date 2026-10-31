@@ -1,6 +1,6 @@
 import { PerspectiveCamera, Vector3 } from "three";
-import { DHARMA_YAW, type Zone, dharmaToWorld, worldToDharma } from "@dongjane/shared";
-import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT } from "./casino-layout.ts";
+import { DHARMA_YAW, MACHINE_SPOTS, type Zone, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
+import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, machineHeight } from "./casino-layout.ts";
 import { DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "./dharma-layout.ts";
 import { LANDSCAPE_BOUNDS } from "./landscape-layout.ts";
 
@@ -128,6 +128,29 @@ export const KEEP_OUTS: readonly Box[] = [...DHARMA_KEEP_OUTS, CASINO_KEEP_OUT];
 
 // How far short of a keep-out box the camera stops.
 const KEEP_OUT_MARGIN = 0.4;
+
+// Each machine's body, widened by the clearance on every side and up. The rows of machines stand right up to the casino's walls
+// (the east row's backs are 0.1 m from the wall), so a camera held in the room's box can end up in them. Unlike the keep-out boxes
+// the camera is not held in front of these (the visitor playing a machine stands 0.7 m from it, nearer than the camera may come
+// to its monk): it is raised over them, to look down from above the row.
+export const CASINO_MACHINE_BOXES: readonly Box[] = MACHINE_SPOTS.map((spot) => {
+  const footprint = machineFootprint(spot);
+  return {
+    minX: footprint.minX - CAMERA_CLEARANCE,
+    maxX: footprint.maxX + CAMERA_CLEARANCE,
+    minY: -1,
+    maxY: machineHeight(spot.kind) + CAMERA_CLEARANCE,
+    minZ: footprint.minZ - CAMERA_CLEARANCE,
+    maxZ: footprint.maxZ + CAMERA_CLEARANCE,
+  };
+});
+
+// How much steeper the camera's pitch gets at a time while it is raised out of a machine's body.
+const LIFT_STEP = 0.05;
+
+function insideAny(point: { x: number; y: number; z: number }, boxes: readonly Box[]): boolean {
+  return boxes.some((box) => point.x > box.minX && point.x < box.maxX && point.y > box.minY && point.y < box.maxY && point.z > box.minZ && point.z < box.maxZ);
+}
 
 export interface View {
   yaw: number;
@@ -258,6 +281,7 @@ export class CameraRig {
     bounds: Box,
     private limits: RigLimits = GATBAWI_LIMITS,
     private readonly keepOut: readonly Box[] = [],
+    private readonly solids: readonly Box[] = [],
   ) {
     this.bounds = { ...bounds };
     this.blendFrom = { ...bounds };
@@ -328,7 +352,17 @@ export class CameraRig {
     const sway = this.reduceMotion ? 0 : Math.sin(this.clock * 0.35) * SWAY.yaw;
     const bob = this.reduceMotion ? 0 : Math.sin(this.clock * 0.5 + 1) * SWAY.pitch;
     const yaw = this.yaw + sway;
-    const pitch = this.pitch + bob;
+    let pitch = this.pitch + bob;
+    this.place(yaw, pitch);
+    // A camera that ended up inside something solid is raised, steeper and steeper, until it looks down from over it.
+    while (pitch < this.limits.maxPitch && insideAny(this.camera.position, this.solids)) {
+      pitch = Math.min(this.limits.maxPitch, pitch + LIFT_STEP);
+      this.place(yaw, pitch);
+    }
+    this.aimAtFocus();
+  }
+
+  private place(yaw: number, pitch: number): void {
     this.dir.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     let reach = maxDistanceInside(this.focus, this.dir, this.bounds, this.distance);
     for (const box of this.keepOut) {
@@ -340,7 +374,6 @@ export class CameraRig {
     this.camera.position.x = Math.min(this.bounds.maxX, Math.max(this.bounds.minX, this.camera.position.x));
     this.camera.position.y = Math.min(this.bounds.maxY, Math.max(this.bounds.minY, this.camera.position.y));
     this.camera.position.z = Math.min(this.bounds.maxZ, Math.max(this.bounds.minZ, this.camera.position.z));
-    this.aimAtFocus();
   }
 
   private aimAtFocus(): void {

@@ -113,12 +113,27 @@ describe("the daily refill", () => {
     const wallet = poor(0, DAY + 5);
     expect(refillDaily(wallet, kstMidnight(DAY))).toEqual({ balance: 1000, refillDay: DAY });
   });
+
+  it("keeps what the bows have paid, through a refill and a payout", () => {
+    const bowReward = { day: DAY + 1, earned: 30, lastAt: 1 };
+    const wallet: Wallet = { balance: 40, refillDay: DAY, bowReward };
+    expect(refillDaily(wallet, kstMidnight(DAY + 1))).toEqual({ balance: 1000, refillDay: DAY + 1, bowReward });
+    expect(applyResult(wallet, { stake: 0, payout: 2 })).toEqual({ balance: 42, refillDay: DAY, bowReward });
+  });
 });
 
 describe("parseWallet", () => {
   it("reads a stored wallet of whole numbers and keeps only the two fields", () => {
     expect(parseWallet({ balance: 640, refillDay: DAY })).toEqual({ balance: 640, refillDay: DAY });
     expect(parseWallet({ balance: 0, refillDay: 0, extra: true })).toEqual({ balance: 0, refillDay: 0 });
+  });
+
+  it("reads the bow reward when it is there, and treats a missing or damaged one as nothing earned", () => {
+    const bowReward = { day: DAY, earned: 12, lastAt: 1_700_000_000_000 };
+    expect(parseWallet({ balance: 640, refillDay: DAY, bowReward })).toEqual({ balance: 640, refillDay: DAY, bowReward });
+    expect(parseWallet({ balance: 640, refillDay: DAY })).toEqual({ balance: 640, refillDay: DAY });
+    expect(parseWallet({ balance: 640, refillDay: DAY, bowReward: { day: DAY, earned: -1, lastAt: 0 } })).toEqual({ balance: 640, refillDay: DAY });
+    expect(parseWallet({ balance: 640, refillDay: DAY, bowReward: "lots" })).toEqual({ balance: 640, refillDay: DAY });
   });
 
   it("rejects anything else", () => {

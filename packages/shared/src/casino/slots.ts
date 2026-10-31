@@ -35,12 +35,12 @@ export const SLOT_STRIPS: Readonly<Record<SlotKind, readonly SlotSymbol[]>> = {
 };
 
 // Every pay is a multiple of the bet, so a payout is always a whole number of coins.
-export const CLASSIC_PAY: Readonly<Record<SlotSymbol, number>> = { coin: 5, pouch: 10, lotus: 15, koi: 50, bell: 100, lantern: 150, ingot: 300, seven: 700 };
+export const CLASSIC_PAY: Readonly<Record<SlotSymbol, number>> = { coin: 5, pouch: 10, lotus: 25, koi: 60, bell: 100, lantern: 200, ingot: 300, seven: 700 };
 export const CLASSIC_COIN_PAIR = 2;
 // Three, four or five in a row from the left.
 export const FIVE_REEL_PAY: Readonly<Record<SlotSymbol, readonly [number, number, number]>> = {
   coin: [1, 3, 10],
-  pouch: [2, 6, 25],
+  pouch: [2, 7, 30],
   lotus: [3, 10, 50],
   koi: [5, 20, 100],
   bell: [10, 40, 200],
@@ -48,7 +48,7 @@ export const FIVE_REEL_PAY: Readonly<Record<SlotSymbol, readonly [number, number
   ingot: [40, 150, 800],
   seven: [100, 400, 2000],
 };
-export const LUCKY_SEVEN_PAY: Readonly<Record<SlotSymbol, number>> = { coin: 5, pouch: 10, lotus: 15, koi: 30, bell: 50, lantern: 75, ingot: 120, seven: 77 };
+export const LUCKY_SEVEN_PAY: Readonly<Record<SlotSymbol, number>> = { coin: 5, pouch: 10, lotus: 15, koi: 40, bell: 50, lantern: 80, ingot: 120, seven: 77 };
 const LUCKY_SEVEN_BARS: readonly SlotSymbol[] = ["bell", "lantern", "ingot"];
 export const LUCKY_SEVEN_ANY_BAR = 3;
 // One or two sevens anywhere on the line, by how many.

@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD, insideCasino } from "../src/casino-layout.ts";
+import {
+  CASINO_AISLE_EAST,
+  CASINO_AISLE_WEST,
+  CASINO_AREAS,
+  CASINO_CROSS,
+  CASINO_DOOR,
+  CASINO_FLOOR,
+  CASINO_LINE_X,
+  CASINO_LOBBY,
+  CASINO_YARD,
+  COAST_ROAD,
+  insideCasino,
+} from "../src/casino-layout.ts";
 import {
   type Bounds,
   DHARMA_BOUNDS,
@@ -25,7 +37,20 @@ import {
   zoneAt,
 } from "../src/walk.ts";
 
-const CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
+const CHAIN = [
+  INTERIOR_AREA,
+  DOORWAY_AREA,
+  COURT_AREA,
+  PLAZA_AREA,
+  SHORE,
+  COAST_ROAD,
+  CASINO_YARD,
+  CASINO_DOOR,
+  CASINO_LOBBY,
+  CASINO_AISLE_WEST,
+  CASINO_CROSS,
+  CASINO_AISLE_EAST,
+];
 
 function walkable(point: Point): boolean {
   const solid = resolveWalkable(point.x, point.z);
@@ -122,7 +147,7 @@ describe("resolveWalkable", () => {
   it("leaves walkable points alone and pulls the rest back to the nearest ground", () => {
     expect(resolveWalkable(1, 2)).toEqual({ x: 1, z: 2 });
     expect(resolveWalkable(100, 10)).toEqual({ x: SHORE.maxX, z: 10 });
-    expect(resolveWalkable(100, 100)).toEqual({ x: CASINO_FLOOR.maxX, z: CASINO_FLOOR.maxZ });
+    expect(resolveWalkable(100, 100)).toEqual({ x: CASINO_CROSS.maxX, z: CASINO_CROSS.maxZ });
     expect(resolveWalkable(-100, -100)).toEqual({ x: DHARMA_BOUNDS.minX, z: DHARMA_BOUNDS.minZ });
     expect(resolveWalkable(DOORWAY_AREA.maxX - 0.5, DHARMA_ORIGIN.z)).toEqual({ x: DOORWAY_AREA.maxX - 0.5, z: DHARMA_ORIGIN.z });
     expect(resolveWalkable(500, -500)).toEqual({ x: SHORE.maxX, z: WORLD_BOUNDS.minZ });
@@ -215,7 +240,7 @@ describe("planPath", () => {
 
   it("ends at the nearest walkable point when the target is out of bounds", () => {
     expect(planPath({ x: 0, z: 14 }, { x: 500, z: 10 }).at(-1)).toEqual({ x: SHORE.maxX, z: 10 });
-    expect(planPath({ x: 0, z: 14 }, { x: 500, z: 500 }).at(-1)).toEqual({ x: CASINO_FLOOR.maxX, z: CASINO_FLOOR.maxZ });
+    expect(planPath({ x: 0, z: 14 }, { x: 500, z: 500 }).at(-1)).toEqual({ x: CASINO_CROSS.maxX, z: CASINO_CROSS.maxZ });
   });
 
   it("leads from the plaza through the court and the east doorway to a seat in the 법당", () => {
@@ -401,24 +426,58 @@ describe("slideWalkable", () => {
 });
 
 describe("the casino", () => {
-  const LINKS = [SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
+  const LINKS = [SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_LOBBY];
+  // The floor is a ring: the lobby opens onto both aisles, which meet again in the cross room.
+  const RING: [Bounds, Bounds][] = [
+    [CASINO_LOBBY, CASINO_AISLE_WEST],
+    [CASINO_AISLE_WEST, CASINO_CROSS],
+    [CASINO_CROSS, CASINO_AISLE_EAST],
+    [CASINO_AISLE_EAST, CASINO_LOBBY],
+  ];
   const overlapOf = (a: Bounds, b: Bounds): Bounds => ({
     minX: Math.max(a.minX, b.minX),
     maxX: Math.min(a.maxX, b.maxX),
     minZ: Math.max(a.minZ, b.minZ),
     maxZ: Math.min(a.maxZ, b.maxZ),
   });
+  const corners = (area: Bounds): Point[] => [
+    { x: area.minX, z: area.minZ },
+    { x: area.minX, z: area.maxZ },
+    { x: area.maxX, z: area.minZ },
+    { x: area.maxX, z: area.maxZ },
+  ];
+  // How far, sideways, the walk strays from the straight line between its start and its end.
+  const deviation = (from: Point, path: Point[]): number => {
+    const end = path.at(-1)!;
+    const dx = end.x - from.x;
+    const dz = end.z - from.z;
+    const length = Math.hypot(dx, dz);
+    return Math.max(...path.map((p) => Math.abs((p.x - from.x) * dz - (p.z - from.z) * dx) / length));
+  };
+  const checkDoorstep = (a: Bounds, b: Bounds, label: string): void => {
+    const step = overlapOf(a, b);
+    expect(step.maxZ, `${label} meet end to end`).toBeCloseTo(step.minZ, 9);
+    expect(step.maxX - step.minX, `doorstep ${label}`).toBeGreaterThanOrEqual(2.6);
+    const x = (step.minX + step.maxX) / 2;
+    expect(walkable({ x, z: step.minZ })).toBe(true);
+    const through = slideWalkable({ x, z: step.minZ - 0.5 }, 0, 1);
+    expect(through.x).toBeCloseTo(x, 6);
+    expect(through.z).toBeCloseTo(step.minZ + 0.5, 6);
+    const back = slideWalkable({ x, z: step.minZ + 0.5 }, 0, -1);
+    expect(back.z).toBeCloseTo(step.minZ - 0.5, 6);
+  };
 
   it("lies far to the south of the plaza, on land west of the sea, and never over the 법당 or the plaza", () => {
     expect(COAST_ROAD.minZ).toBe(WORLD_BOUNDS.maxZ);
-    for (const area of LINKS.slice(1)) {
+    const casino = [...LINKS.slice(1), ...CASINO_AREAS];
+    for (const area of casino) {
       expect(area.maxX).toBeLessThanOrEqual(16.5);
       expect(area.maxX).toBeLessThan(SEA_LINE_X);
       expect(area.minZ).toBeGreaterThanOrEqual(WORLD_BOUNDS.maxZ);
     }
     expect(CASINO_FLOOR.minZ - WORLD_BOUNDS.maxZ).toBeGreaterThanOrEqual(20);
     for (const old of [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA]) {
-      for (const area of LINKS.slice(1)) {
+      for (const area of casino) {
         const shared = overlapOf(old, area);
         expect(shared.maxX <= shared.minX || shared.maxZ <= shared.minZ, "apart").toBe(true);
       }
@@ -434,33 +493,37 @@ describe("the casino", () => {
     });
   });
 
-  it("joins the shore, the road, the yard, the doorway and the floor along doorsteps wide enough to walk through", () => {
-    for (let i = 0; i + 1 < LINKS.length; i += 1) {
-      const a = LINKS[i]!;
-      const b = LINKS[i + 1]!;
-      const step = overlapOf(a, b);
-      expect(step.maxZ, `areas ${i} and ${i + 1} meet end to end`).toBeCloseTo(step.minZ, 9);
-      expect(step.maxX - step.minX, `doorstep ${i}`).toBeGreaterThanOrEqual(2.6);
-      const x = (step.minX + step.maxX) / 2;
-      expect(walkable({ x, z: step.minZ })).toBe(true);
-      const through = slideWalkable({ x, z: step.minZ - 0.5 }, 0, 1);
-      expect(through.x).toBeCloseTo(x, 6);
-      expect(through.z).toBeCloseTo(step.minZ + 0.5, 6);
-      const back = slideWalkable({ x, z: step.minZ + 0.5 }, 0, -1);
-      expect(back.z).toBeCloseTo(step.minZ - 0.5, 6);
-    }
+  it("joins the shore, the road, the yard, the doorway and the lobby along doorsteps wide enough to walk through", () => {
+    for (let i = 0; i + 1 < LINKS.length; i += 1) checkDoorstep(LINKS[i]!, LINKS[i + 1]!, `${i} and ${i + 1}`);
   });
 
-  it("puts a 2.8 m doorway through the front wall in line with the middle of the aisle", () => {
+  it("joins the lobby, the aisles and the cross room in a ring, each doorstep wide enough to walk through", () => {
+    RING.forEach(([a, b], i) => checkDoorstep(a, b, `ring ${i}`));
+  });
+
+  it("walls the island in: a walker pushing sideways from an aisle stops at the aisle's edge", () => {
+    const inEast = slideWalkable({ x: CASINO_AISLE_EAST.minX + 0.4, z: 50 }, -2, 0);
+    expect(inEast.x).toBeCloseTo(CASINO_AISLE_EAST.minX, 6);
+    expect(inEast.z).toBeCloseTo(50, 6);
+    const inWest = slideWalkable({ x: CASINO_AISLE_WEST.maxX - 0.4, z: 50 }, 2, 0);
+    expect(inWest.x).toBeCloseTo(CASINO_AISLE_WEST.maxX, 6);
+    const behindFront = slideWalkable({ x: 11.4, z: CASINO_LOBBY.maxZ - 0.3 }, 0, 2);
+    expect(behindFront.z).toBeCloseTo(CASINO_LOBBY.maxZ, 6);
+  });
+
+  it("puts a 2.8 m doorway through the front wall in line with the east aisle, across the lobby's middle", () => {
     expect(CASINO_DOOR.maxX - CASINO_DOOR.minX).toBeCloseTo(2.8, 9);
     expect(CASINO_DOOR.minZ).toBe(CASINO_YARD.maxZ);
+    expect(CASINO_DOOR.maxZ).toBe(CASINO_LOBBY.minZ);
     expect(CASINO_DOOR.maxZ).toBe(CASINO_FLOOR.minZ);
-    expect((CASINO_DOOR.minX + CASINO_DOOR.maxX) / 2).toBeCloseTo((CASINO_FLOOR.minX + CASINO_FLOOR.maxX) / 2, 9);
+    expect((CASINO_DOOR.minX + CASINO_DOOR.maxX) / 2).toBeCloseTo((CASINO_AISLE_EAST.minX + CASINO_AISLE_EAST.maxX) / 2, 9);
+    expect(CASINO_LOBBY.minX).toBeLessThan(CASINO_DOOR.minX);
+    expect(CASINO_LOBBY.maxX).toBeGreaterThanOrEqual(CASINO_DOOR.maxX);
   });
 
-  it("leads from the 법당 to the casino floor and back, down the road and through the doorway", () => {
+  it("leads from the 법당 to the east aisle and back, down the road and through the doorway", () => {
     const seat = DHARMA_SEATS[24]!;
-    const stand = { x: 11.25, z: 50 };
+    const stand = { x: CASINO_LINE_X, z: 50 };
     const path = planPath(seat, stand);
     expect(path.at(-1)).toEqual(stand);
     assertWalkableRoute(seat, path);
@@ -477,14 +540,42 @@ describe("the casino", () => {
     assertWalkableRoute(stand, home);
   });
 
-  it("walks from any corner of the casino floor to any corner of the plaza without touching a wall", () => {
-    const corners = (area: Bounds): Point[] => [
-      { x: area.minX, z: area.minZ },
-      { x: area.minX, z: area.maxZ },
-      { x: area.maxX, z: area.minZ },
-      { x: area.maxX, z: area.maxZ },
-    ];
-    for (const from of corners(CASINO_FLOOR)) {
+  it("walks from the shore to the doorway in one straight line along the centre line", () => {
+    const door = { x: (CASINO_DOOR.minX + CASINO_DOOR.maxX) / 2, z: (CASINO_DOOR.minZ + CASINO_DOOR.maxZ) / 2 };
+    expect(door.x).toBe(CASINO_LINE_X);
+    const onLine = { x: CASINO_LINE_X, z: SHORE.maxZ - 1.5 };
+    const straight = planPath(onLine, door);
+    expect(straight.at(-1)).toEqual(door);
+    for (const corner of straight) expect(corner.x).toBeCloseTo(CASINO_LINE_X, 9);
+    expect(deviation(onLine, straight)).toBeLessThan(1e-6);
+    assertWalkableRoute(onLine, straight);
+
+    for (const x of [CASINO_LINE_X - 0.75, CASINO_LINE_X + 0.75]) {
+      const from = { x, z: SHORE.maxZ - 1.5 };
+      const path = planPath(from, door);
+      expect(deviation(from, path), `from x = ${x}`).toBeLessThan(1e-6);
+      assertWalkableRoute(from, path);
+    }
+  });
+
+  it("takes the shorter way round the ring to a machine, west or east", () => {
+    const door = { x: CASINO_LINE_X, z: CASINO_DOOR.minZ + 1 };
+    const toWest = planPath(door, { x: 8.8, z: 63 });
+    expect(toWest.every((p) => p.z <= CASINO_CROSS.minZ)).toBe(true);
+    assertWalkableRoute(door, toWest);
+    const toEast = planPath(door, { x: CASINO_LINE_X, z: 63 });
+    expect(toEast.every((p) => p.x >= CASINO_AISLE_EAST.minX)).toBe(true);
+    assertWalkableRoute(door, toEast);
+    const across = planPath({ x: 8.8, z: 63 }, { x: CASINO_LINE_X, z: 63 });
+    expect(across.some((p) => p.z >= CASINO_CROSS.minZ)).toBe(true);
+    expect(lengthOf({ x: 8.8, z: 63 }, across)).toBeLessThan(15);
+    assertWalkableRoute({ x: 8.8, z: 63 }, across);
+    const back = planPath({ x: CASINO_LINE_X, z: 63 }, { x: 8.8, z: 63 });
+    expect(lengthOf({ x: CASINO_LINE_X, z: 63 }, back)).toBeCloseTo(lengthOf({ x: 8.8, z: 63 }, across), 6);
+  });
+
+  it("walks from any corner of the casino's floor to any corner of the plaza without touching a wall", () => {
+    for (const from of CASINO_AREAS.flatMap(corners)) {
       for (const to of [...corners(WORLD_BOUNDS), ...corners(COAST_ROAD)]) {
         const path = planPath(from, to);
         expect(path.at(-1)).toEqual(to);
@@ -501,21 +592,26 @@ describe("the casino", () => {
     expect(down.z).toBeCloseTo(WORLD_BOUNDS.maxZ + 3.7, 6);
   });
 
-  it("keeps the casino a part of the open ground for zones, and only the floor counts as inside it", () => {
+  it("keeps the casino a part of the open ground for zones, and only the lobby, aisles and cross room count as inside it", () => {
     expect(zoneAt(CASINO_FLOOR.minX + 1, CASINO_FLOOR.minZ + 1)).toBe("gatbawi");
-    expect(insideCasino(11.25, 50)).toBe(true);
+    expect(insideCasino(CASINO_LINE_X, 50)).toBe(true);
+    expect(insideCasino(8.8, 50)).toBe(true);
+    expect(insideCasino(11.4, CASINO_LOBBY.maxZ - 0.1)).toBe(true);
+    expect(insideCasino(11.4, CASINO_CROSS.minZ + 1)).toBe(true);
     expect(insideCasino(CASINO_FLOOR.minX, CASINO_FLOOR.minZ)).toBe(true);
     expect(insideCasino(Math.fround(CASINO_FLOOR.maxX), Math.fround(CASINO_FLOOR.maxZ))).toBe(true);
+    expect(insideCasino(11.4, 50)).toBe(false);
+    expect(insideCasino(11.4, CASINO_LOBBY.maxZ + 0.01)).toBe(false);
     expect(insideCasino(CASINO_FLOOR.maxX + 0.01, 50)).toBe(false);
-    expect(insideCasino(11.25, CASINO_FLOOR.minZ - 0.01)).toBe(false);
-    expect(insideCasino(11.25, CASINO_DOOR.minZ + 0.5)).toBe(false);
-    expect(insideCasino(11.25, CASINO_YARD.minZ + 1)).toBe(false);
+    expect(insideCasino(CASINO_LINE_X, CASINO_FLOOR.minZ - 0.01)).toBe(false);
+    expect(insideCasino(CASINO_LINE_X, CASINO_DOOR.minZ + 0.5)).toBe(false);
+    expect(insideCasino(CASINO_LINE_X, CASINO_YARD.minZ + 1)).toBe(false);
     expect(insideCasino(0, 0)).toBe(false);
   });
 
   it("keeps the computer-driven monks out of the coast road and the casino: random walks never leave the temple", () => {
     const random = seededRandom(31);
-    const away = [COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
+    const away = [COAST_ROAD, CASINO_YARD, CASINO_DOOR, ...CASINO_AREAS];
     for (let n = 0; n < 20_000; n += 1) {
       const point = randomWalkable(random);
       for (const area of away) {

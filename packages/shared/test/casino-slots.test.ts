@@ -107,22 +107,22 @@ describe("the reels", () => {
 });
 
 describe("the return to the player", () => {
-  it("is about 95% on the classic machine", () => {
+  it("is about 99% on the classic machine", () => {
     const back = threeReelReturn("classic");
-    expect(back).toBeGreaterThanOrEqual(0.94);
-    expect(back).toBeLessThanOrEqual(0.96);
+    expect(back).toBeGreaterThanOrEqual(0.985);
+    expect(back).toBeLessThanOrEqual(0.995);
   });
 
-  it("is about 95% on the five-reel machine, counting all three lines", () => {
+  it("is about 99% on the five-reel machine, counting all three lines", () => {
     const back = fiveReelReturn();
-    expect(back).toBeGreaterThanOrEqual(0.94);
-    expect(back).toBeLessThanOrEqual(0.96);
+    expect(back).toBeGreaterThanOrEqual(0.985);
+    expect(back).toBeLessThanOrEqual(0.995);
   });
 
-  it("is about 95% on the lucky-seven machine", () => {
+  it("is about 99% on the lucky-seven machine", () => {
     const back = threeReelReturn("luckySeven");
-    expect(back).toBeGreaterThanOrEqual(0.94);
-    expect(back).toBeLessThanOrEqual(0.96);
+    expect(back).toBeGreaterThanOrEqual(0.985);
+    expect(back).toBeLessThanOrEqual(0.995);
   });
 
   it("pays a win often enough to be worth playing", () => {
