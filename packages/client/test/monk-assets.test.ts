@@ -251,6 +251,8 @@ describe("monk assets", () => {
       "kneelPelvisScaleY",
       "bowHipJoint",
       "bowSkirtSquash",
+      "bowSkirtSpread",
+      "skirtRear",
       "bowPelvisSquash",
       "bowLean",
       "bowHead",
@@ -265,6 +267,7 @@ describe("monk assets", () => {
     expect(monkRig.kneelPelvisLift).toBeGreaterThanOrEqual(0);
     expect(monkRig.bowSkirtFollow, "the skirt stays on the thighs when bowing: it does not turn with the chest").toBe(0);
     expect(monkRig.bowSkirtSquash, "the skirt is squashed against its hem when bowing, not stretched").toBeLessThanOrEqual(1);
+    expect(monkRig.bowSkirtSpread, "the skirt spreads forward when bowing, only a little: its front stays out of the arms").toBeLessThanOrEqual(0.25);
     expect(monkRig.bowPelvisSquash, "the seat of the trousers is squashed when bowing, not stretched").toBeLessThanOrEqual(1);
     expect(monkRig.kneelSkirtScale, "the skirt is gathered kneeling, not stretched").toBeLessThanOrEqual(1);
     expect(monkRig.robeTintSaturation).toBeLessThanOrEqual(1);
@@ -277,6 +280,9 @@ describe("monk assets", () => {
     const head = bounds(parts.head);
     const upper = bounds(parts.sleeveUpper);
     const lower = bounds(parts.sleeveLower);
+
+    // The skirt spreads forward from its back wall when bowing: the hem's back, which the rig names as the anchor.
+    expect(bounds(parts.skirt).max.z, "the skirt's back wall is the rig's anchor for the spread").toBeCloseTo(monkRig.skirtRear, 3);
 
     // The neck pivot is the top of the torso; the head's neck stub dips just below it into the robe.
     expect(monkRig.neckY).toBeCloseTo(monkRig.torsoHeight, 4);
@@ -727,6 +733,15 @@ describe("monk assets", () => {
     const hemKneeling = Math.min(...worldVertices(nodeOf(kneeling, "skirt", 0), parts.skirt).map((v) => v.y));
     expect(hem - monkRig.seatTop, "the hem of the bowing skirt stays off the seat").toBeGreaterThanOrEqual(-0.0005);
     expect(Math.abs(hem - hemKneeling), "the hem stays where it hung kneeling, on the thighs").toBeLessThan(0.002);
+    // The skirt spreads forward from its back wall, which stays put, so its front reaches the plane of the chest's hip.
+    const depthOf = (a: MonkAvatar): { rear: number; front: number } => {
+      const z = worldVertices(nodeOf(a, "skirt", 0), parts.skirt).map((v) => v.z);
+      return { rear: Math.max(...z), front: Math.min(...z) };
+    };
+    const kneelDepth = depthOf(kneeling);
+    const bowDepth = depthOf(avatar);
+    expect(bowDepth.rear, "the back wall of the skirt stays where it hung kneeling").toBeCloseTo(kneelDepth.rear, 3);
+    expect(kneelDepth.front - bowDepth.front, "the front of the skirt spreads forward by the rig's share of its depth").toBeCloseTo(monkRig.bowSkirtSpread * (kneelDepth.rear - kneelDepth.front), 3);
     // The hip joint is the pivot of the chest, so the waist swings forward about it, and a little down.
     const waist = new Vector3().setFromMatrixPosition(chest.matrixWorld);
     const waistKneeling = new Vector3().setFromMatrixPosition(nodeOf(kneeling, "torso", 0).matrixWorld);

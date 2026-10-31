@@ -90,6 +90,8 @@ const BOW_HEAD = rig.bowHead;
 const BOW_HIP_JOINT = rig.bowHipJoint;
 const BOW_SKIRT_FOLLOW = rig.bowSkirtFollow;
 const BOW_SKIRT_SQUASH = rig.bowSkirtSquash;
+const BOW_SKIRT_SPREAD = rig.bowSkirtSpread;
+const SKIRT_REAR = rig.skirtRear;
 const BOW_PELVIS_SQUASH = rig.bowPelvisSquash;
 const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
@@ -338,7 +340,8 @@ export class MonkAvatar {
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
     // The jacket is cut at the hip pivot: the chest bows with the torso in one straight line from the hip joint to the neck, and the
-    // skirt below it keeps its place on the thighs (gathered a little kneeling, and settling lower still bowing, its hem fixed).
+    // skirt below it keeps its place on the thighs (gathered a little kneeling, and settling lower still bowing, its hem fixed, and
+    // spreading forward from its back wall so its front reaches the chest's hip).
     const lean = -0.05 * walk + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     const sway = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
     this.torsoNode.rotation.x = lean - theta;
@@ -347,8 +350,14 @@ export class MonkAvatar {
     const skirtSquash = 1 + (BOW_SKIRT_SQUASH - 1) * depth;
     this.skirtNode.rotation.x = lean;
     this.skirtNode.rotation.z = sway;
-    this.skirtNode.position.set(0, waistDown * (1 - BOW_SKIRT_FOLLOW) - JACKET_DROP * skirtY * (1 - skirtSquash), waistForward * (1 - BOW_SKIRT_FOLLOW));
-    this.skirtNode.scale.y = skirtY * skirtSquash;
+    const skirtSpread = 1 + BOW_SKIRT_SPREAD * depth;
+    const spreadShift = SKIRT_REAR * (1 - skirtSpread);
+    this.skirtNode.position.set(
+      0,
+      waistDown * (1 - BOW_SKIRT_FOLLOW) - JACKET_DROP * skirtY * (1 - skirtSquash) - spreadShift * Math.sin(lean),
+      waistForward * (1 - BOW_SKIRT_FOLLOW) + spreadShift * Math.cos(lean),
+    );
+    this.skirtNode.scale.set(1, skirtY * skirtSquash, skirtSpread);
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;
 

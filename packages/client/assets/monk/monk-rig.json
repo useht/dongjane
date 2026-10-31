@@ -37,6 +37,8 @@
   "bowHipJoint": 0.17,
   "bowSkirtFollow": 0.0,
   "bowSkirtSquash": 0.76,
+  "bowSkirtSpread": 0.17,
+  "skirtRear": 0.176,
   "bowPelvisSquash": 0.75,
   "bowLean": 1.54,
   "bowHead": 0.2866,

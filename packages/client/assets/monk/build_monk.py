@@ -129,6 +129,7 @@ RIG = {  # pivots and lengths the animation code uses
     "bowHipJoint": 0.17,  # bowing, the chest folds at the hip joint, this far below the waist pivot, so the waist swings forward (and a little down) while the seat stays on the heels
     "bowSkirtFollow": 0.0,  # the skirt does not turn with the chest: it keeps this share of the waist's swing, 0 = it stays put on the thighs
     "bowSkirtSquash": 0.76,  # ... only it settles: the hem stays where it is and the tunic above it presses down to this share of its kneeling height, so it no longer stands over the level back
+    "bowSkirtSpread": 0.17,  # ... and spreads forward from its back wall by this share of its depth, so its front reaches the plane of the chest's hip and the chest does not sit on a narrower block
     "bowPelvisSquash": 0.75,  # ... and the seat of the trousers presses down (its underside stays on the heels) to this share of its height, under the settled tunic
     "kneelSkirtScale": 0.86,  # kneeling gathers the skirt to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
     "seatTop": 0.13,
@@ -303,11 +304,13 @@ def smooth_pow(c, p):
     return math.copysign(abs(c) ** (2.0 / p), c)
 
 
-def ring_xy(cx, cy, z, rx, ry, n, power=2.0, phase=0.0):
+def ring_xy(cx, cy, z, rx, ry, n, power=2.0, phase=0.0, back_power=None):
+    """A superellipse ring in the plane at z; back_power (the half behind the middle, y < cy) is squarer or rounder than the front's."""
     pts = []
     for k in range(n):
         a = phase + 2 * pi * k / n
-        pts.append(Vector((cx + rx * smooth_pow(cos(a), power), cy + ry * smooth_pow(sin(a), power), z)))
+        p = power if back_power is None or sin(a) >= 0 else back_power
+        pts.append(Vector((cx + rx * smooth_pow(cos(a), p), cy + ry * smooth_pow(sin(a), p), z)))
     return pts
 
 
@@ -607,13 +610,27 @@ def torso_front(x, z):
     return hd * (1 - xn**power) ** (1 / power)
 
 
+BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the skirt's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie
+    -0.050: (0.0, 2.8),
+    0.000: (0.0, 3.6),
+    0.030: (0.010, 3.4),
+    0.100: (0.008, 2.6),
+}
+
+
+def profile_ring(z, w, d, power):
+    extra, back_power = BACK_PROFILE.get(z, (0.0, power))
+    return ring_xy(0.0, -extra / 2, z, w, d + extra / 2, SEGMENTS["torso"], power, back_power=back_power)
+
+
 def torso_rings():
-    n = SEGMENTS["torso"]
-    return [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE]
+    return [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE]
 
 
 HINGE_Z = 0.0  # the jacket is cut here, at the hip pivot: the chest above it bows with the torso, the skirt below it follows only part of the way
-HINGE_TAIL = [(-0.084, 0.45), (-0.050, 0.85)]  # how the chest rounds off below the hinge: z, and its share of the hinge ring
+HINGE_TAIL = [(-0.084, 0.85, 0.090, 0.060), (-0.050, 1.0, 0.108, 0.090)]  # how the chest rounds off below the hinge: z, its share of the hinge's width, and its depth behind and in front of the pivot (the back's deep, the belly's short: bowing, the belly side comes down to the hem)
+HINGE_TAIL_POWER = 3.0
+HINGE_TAIL_CAP = Vector((0.0, -0.010, -0.097))
 
 
 def build_torso():
@@ -622,13 +639,14 @@ def build_torso():
     p = Part("torso")
     n = SEGMENTS["torso"]
     hinge = next(ring for ring in TORSO_PROFILE if ring[0] == HINGE_Z)
-    tail = [ring_xy(0.0, 0.0, z, hinge[1] * k, hinge[2] * k, n, hinge[3]) for z, k in HINGE_TAIL]
-    chest = [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE if z >= HINGE_Z]
-    p.loft(tail + chest, "jacket", cap_first=Vector((0.0, 0.0, -0.097)), cap_last=True)
+    tail = [ring_xy(0.0, (front - back) / 2, z, hinge[1] * k, (back + front) / 2, n, HINGE_TAIL_POWER) for z, k, back, front in HINGE_TAIL]
+    chest = [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE if z >= HINGE_Z]
+    p.loft(tail + chest, "jacket", cap_first=HINGE_TAIL_CAP, cap_last=True)
     return p.to_object()
 
 
 HINGE_CROWN = [(0.012, 0.93), (0.020, 0.62)]  # how the skirt rounds off above the hinge, inside the chest: z, and its share of the hinge ring
+HINGE_CROWN_POWER = 3.0
 
 
 def build_skirt():
@@ -636,8 +654,8 @@ def build_skirt():
     p = Part("skirt")
     n = SEGMENTS["torso"]
     hinge = next(ring for ring in TORSO_PROFILE if ring[0] == HINGE_Z)
-    tunic = [ring_xy(0.0, 0.0, z, w, d, n, power) for z, w, d, power in TORSO_PROFILE if z <= HINGE_Z]
-    crown = [ring_xy(0.0, 0.0, z, hinge[1] * k, hinge[2] * k, n, hinge[3]) for z, k in HINGE_CROWN]
+    tunic = [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE if z <= HINGE_Z]
+    crown = [ring_xy(0.0, 0.0, z, hinge[1] * k, hinge[2] * k, n, HINGE_CROWN_POWER) for z, k in HINGE_CROWN]
     p.loft(tunic + crown, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, 0.026)))
     return p.to_object()
 
@@ -1664,6 +1682,8 @@ def rig_dict():
         "bowHipJoint": RIG["bowHipJoint"],
         "bowSkirtFollow": RIG["bowSkirtFollow"],
         "bowSkirtSquash": RIG["bowSkirtSquash"],
+        "bowSkirtSpread": RIG["bowSkirtSpread"],
+        "skirtRear": TORSO_PROFILE[0][2],
         "bowPelvisSquash": RIG["bowPelvisSquash"],
         "bowLean": POSE["bow_lean"],
         "bowHead": POSE["bow_head"],
@@ -1740,7 +1760,7 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
     phase (radians, standing only) puts the monk at that point of the walk cycle: the swings, the foot lifts, the bob and the lean
     of animate() at sin(phase); bow (0 .. 1, kneeling only) folds the chest and head forward at the hip joint with the arms reaching
-    out, like the bow animation: the seat stays on the heels and the skirt on the thighs while the waist swings forward; fish (0 .. 1,
+    out, like the bow animation: the seat stays on the heels and the skirt on the thighs (spreading a little forward from its back wall) while the waist swings forward; fish (0 .. 1,
     standing) holds the rod, and jerk (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-)."""
     lift = cushion * kneel
     walking = phase is not None
@@ -1760,7 +1780,9 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     stay = 1 - RIG["bowSkirtFollow"]
     skirt_y = lerp(1, RIG["kneelSkirtScale"], kneel)
     skirt_squash = lerp(1, RIG["bowSkirtSquash"], bow)
+    skirt_spread = 1 + RIG["bowSkirtSpread"] * bow
     skirt = hips @ tmat((0, waist_down * stay - JACKET_DROP * skirt_y * (1 - skirt_squash), waist_forward * stay), (lean, 0, 0), (1, skirt_y * skirt_squash, 1))
+    skirt = skirt @ tmat((0, 0, TORSO_PROFILE[0][2] * (1 - skirt_spread)), scale=(1, 1, skirt_spread))  # spread forward from the back wall, which stays put
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "skirt": [skirt], "trim": [torso], "skirtTrim": [skirt]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
