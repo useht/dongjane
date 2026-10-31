@@ -1,7 +1,10 @@
 import { ARRIVAL, DHARMA_SEATS, SEA_LINE_X, SHORE, WORLD_BOUNDS, venueAt } from "@dongjane/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioEngine, SEA_FOLLOW_SECONDS, SEA_PEAK_GAIN } from "../src/audio/engine.ts";
+import { BED_SPECS } from "../src/audio/beds.ts";
+import { AudioEngine } from "../src/audio/engine.ts";
 import { SEA_FADE_METRES, SEA_FULL_METRES, seaLevel } from "../src/audio/sea-level.ts";
+import { SILENCE } from "../src/audio/soundscape.ts";
+import { FakeAudioContext, type FakeNode, graph, reachableFrom, resetGraph } from "./fake-audio.ts";
 
 describe("seaLevel", () => {
   it("is full at the waterline and anywhere within a few metres of it", () => {
@@ -54,91 +57,14 @@ describe("seaLevel", () => {
   });
 });
 
-class FakeParam {
-  value = 0;
-  readonly targets: { value: number; tau: number }[] = [];
-  cancelled = 0;
-  setValueAtTime(): this {
-    return this;
-  }
-  linearRampToValueAtTime(): this {
-    return this;
-  }
-  exponentialRampToValueAtTime(): this {
-    return this;
-  }
-  setTargetAtTime(value: number, _at: number, tau: number): this {
-    this.targets.push({ value, tau });
-    return this;
-  }
-  cancelScheduledValues(): this {
-    this.cancelled += 1;
-    return this;
-  }
-}
-
-class FakeNode {
-  type = "";
-  loop = false;
-  buffer: unknown = null;
-  started = false;
-  readonly outputs: unknown[] = [];
-  readonly frequency = new FakeParam();
-  readonly gain = new FakeParam();
-  readonly Q = new FakeParam();
-  constructor(readonly kind: string) {}
-  connect<T>(next: T): T {
-    this.outputs.push(next);
-    return next;
-  }
-  start(): void {
-    this.started = true;
-  }
-  stop(): void {}
-}
-
-let nodes: FakeNode[] = [];
-
-class FakeAudioContext {
-  state = "running";
-  currentTime = 0;
-  sampleRate = 44100;
-  destination = new FakeNode("destination");
-  private make(kind: string): FakeNode {
-    const node = new FakeNode(kind);
-    nodes.push(node);
-    return node;
-  }
-  createGain = () => this.make("gain");
-  createOscillator = () => this.make("oscillator");
-  createBufferSource = () => this.make("bufferSource");
-  createBiquadFilter = () => this.make("filter");
-  createBuffer = (_channels: number, length: number) => ({ length, getChannelData: () => new Float32Array(length) });
-  decodeAudioData = () => Promise.reject(new Error("no samples in tests"));
-  resume = () => Promise.resolve();
-  close = () => Promise.resolve();
-  addEventListener = () => undefined;
-}
-
-// The surf is the looping noise that feeds both a lowpass (the rumble) and a highpass (the foam); the wind has only a lowpass.
+// The surf is the looping noise that feeds both a lowpass (the rumble) and a highpass (the foam); no other bed has a highpass.
 function surfSource(): FakeNode | undefined {
-  return nodes.find((node) => node.kind === "bufferSource" && node.loop && node.outputs.length === 2);
-}
-
-function reachableFrom(from: FakeNode): FakeNode[] {
-  const seen = new Set<FakeNode>();
-  const queue = [from];
-  for (let node = queue.pop(); node; node = queue.pop()) {
-    if (seen.has(node)) continue;
-    seen.add(node);
-    for (const out of node.outputs) if (out instanceof FakeNode) queue.push(out);
-  }
-  return [...seen];
+  return graph.nodes.find((node) => node.kind === "bufferSource" && node.loop && (node.outputs as FakeNode[]).some((out) => out.type === "highpass"));
 }
 
 describe("the sea's sound", () => {
   beforeEach(() => {
-    nodes = [];
+    resetGraph();
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("offline"))));
   });
@@ -151,17 +77,20 @@ describe("the sea's sound", () => {
     engine.unlock();
     const source = surfSource();
     if (!source) throw new Error("no sea in the audio graph");
-    const ambience = nodes.filter((node) => node.kind === "gain")[1] as FakeNode;
+    const ambience = graph.nodes.filter((node) => node.kind === "gain")[1] as FakeNode;
     const seaGain = reachableFrom(source).find((node) => node.kind === "gain" && node.outputs.includes(ambience));
     if (!seaGain) throw new Error("no sea gain");
     const [low, high] = source.outputs as FakeNode[];
     return { source, low: low as FakeNode, high: high as FakeNode, ambience, seaGain };
   };
 
+  const near = (level: number) => ({ ...SILENCE, sea: level });
+  const peak = BED_SPECS.sea.peak;
+
   it("builds a looping surf of noise: a lowpass rumble and a highpass hiss into one gain on the ambience bus", () => {
     const { source, low, high, ambience, seaGain } = surf(new AudioEngine());
     expect(source.loop).toBe(true);
-    expect(source.started).toBe(true);
+    expect(source.started).toHaveLength(1);
     expect(low.type).toBe("lowpass");
     expect(high.type).toBe("highpass");
     expect(high.frequency.value).toBeGreaterThan(low.frequency.value);
@@ -178,46 +107,46 @@ describe("the sea's sound", () => {
   it("follows the level up to its peak and back down smoothly, not in a jump", () => {
     const engine = new AudioEngine();
     const { seaGain } = surf(engine);
-    engine.setSeaLevel(1);
-    engine.setSeaLevel(0.5);
-    engine.setSeaLevel(0);
-    expect(seaGain.gain.targets.map((step) => step.value)).toEqual([SEA_PEAK_GAIN, SEA_PEAK_GAIN * 0.5, 0]);
-    for (const step of seaGain.gain.targets) expect(step.tau).toBeCloseTo(SEA_FOLLOW_SECONDS);
+    engine.setAmbience(near(1));
+    engine.setAmbience(near(0.5));
+    engine.setAmbience(near(0));
+    expect(seaGain.gain.targets.map((step) => step.value)).toEqual([peak, peak * 0.5, 0]);
+    for (const step of seaGain.gain.targets) expect(step.tau).toBeCloseTo(BED_SPECS.sea.follow);
   });
 
   it("clamps the level to 0..1 and reads a broken one as silence", () => {
     const engine = new AudioEngine();
     const { seaGain } = surf(engine);
-    engine.setSeaLevel(7);
-    engine.setSeaLevel(Number.NaN);
-    engine.setSeaLevel(-3);
-    expect(seaGain.gain.targets.map((step) => step.value)).toEqual([SEA_PEAK_GAIN, 0]);
+    engine.setAmbience(near(7));
+    engine.setAmbience(near(Number.NaN));
+    engine.setAmbience(near(-3));
+    expect(seaGain.gain.targets.map((step) => step.value)).toEqual([peak, 0]);
   });
 
   it("does not reschedule the gain for a change nobody could hear", () => {
     const engine = new AudioEngine();
     const { seaGain } = surf(engine);
-    engine.setSeaLevel(0.8);
-    engine.setSeaLevel(0.8);
-    engine.setSeaLevel(0.8005);
+    engine.setAmbience(near(0.8));
+    engine.setAmbience(near(0.8));
+    engine.setAmbience(near(0.8005));
     expect(seaGain.gain.targets).toHaveLength(1);
   });
 
   it("starts at the level asked for before audio was unlocked", () => {
     const engine = new AudioEngine();
-    expect(() => engine.setSeaLevel(1)).not.toThrow();
+    expect(() => engine.setAmbience(near(1))).not.toThrow();
     const { seaGain } = surf(engine);
-    expect(seaGain.gain.value).toBeCloseTo(SEA_PEAK_GAIN);
+    expect(seaGain.gain.value).toBeCloseTo(peak);
   });
 
   it("makes no sound and does not throw without an AudioContext", () => {
     vi.stubGlobal("AudioContext", undefined);
     const engine = new AudioEngine();
     expect(() => {
-      engine.setSeaLevel(1);
+      engine.setAmbience(near(1));
       engine.unlock();
-      engine.setSeaLevel(0);
+      engine.setAmbience(near(0));
     }).not.toThrow();
-    expect(nodes).toHaveLength(0);
+    expect(graph.nodes).toHaveLength(0);
   });
 });

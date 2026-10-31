@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AudioEngine, RAIN_FOLLOW_SECONDS, RAIN_PEAK_GAIN } from "../src/audio/engine.ts";
+import { BED_SPECS } from "../src/audio/beds.ts";
 import {
+  DROP_AHEAD_SECONDS,
+  DROP_AUDIBLE_LEVEL,
+  DROP_TICK_MS,
   DropPlanner,
-  RAIN_AUDIBLE_LEVEL,
-  RAIN_DROP_AHEAD_SECONDS,
+  RAIN_DROPS,
   RAIN_DROP_MAX_HZ,
   RAIN_DROP_MAX_PEAK,
   RAIN_DROP_MEAN_GAP_SECONDS,
@@ -11,10 +13,12 @@ import {
   RAIN_DROP_MIN_HZ,
   RAIN_DROP_MIN_PEAK,
   RAIN_DROP_SECONDS,
-  RAIN_DROP_TICK_MS,
   dropGap,
   makeDrop,
-} from "../src/audio/rain-drops.ts";
+} from "../src/audio/drops.ts";
+import { AudioEngine } from "../src/audio/engine.ts";
+import { SILENCE } from "../src/audio/soundscape.ts";
+import { FakeAudioContext, FakeNode, droplets, graph, reachableFrom, resetGraph } from "./fake-audio.ts";
 
 // A small deterministic generator (mulberry32), so the statistics below are the same on every run.
 function seeded(seed: number): () => number {
@@ -35,7 +39,7 @@ describe("dropGap", () => {
     let shortest = Number.POSITIVE_INFINITY;
     const count = 40_000;
     for (let i = 0; i < count; i += 1) {
-      const gap = dropGap(random);
+      const gap = dropGap(random, RAIN_DROPS);
       total += gap;
       shortest = Math.min(shortest, gap);
     }
@@ -46,14 +50,14 @@ describe("dropGap", () => {
 
   it("is random, not a metronome: short and long gaps both come up", () => {
     const random = seeded(11);
-    const gaps = Array.from({ length: 2000 }, () => dropGap(random));
+    const gaps = Array.from({ length: 2000 }, () => dropGap(random, RAIN_DROPS));
     expect(Math.min(...gaps)).toBeLessThan(RAIN_DROP_MEAN_GAP_SECONDS / 4);
     expect(Math.max(...gaps)).toBeGreaterThan(RAIN_DROP_MEAN_GAP_SECONDS * 2.5);
   });
 
   it("stays finite at both ends of the random source", () => {
-    expect(dropGap(() => 0)).toBeCloseTo(RAIN_DROP_MIN_GAP_SECONDS);
-    expect(Number.isFinite(dropGap(() => 1))).toBe(true);
+    expect(dropGap(() => 0, RAIN_DROPS)).toBeCloseTo(RAIN_DROP_MIN_GAP_SECONDS);
+    expect(Number.isFinite(dropGap(() => 1, RAIN_DROPS))).toBe(true);
   });
 });
 
@@ -61,7 +65,7 @@ describe("makeDrop", () => {
   it("falls at the given time with a pitch, a strength and a place in the noise inside their ranges", () => {
     const random = seeded(3);
     for (let i = 0; i < 500; i += 1) {
-      const drop = makeDrop(12.5, random);
+      const drop = makeDrop(12.5, random, RAIN_DROPS);
       expect(drop.at).toBe(12.5);
       expect(drop.hz).toBeGreaterThanOrEqual(RAIN_DROP_MIN_HZ);
       expect(drop.hz).toBeLessThanOrEqual(RAIN_DROP_MAX_HZ);
@@ -73,8 +77,8 @@ describe("makeDrop", () => {
   });
 
   it("reaches both ends of the pitch and strength ranges", () => {
-    const low = makeDrop(0, () => 0);
-    const high = makeDrop(0, () => 1);
+    const low = makeDrop(0, () => 0, RAIN_DROPS);
+    const high = makeDrop(0, () => 1, RAIN_DROPS);
     expect(low.hz).toBeCloseTo(RAIN_DROP_MIN_HZ);
     expect(high.hz).toBeCloseTo(RAIN_DROP_MAX_HZ);
     expect(low.peak).toBeCloseTo(RAIN_DROP_MIN_PEAK);
@@ -83,16 +87,16 @@ describe("makeDrop", () => {
 });
 
 describe("DropPlanner", () => {
-  const tick = RAIN_DROP_TICK_MS / 1000;
+  const tick = DROP_TICK_MS / 1000;
 
   it("hands out each drop once, in order, and never one that is already past", () => {
-    const planner = new DropPlanner();
+    const planner = new DropPlanner(RAIN_DROPS);
     const random = seeded(5);
     const seen: number[] = [];
     for (let now = 0; now < 600; now += tick) {
       for (const drop of planner.plan(now, random)) {
         expect(drop.at).toBeGreaterThanOrEqual(now);
-        expect(drop.at).toBeLessThan(now + RAIN_DROP_AHEAD_SECONDS);
+        expect(drop.at).toBeLessThan(now + DROP_AHEAD_SECONDS);
         seen.push(drop.at);
       }
     }
@@ -103,7 +107,7 @@ describe("DropPlanner", () => {
   });
 
   it("falls at about three-quarters of a drop a second", () => {
-    const planner = new DropPlanner();
+    const planner = new DropPlanner(RAIN_DROPS);
     const random = seeded(9);
     let count = 0;
     const seconds = 2000;
@@ -114,7 +118,7 @@ describe("DropPlanner", () => {
   });
 
   it("starts afresh after a stall instead of dropping the backlog at once", () => {
-    const planner = new DropPlanner();
+    const planner = new DropPlanner(RAIN_DROPS);
     const random = seeded(2);
     planner.plan(0, random);
     const late = planner.plan(300, random);
@@ -123,7 +127,7 @@ describe("DropPlanner", () => {
   });
 
   it("starts afresh when the clock is rewound", () => {
-    const planner = new DropPlanner();
+    const planner = new DropPlanner(RAIN_DROPS);
     const random = seeded(4);
     planner.plan(500, random);
     const early = planner.plan(10, random);
@@ -132,94 +136,9 @@ describe("DropPlanner", () => {
   });
 });
 
-class FakeParam {
-  value = 0;
-  readonly targets: { value: number; tau: number }[] = [];
-  readonly ramps: number[] = [];
-  setValueAtTime(): this {
-    return this;
-  }
-  linearRampToValueAtTime(value: number): this {
-    this.ramps.push(value);
-    return this;
-  }
-  exponentialRampToValueAtTime(): this {
-    return this;
-  }
-  setTargetAtTime(value: number, _at: number, tau: number): this {
-    this.targets.push({ value, tau });
-    return this;
-  }
-  cancelScheduledValues(): this {
-    return this;
-  }
-}
-
-class FakeNode {
-  type = "";
-  loop = false;
-  buffer: { length: number } | null = null;
-  started: number[][] = [];
-  readonly outputs: unknown[] = [];
-  readonly frequency = new FakeParam();
-  readonly gain = new FakeParam();
-  readonly Q = new FakeParam();
-  constructor(readonly kind: string) {}
-  connect<T>(next: T): T {
-    this.outputs.push(next);
-    return next;
-  }
-  start(...args: number[]): void {
-    this.started.push(args);
-  }
-  stop(): void {}
-}
-
-let nodes: FakeNode[] = [];
-let context: FakeAudioContext | null = null;
-
-class FakeAudioContext {
-  state = "running";
-  currentTime = 0;
-  sampleRate = 44100;
-  destination = new FakeNode("destination");
-  constructor() {
-    context = this;
-  }
-  private make(kind: string): FakeNode {
-    const node = new FakeNode(kind);
-    nodes.push(node);
-    return node;
-  }
-  createGain = () => this.make("gain");
-  createOscillator = () => this.make("oscillator");
-  createBufferSource = () => this.make("bufferSource");
-  createBiquadFilter = () => this.make("filter");
-  createBuffer = (_channels: number, length: number) => ({ length, getChannelData: () => new Float32Array(length) });
-  decodeAudioData = () => Promise.reject(new Error("no samples in tests"));
-  resume = () => Promise.resolve();
-  close = () => Promise.resolve();
-  addEventListener = () => undefined;
-}
-
-function reachableFrom(from: FakeNode): FakeNode[] {
-  const seen = new Set<FakeNode>();
-  const queue = [from];
-  for (let node = queue.pop(); node; node = queue.pop()) {
-    if (seen.has(node)) continue;
-    seen.add(node);
-    for (const out of node.outputs) if (out instanceof FakeNode) queue.push(out);
-  }
-  return [...seen];
-}
-
-// A drop is a one-shot slice of the shared noise; the beds are the looping sources.
-const droplets = () => nodes.filter((node) => node.kind === "bufferSource" && !node.loop && node.started.length > 0);
-
-describe("the indoor rain's sound", () => {
+describe("the rain's sound", () => {
   beforeEach(() => {
-    nodes = [];
-    context = null;
+    resetGraph();
     vi.useFakeTimers();
     vi.stubGlobal("AudioContext", FakeAudioContext);
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("offline"))));
@@ -233,22 +152,25 @@ describe("the indoor rain's sound", () => {
   // The rain bed is the looping noise whose hiss branch is a bandpass; the sea's is a lowpass and a highpass, the wind's a lowpass.
   const rain = (engine: AudioEngine) => {
     engine.unlock();
-    const source = nodes.find(
+    const source = graph.nodes.find(
       (node) => node.kind === "bufferSource" && node.loop && (node.outputs as FakeNode[]).some((out) => out.type === "bandpass"),
     );
     if (!source) throw new Error("no rain in the audio graph");
-    const ambience = nodes.filter((node) => node.kind === "gain")[1] as FakeNode;
+    const ambience = graph.nodes.filter((node) => node.kind === "gain")[1] as FakeNode;
     const rainGain = reachableFrom(source).find((node) => node.kind === "gain" && node.outputs.includes(ambience));
     if (!rainGain) throw new Error("no rain gain");
     const [hiss, body] = source.outputs as FakeNode[];
     return { source, hiss: hiss as FakeNode, body: body as FakeNode, ambience, rainGain };
   };
 
+  const raining = (level: number) => ({ ...SILENCE, rain: level });
+  const peak = BED_SPECS.rain.peak;
+
   const advance = (seconds: number) => {
-    const ticks = Math.round((seconds * 1000) / RAIN_DROP_TICK_MS);
+    const ticks = Math.round((seconds * 1000) / DROP_TICK_MS);
     for (let i = 0; i < ticks; i += 1) {
-      if (context) context.currentTime += RAIN_DROP_TICK_MS / 1000;
-      vi.advanceTimersByTime(RAIN_DROP_TICK_MS);
+      if (graph.context) graph.context.currentTime += DROP_TICK_MS / 1000;
+      vi.advanceTimersByTime(DROP_TICK_MS);
     }
   };
 
@@ -267,7 +189,7 @@ describe("the indoor rain's sound", () => {
     expect(rainGain.outputs).toEqual([ambience]);
   });
 
-  it("is silent until the monk is in the 법당", () => {
+  it("is silent until it rains outdoors", () => {
     const { rainGain } = rain(new AudioEngine());
     expect(rainGain.gain.value).toBe(0);
   });
@@ -275,50 +197,51 @@ describe("the indoor rain's sound", () => {
   it("follows the level up to its peak and back down smoothly, not in a jump", () => {
     const engine = new AudioEngine();
     const { rainGain } = rain(engine);
-    engine.setRainLevel(1);
-    engine.setRainLevel(0.5);
-    engine.setRainLevel(0);
-    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([RAIN_PEAK_GAIN, RAIN_PEAK_GAIN * 0.5, 0]);
-    for (const step of rainGain.gain.targets) expect(step.tau).toBeCloseTo(RAIN_FOLLOW_SECONDS);
+    engine.setAmbience(raining(1));
+    engine.setAmbience(raining(0.5));
+    engine.setAmbience(raining(0));
+    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([peak, peak * 0.5, 0]);
+    for (const step of rainGain.gain.targets) expect(step.tau).toBeCloseTo(BED_SPECS.rain.follow);
   });
 
   it("clamps the level to 0..1 and reads a broken one as silence", () => {
     const engine = new AudioEngine();
     const { rainGain } = rain(engine);
-    engine.setRainLevel(7);
-    engine.setRainLevel(Number.NaN);
-    engine.setRainLevel(-3);
-    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([RAIN_PEAK_GAIN, 0]);
+    engine.setAmbience(raining(7));
+    engine.setAmbience(raining(Number.NaN));
+    engine.setAmbience(raining(-3));
+    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([peak, 0]);
   });
 
   it("does not reschedule the gain for a change nobody could hear", () => {
     const engine = new AudioEngine();
     const { rainGain } = rain(engine);
-    engine.setRainLevel(0.8);
-    engine.setRainLevel(0.8);
-    engine.setRainLevel(0.8005);
+    engine.setAmbience(raining(0.8));
+    engine.setAmbience(raining(0.8));
+    engine.setAmbience(raining(0.8005));
     expect(rainGain.gain.targets).toHaveLength(1);
   });
 
   it("starts at the level asked for before audio was unlocked", () => {
     const engine = new AudioEngine();
-    expect(() => engine.setRainLevel(1)).not.toThrow();
+    expect(() => engine.setAmbience(raining(1))).not.toThrow();
     const { rainGain } = rain(engine);
-    expect(rainGain.gain.value).toBeCloseTo(RAIN_PEAK_GAIN);
+    expect(rainGain.gain.value).toBeCloseTo(peak);
   });
 
-  it("is not switched off with the wind", () => {
+  it("follows only its own level, not the other beds'", () => {
     const engine = new AudioEngine();
     const { rainGain } = rain(engine);
-    engine.setWindAllowed(false);
-    engine.setRainLevel(1);
-    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([RAIN_PEAK_GAIN]);
+    engine.setAmbience({ ...SILENCE, wind: 1, sea: 1, fire: 1, water: 1 });
+    expect(rainGain.gain.targets).toHaveLength(0);
+    engine.setAmbience({ ...SILENCE, wind: 0, rain: 1 });
+    expect(rainGain.gain.targets.map((step) => step.value)).toEqual([peak]);
   });
 
   it("lets single drops fall over the bed at about three-quarters of a drop a second", () => {
     const engine = new AudioEngine();
     const { rainGain } = rain(engine);
-    engine.setRainLevel(1);
+    engine.setAmbience(raining(1));
     const seconds = 600;
     advance(seconds);
     const drops = droplets();
@@ -331,9 +254,9 @@ describe("the indoor rain's sound", () => {
       expect(band?.frequency.value).toBeGreaterThanOrEqual(RAIN_DROP_MIN_HZ);
       expect(band?.frequency.value).toBeLessThanOrEqual(RAIN_DROP_MAX_HZ);
       expect(envelope?.outputs).toEqual([rainGain]);
-      const [peak] = envelope?.gain.ramps ?? [];
-      expect(peak).toBeGreaterThanOrEqual(RAIN_DROP_MIN_PEAK);
-      expect(peak).toBeLessThanOrEqual(RAIN_DROP_MAX_PEAK);
+      const [dropPeak] = envelope?.gain.ramps ?? [];
+      expect(dropPeak).toBeGreaterThanOrEqual(RAIN_DROP_MIN_PEAK);
+      expect(dropPeak).toBeLessThanOrEqual(RAIN_DROP_MAX_PEAK);
       const [at, offset, length] = drop.started[0] ?? [];
       expect(at).toBeGreaterThan(0);
       expect(offset).toBeGreaterThanOrEqual(0);
@@ -347,50 +270,53 @@ describe("the indoor rain's sound", () => {
     rain(engine);
     advance(60);
     expect(droplets()).toHaveLength(0);
-    engine.setRainLevel(RAIN_AUDIBLE_LEVEL / 2);
+    engine.setAmbience(raining(DROP_AUDIBLE_LEVEL / 2));
     advance(60);
     expect(droplets()).toHaveLength(0);
-    engine.setRainLevel(0.3);
+    engine.setAmbience(raining(0.3));
     advance(60);
     const falling = droplets().length;
     expect(falling).toBeGreaterThan(20);
-    engine.setRainLevel(0);
+    engine.setAmbience(raining(0));
     advance(60);
     expect(droplets()).toHaveLength(falling);
   });
 
-  it("does not drop the backlog of a quiet spell on the monk walking in", () => {
+  it("does not drop the backlog of a quiet spell on the monk walking out into the rain", () => {
     const engine = new AudioEngine();
     rain(engine);
     advance(300);
-    engine.setRainLevel(1);
-    advance(RAIN_DROP_TICK_MS / 1000);
+    engine.setAmbience(raining(1));
+    advance(DROP_TICK_MS / 1000);
     expect(droplets().length).toBeLessThanOrEqual(3);
   });
 
-  it("stops its timer when disposed, and a later call does nothing", () => {
+  it("keeps no timer while it is silent, runs one while it rains, and stops it when disposed", () => {
     const engine = new AudioEngine();
     rain(engine);
+    expect(vi.getTimerCount()).toBe(0);
+    engine.setAmbience(raining(1));
     expect(vi.getTimerCount()).toBe(1);
     engine.dispose();
     expect(vi.getTimerCount()).toBe(0);
     expect(() => {
-      engine.setRainLevel(1);
+      engine.setAmbience(raining(1));
       vi.advanceTimersByTime(5000);
     }).not.toThrow();
     expect(droplets()).toHaveLength(0);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("makes no sound and does not throw without an AudioContext", () => {
     vi.stubGlobal("AudioContext", undefined);
     const engine = new AudioEngine();
     expect(() => {
-      engine.setRainLevel(1);
+      engine.setAmbience(raining(1));
       engine.unlock();
-      engine.setRainLevel(0);
+      engine.setAmbience(raining(0));
       engine.dispose();
     }).not.toThrow();
-    expect(nodes).toHaveLength(0);
+    expect(graph.nodes).toHaveLength(0);
     expect(vi.getTimerCount()).toBe(0);
   });
 });
