@@ -1,4 +1,4 @@
-import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
+import { ACESFilmicToneMapping, type CanvasTexture, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
 import { ARRIVAL, DHARMA_VENUE, GATBAWI_VENUE, INDOOR, type MachineSpot, NPC_COUNT, SEAT_COUNT, SEAT_POSES, SEAT_TOPS, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, perZone, venueAt } from "@dongjane/shared";
 import type { GameAssets, KitModel } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
@@ -20,6 +20,7 @@ import { AdaptiveScale, detectQuality, type QualityProfile } from "./quality.ts"
 import type { SelfDisplay } from "./prediction.ts";
 import { DAY_LOOK, packRgb, skyLook } from "./sky-look.ts";
 import { RemoteTrack, ServerClock, type Sample } from "./snapshot.ts";
+import { lampHaloTexture } from "./textures.ts";
 import { screenCorners } from "./venue-layout.ts";
 import { VenueLights, VenueScene } from "./venue-scene.ts";
 
@@ -117,6 +118,8 @@ export class World {
   private readonly dharma: DharmaScene;
   private readonly casino: CasinoScene;
   private readonly venueLights: VenueLights;
+  // The soft glow every night lamp's halo and pool is drawn with: the street's and the casino's share it.
+  private readonly lampHalo: CanvasTexture;
   private readonly indoorColor = new Color(THEME.scene.dharmaBackground);
   private readonly casinoColor = new Color(THEME.scene.casinoBackground);
   private readonly venueColor = new Color();
@@ -180,7 +183,8 @@ export class World {
     this.dharma = new DharmaScene(this.renderer, this.quality, assets.models.dharma, assets.models.buddha.buddha, assets.models.venue.lantern);
     this.dharma.setPresence(this.dharmaShare());
     this.scene.add(this.dharma.group);
-    this.casino = new CasinoScene(assets.models.casino, assets.models.world.ground, this.quality);
+    this.lampHalo = lampHaloTexture();
+    this.casino = new CasinoScene(assets.models.casino, assets.models.world.ground, this.quality, this.lampHalo);
     this.scene.add(this.casino.group);
     this.venueLights = new VenueLights(this.quality);
     this.scene.add(this.venueLights.group);
@@ -246,7 +250,7 @@ export class World {
         model.dispose();
         continue;
       }
-      const venue = new VenueScene(spec, model);
+      const venue = new VenueScene(spec, model, this.lampHalo);
       this.venueModels.push(model);
       this.venues.set(model.id, venue);
       this.scene.add(venue.group);
@@ -502,6 +506,7 @@ export class World {
     for (const model of this.venueModels) model.dispose();
     this.venueLights.dispose();
     this.casino.dispose();
+    this.lampHalo.dispose();
     this.dharma.dispose();
     this.landscape.dispose();
     this.assets.dispose();
@@ -548,7 +553,11 @@ export class World {
     this.fog.color.copy(this.background);
     this.fog.near = near;
     this.fog.far = far;
-    this.landscape.setIndoor(Math.max(share, casinoShare, airShare));
+    const indoor = Math.max(share, casinoShare, airShare);
+    this.landscape.setIndoor(indoor);
+    const outdoorNight = look.nightSky * (1 - indoor);
+    for (const venue of this.venues.values()) venue.setNight(outdoorNight);
+    this.casino.setNight(outdoorNight);
     this.dharma.setPresence(share);
     this.venueLights.show(lit?.look ?? null, venueShare, this.reduceMotion ? null : this.time);
   }

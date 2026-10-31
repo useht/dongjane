@@ -96,6 +96,10 @@ export const CASINO_POSTS: readonly (readonly [number, number])[] = [
   [CASINO_PAVING.road.maxX - POST_MID, 22],
 ];
 
+// The middle of each lamp's glass globe (casinoNeon draws it), which the halo of light round it at night is centred on.
+export const CASINO_LAMP_HEIGHT = 2.88;
+export const CASINO_LAMP_SPOTS: readonly (readonly [number, number, number])[] = CASINO_POSTS.map(([x, z]) => [x, CASINO_LAMP_HEIGHT, z]);
+
 // The compound stands on a level pad pressed into the hillside: PAD.y is the height the sand lies at less the ground under it
 // (SAND_Y - GROUND_UNDER in shore.ts), so the road meets the shore with no step. The pad reaches `margin` past the paving and the
 // walls and eases up to the hillside over `blend` metres, which is long because the hillside behind the building stands high.

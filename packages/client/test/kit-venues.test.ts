@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { BufferGeometry, Float32BufferAttribute, Group, type InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PlaneGeometry, PointLight, Vector3 } from "three";
+import { BufferGeometry, Float32BufferAttribute, Group, type InstancedMesh, Matrix4, Mesh, type MeshLambertMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Sprite, Texture, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import {
@@ -32,6 +32,8 @@ import { LOG_PLACE } from "../src/game/kits/bonfire.ts";
 import { CHAIR } from "../src/game/kits/church.ts";
 import { KITS, KIT_IDS, KIT_PADS, type KitPiece, type KitSpec, kitById, meshNames } from "../src/game/kits/index.ts";
 import { type KitLook, PAD_HEIGHT } from "../src/game/kits/kit.ts";
+import { STREET_Y } from "../src/game/kits/street.ts";
+import { STREET_LAMP_GLOW, nightGlow } from "../src/game/night-lamps.ts";
 import { VenueLights, VenueScene, flicker } from "../src/game/venue-scene.ts";
 import { PAD_FALLOFF, levelGround, padWeight } from "../src/game/ground-pads.ts";
 import { KEEP_OUTS, WORLD_KEEP_OUTS, regionFor, startViewFor, viewFor, DHARMA_CAMERA_BOUNDS } from "../src/game/camera-rig.ts";
@@ -145,6 +147,15 @@ describe("the kit venues", () => {
     expect(KIT_PROTOTYPES).toEqual(["seat"]);
   });
 
+  it("keep the lamps' globes, lit only at night, apart from the glow of windows and flames, lit at all hours", () => {
+    expect(KIT_MESHES).toContain("lamps");
+    expect(KIT_MESHES).toContain("glow");
+    expect(KITS.filter((kit) => kit.nightLamps).map((kit) => kit.id), "only the street hangs lamps with a halo").toEqual(["street"]);
+    for (const kit of KITS) {
+      for (const piece of extentPieces(kit, "glow")) expect(paintsOf(piece), `${kit.id}'s glow`).not.toContain(THEME.venue.lampGlobe);
+    }
+  });
+
   it("paint with the theme's venue colours and nothing else", () => {
     for (const kit of KITS) {
       for (const pieces of Object.values(kit.meshes)) {
@@ -188,6 +199,42 @@ describe("the street kit", () => {
         const crossesGap = piece.min[0] < apron.maxX - 1e-6 && piece.max[0] > apron.minX + 1e-6 && piece.min[2] < AVENUE.maxZ + 1e-6 && piece.max[2] > AVENUE.maxZ - 0.3 - 1e-6;
         expect(crossesGap, `a ${piece.min.join(",")} piece stands in the apron at ${apron.minX}..${apron.maxX}`).toBe(false);
       }
+    }
+  });
+
+  it("hangs a globe in the lamps mesh over each post, and none in the always-lit glow", () => {
+    const globes = extentPieces(street, "lamps");
+    expect(globes.length).toBeGreaterThan(0);
+    for (const globe of globes) {
+      expect(globe.shape).toBe("sphere");
+      expect(paintsOf(globe)).toEqual([THEME.venue.lampGlobe]);
+    }
+    expect(extentPieces(street, "glow")).toHaveLength(0);
+    const crowns = extentPieces(street, "shell").filter((piece) => piece.shape === "cylinder" && piece.radius === 0.16);
+    expect(crowns, "one crown per globe").toHaveLength(globes.length);
+    for (const globe of globes) {
+      if (globe.shape !== "sphere") continue;
+      expect(
+        crowns.some((crown) => crown.shape === "cylinder" && crown.from[0] === globe.at[0] && crown.from[2] === globe.at[2] && crown.to[1] < globe.at[1]),
+        `a post carries the globe at ${globe.at.join(",")}`,
+      ).toBe(true);
+    }
+  });
+
+  it("gives the halos and pools the globes' own spots, along the avenue's south edge and clear of every apron", () => {
+    const night = street.nightLamps;
+    expect(night).toBeDefined();
+    if (!night) return;
+    const globes = extentPieces(street, "lamps");
+    expect(night.spots).toHaveLength(globes.length);
+    night.spots.forEach((spot, index) => expect(globes[index]).toMatchObject({ shape: "sphere", at: spot }));
+    expect(night.groundY).toBe(STREET_Y);
+    const aprons = VENUES.flatMap((venue) => (venue.id === "street" ? [] : venue.areas.filter((area) => Math.abs(area.minZ - AVENUE.maxZ) < 1e-6)));
+    for (const [x, y, z] of night.spots) {
+      expect(within(AVENUE, x, z), `spot ${x}, ${z} is in the avenue`).toBe(true);
+      expect(z, `spot ${x}, ${z} stands on the kerb's side`).toBeGreaterThan(AVENUE.maxZ - 0.5);
+      expect(y, "the globe hangs over a visitor's head").toBeGreaterThan(2.5);
+      for (const apron of aprons) expect(x < apron.minX || x > apron.maxX, `spot ${x}, ${z} is in front of the apron at ${apron.minX}..${apron.maxX}`).toBe(true);
     }
   });
 });
@@ -863,7 +910,7 @@ describe("the bonfire kit against the shared layout", () => {
     const scene = await parsed("bonfire");
     const { loader } = diskLoader(() => scene);
     const model = await loadVenueKit(spec, loader);
-    const view = new VenueScene(spec, model);
+    const view = new VenueScene(spec, model, new Texture());
     const seats = view.group.getObjectByName("seats") as InstancedMesh;
     expect(seats.count).toBe(BONFIRE_SEATS.length);
     const matrix = new Matrix4();
@@ -918,6 +965,62 @@ describe("the bonfire kit against the shared layout", () => {
     expect(view.pitch).toBeGreaterThanOrEqual(limits.minPitch);
     expect(view.pitch).toBeLessThanOrEqual(limits.maxPitch);
   });
+});
+
+describe("the street at night", () => {
+  const spec = kitById("street") as KitSpec;
+
+  async function streetScene(): Promise<{ view: VenueScene; model: Awaited<ReturnType<typeof loadVenueKit>> }> {
+    const scene = await parsed("street");
+    const model = await loadVenueKit(spec, diskLoader(() => scene).loader);
+    return { view: new VenueScene(spec, model, new Texture()), model };
+  }
+
+  it("lights the globes and brings up a halo and a pool under each only as the night comes", async () => {
+    const { view, model } = await streetScene();
+    const spots = spec.nightLamps?.spots ?? [];
+    const globes = view.group.getObjectByName("lamps") as Mesh;
+    const glass = globes.material as MeshLambertMaterial;
+    const halos = view.group.getObjectByName("night-lamps") as Group;
+    expect(spots.length).toBeGreaterThan(0);
+    expect(halos.children.filter((child) => child instanceof Sprite)).toHaveLength(spots.length);
+    expect(halos.children.filter((child) => child instanceof Mesh)).toHaveLength(spots.length);
+    expect(glass.emissiveIntensity, "by day the globes are glass").toBeCloseTo(nightGlow(STREET_LAMP_GLOW, 0), 9);
+    expect(halos.visible, "by day there is no halo to draw").toBe(false);
+    view.setNight(1);
+    expect(glass.emissiveIntensity).toBeCloseTo(STREET_LAMP_GLOW.night, 9);
+    expect(halos.visible).toBe(true);
+    view.setNight(0.5);
+    expect(glass.emissiveIntensity).toBeCloseTo((STREET_LAMP_GLOW.day + STREET_LAMP_GLOW.night) / 2, 9);
+    view.setNight(0);
+    expect(glass.emissiveIntensity).toBeCloseTo(STREET_LAMP_GLOW.day, 9);
+    expect(halos.visible).toBe(false);
+    view.dispose();
+    model.dispose();
+  });
+
+  it("lets a tap go through the halos and the pools to the paving", async () => {
+    const { view, model } = await streetScene();
+    const halos = view.group.getObjectByName("night-lamps") as Group;
+    for (const object of halos.children) {
+      expect(view.surfaces.floors).not.toContain(object);
+      expect(view.surfaces.blockers).not.toContain(object);
+    }
+    view.dispose();
+    model.dispose();
+  });
+
+  it("leaves a venue with no lamps of its own without a halo, and lets it hear of the night all the same", async () => {
+    const bonfire = kitById("bonfire") as KitSpec;
+    const scene = await parsed("bonfire");
+    const model = await loadVenueKit(bonfire, diskLoader(() => scene).loader);
+    const view = new VenueScene(bonfire, model, new Texture());
+    expect(view.group.getObjectByName("night-lamps")).toBeUndefined();
+    expect(() => view.setNight(1)).not.toThrow();
+    view.dispose();
+    model.dispose();
+  });
+
 });
 
 describe("a fire's lamps", () => {

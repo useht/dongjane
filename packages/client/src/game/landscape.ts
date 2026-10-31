@@ -38,6 +38,7 @@ import { THEME } from "../theme.ts";
 import { KIT_PADS, PAD_HEIGHT } from "./kits/index.ts";
 import { levelGround } from "./ground-pads.ts";
 import { GATBAWI_STATUE, MOON_DIRECTION, SHADOW_HALF_EXTENT, SKY_RADIUS, SUN_POSITION, SUN_TARGET } from "./landscape-layout.ts";
+import { LANTERN_GLOW, nightGlow } from "./night-lamps.ts";
 import { Precipitation } from "./precipitation.ts";
 import { DAY_LOOK, type SkyLook, cloneLook, easeLook, packRgb } from "./sky-look.ts";
 import { cloudTexture, discGlowTexture, flakeTexture, foamTexture, leafTexture, mulberry32, seaTexture, stagePosterTexture } from "./textures.ts";
@@ -72,9 +73,6 @@ const SUN_DISTANCE = 58;
 // The photographed stone, ground and straw come out darker than the colours painted on them, so each is lifted. The scanned
 // Buddha is only a grey picture of light and shade, tinted granite, and is lifted the same way.
 export const LIFT = { ground: 1.35, stone: 1.5, mat: 1.35, statue: 1.5 } as const;
-
-// The paper lanterns glow a little by day and fully at night.
-const LANTERN_GLOW = { day: 0.12, night: 1.1 } as const;
 
 // At night a warm light hangs `drop` metres under the canopy in each of these bays (corner poles, by index), so the plaza, the stage
 // and the statue take the lanterns' light. The count is fixed: a light that comes or goes recompiles every material.
@@ -664,7 +662,7 @@ export class Landscape {
     stars.opacity = look.nightSky;
     this.stars.visible = look.nightSky > SKY_VISIBLE;
 
-    this.lanternMaterial.emissiveIntensity = LANTERN_GLOW.day + (LANTERN_GLOW.night - LANTERN_GLOW.day) * look.nightSky;
+    this.lanternMaterial.emissiveIntensity = nightGlow(LANTERN_GLOW, look.nightSky);
     for (const light of this.lanternLights) light.intensity = LANTERN_LIGHT.intensity * look.nightSky * open;
 
     this.sunSprite.material.opacity = look.sunGlow;

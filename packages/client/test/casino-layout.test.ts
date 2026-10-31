@@ -5,6 +5,8 @@ import {
   CASINO_COLUMNS,
   CASINO_KEEP_OUT,
   CASINO_LAMPS,
+  CASINO_LAMP_HEIGHT,
+  CASINO_LAMP_SPOTS,
   CASINO_LIGHT,
   CASINO_NEAR,
   CASINO_PAD,
@@ -93,6 +95,13 @@ describe("the casino's building", () => {
         for (const area of venue.areas) expect(distanceToBounds(area, x, z), `post at ${x}, ${z} and ${venue.id}`).toBeGreaterThanOrEqual(crown);
       }
     }
+  });
+
+  it("hangs a halo's spot at each post's globe: over the post, at the globe's height, over a visitor's head", () => {
+    expect(CASINO_LAMP_SPOTS).toHaveLength(CASINO_POSTS.length);
+    CASINO_POSTS.forEach(([x, z], index) => expect(CASINO_LAMP_SPOTS[index]).toEqual([x, CASINO_LAMP_HEIGHT, z]));
+    expect(CASINO_LAMP_HEIGHT).toBeGreaterThan(2.5);
+    expect(CASINO_LAMP_HEIGHT).toBeLessThan(CASINO_SHELL.topY);
   });
 
   it("stands the four columns in the strips of carpet beside the lobby and the cross room, off every walkable area and inside the room", () => {

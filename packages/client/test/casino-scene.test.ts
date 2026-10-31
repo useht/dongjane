@@ -1,9 +1,9 @@
-import { BufferGeometry, Group, HemisphereLight, InstancedMesh, Mesh, MeshStandardMaterial, PointLight, Texture } from "three";
+import { BufferGeometry, Group, HemisphereLight, InstancedMesh, Mesh, MeshStandardMaterial, PointLight, Sprite, Texture } from "three";
 import { describe, expect, it } from "vitest";
 import { MACHINE_SPOTS } from "@dongjane/shared";
 import { CASINO_MESHES, CASINO_PROTOTYPES } from "../src/assets/contract.ts";
 import type { ModelMeshes } from "../src/assets/registry.ts";
-import { CASINO_LAMPS, CASINO_LIGHT, CASINO_SHELL } from "../src/game/casino-layout.ts";
+import { CASINO_LAMPS, CASINO_LAMP_HEIGHT, CASINO_LIGHT, CASINO_POSTS, CASINO_SHELL, PAVING_Y } from "../src/game/casino-layout.ts";
 import { CasinoScene } from "../src/game/casino.ts";
 
 // Node has no image decoding or GPU: the glb's meshes are stood in for by empty geometries, with a texture where the game asks for one.
@@ -20,7 +20,7 @@ function meshes(): ModelMeshes<"casino"> {
 }
 
 function build(weak = false): CasinoScene {
-  return new CasinoScene(meshes(), stub("ground", true), { weak, anisotropy: 4 });
+  return new CasinoScene(meshes(), stub("ground", true), { weak, anisotropy: 4 }, new Texture());
 }
 
 const lightsOf = (scene: CasinoScene): PointLight[] => scene.group.children.filter((child): child is PointLight => child instanceof PointLight);
@@ -55,6 +55,29 @@ describe("CasinoScene", () => {
     expect(lightsOf(scene)).toHaveLength(CASINO_LAMPS.gold.length + CASINO_LAMPS.pink.length + CASINO_LAMPS.cyan.length + CASINO_LAMPS.sign.length);
     for (const light of lightsOf(scene)) expect(light.intensity).toBe(0);
     expect(hemisphereOf(scene).intensity).toBe(0);
+  });
+
+  it("draws a halo at each street lamp's globe and a pool on the paving under it, with no light of their own, and shows them only at night", () => {
+    const scene = build();
+    const halos = scene.group.getObjectByName("night-lamps") as Group;
+    expect(halos).toBeInstanceOf(Group);
+    const sprites = halos.children.filter((child): child is Sprite => child instanceof Sprite);
+    const pools = halos.children.filter((child): child is Mesh => child instanceof Mesh);
+    expect(sprites).toHaveLength(CASINO_POSTS.length);
+    expect(pools).toHaveLength(CASINO_POSTS.length);
+    CASINO_POSTS.forEach(([x, z], index) => {
+      expect(sprites[index]?.position.toArray()).toEqual([x, CASINO_LAMP_HEIGHT, z]);
+      expect(pools[index]?.position.x).toBe(x);
+      expect(pools[index]?.position.z).toBe(z);
+      expect(pools[index]?.position.y, "on the paving, a hair over it").toBeGreaterThan(PAVING_Y);
+      expect(pools[index]?.position.y).toBeLessThan(PAVING_Y + 0.05);
+    });
+    expect(halos.visible, "by day").toBe(false);
+    scene.setNight(1);
+    expect(halos.visible).toBe(true);
+    scene.setNight(0);
+    expect(halos.visible).toBe(false);
+    halos.traverse((object) => expect((object as { isLight?: boolean }).isLight, "a light costs every material").toBeUndefined());
   });
 
   it("keeps a weak device to one lamp for the room and one for the front", () => {

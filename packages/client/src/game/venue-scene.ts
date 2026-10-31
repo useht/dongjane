@@ -10,12 +10,14 @@ import {
   Mesh,
   MeshLambertMaterial,
   PointLight,
+  type Texture,
 } from "three";
 import { ZONE_SEATS, isZone, seatYaw } from "@dongjane/shared";
 import type { KitModel } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { FloorSurfaces } from "./floor-pick.ts";
 import type { KitLook, KitSpec } from "./kits/kit.ts";
+import { LAMP_REACH, NightLamps, STREET_LAMP_GLOW, nightGlow } from "./night-lamps.ts";
 import { vertexGlowMaterial } from "./vertex-glow.ts";
 
 const SEAT_OCCUPIED_TINT = 0.55;
@@ -25,7 +27,8 @@ const LAMP_DECAY = 2;
 
 // A venue made from a kit: the floor, the walls, the roof, the lit panes and the water as the kit's glb drew them, and one
 // instance of the seat prototype at each of the venue's seats. The venue's light is not its own: all kit venues share one
-// `VenueLights` rig, because a light in the scene costs every material, whether or not it reaches them.
+// `VenueLights` rig, because a light in the scene costs every material, whether or not it reaches them. Lamp globes (the kit's `lamps`)
+// and their halos shine only as the night comes on (`setNight`); `lampHalo` is the soft glow the halos are drawn with, owned by the caller.
 export class VenueScene {
   readonly group = new Group();
   readonly spec: KitSpec;
@@ -34,11 +37,13 @@ export class VenueScene {
 
   private readonly roof: Mesh | undefined;
   private readonly seats: InstancedMesh | undefined;
+  private readonly lampGlass: MeshLambertMaterial;
+  private readonly nightLamps: NightLamps | undefined;
   private readonly materials: Material[] = [];
   private readonly tint = new Color();
   private readonly occupied = new Set<number>();
 
-  constructor(spec: KitSpec, model: KitModel) {
+  constructor(spec: KitSpec, model: KitModel, lampHalo: Texture) {
     this.spec = spec;
     this.group.name = `venue:${spec.id}`;
     const { meshes } = model;
@@ -48,7 +53,21 @@ export class VenueScene {
     const shell = this.add(meshes.shell, lit());
     this.roof = this.add(meshes.roof, lit());
     this.add(meshes.glow, this.keep(vertexGlowMaterial(THEME.material.paper, PANE_GLOW)));
+    this.lampGlass = this.keep(vertexGlowMaterial(THEME.material.paper, nightGlow(STREET_LAMP_GLOW, 0)));
+    this.add(meshes.lamps, this.lampGlass);
     const water = this.add(meshes.water, this.keep(new MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: WATER_OPACITY, depthWrite: false })));
+
+    if (spec.nightLamps) {
+      this.nightLamps = new NightLamps({
+        spots: spec.nightLamps.spots,
+        groundY: spec.nightLamps.groundY,
+        haloRadius: LAMP_REACH.halo,
+        poolRadius: LAMP_REACH.pool,
+        color: THEME.venue.lampGlobe,
+        texture: lampHalo,
+      });
+      this.group.add(this.nightLamps.group);
+    }
 
     this.seats = this.buildSeats(model);
     const blockers = [shell, this.roof, water].filter((mesh): mesh is Mesh => mesh !== undefined);
@@ -108,9 +127,16 @@ export class VenueScene {
     if (this.roof) this.roof.visible = !cut;
   }
 
+  // How dark it is in the open, 0 to 1 (0 by day and wherever the camera is indoors): the lamp globes shine and their halos come up.
+  setNight(share: number): void {
+    this.lampGlass.emissiveIntensity = nightGlow(STREET_LAMP_GLOW, share);
+    this.nightLamps?.setNight(share);
+  }
+
   // The geometries that came with the glb belong to the loaded model; only what the scene made is released here.
   dispose(): void {
     for (const material of this.materials) material.dispose();
+    this.nightLamps?.dispose();
     this.seats?.dispose();
     this.group.removeFromParent();
   }

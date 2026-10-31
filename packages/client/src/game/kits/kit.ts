@@ -47,9 +47,16 @@ export interface KitCamera {
   readonly keepOut?: { readonly minX: number; readonly maxX: number; readonly minY: number; readonly maxY: number; readonly minZ: number; readonly maxZ: number };
 }
 
+// The centres of a kit's lamp globes and the height of the paving under them: where the game draws their halos and pools of light at night.
+export interface KitNightLamps {
+  readonly spots: readonly Vec3[];
+  readonly groundY: number;
+}
+
 export interface KitSpec {
   readonly id: string;
   readonly meshes: KitPieces;
+  readonly nightLamps?: KitNightLamps;
   // Ground that is levelled flat to the floor's height under the kit, so the hillside does not poke through it.
   readonly pads: readonly Bounds[];
   // Present for a venue the camera goes into (a seated venue), absent for the street, which is only drawn.

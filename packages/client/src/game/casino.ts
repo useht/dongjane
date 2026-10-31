@@ -12,14 +12,16 @@ import {
   Mesh,
   MeshLambertMaterial,
   PointLight,
+  type Texture,
   Vector3,
 } from "three";
 import { MACHINE_SIZE, MACHINE_SPOTS, type MachineKind, type MachineSpot } from "@dongjane/shared";
 import { type ModelMeshes, normalOf, textureOf } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
-import { CASINO_LAMPS, CASINO_LIGHT, CASINO_SHELL } from "./casino-layout.ts";
+import { CASINO_LAMPS, CASINO_LAMP_SPOTS, CASINO_LIGHT, CASINO_SHELL, PAVING_Y } from "./casino-layout.ts";
 import type { FloorSurfaces } from "./floor-pick.ts";
 import { LIFT } from "./landscape.ts";
+import { LAMP_REACH, NightLamps } from "./night-lamps.ts";
 import { vertexGlowMaterial } from "./vertex-glow.ts";
 
 export interface CasinoQuality {
@@ -63,6 +65,8 @@ interface Lamp {
 // and keeps them in the scene all the time (adding or removing one would recompile every material); `setPresence` turns them up
 // as a visitor comes near and as the camera comes in. While a visitor is inside, the roof and the sign are hidden (`setCutaway`),
 // so the camera, which then moves over the whole room, looks down into it. The front wall stays: its inside face is the wall around the door.
+// The glass globes of its yard and road lamps always shine; `setNight` adds the halo and pool of light they throw once it is dark outside.
+// `lampHalo` is the soft glow those are drawn with, owned by the caller.
 export class CasinoScene {
   readonly group = new Group();
   // The carpet, the yard and the road a tap can walk to, and the walls and machines that stand on them.
@@ -70,6 +74,7 @@ export class CasinoScene {
 
   private readonly hemisphere: HemisphereLight;
   private readonly lamps: Lamp[] = [];
+  private readonly nightLamps: NightLamps;
   private readonly materials: Material[] = [];
   private readonly machines: InstancedMesh[] = [];
   // Which spot each instance of a machine mesh stands for.
@@ -79,7 +84,7 @@ export class CasinoScene {
   private inside = 0;
   private near = 0;
 
-  constructor(meshes: ModelMeshes<"casino">, paving: Mesh, quality: CasinoQuality) {
+  constructor(meshes: ModelMeshes<"casino">, paving: Mesh, quality: CasinoQuality, lampHalo: Texture) {
     const { scene: palette, material: tokens } = THEME;
     this.group.name = "casino";
 
@@ -114,6 +119,9 @@ export class CasinoScene {
     const yard = this.add(meshes.casinoYard, stone);
     const road = this.add(meshes.coastRoad, stone);
     const carpet = this.add(meshes.casinoFloor, this.surface(textureOf(meshes.casinoFloor), normalOf(meshes.casinoFloor), quality.anisotropy, 1));
+
+    this.nightLamps = new NightLamps({ spots: CASINO_LAMP_SPOTS, groundY: PAVING_Y, haloRadius: LAMP_REACH.halo, poolRadius: LAMP_REACH.pool, color: tokens.casinoCream, texture: lampHalo });
+    this.group.add(this.nightLamps.group);
 
     this.machines.push(...this.buildMachines(meshes));
     this.surfaces = { floors: [carpet, yard, road], blockers: [walls, front, roof, columns, board, ...this.machines] };
@@ -201,6 +209,11 @@ export class CasinoScene {
     this.near = near;
   }
 
+  // How dark it is outside, 0 to 1 (0 by day and while the camera is indoors).
+  setNight(share: number): void {
+    this.nightLamps.setNight(share);
+  }
+
   update(time: number, reduceMotion: boolean): void {
     this.hemisphere.intensity = HEMISPHERE_LIGHT * this.inside;
     const room = Math.max(this.inside, this.near * DOORWAY_SHARE);
@@ -214,6 +227,7 @@ export class CasinoScene {
   // The geometries and textures that came with the glb belong to the loaded assets; only what the casino made is released here.
   dispose(): void {
     for (const material of this.materials) material.dispose();
+    this.nightLamps.dispose();
     for (const machines of this.machines) machines.dispose();
     this.group.removeFromParent();
   }

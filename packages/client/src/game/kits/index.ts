@@ -5,7 +5,7 @@ import { churchKit } from "./church.ts";
 import type { KitSpec } from "./kit.ts";
 import { streetKit } from "./street.ts";
 
-export type { KitCamera, KitLamp, KitLook, KitMesh, KitPiece, KitPieces, KitSpec } from "./kit.ts";
+export type { KitCamera, KitLamp, KitLook, KitMesh, KitNightLamps, KitPiece, KitPieces, KitSpec } from "./kit.ts";
 export { PAD_HEIGHT, meshNames } from "./kit.ts";
 
 // Every venue built from a kit, in the order of the venue registry: the street first, then the buildings that open onto it. A new

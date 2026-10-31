@@ -57,6 +57,26 @@ export function flameGlowTexture(): CanvasTexture {
   return toTexture(canvas);
 }
 
+let lampHalo: CanvasTexture | undefined;
+
+// A soft round glow, white and bright at its middle and gone at its rim, that every night lamp tints and draws additively: as a halo
+// round its globe and as the pool of light on the ground under it. It is made once and shared, so its owner disposes it, not a lamp.
+export function lampHaloTexture(): CanvasTexture {
+  if (lampHalo) return lampHalo;
+  const [canvas, ctx] = makeCanvas(128, 128);
+  const white = THEME.scene.white;
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, withAlpha(white, 1));
+  g.addColorStop(0.2, withAlpha(white, 0.6));
+  g.addColorStop(0.5, withAlpha(white, 0.2));
+  g.addColorStop(0.8, withAlpha(white, 0.04));
+  g.addColorStop(1, withAlpha(white, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  lampHalo = toTexture(canvas);
+  return lampHalo;
+}
+
 export function flakeTexture(): CanvasTexture {
   const [canvas, ctx] = makeCanvas(32, 32);
   const scene = THEME.scene;

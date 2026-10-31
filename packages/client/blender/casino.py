@@ -49,6 +49,7 @@ class Plan:
         self.inner_front = s["minZ"] + s["wall"]
         self.inner_back = s["maxZ"] - s["wall"]
         self.posts = k["CASINO_POSTS"]
+        self.lamp_height = k["CASINO_LAMP_HEIGHT"]
         # The lit windows in the front wall's west pier.
         windows = k["CASINO_WINDOWS"]
         self.windows = windows["xs"]
@@ -463,7 +464,7 @@ def neon(plan):
     part.tube([(fx0, fy0, zb), (fx0, fy1, zb), (fx1, fy1, zb), (fx1, fy0, zb)], [0.03] * 4, 6, cyan, closed=True, smooth=False)
     # The glass globes of the street lamps.
     for x, z in plan.posts:
-        part.sphere((x, 2.88, z), (0.23, 0.23, 0.23), 10, 6, c["casinoCream"])
+        part.sphere((x, plan.lamp_height, z), (0.23, 0.23, 0.23), 10, 6, c["casinoCream"])
     return part
 
 
