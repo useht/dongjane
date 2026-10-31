@@ -9,7 +9,8 @@ import { SHORE_VENUE } from "./shore.ts";
 import { STREET_VENUE } from "./street.ts";
 import type { SeatGroup, VenueDef } from "./types.ts";
 
-export type { ActivitySpot, SeatGroup, VenueDef } from "./types.ts";
+export type { ActivitySpot, SeatGroup, SeatPose, VenueDef } from "./types.ts";
+export { BENCH_HIPS_BACK } from "./types.ts";
 export { BATHHOUSE_VENUE, BONFIRE_VENUE, CASINO_VENUE, CHURCH_VENUE, DHARMA_VENUE, GATBAWI_VENUE, SHORE_VENUE, STREET_VENUE };
 export { BATHHOUSE_AREAS, BATHHOUSE_LANES, BATHHOUSE_MATS, BATHHOUSE_POOL, BATHHOUSE_ROOMS } from "./bathhouse.ts";
 export {
@@ -91,6 +92,7 @@ export const SEAT_NAMES = perZone((venue) => venue.seats.name);
 export const ZONE_SEATS: Readonly<Record<Zone, readonly SeatSpot[]>> = perZone((venue) => venue.seats.spots);
 export const SEAT_YAWS = perZone((venue) => venue.seats.yaw);
 export const SEAT_TOPS = perZone((venue) => venue.seats.top);
+export const SEAT_POSES = perZone((venue) => venue.seats.pose);
 // How far back a seat is from what the zone faces: the rows are counted from the front.
 export const SEAT_DEPTH: Readonly<Record<Zone, (spot: SeatSpot) => number>> = perZone((venue) => venue.seats.depth);
 const SEAT_OFFSET: Readonly<Record<Zone, (spot: SeatSpot) => number>> = perZone((venue) => venue.seats.offset);

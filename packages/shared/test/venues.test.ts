@@ -7,6 +7,7 @@ import {
   INDOOR,
   SEAT_DEPTH,
   SEAT_NAMES,
+  SEAT_POSES,
   SEAT_TOPS,
   SEAT_YAWS,
   CASINO_VENUE,
@@ -79,6 +80,11 @@ describe("the venue registry", () => {
     expect(INDOOR).toEqual({ gatbawi: false, dharma: true, bathhouse: true, church: true, bonfire: false });
     expect(SEAT_TOPS.dharma).toBeGreaterThan(SEAT_TOPS.gatbawi);
     for (const zone of ZONES) expect(SEAT_YAWS[zone]).toBe(venueById(zone)?.seats?.yaw);
+  });
+
+  it("sits each venue's visitors the way the place asks: on the knees, cross-legged on a mat, or on a chair or a log", () => {
+    expect(SEAT_POSES).toEqual({ gatbawi: "kneel", dharma: "kneel", bathhouse: "cross", church: "bench", bonfire: "bench" });
+    for (const zone of ZONES) expect(SEAT_POSES[zone], zone).toBe(venueById(zone)?.seats?.pose);
   });
 
   it("keeps the seats numbered from 0 within an int8, ZONE_CAPACITY of them on the plaza and in the 법당 and no more in any zone", () => {

@@ -63,6 +63,7 @@ export const BATHHOUSE_VENUE = defineVenue({
     depth: (spot) => spot.x,
     offset: (spot) => Math.abs(spot.z - MIDDLE_Z),
     top: 0.08,
+    pose: "cross",
   },
   activities: BATHHOUSE_LANES,
   npc: { stroll: false, seatWeight: 0 },

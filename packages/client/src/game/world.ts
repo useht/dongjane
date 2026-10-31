@@ -1,5 +1,5 @@
 import { ACESFilmicToneMapping, Color, Fog, PerspectiveCamera, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from "three";
-import { ARRIVAL, DHARMA_VENUE, GATBAWI_VENUE, INDOOR, type MachineSpot, NPC_COUNT, SEAT_COUNT, SEAT_TOPS, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, perZone, venueAt } from "@dongjane/shared";
+import { ARRIVAL, DHARMA_VENUE, GATBAWI_VENUE, INDOOR, type MachineSpot, NPC_COUNT, SEAT_COUNT, SEAT_POSES, SEAT_TOPS, type SkyState, WORLD_CAPACITY, ZONES, type Zone, lerpAngle, perZone, venueAt } from "@dongjane/shared";
 import type { GameAssets, KitModel } from "../assets/registry.ts";
 import { THEME } from "../theme.ts";
 import type { Quad } from "../ui/stage-quad.ts";
@@ -382,7 +382,9 @@ export class World {
       entry.avatar.chanting = view.chanting;
       entry.avatar.item = view.item;
       entry.avatar.bite = view.bite;
-      entry.avatar.seatTop = SEAT_TOPS[venueAt(view.x, view.z)];
+      const zone = venueAt(view.x, view.z);
+      entry.avatar.seatTop = SEAT_TOPS[zone];
+      entry.avatar.seatPose = SEAT_POSES[zone];
       // The tracker sees the player's own counter too, so the echo of a knock already played locally never replays.
       if (this.knocks.observe(view.id, view.knockSeq) && !isSelf) {
         entry.avatar.knock(nowMs);

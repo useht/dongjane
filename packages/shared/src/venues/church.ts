@@ -106,6 +106,7 @@ export const CHURCH_VENUE = defineVenue({
     depth: (spot) => FRONT_Z - spot.z,
     offset: (spot) => Math.abs(spot.x - MIDDLE_X),
     top: 0.1,
+    pose: "bench",
   },
   activities: CHURCH_CANDLES,
   npc: { stroll: false, seatWeight: 0 },

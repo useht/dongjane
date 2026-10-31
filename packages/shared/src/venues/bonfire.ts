@@ -120,6 +120,7 @@ export const BONFIRE_VENUE = defineVenue({
     depth: (spot) => Math.hypot(spot.x - BONFIRE_GATE.x, spot.z - BONFIRE_GATE.z),
     offset: () => 0,
     top: 0.35,
+    pose: "bench",
   },
   activities: BONFIRE_FIRES,
   npc: { stroll: false, seatWeight: 0 },

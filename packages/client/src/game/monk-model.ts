@@ -1,5 +1,5 @@
 import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
-import { BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X } from "@dongjane/shared";
+import { BENCH_HIPS_BACK, BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X, type SeatPose } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
 import type { MonkAssets } from "./monk-assets.ts";
 import { ROD, ROD_POSE } from "./monk-items.ts";
@@ -72,6 +72,7 @@ const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
 const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
 const BOW_HIP_FORWARD = rig.bowHipForward;
 const BOW_SEAT_BACK = rig.bowSeatBack;
+const PELVIS_DROP = rig.pelvisDrop;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
 // The lift of a kneeling monk on a 방석; on a 돗자리 it is less.
@@ -87,6 +88,30 @@ const CHANT_NOD = 0.06;
 const CHANT_SWAY_HZ = 0.4;
 const CHANT_SWAY = 0.025;
 const HOP_HEIGHT = 0.35;
+// On a chair or a log the monk stays on the floor and the hips sit on the seat: the trouser seat is squashed to this share of its
+// height so it fits between the seat and the jacket, the hips are drawn back over the seat, and the feet stand this far in front
+// of them. A bow only leans from the waist, since the knees are in the way.
+const BENCH_PELVIS_SCALE_Y = 0.65;
+const BENCH_FOOT_REACH = 0.33;
+const BENCH_BOW = 0.35;
+// The clearance a kneeling seat has under the trousers, kept under a squashed one too.
+const SEAT_CLEARANCE = HIP_KNEEL - PELVIS_DROP * KNEEL_PELVIS_SCALE_Y;
+// Where the feet go while seated, in the monk's frame (forward is -z): x is the distance from the middle line to the foot on its
+// own side (a crossed foot is on the other side), turn the way it is turned about the vertical.
+interface SitFeet {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly tilt: number;
+  readonly turn: number;
+  // how far the leg's end is raised for the shape of the foot
+  readonly legLift: number;
+}
+const SIT_FEET: Readonly<Record<SeatPose, SitFeet>> = {
+  kneel: { x: FOOT_X, y: FOOT_KNEEL_Y, z: FOOT_KNEEL_Z, tilt: FOOT_KNEEL_TILT, turn: 0, legLift: LEG_KNEEL_LIFT },
+  cross: { x: -0.04, y: 0.03, z: -0.12, tilt: 0, turn: 1.2, legLift: 0 },
+  bench: { x: FOOT_X, y: FOOT_Y, z: BENCH_HIPS_BACK - BENCH_FOOT_REACH, tilt: 0, turn: 0, legLift: 0 },
+};
 // The top of a leg slides this far back as its foot swings forward (and forward as it swings back), so the thigh stays inside the
 // jacket (a copy of POSE.walk_hip_shift in packages/client/assets/monk/build_monk.py, which checks the whole walk).
 const WALK_HIP_SHIFT = 0.05;
@@ -129,8 +154,10 @@ export class MonkAvatar {
   bite = false;
   // A monk in another part of the world than the camera's is still animated but not drawn.
   hidden = false;
-  // How high the seat under this monk is: a kneeling monk is lifted by it.
+  // How high the seat under this monk is, and how the monk sits on it: a kneeling or cross-legged monk is lifted by the height, one on
+  // a bench is not, and sits on it with its feet on the floor.
   seatTop = SEAT_TOP;
+  seatPose: SeatPose = "kneel";
 
   private readonly hips = new Object3D();
   private readonly pelvisNode = new Object3D();
@@ -242,7 +269,9 @@ export class MonkAvatar {
     if (this.mode === "walk") this.phase += dt * Math.min(speed, 3.5) * 4.4;
     const swing = Math.sin(this.phase);
     const swingBack = Math.sin(this.phase + Math.PI);
-    const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) : 0;
+    const bench = this.seatPose === "bench";
+    const sit = SIT_FEET[this.seatPose];
+    const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) * (bench ? BENCH_BOW : 1) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
     this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
     const chant = this.chantMix * kneel;
@@ -252,14 +281,15 @@ export class MonkAvatar {
     const knock = knockProgress > 0 && knockProgress < 1 ? Math.sin(Math.PI * knockProgress) * (reduceMotion ? KNOCK_REDUCED_SHARE : 1) : 0;
 
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
-    this.root.position.y = this.liftedBy * kneel + hop;
+    this.root.position.y = (bench ? 0 : this.liftedBy * kneel) + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
-    this.hips.position.y = HIP_STAND + (HIP_KNEEL - HIP_STAND) * kneel + bob + breathe * 0.006;
-    this.hips.position.z = -depth * BOW_HIP_FORWARD;
+    const sitHips = bench ? this.liftedBy + PELVIS_DROP * BENCH_PELVIS_SCALE_Y + SEAT_CLEARANCE : HIP_KNEEL;
+    this.hips.position.y = HIP_STAND + (sitHips - HIP_STAND) * kneel + bob + breathe * 0.006;
+    this.hips.position.z = (bench ? BENCH_HIPS_BACK * kneel : 0) - depth * BOW_HIP_FORWARD;
 
     // Kneeling, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing, the hips and
     // everything on them slide forward, but the seat stays on the heels, so the folded arms have room between it and the head.
-    const pelvisY = 1 + (KNEEL_PELVIS_SCALE_Y - 1) * kneel;
+    const pelvisY = 1 + ((bench ? BENCH_PELVIS_SCALE_Y : KNEEL_PELVIS_SCALE_Y) - 1) * kneel;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
     this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
     this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel, BOW_SEAT_BACK * depth);
@@ -315,20 +345,24 @@ export class MonkAvatar {
       const foot = this.feet[side] as Object3D;
       const stride = (side === 0 ? swing : swingBack) * walk;
       const lift = Math.max(0, Math.cos(this.phase + (side === 0 ? 0 : Math.PI))) * walk;
-      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + FOOT_KNEEL_Z * kneel;
-      foot.position.y = FOOT_Y + (FOOT_KNEEL_Y - FOOT_Y) * kneel + lift * 0.07;
-      foot.rotation.x = kneel * FOOT_KNEEL_TILT;
+      foot.position.x = sign * (FOOT_X + (sit.x - FOOT_X) * kneel);
+      foot.position.z = stride * 0.2 - FOOT_FORWARD * (1 - kneel) + sit.z * kneel;
+      foot.position.y = FOOT_Y + (sit.y - FOOT_Y) * kneel + lift * 0.07;
+      foot.rotation.x = kneel * sit.tilt;
+      foot.rotation.y = sign * kneel * sit.turn;
 
       // The leg (and the trouser leg hung on it) hangs from a pivot inside the pelvis and is stretched to the ankle, so it follows
       // strides, bobbing and the folded kneel.
       const leg = this.legs[side] as Object3D;
       const topY = this.hips.position.y - LEG_TOP_DROP;
-      const reachY = foot.position.y + LEG_KNEEL_LIFT * kneel - topY;
+      const reachX = foot.position.x - sign * FOOT_X;
+      const reachY = foot.position.y + sit.legLift * kneel - topY;
       const topZ = this.hips.position.z - stride * WALK_HIP_SHIFT;
       const reachZ = foot.position.z - topZ;
+      const reach = Math.hypot(reachX, reachY, reachZ);
       leg.position.set(sign * FOOT_X, topY, topZ);
-      leg.rotation.x = Math.atan2(-reachZ, -reachY);
-      leg.scale.y = Math.hypot(reachY, reachZ) / LEG_LENGTH;
+      leg.rotation.set(Math.atan2(-reachZ, -reachY), 0, Math.asin(reachX / reach));
+      leg.scale.y = reach / LEG_LENGTH;
     }
 
     // Fished, the rod rises toward the sea; otherwise it is carried leaning forward, and folded away while kneeling.

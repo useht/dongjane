@@ -36,6 +36,7 @@ export const DHARMA_VENUE = defineVenue({
     depth: (spot) => spot.x,
     offset: (spot) => Math.abs(spot.z - DHARMA_ORIGIN.z),
     top: DHARMA_SEAT_TOP,
+    pose: "kneel",
   },
   npc: { stroll: true, seatWeight: 1 },
   indoor: true,
