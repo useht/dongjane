@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { PerspectiveCamera, Raycaster, Vector2, Vector3 } from "three";
-import { ARRIVAL, CASINO_AISLE_EAST, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, PLATFORM, dharmaToWorld, worldToDharma } from "@dongjane/shared";
+import { ARRIVAL, CASINO_AISLE_EAST, CASINO_FLOOR, CASINO_YARD, DHARMA_BOUNDS, DHARMA_ORIGIN, DHARMA_SEATS, DHARMA_YAW, GATBAWI_SEATS, GATBAWI_SEAT_SIZE, GATBAWI_Z, MACHINE_SPOTS, PLATFORM, type MachineSpot, dharmaToWorld, machineFootprint, worldToDharma } from "@dongjane/shared";
 import {
   CAMERA_CLEARANCE,
+  CASINO_MACHINE_BOXES,
   CameraRig,
   DEFAULT_VIEW,
   DHARMA_CAMERA_BOUNDS,
@@ -24,7 +25,7 @@ import {
   viewFor,
   type Box,
 } from "../src/game/camera-rig.ts";
-import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, CASINO_ROOM, CASINO_SHELL, CASINO_TOP } from "../src/game/casino-layout.ts";
+import { CASINO_CAMERA_BOUNDS, CASINO_KEEP_OUT, CASINO_ROOM, CASINO_SHELL, CASINO_TOP, machineHeight } from "../src/game/casino-layout.ts";
 import { LANDSCAPE_BOUNDS } from "../src/game/landscape-layout.ts";
 import { BUDDHA_AT, DHARMA, DHARMA_SHELL, FRONT_PILLARS_X } from "../src/game/dharma-layout.ts";
 import { loadGlb, triangleCorners } from "./glb.ts";
@@ -675,5 +676,112 @@ describe("the casino's camera", () => {
 
   it("lets a camera look at the casino from the shore's side: the world's bounds reach past the building", () => {
     expect(LANDSCAPE_BOUNDS.maxZ).toBeGreaterThan(CASINO_SHELL.maxZ);
+  });
+
+  describe("beside the machines", () => {
+    // The rows of machines stand against the walls, so the camera's box (inside the walls) reaches into them.
+    const HINT_LIFT = 0.2; // app.ts's MACHINE_HINT_LIFT: the play hint floats this far over the machine's top
+    const eastRow = MACHINE_SPOTS.filter((spot) => spot.x > CASINO_AISLE_EAST.maxX);
+    const grid = { pitches: [limits.minPitch, 0.3, 0.62, 0.9], distances: [limits.minDistance, 4, 8, limits.maxDistance] };
+
+    // The camera of a visitor standing at the front of `spot`, turned and zoomed as given, in a window of 1280 by 800.
+    function viewAt(spot: MachineSpot, yaw: number, pitch: number, distance: number, solids: readonly Box[] = CASINO_MACHINE_BOXES): PerspectiveCamera {
+      const camera = new PerspectiveCamera();
+      const rig = new CameraRig(camera, bounds, limits, KEEP_OUTS, solids);
+      rig.reduceMotion = true;
+      rig.yaw = yaw;
+      rig.pitch = pitch;
+      rig.distance = distance;
+      configureCamera(camera, rig, 1280, 800, 0, 0);
+      rig.follow(spot.frontX, spot.frontZ, 1, true);
+      rig.update(0.016);
+      camera.updateMatrixWorld();
+      return camera;
+    }
+
+    const bodyAt = ({ x, y, z }: { x: number; y: number; z: number }): MachineSpot | undefined =>
+      MACHINE_SPOTS.find((other) => {
+        const footprint = machineFootprint(other);
+        return x > footprint.minX && x < footprint.maxX && z > footprint.minZ && z < footprint.maxZ && y < machineHeight(other.kind);
+      });
+
+    it("holds a box over each machine: its body widened by the camera's clearance, and inside the building's keep-out", () => {
+      expect(CASINO_MACHINE_BOXES).toHaveLength(MACHINE_SPOTS.length);
+      MACHINE_SPOTS.forEach((spot, index) => {
+        const footprint = machineFootprint(spot);
+        const held = CASINO_MACHINE_BOXES[index] as Box;
+        expect(held.minX).toBeCloseTo(footprint.minX - CAMERA_CLEARANCE, 9);
+        expect(held.maxX).toBeCloseTo(footprint.maxX + CAMERA_CLEARANCE, 9);
+        expect(held.minZ).toBeCloseTo(footprint.minZ - CAMERA_CLEARANCE, 9);
+        expect(held.maxZ).toBeCloseTo(footprint.maxZ + CAMERA_CLEARANCE, 9);
+        expect(held.maxY).toBeCloseTo(machineHeight(spot.kind) + CAMERA_CLEARANCE, 9);
+        expect(held.minY).toBeLessThan(0);
+        expect(held.minX, spot.id).toBeGreaterThan(CASINO_KEEP_OUT.minX);
+        expect(held.maxX, spot.id).toBeLessThan(CASINO_KEEP_OUT.maxX);
+        expect(held.minZ, spot.id).toBeGreaterThan(CASINO_KEEP_OUT.minZ);
+        expect(held.maxZ, spot.id).toBeLessThan(CASINO_KEEP_OUT.maxZ);
+      });
+    });
+
+    it("never ends up inside a machine, with the visitor at any machine, however the camera is turned and zoomed", () => {
+      for (const spot of MACHINE_SPOTS) {
+        for (let turn = 0; turn < 8; turn += 1) {
+          for (const pitch of [limits.minPitch, 0.4, 0.8, limits.maxPitch]) {
+            for (const distance of [limits.minDistance, 5, limits.maxDistance]) {
+              const { x, y, z } = viewAt(spot, (turn * Math.PI) / 4, pitch, distance).position;
+              const label = `${spot.id}, yaw ${turn}/8 turn, pitch ${pitch}, distance ${distance}: ${x}, ${y}, ${z}`;
+              expect(bodyAt({ x, y, z })?.id, label).toBeUndefined();
+              expect(x, label).toBeGreaterThanOrEqual(bounds.minX - 1e-6);
+              expect(x, label).toBeLessThanOrEqual(bounds.maxX + 1e-6);
+              expect(y, label).toBeLessThanOrEqual(bounds.maxY + 1e-6);
+              expect(z, label).toBeGreaterThanOrEqual(bounds.minZ - 1e-6);
+              expect(z, label).toBeLessThanOrEqual(bounds.maxZ + 1e-6);
+            }
+          }
+        }
+      }
+    });
+
+    it("keeps the play hint on screen at the east wall's machines when the camera is turned a quarter turn, which pushes it against the wall", () => {
+      const anchorShows = (camera: PerspectiveCamera, spot: MachineSpot): boolean =>
+        projectToCanvas(camera, spot.x, machineHeight(spot.kind) + HINT_LIFT, spot.z, 1280, 800, { x: 0, y: 0 });
+      let insideWithout = 0;
+      let hiddenWithout = 0;
+      for (const spot of eastRow) {
+        for (const pitch of grid.pitches) {
+          for (const distance of grid.distances) {
+            const before = viewAt(spot, Math.PI / 2, pitch, distance, []);
+            if (bodyAt(before.position)) insideWithout += 1;
+            if (!anchorShows(before, spot)) hiddenWithout += 1;
+            const after = viewAt(spot, Math.PI / 2, pitch, distance);
+            const { x, y, z } = after.position;
+            expect(bodyAt({ x, y, z }), `${spot.id}, pitch ${pitch}, distance ${distance}: ${x}, ${y}, ${z}`).toBeUndefined();
+            expect(anchorShows(after, spot), `${spot.id}, pitch ${pitch}, distance ${distance}`).toBe(true);
+          }
+        }
+      }
+      expect(insideWithout, "without the boxes the camera ends up in the machines' bodies").toBeGreaterThan(0);
+      expect(hiddenWithout, "and then the hint is off screen").toBeGreaterThan(0);
+    });
+
+    it("pins the failing case: a visitor at the east row's first machine, the camera low and far against the wall", () => {
+      const spot = eastRow.reduce((first, other) => (other.z < first.z ? other : first));
+      const before = viewAt(spot, Math.PI / 2, limits.minPitch, limits.maxDistance, []).position;
+      expect(before.x).toBeCloseTo(bounds.maxX, 6);
+      expect(bodyAt(before)?.id, "it is in a machine's body").toBeDefined();
+      const after = viewAt(spot, Math.PI / 2, limits.minPitch, limits.maxDistance).position;
+      expect(after.y, "now over the row, looking down").toBeGreaterThan(machineHeight("classic") + CAMERA_CLEARANCE - 1e-6);
+      expect(after.x).toBeLessThanOrEqual(bounds.maxX);
+    });
+
+    it("leaves a camera that is clear of every machine where it was", () => {
+      const spot = { ...(MACHINE_SPOTS[0] as MachineSpot), frontX: aisle.x, frontZ: aisle.z };
+      for (const yaw of [0, Math.PI]) {
+        const without = viewAt(spot, yaw, 0.62, 4, []).position;
+        const raised = viewAt(spot, yaw, 0.62, 4).position;
+        expect(bodyAt(without)).toBeUndefined();
+        expect(raised.distanceTo(without)).toBeLessThan(1e-9);
+      }
+    });
   });
 });
