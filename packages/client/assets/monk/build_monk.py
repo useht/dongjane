@@ -1221,7 +1221,7 @@ def world_bvh(obj, matrix):
 BOW_DEPTHS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)  # the bow's way down (and back up), from the first tilt to the deepest
 BOW_CLEARANCE = {  # what each arm part must stay clear of, in metres: a margin of 0 only forbids sinking in
     "head": {"hand": 0.004, "sleeveLower": 0.0, "sleeveUpper": 0.001},
-    "torso": {"hand": 0.0, "sleeveLower": 0.0},
+    "torso": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": -0.03},  # the root of the sleeve sits inside the shoulder: 27 mm deep at the first tilt, and the bow brings it back out to 19 mm
     "pelvis": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # the seat of the trousers
     "trousers": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # both trouser legs
 }
