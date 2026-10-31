@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  AVENUE,
   type Bounds,
   CASINO_AREAS,
   CASINO_DOOR,
@@ -781,6 +782,15 @@ describe("casino.glb", () => {
     const triangles = nodes.reduce((sum, node) => sum + node.triangles * (prototypes.includes(node.name) ? spotsOf(node.name).length : 1), 0);
     expect(triangles).toBeLessThanOrEqual(BUDGET.casino.tris);
     expect(glb.bytes).toBeLessThanOrEqual(BUDGET.casino.bytes);
+  });
+
+  it("keeps everything it builds but the paving south of the avenue, so no wall, post or lamp stands on ground a visitor walks", () => {
+    const prototypes: readonly string[] = CASINO_PROTOTYPES;
+    const paving: readonly string[] = BORROWS_PAVING;
+    for (const node of nodes) {
+      if (prototypes.includes(node.name) || paving.includes(node.name)) continue;
+      expect(node.positions.min[2], node.name).toBeGreaterThanOrEqual(AVENUE.maxZ - 1e-6);
+    }
   });
 
   it("holds the carpet's picture and normal map and no other picture: the yard and the road wear the paving's", () => {

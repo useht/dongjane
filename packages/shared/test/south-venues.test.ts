@@ -220,6 +220,30 @@ describe("the church", () => {
     }
   });
 
+  it("walks a visitor from the bathhouse's gap in the avenue to a tap on the church's apron, and back", () => {
+    const [apron] = venue.areas as readonly [Bounds];
+    const gap = { x: -3, z: AVENUE.maxZ };
+    const tap = { x: -18, z: 21.5 };
+    expect(holds(apron, tap.x, tap.z)).toBe(true);
+    let now = 1_800_000_000_000;
+    const sim = new TempleSim({ clock: () => now, random: () => 0.5 });
+    sim.join("a", 0);
+    const walkTo = (to: { x: number; z: number }): void => {
+      expect(sim.move("a", to.x, to.z)).toBe(true);
+      for (let elapsed = 0; elapsed < 120_000 && sim.state.monks.get("a")?.mode !== "stand"; elapsed += TICK_MS) {
+        now += TICK_MS;
+        sim.tick(TICK_MS);
+      }
+      const monk = sim.state.monks.get("a");
+      expect(monk?.mode).toBe("stand");
+      expect(monk?.x).toBeCloseTo(to.x, 4);
+      expect(monk?.z).toBeCloseTo(to.z, 4);
+    };
+    walkTo(gap);
+    walkTo(tap);
+    walkTo(gap);
+  });
+
   it("fills its slot of 14 by 14 and is entered from the avenue by a door in the wall facing it", () => {
     expect(venue.footprint.maxX - venue.footprint.minX).toBeCloseTo(14, 9);
     expect(venue.footprint.maxZ - venue.footprint.minZ).toBeCloseTo(14, 9);
