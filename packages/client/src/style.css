@@ -590,11 +590,6 @@ button:disabled {
   align-items: center;
   gap: var(--hud-main-gap);
   width: var(--hud-main-size);
-}
-
-/* Seated, the column keeps its full height so the stand-up button neither drops nor shifts while the main button hides. */
-.bow-actions.seated {
-  justify-content: flex-start;
   min-height: calc(var(--hud-main-size) + 44px + var(--hud-main-gap));
 }
 

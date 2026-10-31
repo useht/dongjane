@@ -132,8 +132,8 @@ export class Hud {
       else if (this.selfAction === "cast") handlers.onCast();
       else if (this.selfAction === "reel") handlers.onReel();
     });
-    this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "bow-button jump-button");
-    this.bowActions.append(this.standButton, this.bowButton, this.actionButton, this.jumpButton);
+    this.jumpButton = iconButton("jump", "점프하기", () => handlers.onJump(), "icon-button jump-button");
+    this.bowActions.append(this.standButton, this.jumpButton, this.bowButton, this.actionButton);
     this.emotePicker = new EmotePicker(host, (emote) => handlers.onEmote(emote));
     const emoteButton = iconButton("emote", "이모티콘 고르기", () => this.emotePicker.sheet.toggle(), "icon-button emote-button");
     emoteButton.setAttribute("aria-haspopup", "dialog");
@@ -234,7 +234,6 @@ export class Hud {
     this.bowButton.classList.toggle("hidden", !seated || bowing || action !== null);
     this.standButton.classList.toggle("hidden", !seated && !fishing);
     this.jumpButton.classList.toggle("hidden", !self || self.seatId >= 0 || fishing);
-    this.bowActions.classList.toggle("seated", seated || fishing);
     this.bowActions.classList.toggle("hidden", !self);
     this.toolButton.classList.toggle("ready", this.selfItem !== ITEM_NONE);
 
