@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type BufferGeometry, Group, type InstancedMesh, Matrix4, type Object3D, Vector3 } from "three";
+import { type BufferGeometry, DoubleSide, Group, type InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, type Object3D, Raycaster, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { ITEM_NONE, ITEM_ROD, SEA_LINE_X, yawFromDirection } from "@dongjane/shared";
@@ -148,6 +148,26 @@ describe("the rod", () => {
     const farthest = vertices.reduce((far, v) => (v.distanceTo(origin) > far.distanceTo(origin) ? v : far));
     expect(farthest.distanceTo(rodTipOf(avatar)), "the longest reach of the model is the tip").toBeLessThan(0.02);
     expect(Math.max(...vertices.map((v) => v.y)), "the tip stands high above the ground").toBeGreaterThan(1.4);
+  });
+
+  it("stays outside the jacket, steady and through every jerk and sway of a bite", async () => {
+    const jacket = new Mesh((await loadAssets()).parts.torso, new MeshBasicMaterial({ side: DoubleSide }));
+    const geometry = buildItemGeometries().rod;
+    const aim = new Vector3(0.31, 0.93, 0.19).normalize();
+    const raycaster = new Raycaster();
+    const avatar = newAngler({ ...AT_ORIGIN, bite: true });
+    for (let step = 0; step < 220; step += 1) {
+      avatar.animate(0.016, 5000 + step * 16, 0, false);
+      const toJacket = nodeOf(avatar, "torso").matrixWorld.clone().invert();
+      // A point is inside the closed, convex jacket when a ray from it crosses the surface an odd number of times.
+      const inside = worldVertices(nodeOf(avatar, "rod"), geometry)
+        .map((v) => v.applyMatrix4(toJacket))
+        .filter((v) => {
+          raycaster.set(v, aim);
+          return raycaster.intersectObject(jacket).length % 2 === 1;
+        });
+      expect(inside.length, `the rod sinks into the jacket at step ${step}`).toBe(0);
+    }
   });
 
   it("is carried leaning forward and up when the monk walks or stands with it, not hanging behind", () => {

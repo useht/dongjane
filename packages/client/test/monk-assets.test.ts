@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { type BufferGeometry, Box3, Color, DoubleSide, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BOW_MS } from "@dongjane/shared";
+import { BOW_MS, ITEM_ROD } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
 import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 
@@ -28,6 +28,7 @@ const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 // monk-poses.json, written by build_monk.py: world bounds [min x, y, z, max x, y, z] of one copy of each part, per probed pose.
 type BowProbe = { bows: number[] } & Record<"head" | "pelvis" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
 type WalkProbe = { phases: number[] } & Record<"head" | "torso" | "sleeveUpper" | "sleeveLower" | "hand" | "foot" | "trousers", number[][]>;
+type FishProbe = Record<"head" | "torso" | "sleeveUpper" | "sleeveLower" | "hand", number[][]>;
 // animate() advances the walk phase by dt * min(speed, 3.5) * 4.4 radians, so dt = phase / this puts a fresh walker at that phase.
 const FASTEST_PHASE_RATE = 3.5 * 4.4;
 
@@ -500,6 +501,24 @@ describe("monk assets", () => {
         const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
         for (const [axis, value] of got.entries()) {
           expect(Math.abs(value - (want[axis] as number)), `${part} bounds[${axis}] at walk phase ${phase}`).toBeLessThan(0.002);
+        }
+      }
+    }
+  });
+
+  it("holds the rod exactly as build_monk.py checked it: the lead arm up on the rod, the rear arm out to steady it, both clear of the jacket", async () => {
+    const parts = await loadParts();
+    const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { fish: FishProbe };
+    const avatar = new MonkAvatar("angler", 0, false);
+    avatar.item = ITEM_ROD;
+    avatar.setMode("fish", 0);
+    avatar.animate(0.016, 5000, 0, true);
+    for (const part of ["head", "torso", "sleeveUpper", "sleeveLower", "hand"] as const) {
+      for (const [copy, want] of (probe.fish[part] as number[][]).entries()) {
+        const box = new Box3().setFromPoints(worldVertices(nodeOf(avatar, part, copy), parts[part]));
+        const got = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+        for (const [axis, value] of got.entries()) {
+          expect(Math.abs(value - (want[axis] as number)), `${part} ${copy} bounds[${axis}] holding the rod`).toBeLessThan(0.002);
         }
       }
     }

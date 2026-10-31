@@ -145,10 +145,13 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "walk_head_roll": 0.035,  # the head rolls this far with each step
     "fish_lean": 0.06,  # holding a rod (a copy of ROD_POSE in monk-items.ts): the monk leans back against the pull ...
     "fish_roll": 0.3,  # ... both arms roll in toward the middle of the chest ...
-    "fish_lead_x": 0.9,  # ... the lead hand, which grips the rod ...
-    "fish_lead_elbow": 0.9,
-    "fish_rear_x": 0.42,  # ... and the rear hand, which steadies the butt
-    "fish_rear_elbow": 1.05,
+    "fish_lead_x": 1.1,  # ... the lead hand, which grips the rod (high enough that a downward tug does not sink the elbow into the jacket) ...
+    "fish_lead_elbow": 0.7,
+    "fish_rear_x": 0.96,  # ... and the rear hand, which steadies the butt (a straight arm held out in front of the belly, clear of the jacket and the lead arm)
+    "fish_rear_elbow": 0.0,
+    "fish_tug": 0.07,  # a fish on the line jerks the lead shoulder this far (and the torso by fish_tug_lean of it) ...
+    "fish_tug_lean": 0.4,
+    "fish_sway": 0.02,  # ... on top of the slow sway of the rod
     "pray_x": 0.924,
     "pray_y": 0.315,
     "pray_z": 0.185,
@@ -1322,6 +1325,63 @@ def check_walk(parts):
     assert ground >= -0.0005, "walking, a foot sinks %.4f into the ground" % -ground
 
 
+FISH_JERKS = (-1.0, 0.0, 1.0)  # the rod held steady, and pulled hardest down and up (a fish on the line plus the sway of the rod)
+FISH_CLEARANCE = {  # what each arm part must stay clear of holding the rod, in metres (negative: it may sink that deep; about half of what the pose leaves today)
+    "head": {"hand": 0.05, "sleeveLower": 0.025, "sleeveUpper": 0.001},
+    "torso": {"hand": 0.04, "sleeveLower": 0.002, "sleeveUpper": -0.03},  # the root of the sleeve sits inside the shoulder, and turning the arm up and forward sinks it a little deeper than standing does
+    "pelvis": {"hand": 0.05, "sleeveLower": 0.015, "sleeveUpper": 0.015},  # the seat of the trousers
+    "trousers": {"hand": 0.08, "sleeveLower": 0.06, "sleeveUpper": 0.07},  # both trouser legs
+}
+FISH_ARM_PARTS = ("sleeveUpper", "sleeveLower", "hand")
+FISH_ARMS_GAP = 0.003  # what the two arms (the lead one and the rear one) must keep between them
+
+
+def separation(mesh, tree, obj, matrix):
+    """Signed gap between a posed part (its BVH `mesh`) and the surface in `tree`: how near any vertex of the part comes to it while
+    their triangles do not cross, or minus the deepest a vertex lies below it when they do (a crossing with no vertex below counts as 0.1 mm)."""
+    near, sunk = 1.0, 0.0
+    for v in obj.data.vertices:
+        p = matrix @ v.co
+        hit, normal, _, dist = tree.find_nearest(p)
+        near = min(near, dist)
+        if (p - hit).dot(normal) < 0:
+            sunk = max(sunk, dist)
+    return -max(sunk, 0.0001) if mesh.overlap(tree) else near
+
+
+def fish_clearances(parts, jerks=FISH_JERKS):
+    """The least separation of each arm part from each target and from the other arm, over the jerks, holding the rod."""
+    worst = {}
+
+    def note(key, value):
+        worst[key] = min(worst.get(key, 1.0), value)
+
+    for jerk in jerks:
+        mats = pose_matrices(0.0, 0.0, fish=1.0, jerk=jerk)
+        for target, margins in FISH_CLEARANCE.items():
+            trees = [world_bvh(parts[target], m) for m in mats[target]]
+            for part in margins:
+                for m in mats[part]:
+                    mesh = world_bvh(parts[part], m)
+                    note((target, part), min(separation(mesh, tree, parts[part], m) for tree in trees))
+        for part_a in FISH_ARM_PARTS:
+            lead = world_bvh(parts[part_a], mats[part_a][0])
+            for part_b in FISH_ARM_PARTS:
+                rear = world_bvh(parts[part_b], mats[part_b][1])
+                note(("arms", part_a + "/" + part_b), separation(lead, rear, parts[part_a], mats[part_a][0]))
+    return worst
+
+
+def check_fish(parts):
+    """Holding the rod, steady and at the hardest pull of a fish, up and down: the arms and hands stay clear of the head, the jacket,
+    the seat and both trouser legs, and the lead arm (which grips the rod) stays clear of the rear arm (which steadies the butt)."""
+    worst = fish_clearances(parts)
+    for (target, part), near in sorted(worst.items()):
+        print("FISH %-24s clearance from the %s %.4f" % (part, target, near))
+        margin = FISH_ARMS_GAP if target == "arms" else FISH_CLEARANCE[target][part]
+        assert near >= margin, "holding the rod, the %s comes within %.4f of the %s (it needs %.4f)" % (part, near, target, margin)
+
+
 def check_sleeves_clear_head(parts):
     """The whole sleeves and the hands stay out of the head standing and kneeling in prayer (walking is in check_walk, the bow in
     check_bow). The shoulder is right under the jaw in this chibi, so this holds the root of the sleeve to it too."""
@@ -1390,6 +1450,7 @@ PROBE_PARTS = ("head", "pelvis", "sleeveUpper", "sleeveLower", "hand")
 PROBE_BOWS = (0.0, 0.25, 0.5, 0.75, 1.0)
 PROBE_WALK_PARTS = ("head", "torso", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
 PROBE_PHASES = tuple(k * pi / 4 for k in range(8))  # a copy walks the other half of the cycle half a turn on, so these cover both
+PROBE_FISH_PARTS = ("head", "torso", "sleeveUpper", "sleeveLower", "hand")
 
 
 def probe_bounds(parts, part, matrix):
@@ -1401,7 +1462,8 @@ def probe_bounds(parts, part, matrix):
 
 
 def pose_probe(parts):
-    """The world bounds of the first copy of a few parts, kneeling at each bow depth and walking at each probed phase.
+    """The world bounds of the first copy of a few parts, kneeling at each bow depth and walking at each probed phase, and of every copy
+    of the arm parts holding the rod, steady.
     The checks above run on pose_matrices, a copy of animate() in monk-model.ts; a test replays both there and holds it to these."""
     bow = {"bows": list(PROBE_BOWS)}
     for part in PROBE_PARTS:
@@ -1409,7 +1471,8 @@ def pose_probe(parts):
     walk = {"phases": [round(p, 5) for p in PROBE_PHASES]}
     for part in PROBE_WALK_PARTS:
         walk[part] = [probe_bounds(parts, part, pose_matrices(0.0, 0.0, p)[part][0]) for p in PROBE_PHASES]
-    return {"bow": bow, "walk": walk}
+    fish = {part: [probe_bounds(parts, part, m) for m in pose_matrices(0.0, 0.0, fish=1.0)[part]] for part in PROBE_FISH_PARTS}
+    return {"bow": bow, "walk": walk, "fish": fish}
 
 
 def export_glb(parts_coll, path):
@@ -1442,18 +1505,20 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.Translation(Vector(pos)) @ three_euler @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
-def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0):
+def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
     phase (radians, standing only) puts the monk at that point of the walk cycle: the swings, the foot lifts, the bob and the lean
     of animate() at sin(phase); bow (0 .. 1, kneeling only) tips the torso and head forward with the arms reaching out, like the bow
-    animation, and slides the hips forward while the seat stays on the heels; fish (0 .. 1, standing) holds the rod."""
+    animation, and slides the hips forward while the seat stays on the heels; fish (0 .. 1, standing) holds the rod, and jerk
+    (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-)."""
     lift = cushion * kneel
     walking = phase is not None
     swing = sin(phase) if walking else 0.0
     hips = tmat((0, lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel) + abs(swing) * POSE["walk_bob"], -RIG["bowHipForward"] * bow))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
     pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, RIG["bowSeatBack"] * bow), scale=(grow, lerp(1, RIG["kneelPelvisScaleY"], kneel), grow))
-    torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow - POSE["walk_lean"] * walking + POSE["fish_lean"] * fish, 0, 0))
+    fish_lean = POSE["fish_lean"] + jerk * POSE["fish_tug"] * POSE["fish_tug_lean"]
+    torso = hips @ tmat((0, 0, 0), (-POSE["bow_lean"] * bow - POSE["walk_lean"] * walking + fish_lean * fish, 0, 0))
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "trim": [torso]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
@@ -1468,7 +1533,8 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0):
         arm_y = sign * POSE["pray_y"] * pray
         arm_z = -sign * (POSE["idle_z"] + (POSE["pray_z"] - POSE["idle_z"]) * pray + (POSE["bow_z"] - POSE["idle_z"]) * bow * kneel)
         hold = "fish_lead" if side == 0 else "fish_rear"  # the lead hand grips the rod, the rear hand steadies the butt
-        arm_x += (POSE[hold + "_x"] - arm_x) * fish
+        lead_jerk = jerk * (POSE["fish_tug"] + POSE["fish_sway"]) if side == 0 else 0.0
+        arm_x += (POSE[hold + "_x"] + lead_jerk - arm_x) * fish
         arm_z += (-sign * POSE["fish_roll"] - arm_z) * fish
         shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
         elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
@@ -1504,9 +1570,9 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
-def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], phase=None, bow=0.0):
+def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], phase=None, bow=0.0, fish=0.0):
     coll = new_collection(name)
-    mats = pose_matrices(kneel, cushion, phase, bow)
+    mats = pose_matrices(kneel, cushion, phase, bow, fish)
     robe = {"torso", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
@@ -1624,6 +1690,7 @@ def main():
     check_kneel_hands(parts)
     check_bow(parts)
     check_walk(parts)
+    check_fish(parts)
     check_sleeves_clear_head(parts)
     check_standing_hands(parts)
 
