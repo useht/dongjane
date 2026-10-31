@@ -72,12 +72,12 @@ import {
 } from "./storage.ts";
 import { BackGuard } from "./ui/back-guard.ts";
 import { CasinoPanel } from "./ui/casino-panel.ts";
+import { Hint, hintLayer } from "./ui/hint.ts";
 import { Hud, type VisitorRow } from "./ui/hud.ts";
 import { HudFrame } from "./ui/hud-frame.ts";
 import { catchMessage, describeChant, seatName } from "./ui/format.ts";
 import { InstallBanner } from "./ui/install-banner.ts";
 import { Joystick } from "./ui/joystick.ts";
-import { MachineHint } from "./ui/machine-hint.ts";
 import { EmoteBubbles } from "./ui/emote-bubbles.ts";
 import { Overlay } from "./ui/overlay.ts";
 import { SeatHints } from "./ui/seat-hints.ts";
@@ -135,7 +135,7 @@ export class App {
   private readonly keyboard: KeyboardInput;
   private readonly joystick: Joystick;
   private readonly seatHints: SeatHints;
-  private readonly machineHint: MachineHint;
+  private readonly machineHint: Hint;
   private readonly casinoBank: CasinoBank;
   private readonly casino: CasinoPanel;
   private readonly backGuard: BackGuard;
@@ -283,8 +283,9 @@ export class App {
       this.sutra.prime();
       this.stage.openTapWindow();
     });
-    this.seatHints = new SeatHints(this.ui, (id) => this.sitAt(id));
-    this.machineHint = new MachineHint(this.ui, () => {
+    const hints = hintLayer(this.ui);
+    this.seatHints = new SeatHints(hints, (id) => this.sitAt(id));
+    this.machineHint = new Hint(hints, { icon: "play", label: "플레이" }, () => {
       if (this.nearMachine) this.openMachine(this.nearMachine);
     });
     this.casinoBank = new CasinoBank({ load: loadWallet, save: saveWallet }, () => Date.now());
@@ -297,7 +298,7 @@ export class App {
     });
     this.casino.setReduceMotion(this.settings.reduceMotion);
     this.backGuard = new BackGuard(window, window.history, () => this.casino.close());
-    this.stageHint = new StageHint(this.ui, { play: () => this.stage.play(), stop: () => this.stage.stop() });
+    this.stageHint = new StageHint(hints, { play: () => this.stage.play(), stop: () => this.stage.stop() });
     this.visitorTitles = new VisitorTitles(this.ui);
     this.hudFrame = new HudFrame(this.ui);
     new InstallBanner(this.ui, () => this.fitCameraToHud());
@@ -595,7 +596,6 @@ export class App {
     this.syncWorldCount(rows.length, counts);
 
     const report = this.bowWatch.update(watched, selfId, now);
-    if (report.selfStarted) this.audio.knock();
     for (const slot of report.greeters) this.hud.toast(`${seatLabel(slot)}님이 인사했어요`);
   }
 

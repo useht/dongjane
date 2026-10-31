@@ -1,65 +1,30 @@
 import { SEAT_COUNT } from "@dongjane/shared";
-import { h } from "./dom.ts";
-import { icon } from "./icons.ts";
+import { Hint } from "./hint.ts";
 
-interface Hint {
-  node: HTMLButtonElement;
-  x: number;
-  y: number;
-  shown: boolean;
-}
+const LOOK = { icon: "sit", label: "여기 앉기" } as const;
 
-// One sit button per seat, floated above it; the DOM is only touched when a hint appears, vanishes or moves a pixel.
+// One sit button per seat, floated above it.
 export class SeatHints {
-  private readonly root = h("div", "seat-hints");
   private readonly hints: Hint[];
 
-  constructor(host: HTMLElement, onSit: (seatId: number) => void) {
-    this.hints = Array.from({ length: SEAT_COUNT }, (_, id) => {
-      const node = h("button", "seat-hint hidden", icon("sit"));
-      node.type = "button";
-      node.setAttribute("aria-label", "여기 앉기");
-      node.title = "여기 앉기";
-      node.addEventListener("click", () => onSit(id));
-      this.root.append(node);
-      return { node, x: Number.NaN, y: Number.NaN, shown: false };
-    });
-    host.append(this.root);
+  constructor(layer: HTMLElement, onSit: (seatId: number) => void) {
+    this.hints = Array.from({ length: SEAT_COUNT }, (_, id) => new Hint(layer, LOOK, () => onSit(id)));
   }
 
   place(id: number, x: number, y: number): void {
-    const hint = this.hints[id];
-    if (!hint) return;
-    const px = Math.round(x);
-    const py = Math.round(y);
-    if (!hint.shown) {
-      hint.shown = true;
-      hint.node.classList.remove("hidden");
-    }
-    if (px === hint.x && py === hint.y) return;
-    hint.x = px;
-    hint.y = py;
-    hint.node.style.transform = `translate3d(${px}px, ${py}px, 0) translate(-50%, -100%)`;
+    this.hints[id]?.place(x, y);
   }
 
   seatAt(clientX: number, clientY: number): number | null {
-    for (let id = 0; id < this.hints.length; id += 1) {
-      const hint = this.hints[id];
-      if (!hint?.shown) continue;
-      const rect = hint.node.getBoundingClientRect();
-      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) return id;
-    }
-    return null;
+    const id = this.hints.findIndex((hint) => hint.contains(clientX, clientY));
+    return id < 0 ? null : id;
   }
 
   hide(id: number): void {
-    const hint = this.hints[id];
-    if (!hint?.shown) return;
-    hint.shown = false;
-    hint.node.classList.add("hidden");
+    this.hints[id]?.hide();
   }
 
   hideAll(): void {
-    for (let id = 0; id < this.hints.length; id += 1) this.hide(id);
+    for (const hint of this.hints) hint.hide();
   }
 }

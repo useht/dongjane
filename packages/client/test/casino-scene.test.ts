@@ -104,15 +104,15 @@ describe("CasinoScene", () => {
     expect(seen(false).size).toBeGreaterThan(1);
   });
 
-  it("hides the roof, the front wall and the sign for a visitor inside, and the ceiling too once the camera is up among its beams", () => {
+  it("hides the roof and the sign for a visitor inside but keeps the front wall, and hides the ceiling too once the camera is up among its beams", () => {
     const scene = build();
     const visible = (): Record<string, boolean> => Object.fromEntries(["casinoFront", "casinoRoof", "casinoSign", "casinoCeiling", "casinoWalls", "casinoFloor"].map((name) => [name, meshNamed(scene, name).visible]));
     const all = { casinoFront: true, casinoRoof: true, casinoSign: true, casinoCeiling: true, casinoWalls: true, casinoFloor: true };
     expect(visible()).toEqual(all);
     scene.setCutaway(true, 1.6);
-    expect(visible(), "a low camera in the room still sees its ceiling").toEqual({ ...all, casinoFront: false, casinoRoof: false, casinoSign: false });
+    expect(visible(), "a low camera in the room still sees its ceiling, and the wall around the door").toEqual({ ...all, casinoRoof: false, casinoSign: false });
     scene.setCutaway(true, CASINO_SHELL.ceilingY + 2);
-    expect(visible(), "a high camera looks down through the roof and the ceiling").toEqual({ ...all, casinoFront: false, casinoRoof: false, casinoSign: false, casinoCeiling: false });
+    expect(visible(), "a high camera looks down through the roof and the ceiling, and still sees the wall around the door").toEqual({ ...all, casinoRoof: false, casinoSign: false, casinoCeiling: false });
     scene.setCutaway(false, CASINO_SHELL.ceilingY + 2);
     expect(visible(), "from outside the building is whole whatever the height").toEqual(all);
   });

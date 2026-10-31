@@ -7,7 +7,6 @@ export interface WatchedMonk {
 }
 
 export interface BowReport {
-  selfStarted: boolean;
   greeters: number[];
 }
 
@@ -28,7 +27,7 @@ export class BowWatcher {
   }
 
   update(monks: readonly WatchedMonk[], selfId: string | null, now: number): BowReport {
-    const report: BowReport = { selfStarted: false, greeters: [] };
+    const report: BowReport = { greeters: [] };
     const self = selfId ? monks.find((monk) => monk.id === selfId) : undefined;
     const seen = new Set<string>();
 
@@ -38,10 +37,7 @@ export class BowWatcher {
       this.modes.set(monk.id, monk.mode);
       if (before === undefined || before === "bow" || monk.mode !== "bow") continue;
 
-      if (monk.id === selfId) {
-        report.selfStarted = true;
-        continue;
-      }
+      if (monk.id === selfId) continue;
       if (!self || Math.hypot(monk.x - self.x, monk.z - self.z) > NEARBY_METERS) continue;
       if (now - (this.spoke.get(monk.id) ?? Number.NEGATIVE_INFINITY) < PER_MONK_QUIET_MS) continue;
       if (now - this.lastReport < GLOBAL_QUIET_MS) continue;

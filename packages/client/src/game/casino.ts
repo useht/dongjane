@@ -61,8 +61,8 @@ interface Lamp {
 
 // The casino at the end of the coast road: the building, its yard and road, the machines inside. Like the 법당 it owns its lights
 // and keeps them in the scene all the time (adding or removing one would recompile every material); `setPresence` turns them up
-// as a visitor comes near and as the camera comes in. While a visitor is inside, the roof, the front wall and the sign are
-// hidden (`setCutaway`), so the camera, which then moves over the whole room, looks down into it.
+// as a visitor comes near and as the camera comes in. While a visitor is inside, the roof and the sign are hidden (`setCutaway`),
+// so the camera, which then moves over the whole room, looks down into it. The front wall stays: its inside face is the wall around the door.
 export class CasinoScene {
   readonly group = new Group();
   // The carpet, the yard and the road a tap can walk to, and the walls and machines that stand on them.
@@ -117,7 +117,7 @@ export class CasinoScene {
 
     this.machines.push(...this.buildMachines(meshes));
     this.surfaces = { floors: [carpet, yard, road], blockers: [walls, front, roof, columns, board, ...this.machines] };
-    this.cutaway = [front, roof, board];
+    this.cutaway = [roof, board];
     this.ceiling = ceiling;
     this.update(0, true);
   }
@@ -187,8 +187,8 @@ export class CasinoScene {
     return this.spotsOf.get(hit.object)?.[hit.instanceId] ?? null;
   }
 
-  // The roof, the front wall and the sign are in the way of a camera over the room; they are hidden while a visitor is inside. The
-  // coffered ceiling goes with them once the camera is up among its beams, and comes back for a camera low in the room.
+  // The roof and the sign are in the way of a camera over the room; they are hidden while a visitor is inside. The coffered
+  // ceiling goes with them once the camera is up among its beams, and comes back for a camera low in the room.
   setCutaway(cut: boolean, cameraY: number): void {
     for (const mesh of this.cutaway) mesh.visible = !cut;
     this.ceiling.visible = !(cut && cameraY > CEILING_CUT_Y);
