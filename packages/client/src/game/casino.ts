@@ -27,8 +27,8 @@ export interface CasinoQuality {
   anisotropy: number;
 }
 
-// The air of the casino's room: the world beyond its open roof falls away into the dark behind it.
-export const CASINO_FOG = { near: 18, far: 48 } as const;
+// The air of the casino's room: the world beyond its open roof falls away into the dark behind it. The room is 29 m deep, so the fog starts past a camera's view of its far wall.
+export const CASINO_FOG = { near: 24, far: 62 } as const;
 
 // The inside is lit by its own lamps and a warm hemisphere that comes up as the camera comes in, as the 법당's does.
 const HEMISPHERE_LIGHT = 1.25;

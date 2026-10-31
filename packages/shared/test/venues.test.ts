@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CASINO_DOOR, CASINO_FLOOR, CASINO_YARD, COAST_ROAD } from "../src/casino-layout.ts";
+import { CASINO_AREAS, CASINO_DOOR, CASINO_YARD, COAST_ROAD } from "../src/casino-layout.ts";
 import { ZONE_CAPACITY } from "../src/constants.ts";
 import { ARRIVAL, SHORE } from "../src/layout.ts";
 import { weightedOrder } from "../src/npc.ts";
@@ -9,6 +9,10 @@ import {
   SEAT_NAMES,
   SEAT_TOPS,
   SEAT_YAWS,
+  CASINO_VENUE,
+  DHARMA_VENUE,
+  GATBAWI_VENUE,
+  SHORE_VENUE,
   type VenueDef,
   VENUES,
   ZONES,
@@ -20,11 +24,13 @@ import {
   seatSpot,
   venueById,
 } from "../src/venues/index.ts";
-import { buildWalkGraph, routeBetween, touches } from "../src/walk-graph.ts";
+import { buildWalkGraph, routesBetween, touches } from "../src/walk-graph.ts";
 import { COURT_AREA, DOORWAY_AREA, INTERIOR_AREA, PLAZA_AREA, venueAt } from "../src/walk.ts";
 
-// The walkable world before the graph: one chain of areas, from the room outward, each touching the next.
-const OLD_CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR, CASINO_FLOOR];
+// The first four venues, the world as it was before the others: a chain of eight areas from the room outward, each touching the
+// next, then the casino floor's ring of aisles.
+const FIRST_VENUES = [GATBAWI_VENUE, DHARMA_VENUE, SHORE_VENUE, CASINO_VENUE];
+const CHAIN = [INTERIOR_AREA, DOORWAY_AREA, COURT_AREA, PLAZA_AREA, SHORE, COAST_ROAD, CASINO_YARD, CASINO_DOOR];
 
 describe("the venue registry", () => {
   it("lists each venue once, under an id of its own", () => {
@@ -111,17 +117,26 @@ describe("the venue registry", () => {
 
 describe("the walk graph", () => {
   const graph = buildWalkGraph(VENUES, ARRIVAL);
+  const first = buildWalkGraph(FIRST_VENUES, ARRIVAL);
 
   it("numbers the areas outward from the room, as the chain did", () => {
-    expect(graph.map((node) => node.area)).toEqual(OLD_CHAIN);
+    expect(first.slice(0, CHAIN.length).map((node) => node.area)).toEqual(CHAIN);
+    expect(first.slice(CHAIN.length).map((node) => node.area)).toEqual(expect.arrayContaining([...CASINO_AREAS]));
+    expect(first).toHaveLength(CHAIN.length + CASINO_AREAS.length);
+    expect(first[0]?.venue).toBe("dharma");
     expect(graph[0]?.venue).toBe("dharma");
   });
 
-  it("joins exactly the neighbours of the chain", () => {
-    graph.forEach((node, index) => {
-      const expected = [index - 1, index + 1].filter((next) => next >= 0 && next < OLD_CHAIN.length);
-      expect(node.neighbours, `area ${index}`).toEqual(expected);
+  it("joins the chain neighbour to neighbour, and rings the casino floor", () => {
+    first.slice(0, CHAIN.length - 1).forEach((node, index) => {
+      expect(node.neighbours, `area ${index}`).toContain(index + 1);
+      if (index > 0) expect(node.neighbours, `area ${index}`).toContain(index - 1);
     });
+    const lobby = first[CHAIN.length] as (typeof first)[number];
+    expect(lobby.area).toBe(CASINO_AREAS[0]);
+    expect(lobby.neighbours).toHaveLength(3);
+    const cross = first.find((node) => node.area === CASINO_AREAS[2]) as (typeof first)[number];
+    expect(cross.neighbours).toHaveLength(2);
   });
 
   it("joins areas only along an edge of positive length", () => {
@@ -131,9 +146,9 @@ describe("the walk graph", () => {
     expect(touches(COAST_ROAD, COAST_ROAD)).toBe(false);
   });
 
-  it("lets the computer-driven monks stroll the same five areas, and no others", () => {
-    expect(graph.filter((node) => node.stroll).map((node) => node.area)).toEqual(OLD_CHAIN.slice(0, 5));
-    expect(graph.map((node) => node.stroll)).toEqual([true, true, true, true, true, false, false, false, false]);
+  it("lets the computer-driven monks stroll the first five areas, and no others", () => {
+    expect(first.filter((node) => node.stroll).map((node) => node.area)).toEqual(CHAIN.slice(0, 5));
+    expect(first.map((node) => node.stroll)).toEqual([true, true, true, true, true, ...Array(first.length - 5).fill(false)]);
   });
 
   it("has no two areas that overlap", () => {
@@ -150,14 +165,26 @@ describe("the walk graph", () => {
   });
 
   it("routes through every area between two ends of a line", () => {
-    expect(routeBetween(graph, [0], [8])).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(routeBetween(graph, [8], [0])).toEqual([8, 7, 6, 5, 4, 3, 2, 1, 0]);
-    expect(routeBetween(graph, [3], [3])).toEqual([3]);
+    expect(routesBetween(first, 0, [7])).toEqual([[0, 1, 2, 3, 4, 5, 6, 7]]);
+    expect(routesBetween(first, 7, [0])).toEqual([[7, 6, 5, 4, 3, 2, 1, 0]]);
+    expect(routesBetween(first, 3, [3])).toEqual([[3]]);
   });
 
-  it("starts from whichever end of a doorstep is closer to the goal", () => {
-    expect(routeBetween(graph, [2, 3], [5])).toEqual([3, 4, 5]);
-    expect(routeBetween(graph, [2, 3], [0])).toEqual([2, 1, 0]);
+  it("offers each way round the casino's ring", () => {
+    const lobby = CHAIN.length;
+    const far = first.length - 1;
+    const routes = routesBetween(first, lobby, [far]);
+    expect(routes.length).toBe(2);
+    for (const route of routes) {
+      expect(route[0]).toBe(lobby);
+      expect(route[route.length - 1]).toBe(far);
+      expect(route).toHaveLength(3);
+    }
+  });
+
+  it("offers a route to each goal it is given", () => {
+    expect(routesBetween(first, 3, [5])).toEqual([[3, 4, 5]]);
+    expect(routesBetween(first, 2, [0, 5])).toEqual([[2, 1, 0], [2, 3, 4, 5]]);
   });
 
   it("refuses a world with ground the visitors cannot reach", () => {

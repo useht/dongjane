@@ -689,7 +689,7 @@ describe("hardening", () => {
     expect(monk.z).toBe(z);
     expect(Number.isFinite(monk.x) && Number.isFinite(monk.z)).toBe(true);
 
-    // The far corner is the casino floor's: from the arrival spot the route is about 71 m, some 30 s at the walking pace.
+    // The far corner is the casino floor's, in the cross room behind the aisles: from the arrival spot the route is about 84 m, some 35 s at the walking pace.
     a.send("move", { x: 1e9, z: 1e9 });
     await waitFor(() => monk.mode === "walk", "valid move accepted");
     await waitFor(

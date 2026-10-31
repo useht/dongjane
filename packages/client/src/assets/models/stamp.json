@@ -1,12 +1,12 @@
 {
   "blender": "Blender 5.2.3 LTS",
-  "inputsHash": "7423ec8a15358801782aad531cf45aa957e0e1d603941043057830dea41bdb0b",
+  "inputsHash": "a731f98287a195bf32c545793c1737ef6ca13ee139ebc7ba073ba67cda6a5ff9",
   "outputs": {
     "buddha.glb": "14075527b22c802761bf7298ee6cd41bb1c6a55e04001ab07a322faa07687998",
-    "casino.glb": "2718537a287c7ceb1101934c558a8c5864b2c148e0cf9801ac27270ad2d6960c",
+    "casino.glb": "e11350e99a9cc7762c03b30e58deb373379bd62ad82aa0432a1ace6af0e06621",
     "dharma.glb": "7f14814666f6b9fd76c234dcabd242f046dd279836d27ef05649ee932516fd5f",
     "gatbawi.glb": "426a7fe415c53a9de2cb2a6333d9739a166ac47155687476f83fa771e93ede69",
     "venue.glb": "f4854711e322b6aeeedac7540c63484b81cf2ce89b2e565b331cc0cbaf6318a6",
-    "world.glb": "1cde9350da09fc6985108a3d3161edda172a7ae5a6c816c3aa8ec0eddd220256"
+    "world.glb": "8ca3b4fc8d236c025b941fb3f53e7140ae446ee6e97432397c48df68da36342a"
   }
 }

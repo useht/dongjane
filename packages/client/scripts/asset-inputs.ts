@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
 import {
+  CASINO_AISLE_EAST,
+  CASINO_AISLE_WEST,
+  CASINO_AREAS,
   CASINO_DOOR,
   CASINO_FLOOR,
   CASINO_YARD,
@@ -34,7 +37,7 @@ import {
   WORLD_MESHES,
   WORLD_PROTOTYPES,
 } from "../src/assets/contract.ts";
-import { CASINO_COLUMNS, CASINO_PAD, CASINO_PAVING, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, FLOOR_Y, MACHINE_HEIGHT, PAVING_Y } from "../src/game/casino-layout.ts";
+import { CASINO_COLUMNS, CASINO_PAD, CASINO_PAVING, CASINO_POSTS, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, CASINO_WINDOWS, FLOOR_Y, KERB_WIDTH, MACHINE_HEIGHT, PAVING_Y } from "../src/game/casino-layout.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, CANDLE_SPOTS, DHARMA, DHARMA_DOOR, DHARMA_SHELL, FRONT_PILLARS_X, LOTUS_EMBED, SIDE_PILLARS_Z, WALL_OPENINGS, WINDOW_BAND, hangingLanterns } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { CANOPY, PADS, SCREEN, STAGE, STAGE_YAW } from "../src/game/venue-layout.ts";
@@ -99,12 +102,18 @@ export function assetInputs() {
       CASINO_COLUMNS,
       CASINO_DOOR,
       CASINO_FLOOR,
+      CASINO_AREAS,
+      CASINO_AISLE_WEST,
+      CASINO_AISLE_EAST,
+      CASINO_POSTS,
+      CASINO_WINDOWS,
       CASINO_YARD,
       COAST_ROAD,
       MACHINE_SIZE,
       MACHINE_HEIGHT,
       FLOOR_Y,
       PAVING_Y,
+      KERB_WIDTH,
     },
     material: THEME.material,
     names: {

@@ -13,7 +13,7 @@ export const SEA_FLOOR_Y = -2;
 export const COAST_X = SEA_LINE_X - 0.5;
 export const BEACH_SPAN = 9;
 export const SAND_AREA = { minX: PLAZA.maxX, maxX: SEA_LINE_X + 4, minZ: SHORE.minZ - 1.4, maxZ: SHORE.maxZ + 1.4 } as const;
-export const SEA_AREA = { minX: SEA_LINE_X - 1, maxX: 110, minZ: -80, maxZ: 125 } as const;
+export const SEA_AREA = { minX: SEA_LINE_X - 1, maxX: 110, minZ: -80, maxZ: 150 } as const;
 // How far the baked ground lies under the sand, and how steeply it may rise again beside the sand.
 export const GROUND_UNDER = 0.06;
 const SHOULDER_SLOPE = 0.35;

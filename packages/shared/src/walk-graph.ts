@@ -60,40 +60,18 @@ export function buildWalkGraph(venues: readonly VenueDef[], arrival: { readonly 
   });
 }
 
-// The nodes to pass through, in order, on the shortest way from one of `from` to one of `to` (the two ends are the nodes
-// a point stands in; a point on a doorstep stands in two). Length is the distance between the centres of the areas.
-export function routeBetween(graph: readonly WalkNode[], from: readonly number[], to: readonly number[]): number[] {
-  let best: number[] = [from[0] ?? 0];
-  let bestCost = Number.POSITIVE_INFINITY;
-  for (const source of from.length > 0 ? from : [0]) {
-    const cost = graph.map(() => Number.POSITIVE_INFINITY);
-    const previous = graph.map(() => -1);
-    const done = graph.map(() => false);
-    cost[source] = 0;
-    for (;;) {
-      let at = -1;
-      for (let index = 0; index < graph.length; index += 1) {
-        if (!done[index] && (cost[index] as number) < (at < 0 ? Number.POSITIVE_INFINITY : (cost[at] as number))) at = index;
-      }
-      if (at < 0) break;
-      done[at] = true;
-      const here = graph[at] as WalkNode;
-      for (const next of here.neighbours) {
-        const there = graph[next] as WalkNode;
-        const total = (cost[at] as number) + Math.hypot(there.centre.x - here.centre.x, there.centre.z - here.centre.z);
-        if (total < (cost[next] as number)) {
-          cost[next] = total;
-          previous[next] = at;
-        }
-      }
+// Every way from area `from` to one of the areas `goals` that never visits an area twice, as lists of node numbers. Where the
+// graph has a ring (the casino's floor) there is more than one, and the caller picks the shortest by the walk itself.
+export function routesBetween(graph: readonly WalkNode[], from: number, goals: readonly number[]): number[][] {
+  const found: number[][] = [];
+  const walk = (trail: number[]): void => {
+    const at = trail[trail.length - 1] as number;
+    if (goals.includes(at)) {
+      found.push(trail);
+      return;
     }
-    for (const target of to.length > 0 ? to : [0]) {
-      if ((cost[target] as number) >= bestCost) continue;
-      bestCost = cost[target] as number;
-      const route = [target];
-      while (route[0] !== source) route.unshift(previous[route[0] as number] as number);
-      best = route;
-    }
-  }
-  return best;
+    for (const next of graph[at]?.neighbours ?? []) if (!trail.includes(next)) walk([...trail, next]);
+  };
+  walk([from]);
+  return found;
 }

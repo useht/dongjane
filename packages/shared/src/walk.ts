@@ -1,11 +1,11 @@
 import { ARRIVAL, type Bounds } from "./layout.ts";
 import { DEFAULT_ZONE, SEATED_VENUES, VENUES, type Zone } from "./venues/index.ts";
-import { buildWalkGraph, routeBetween } from "./walk-graph.ts";
+import { buildWalkGraph, routesBetween } from "./walk-graph.ts";
 
 // Where feet may go. The world is a graph of rectangles, the areas of its venues (venues/): the room inside the 법당, the
 // doorway through its front wall, the court between the doorway and the plaza (the door faces +x, so the court is the strip
 // along the plaza's west edge), the plaza, the shore, and, far to the south, the coast road, the casino's yard, its doorway
-// and its floor. Two areas that touch along an edge are neighbours (walk-graph.ts). Every rectangle is convex, so a straight
+// and its floor (a lobby, two aisles and a cross room). Two areas that touch along an edge are neighbours (walk-graph.ts). Every rectangle is convex, so a straight
 // line between two points of the same one is always walkable, and a walk across the world is a few such lines joined at the
 // places where two rectangles touch.
 
@@ -163,17 +163,44 @@ function shortestCrossings(steps: readonly { from: Point; to: Point }[], start: 
   return corners;
 }
 
+function lengthVia(start: Point, corners: readonly Point[], end: Point): number {
+  let total = 0;
+  let previous = start;
+  for (const corner of [...corners, end]) {
+    total += Math.hypot(corner.x - previous.x, corner.z - previous.z);
+    previous = corner;
+  }
+  return total;
+}
+
 // The corners to walk through, in order, to get from `from` to the walkable point nearest `to`; the last one is that
-// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way, along the shortest
-// route through the graph of areas.
+// point itself. Inside one area it is just the point; between areas it passes each doorstep on the way, by the shortest
+// route when there is more than one.
 export function planPath(from: Point, to: Point): Point[] {
   const end = resolveWalkable(to.x, to.z, from);
   const start = resolveWalkable(from.x, from.z);
-  const route = routeBetween(GRAPH, indexesAt(start.x, start.z), indexesAt(end.x, end.z));
-  const steps = route.slice(1).map((next, index) => doorstep(AREAS[route[index] as number] as Bounds, AREAS[next] as Bounds));
+  const goals = indexesAt(end.x, end.z);
+  const origins = indexesAt(start.x, start.z);
+  if (origins.some((index) => goals.includes(index))) return [end];
+  let best: Point[] = [];
+  let bestLength = Number.POSITIVE_INFINITY;
+  let bestSteps = Number.POSITIVE_INFINITY;
+  for (const origin of origins) {
+    for (const route of routesBetween(GRAPH, origin, goals)) {
+      const steps = route.slice(1).map((index, i) => doorstep(AREAS[route[i] as number] as Bounds, AREAS[index] as Bounds));
+      const corners = shortestCrossings(steps, start, end);
+      const length = lengthVia(start, corners, end);
+      const shorter = length < bestLength - TIE;
+      if (shorter || (Math.abs(length - bestLength) <= TIE && steps.length < bestSteps)) {
+        best = corners;
+        bestLength = length;
+        bestSteps = steps.length;
+      }
+    }
+  }
   const path: Point[] = [];
   let previous: Point = start;
-  for (const corner of shortestCrossings(steps, start, end)) {
+  for (const corner of best) {
     if (Math.hypot(corner.x - previous.x, corner.z - previous.z) > SAME_POINT) path.push(corner);
     previous = corner;
   }

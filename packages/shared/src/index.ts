@@ -7,6 +7,7 @@ export * from "./venues/index.ts";
 export * from "./walk.ts";
 export * from "./casino-layout.ts";
 export * from "./casino/index.ts";
+export * from "./bow-reward.ts";
 export * from "./schema.ts";
 export * from "./messages.ts";
 export * from "./identity.ts";

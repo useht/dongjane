@@ -3,8 +3,9 @@ import { readdirSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   type Bounds,
+  CASINO_AREAS,
   CASINO_DOOR,
-  CASINO_FLOOR,
+  CASINO_LINE_X,
   CASINO_YARD,
   COAST_ROAD,
   COURT_AREA,
@@ -29,7 +30,7 @@ import {
   worldToDharma,
 } from "@dongjane/shared";
 import { BORROWS_PAVING, BORROWS_STONE, BUDDHA, BUDDHA_EXTRAS, BUDDHA_MESHES, BUDGET, CASINO_MESHES, CASINO_PROTOTYPES, DHARMA_MESHES, DHARMA_PROTOTYPES, GATBAWI_MESHES, TEXTURED, VENUE_MESHES, VENUE_PROTOTYPES, WORLD_MESHES, WORLD_PROTOTYPES } from "../src/assets/contract.ts";
-import { CASINO_COLUMNS, CASINO_KEEP_OUT, CASINO_PAD, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, FLOOR_Y, MACHINE_HEIGHT, PAVING_MARGIN } from "../src/game/casino-layout.ts";
+import { CASINO_COLUMNS, CASINO_KEEP_OUT, CASINO_PAD, CASINO_ROOM, CASINO_SHELL, CASINO_SIGN, CASINO_TOP, CASINO_WINDOWS, FLOOR_Y, MACHINE_HEIGHT, PAVING_MARGIN } from "../src/game/casino-layout.ts";
 import { ALTAR, BUDDHA_AT, BUDDHA_HEIGHT, DHARMA, DHARMA_DOOR, DHARMA_SHELL, WALL_OPENINGS, WINDOW_BAND, type WindowWall } from "../src/game/dharma-layout.ts";
 import { GATBAWI_STATUE } from "../src/game/landscape-layout.ts";
 import { GROUND_UNDER, SAND_Y } from "../src/game/shore.ts";
@@ -797,15 +798,27 @@ describe("casino.glb", () => {
     near(floor.max[2], CASINO_ROOM.maxZ);
     near(floor.min[1], FLOOR_Y);
     near(floor.max[1], FLOOR_Y);
-    for (const corner of [[CASINO_FLOOR.minX, CASINO_FLOOR.minZ], [CASINO_FLOOR.maxX, CASINO_FLOOR.maxZ]] as const) {
-      expect(inside(CASINO_ROOM, corner[0], corner[1]), "the walkable aisle lies on the carpet").toBe(true);
+    for (const area of CASINO_AREAS) {
+      for (const [x, z] of [[area.minX, area.minZ], [area.maxX, area.maxZ]] as const) expect(inside(CASINO_ROOM, x, z), "the walkable floor lies on the carpet").toBe(true);
     }
     near(mesh("casinoCeiling").positions.max[1], CASINO_SHELL.ceilingY);
     near(mesh("casinoWalls").positions.max[1], CASINO_SHELL.topY);
     near(mesh("casinoRoof").positions.min[1], CASINO_SHELL.topY);
     const shell = mesh("casinoFront").positions;
     near(shell.min[0], CASINO_SHELL.minX);
-    near(shell.max[0], CASINO_SHELL.maxX);
+    // The piers, the lintel and the sign's eave end at the shell's east face exactly. Only the gilt finial that caps the eave's ridge
+    // (a 0.05 m tail of the ridge tube and a sphere of 0.12 m radius) stands out past it: by 0.17 m, short of the 0.5 m to the sea.
+    const front = positions(glb, "casinoFront");
+    const ridgeBand = CASINO_TOP - 0.15;
+    let bodyEast = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < front.count; i += 1) {
+      const x = front.values[i * 3] as number;
+      const y = front.values[i * 3 + 1] as number;
+      if (y < ridgeBand) bodyEast = Math.max(bodyEast, x);
+      if (x > CASINO_SHELL.maxX + TOLERANCE) expect(y, `vertex ${i} past the east face stands on the ridge`).toBeGreaterThanOrEqual(ridgeBand);
+    }
+    near(bodyEast, CASINO_SHELL.maxX);
+    near(shell.max[0], CASINO_SHELL.maxX + 0.17, 0.02);
     near(mesh("casinoWalls").positions.min[0], CASINO_SHELL.minX, 0.3);
     near(mesh("casinoWalls").positions.max[2], CASINO_SHELL.maxZ, 0.3);
   });
@@ -815,9 +828,18 @@ describe("casino.glb", () => {
     expect(front.max[1]).toBeGreaterThanOrEqual(CASINO_TOP - TOLERANCE);
     expect(front.max[1]).toBeLessThanOrEqual(CASINO_KEEP_OUT.maxY);
     expect(mesh("casinoRoof").positions.max[1]).toBeLessThanOrEqual(CASINO_KEEP_OUT.maxY);
-    // The sign's marquee bulbs stand a little above the board's frame.
-    near(board.max[1], CASINO_SIGN.bottom + CASINO_SIGN.height, 0.3);
-    near((board.min[0] + board.max[0]) / 2, (CASINO_SHELL.minX + CASINO_SHELL.maxX) / 2, 0.5);
+    // The board's gilt frame is 0.12 m thick (casino.py's sign), so it stands that far above the board and past its ends.
+    near(board.max[1], CASINO_SIGN.bottom + CASINO_SIGN.height + 0.12);
+    // The board hangs on the door's centre line, not on the middle of the shell (the shell is not symmetric about it). casinoSign also
+    // carries the lit glass of the front wall's windows, which stand below the board, so only what is at the board's height is measured.
+    const sign = positions(glb, "casinoSign");
+    const boardX: number[] = [];
+    for (let i = 0; i < sign.count; i += 1) if ((sign.values[i * 3 + 1] as number) >= CASINO_SIGN.bottom - 0.05) boardX.push(sign.values[i * 3] as number);
+    const boardMin = Math.min(...boardX);
+    const boardMax = Math.max(...boardX);
+    near((boardMin + boardMax) / 2, CASINO_LINE_X);
+    near(boardMax, CASINO_LINE_X + CASINO_SIGN.halfWidth + 0.12);
+    expect(Math.min(...Array.from({ length: sign.count }, (_, i) => sign.values[i * 3] as number)), "the windows' glass reaches further west").toBeLessThanOrEqual(CASINO_WINDOWS.xs[0] as number);
     expect(board.max[0] - board.min[0], "the board is at least as wide as its frame").toBeGreaterThanOrEqual(CASINO_SIGN.halfWidth * 2);
   });
 
@@ -863,12 +885,15 @@ describe("casino.glb", () => {
   it("keeps every machine and column inside the room, the columns clear of the machines", () => {
     for (const spot of MACHINE_SPOTS) {
       const footprint = machineFootprint(spot);
-      expect(inside(CASINO_ROOM, footprint.minX, footprint.minZ) && inside(CASINO_ROOM, footprint.maxX, footprint.maxZ), `machine ${spot.id} is inside the walls`).toBe(true);
-      expect(inside(CASINO_FLOOR, footprint.minX, footprint.minZ) || inside(CASINO_FLOOR, footprint.maxX, footprint.maxZ), `machine ${spot.id} stays out of the aisle`).toBe(false);
+      // A machine flush with a wall overshoots it by rounding alone (8.9e-16 for classic-1 against minX 6.2), so the slack is a float epsilon.
+      expect(inside(CASINO_ROOM, footprint.minX, footprint.minZ, 1e-9) && inside(CASINO_ROOM, footprint.maxX, footprint.maxZ, 1e-9), `machine ${spot.id} is inside the walls`).toBe(true);
+      for (const area of CASINO_AREAS) {
+        expect(footprint.minX < area.maxX && footprint.maxX > area.minX && footprint.minZ < area.maxZ && footprint.maxZ > area.minZ, `machine ${spot.id} stays out of the walkable floor`).toBe(false);
+      }
     }
     for (const column of CASINO_COLUMNS) {
       expect(inside(CASINO_ROOM, column.x, column.z, -column.radius)).toBe(true);
-      expect(inside(CASINO_FLOOR, column.x, column.z, column.radius), "a column does not stand in the aisle").toBe(false);
+      for (const area of CASINO_AREAS) expect(inside(area, column.x, column.z, column.radius), "a column does not stand on the walkable floor").toBe(false);
       for (const spot of MACHINE_SPOTS) {
         const box = machineFootprint(spot);
         expect(inside(box, column.x, column.z, column.radius), `column at ${column.x}, ${column.z} against ${spot.id}`).toBe(false);
