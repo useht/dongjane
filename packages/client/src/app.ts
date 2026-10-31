@@ -33,7 +33,7 @@ import clickUrl from "./assets/audio/click.mp3?url";
 import coinUrl from "./assets/audio/coin.mp3?url";
 import jackpotUrl from "./assets/audio/jackpot.mp3?url";
 import sutraUrl from "./assets/audio/sutra.mp3?url";
-import { SyncedLoop, areaMix } from "./audio/music.ts";
+import { SyncedLoop, areaMix, chantMix } from "./audio/music.ts";
 import { CasinoSounds } from "./audio/casino.ts";
 import { seaLevel } from "./audio/sea-level.ts";
 import { CasinoBank } from "./casino/bank.ts";
@@ -990,11 +990,11 @@ export class App {
     }
   }
 
-  // Where the visitor stands sets the share of the two soundtracks: the sutra's inside the 법당, the concert's out on the plaza.
+  // Where the visitor stands sets the two soundtracks: the sutra only inside the 법당, the concert by its areaMix share.
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
-    this.sutra.setMix(mix);
+    this.sutra.setMix(this.session !== null && at ? chantMix(at.x, at.z) : 0);
     this.stage.setLevel(1 - mix);
     this.audio.setSeaLevel(this.session !== null && at ? seaLevel(at.x, at.z) : 0);
   }

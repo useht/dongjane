@@ -14,6 +14,7 @@ import {
   SyncedLoop,
   aimAhead,
   areaMix,
+  chantMix,
   driftAction,
   loopPosition,
 } from "../src/audio/music.ts";
@@ -135,7 +136,7 @@ describe("areaMix", () => {
   it("counts the court beside the door and the plaza as outdoors", () => {
     expect(areaMix(doorX + 1, doorZ + DHARMA_DOOR.halfWidth + 5)).toBeLessThan(0.1);
     expect(areaMix(0, 0)).toBe(0);
-    // The plaza's near edge is only the court's width from the porch, so the chant still reaches it a little.
+    // The plaza's near edge is only the court's width from the porch, so the room's share still reaches it a little.
     expect(areaMix(WORLD_BOUNDS.minX, doorZ)).toBeLessThan(0.3);
   });
 
@@ -148,6 +149,42 @@ describe("areaMix", () => {
       }
     }
     expect(areaMix(Number.NaN, 3)).toBe(0);
+  });
+});
+
+describe("chantMix", () => {
+  const { x: doorX, z: doorZ } = dharmaToWorld(0, DHARMA.frontZ);
+
+  it("is silent outside the door, the half-metre of porch included", () => {
+    expect(chantMix(doorX + 0.5, doorZ)).toBe(0);
+    expect(chantMix(doorX + 1, doorZ)).toBe(0);
+    expect(chantMix(doorX + OUTSIDE_METRES, doorZ)).toBe(0);
+    expect(chantMix(doorX + 1, doorZ + DHARMA_DOOR.halfWidth + 5)).toBe(0);
+    expect(chantMix(0, 0)).toBe(0);
+    expect(chantMix(WORLD_BOUNDS.minX, doorZ)).toBe(0);
+  });
+
+  it("is half in the doorway, where the room ends", () => {
+    expect(chantMix(doorX, doorZ)).toBeCloseTo(0.5, 9);
+  });
+
+  it("is the chant alone from three metres inside", () => {
+    expect(chantMix(doorX - DEEP_METRES, doorZ)).toBe(1);
+    expect(chantMix(DHARMA_ORIGIN.x, DHARMA_ORIGIN.z)).toBe(1);
+  });
+
+  it("is areaMix at every point inside the room", () => {
+    for (const x of [DHARMA_BOUNDS.minX, DHARMA_ORIGIN.x, doorX - 2, doorX - 0.5, doorX]) {
+      for (const z of [DHARMA_BOUNDS.minZ, DHARMA_ORIGIN.z, doorZ, DHARMA_BOUNDS.maxZ]) {
+        expect(chantMix(x, z)).toBe(areaMix(x, z));
+      }
+    }
+  });
+
+  it("answers 0 for nonsense", () => {
+    expect(chantMix(Number.NaN, doorZ)).toBe(0);
+    expect(chantMix(doorX - 1, Number.NaN)).toBe(0);
+    expect(chantMix(Number.POSITIVE_INFINITY, doorZ)).toBe(0);
   });
 });
 
