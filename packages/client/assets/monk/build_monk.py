@@ -481,7 +481,7 @@ def stroke_inset(halfwidth, rise, radius):
     return halfwidth - radius * sin(atan2(2 * abs(rise), halfwidth))
 
 
-def surface_oval(p, cx, cz, rx, rz, key, rings=2, sides=14, lift=0.0015):
+def surface_oval(p, cx, cz, rx, rz, key, rings=2, sides=10, lift=0.0015):
     """A flat oval laid over the skull's front: a fan of rings whose points follow the skull surface, lifted a hair above it."""
     bm = p.bm
 
@@ -506,9 +506,9 @@ def build_face():
     z_eye = face_z(FACE["eye_f"]) - FACE["eye_arch"] / 2  # eye_f is the height of the middle of the stroke's box
     eye_hw = stroke_inset(FACE["eye_halfwidth"], FACE["eye_arch"], FACE["eye_radius"])
     for side in (-1, 1):
-        tube_along(p, arc_points(side * FACE["eye_x"], z_eye, eye_hw, FACE["eye_arch"], 7), FACE["eye_radius"], "eye")
+        tube_along(p, arc_points(side * FACE["eye_x"], z_eye, eye_hw, FACE["eye_arch"], 5), FACE["eye_radius"], "eye")
         surface_oval(p, side * FACE["blush_x"], face_z(FACE["blush_f"]), FACE["blush_radii"][0], FACE["blush_radii"][1], "blush")
-    tube_along(p, arc_points(0.0, face_z(FACE["mouth_f"]) + FACE["mouth_sag"] / 2, stroke_inset(FACE["mouth_halfwidth"], FACE["mouth_sag"], FACE["mouth_radius"]), -FACE["mouth_sag"], 9), FACE["mouth_radius"], "mouth")
+    tube_along(p, arc_points(0.0, face_z(FACE["mouth_f"]) + FACE["mouth_sag"] / 2, stroke_inset(FACE["mouth_halfwidth"], FACE["mouth_sag"], FACE["mouth_radius"]), -FACE["mouth_sag"], 7), FACE["mouth_radius"], "mouth")
     return p.to_object()
 
 
