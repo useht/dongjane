@@ -101,7 +101,7 @@ const BOW_SWEEP = {
   reach: [0.05, 0.08],
   dent: [0.0135, 0.013],
   span: 0.01,
-  turn: 20,
+  turn: 19.5,
   zone: 0.28,
 } as const;
 const SWEEP_PARTS = ["torso", "skirt", "backRamp", "pelvis"] as const;

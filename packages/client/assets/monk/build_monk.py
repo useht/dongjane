@@ -1654,7 +1654,7 @@ BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a co
     "reach": (0.05, 0.08),
     "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the bow measures 0.0123 and 0.0115 at worst (a tenth of slack); with no ramp under the chest's back it is 0.0207 and 0.0284 at worst, and a seated monk's own seat and thighs show 0.0055 and 0.0041
     "span": 0.01,  # the shading turns by at most "turn" degrees between two points of the outline this far apart, within "zone" of the hip joint: the light can draw a ledge or a seam the shape has not got (a bright rim on the skirt's top, shading that stops short of the chest's), and a band of it is a line at any zoom
-    "turn": 20.0,  # a chest of 10 cm radius turns 6 degrees over 10 mm; the bands that read as a seam when the monk is looked at from close by turn 20 and more (24 to 32 in the bow's first half before the skirt's top and the ramp were shaded to match the chest; the bow measures 16 at worst now)
+    "turn": 19.5,  # a chest of 10 cm radius turns 6 degrees over 10 mm; the middle of the measured gap: the bow turns 16.2 at worst (bow 0.75, where the ramp's shading, baked once for every depth, meets the skirt's: a seam on the flank 8 grey levels deep at 3x zoom, no ledge), the skirt and the ramp shaded by their own faces 22.5 to 34.4 over the bow 0.05 to 0.55 (ledges that show at any zoom: the last of the sweep's tests in monk-assets.test.ts), so 3.3 over the one and 3.0 under the other
     "zone": 0.28,
 }
 SWEEP_PARTS = ("torso", "skirt", "backRamp", "pelvis")
