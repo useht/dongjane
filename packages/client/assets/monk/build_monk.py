@@ -176,11 +176,14 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "pray_twist": 1.478,
     "bow_lean": 1.54,  # 88 degrees: the back is level at the deepest
     "bow_head": 0.2866,  # the head tucks down this far more at the deepest
-    "bow_x": 0.9667,  # the arms reach forward and down, the hands together on the cushion under the face
-    "bow_z": 0.1159,
-    "bow_y": 0.3012,
-    "bow_twist": -2.0646,
-    "bow_elbow": 1.5347,
+    "bow_x": 1.457,  # the arms hang from shoulders slid down the front of the folded chest, the hands together on the cushion under the face
+    "bow_z": 0.122,
+    "bow_y": -0.021,
+    "bow_twist": -1.455,
+    "bow_elbow": 0.12,
+    "bow_drop": 0.089,  # the shoulders slide this far toward the chest's front (down, once the back is level) ...
+    "bow_dx": -0.024,  # ... this far inward ...
+    "bow_dy": -0.094,  # ... and this far down the torso, so the straight arms reach the cushion past the jaw
 }
 
 LEG = {
@@ -2196,7 +2199,8 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
         lead_jerk = jerk * (POSE["fish_tug"] + POSE["fish_sway"]) if side == 0 else 0.0
         arm_x += (POSE[hold + "_x"] + lead_jerk - arm_x) * fish
         arm_z += (-sign * POSE["fish_roll"] - arm_z) * fish
-        shoulder = torso @ tmat((sign * RIG["shoulderX"], SHOULDER_Y, 0), (arm_x, arm_y, arm_z))
+        folded = reach * kneel  # the bowing arm's shoulders slide down the folded chest
+        shoulder = torso @ tmat((sign * (RIG["shoulderX"] + POSE["bow_dx"] * folded), SHOULDER_Y + POSE["bow_dy"] * folded, -POSE["bow_drop"] * folded), (arm_x, arm_y, arm_z))
         elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
         elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * reach + max(0.0, -arm_swing) * POSE["walk_elbow"]
         elbow_x += (POSE[hold + "_elbow"] - elbow_x) * fish

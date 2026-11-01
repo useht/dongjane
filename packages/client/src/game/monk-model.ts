@@ -348,8 +348,8 @@ export class MonkAvatar {
       const armSwing = (side === 0 ? swing : swingBack) * 0.5 * walk;
 
       // The arm hangs straight at rest, splayed about 35 degrees out from the shoulder so the sleeve clears the wide robe; praying swings
-      // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing reaches both arms forward and down, the
-      // forearms rolled over so the hands lie together on the 방석 under the face (a copy of POSE in
+      // it forward, yaws it inward and rolls the forearm so the palms meet under the chin; bowing slides the shoulders down the folded chest
+      // and hangs both arms straight down, the forearms rolled so the palms meet on the 방석 under the face (a copy of POSE in
       // packages/client/assets/monk/build_monk.py, keep both in step).
       const idleX = 0.08 + breathe * 0.02;
       const idleZ = sign * 0.61;
@@ -359,17 +359,22 @@ export class MonkAvatar {
       const prayZ = -sign * 0.185;
       const prayElbow = 1.301;
       const prayTwist = -sign * 1.478;
-      const bowX = 0.9667;
-      const bowY = sign * 0.3012;
-      const bowZ = -sign * 0.1159;
-      const bowElbow = 1.5347;
-      const bowTwist = sign * 2.0646;
+      const bowX = 1.457;
+      const bowY = -sign * 0.021;
+      const bowZ = -sign * 0.122;
+      const bowElbow = 0.12;
+      const bowTwist = sign * 1.455;
+      const bowDrop = 0.089;
+      const bowDx = -0.024;
+      const bowDy = -0.094;
 
       // The arms get out of the prayer ahead of the chest, so the cuffs leave the chest as it starts to fold.
       const armBow = 1 - (1 - depth) * (1 - depth);
       const prayMix = kneel * (1 - armBow);
       const baseX = idleX + (prayX - idleX) * kneel;
       const strike = side === 1 ? knock * prayMix : 0;
+      const slide = armBow * kneel;
+      shoulder.position.set(sign * (SHOULDER_X + bowDx * slide), SHOULDER_Y + bowDy * slide, -bowDrop * slide);
       shoulder.rotation.x = baseX + (bowX - baseX) * armBow + armSwing * (1 - kneel) + strike * 0.12;
       shoulder.rotation.y = prayY * prayMix + bowY * armBow * kneel;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * armBow * kneel;
