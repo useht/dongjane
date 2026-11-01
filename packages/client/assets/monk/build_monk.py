@@ -1684,6 +1684,39 @@ def check_leg_skirt(parts):
         assert low <= near <= high, "the thighs are %.4f from the jacket at bow %.3f (it needs %.4f to %.4f)" % (near, bow, low, high)
 
 
+TROUSERS_HIDDEN = 0.06  # kneeling, the trousers' highest vertex lies at least this far under where the jacket's bend begins: 0.0661 measured, which is also 0.0107 under the gathered hem
+
+
+def check_trousers_hidden(parts):
+    """The trousers stay under the jacket while it bends, kneeling at every depth of the bow. Two measures, because the trousers' own top
+    is the visible knee when kneeling and cannot be cut back to hide it: (1) the trousers end TROUSERS_HIDDEN under the height where the
+    bend begins (the seat ends exactly there), and the bend moves only the jacket above that, so it never lifts the jacket off them;
+    (2) of the seat's and the trousers' vertices, every one that lies above the jacket's hem (the lower edge and HEM_LIP, the roll the
+    trousers are free to show under) is inside the bent jacket at every depth, with the most outside it measured as a clearance."""
+    cushion = RIG["seatTop"]
+    hem = -JACKET_DROP * RIG["kneelSkirtScale"] + HEM_LIP
+    start = -RIG["bendLength"]
+    top, reaching, outermost = -math.inf, 0, -math.inf
+    for step in range(BOW_SWEEP["depths"] + 1):
+        mats = pose_matrices(1.0, cushion, bow=step / BOW_SWEEP["depths"])
+        to_waist = mats["jacket"][0].node.inverted()
+        jacket = world_bvh(parts["jacket"], mats["jacket"][0])
+        for name in ("pelvis", "trousers"):
+            for matrix in mats[name]:
+                for vertex in parts[name].data.vertices:
+                    point = matrix @ vertex.co
+                    height = (to_waist @ point).z
+                    if name == "trousers":
+                        top = max(top, height)
+                    if height > hem:
+                        reaching += 1
+                        outermost = max(outermost, clearance_of(jacket, point))
+    print("TROUSERS the highest trouser vertex lies %.4f under where the bend begins (it needs %.4f); %d vertex-depths of the seat and the trousers rise above the hem, the one nearest the surface lies %.4f %s it (it must be inside)" % (start - top, TROUSERS_HIDDEN, reaching, abs(outermost), "inside" if outermost <= 0 else "outside"))
+    assert start - top >= TROUSERS_HIDDEN, "the trousers reach %.4f under where the bend begins (they must stay %.4f under it)" % (start - top, TROUSERS_HIDDEN)
+    assert reaching > 0, "no vertex of the seat reaches above the hem: the check measures nothing"
+    assert outermost <= 0, "a vertex of the seat or the trousers lies %.4f outside the bent jacket above its hem" % outermost
+
+
 BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a copy of this is in packages/client/test/monk-assets.test.ts)
     "depths": 20,  # the bow's depth from 0 to 1 in this many steps
     "planes": (0.0, 0.07),  # slices of the jacket along its length, this far from the middle line (the middle of the back and half-way to its edge)
@@ -2379,6 +2412,7 @@ def main():
     check_bow(parts)
     check_jacket_bend(parts)
     check_leg_skirt(parts)
+    check_trousers_hidden(parts)
     check_bow_sweep(parts)
     check_walk(parts)
     check_fish(parts)

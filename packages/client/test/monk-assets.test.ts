@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { type BufferGeometry, Box3, Color, DoubleSide, type Intersection, Matrix3, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
-import { BOW_MS, ITEM_ROD } from "@dongjane/shared";
+import { BOW_MS, ITEM_ROD, SEAT_TOPS, type SeatPose } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
 import { bendFrame, bendPoint } from "../src/game/monk-bend.ts";
 import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
@@ -88,9 +88,14 @@ function shownVertices(avatar: MonkAvatar, parts: Record<BodyPartName, BufferGeo
   return worldVertices(nodeOf(avatar, part, copy), shownGeometry(avatar, part, parts[part]));
 }
 
-function bowedAvatar(depth: number): MonkAvatar {
+function bowedAvatar(depth: number, seat?: { pose: SeatPose; top: number }): MonkAvatar {
   const avatar = new MonkAvatar("bower", 0, false);
+  if (seat) {
+    avatar.seatPose = seat.pose;
+    avatar.seatTop = seat.top;
+  }
   avatar.setMode("bow", 0);
+  if (seat) avatar.place(0, 0, 0);
   avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
   return avatar;
 }
@@ -781,6 +786,54 @@ describe("monk assets", () => {
       }
     }
   });
+
+  // The trouser top is bound only below the hip pivot (0.611) because the trousers cannot be cut back: their top is the visible knee when
+  // kneeling (a cut to the old 0.411 left bare leg and broke build_monk.py's knee-to-ankle and thigh-clearance checks). This is what
+  // keeps them hidden instead, at every depth of the bow in the sweep's steps, bent the way the shader bends the jacket.
+  it("keeps the seat and the trouser legs under the bent jacket at every depth of the bow, kneeling and cross-legged, and shows no more of them on a bench than upright", async () => {
+    const parts = await loadParts();
+    const aim = new Vector3(0.31, 0.93, 0.19).normalize();
+    const raycaster = new Raycaster();
+    const kneel = { pose: "kneel" as SeatPose, top: monkRig.seatTop };
+    const cross = { pose: "cross" as SeatPose, top: SEAT_TOPS.bathhouse };
+    const bench = { pose: "bench" as SeatPose, top: SEAT_TOPS.church };
+    for (const seat of [kneel, cross, bench]) {
+      const exposed: number[] = [];
+      let covered = 0;
+      for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
+        const avatar = bowedAvatar(step / BOW_SWEEP.depths, seat);
+        const shown = shownGeometry(avatar, "jacket", parts.jacket);
+        // The hem is the lowest point of the bent jacket; the trousers are free to show HEM_LIP above it, where the hem rolls under.
+        const hem = bounds(shown).min.y + 0.004;
+        const jacket = new Mesh(shown, new MeshBasicMaterial({ side: DoubleSide }));
+        const toJacket = nodeOf(avatar, "jacket", 0).matrixWorld.clone().invert();
+        let outside = 0;
+        let top = -Infinity;
+        for (const part of ["pelvis", "trousers", "leg"] as const) {
+          for (let copy = 0; copy < COPIES[part]; copy += 1) {
+            for (const v of worldVertices(nodeOf(avatar, part, copy), parts[part]).map((w) => w.applyMatrix4(toJacket))) {
+              if (part === "trousers") top = Math.max(top, v.y);
+              if (v.y <= hem) continue;
+              covered += 1;
+              raycaster.set(v, aim);
+              if (raycaster.intersectObject(jacket).length % 2 === 0) outside += 1;
+            }
+          }
+        }
+        exposed.push(outside);
+        if (seat === kneel) {
+          expect(-monkRig.bendLength - top, `the trousers' top lies under where the bend begins at bow ${step / BOW_SWEEP.depths}`).toBeGreaterThanOrEqual(0.06);
+        }
+      }
+      expect(covered, `${seat.pose}: some of the seat reaches above the hem, so this measures something`).toBeGreaterThan(0);
+      if (seat === bench) {
+        // On the bench the thigh tops stand out of the jacket's front at every depth, upright included: the bow adds none.
+        for (const [step, count] of exposed.entries()) expect(count, `${seat.pose}: vertices outside the jacket at bow ${step / BOW_SWEEP.depths}`).toBeLessThanOrEqual(exposed[0] as number);
+      } else {
+        expect(Math.max(...exposed), `${seat.pose}: a vertex of the seat or the legs pokes through the bent jacket`).toBe(0);
+      }
+    }
+  }, 120_000);
 
   it("swings the arms in a natural arc against the same-side leg while walking", async () => {
     const parts = await loadParts();
