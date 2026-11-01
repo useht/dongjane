@@ -658,7 +658,7 @@ describe("monk assets", () => {
     }
   });
 
-  it("bows with the hands together under the face: nothing below the seat, the hands off the head, in front of the knees", async () => {
+  it("bows with the hands together on the seat in front of the face: nothing below the seat, the hands off the head", async () => {
     const parts = await loadParts();
     const avatar = new MonkAvatar("bower", 0, false);
     avatar.setMode("bow", 0);
@@ -677,7 +677,7 @@ describe("monk assets", () => {
       for (const h of hand) for (const v of head) nearest = Math.min(nearest, h.distanceTo(v));
       expect(nearest, `hand ${side} keeps off the head`).toBeGreaterThan(0.01);
       expect(Math.min(...hand.map((v) => sign * v.x)), `hand ${side} does not cross the middle`).toBeGreaterThan(-0.012);
-      expect(Math.min(...hand.map((v) => v.y)), `hand ${side} lies under the face`).toBeLessThanOrEqual(Math.min(...head.map((v) => v.y)));
+      expect(Math.min(...hand.map((v) => v.y)) - monkRig.seatTop, `hand ${side} rests on the seat`).toBeLessThan(0.05);
       expect(Math.max(...hand.map((v) => v.z)), `hand ${side} lies in front of the knees`).toBeLessThan(-0.1);
     }
   });
