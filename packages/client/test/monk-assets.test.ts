@@ -231,6 +231,34 @@ describe("monk assets", () => {
     expect(Math.max(...edge.map((v) => Math.abs(v.x))), "the sides of the hem tuck in from the widest of the skirt").toBeLessThan(box.max.x - 0.015);
   });
 
+  it("shades the hem's lower ring as the tucked edge it is, not as an underside, so bowing no dark rim catches the light across the thighs", async () => {
+    const parts = await loadParts();
+    const box = bounds(parts.skirt);
+    const position = parts.skirt.getAttribute("position");
+    const normal = parts.skirt.getAttribute("normal");
+    const tilts: number[] = [];
+    for (let i = 0; i < position.count; i += 1) {
+      if (position.getY(i) > box.min.y + 0.002) continue;
+      const n = new Vector3().fromBufferAttribute(normal, i);
+      if (Math.hypot(n.x, n.z) > 0.1) tilts.push((Math.asin(-n.y) * 180) / Math.PI);
+    }
+    expect(tilts.length, "the hem's lower ring has vertices around the skirt").toBeGreaterThan(8);
+    expect(Math.max(...tilts), "none faces down more steeply than a bevel").toBeLessThan(40);
+  });
+
+  it("rounds the chest off below the hinge as deep behind as the hinge itself, so bowing it comes out of the skirt's dome without a dip in the back", async () => {
+    const parts = await loadParts();
+    const position = parts.torso.getAttribute("position");
+    let hinge = -Infinity;
+    let tail = -Infinity;
+    for (let i = 0; i < position.count; i += 1) {
+      if (Math.abs(position.getY(i)) < 1e-4) hinge = Math.max(hinge, position.getZ(i));
+      else if (position.getY(i) < -0.04) tail = Math.max(tail, position.getZ(i));
+    }
+    expect(hinge, "the hinge ring is there").toBeGreaterThan(0.1);
+    expect(tail, "the tail reaches back as far as the hinge").toBeGreaterThan(hinge - 0.002);
+  });
+
   it("keeps the whole monk within the triangle budget", async () => {
     const parts = await loadParts();
     let total = 0;

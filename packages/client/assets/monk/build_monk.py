@@ -634,7 +634,7 @@ def torso_rings():
 
 
 HINGE_Z = 0.0  # the jacket is cut here, at the hip pivot: the chest above it bows with the torso, the skirt below it follows only part of the way
-HINGE_TAIL = [(-0.084, 0.85, 0.090, 0.060), (-0.050, 1.0, 0.108, 0.090)]  # how the chest rounds off below the hinge: z, its share of the hinge's width, and its depth behind and in front of the pivot (the back's deep, the belly's short: bowing, the belly side comes down to the hem)
+HINGE_TAIL = [(-0.084, 0.85, 0.1195, 0.060), (-0.050, 1.0, 0.1218, 0.090)]  # how the chest rounds off below the hinge: z, its share of the hinge's width, and its depth behind and in front of the pivot (the back's deep, the belly's short: bowing, the belly side comes down to the hem; the back reaches as deep as the skirt's, so bowing the chest comes out of the skirt's dome early and the silhouette has no dip where they meet)
 HINGE_TAIL_POWER = 3.0
 HINGE_TAIL_CAP = Vector((0.0, -0.010, -0.097))
 
@@ -671,6 +671,25 @@ def build_jacket_whole():
     p = Part("jacket")
     p.loft(torso_rings(), "jacket", cap_first=True, cap_last=True)
     return p.to_object()
+
+
+HEM_TILT = radians(30)  # how far below the horizontal the hem's lowest ring is shaded: it turns under, it does not face down
+
+
+def soften_hem_normals(skirt):
+    """The skirt's lowest ring shares its vertices with the flat bottom cap, so its smooth normals point almost straight down and
+    shade near black: bowing, the hem's turned-under back catches the light as a hard dark rim across the thighs. It is shaded as
+    the tucked edge it is instead, its horizontal direction kept and tilted HEM_TILT below the horizontal. The cap's own centre,
+    the other rings and the geometry are left as they are."""
+    mesh = skirt.data
+    low = min(v.co.z for v in mesh.vertices)
+    normals = [Vector(n.vector) for n in mesh.vertex_normals]
+    for v in mesh.vertices:
+        flat = Vector((normals[v.index].x, normals[v.index].y, 0.0))
+        if abs(v.co.z - low) < 1e-6 and flat.length > 0.1:
+            flat.normalize()
+            normals[v.index] = Vector((flat.x * cos(HEM_TILT), flat.y * cos(HEM_TILT), -sin(HEM_TILT)))
+    mesh.normals_split_custom_set_from_vertices(normals)
 
 
 JUNCTION_REACH = 0.12  # how far from the skirt, at the deepest bow, the chest's normals still follow the skirt's
@@ -1989,8 +2008,9 @@ def main():
         obj = BUILDERS[name]()
         parts_coll.objects.link(obj)
         parts[name] = obj
+    soften_hem_normals(parts["skirt"])
     blend_junction_normals(parts["torso"], parts["skirt"])
-    jacket = build_jacket_whole()  # not exported: the one surface the thighs and the arms are held against while the chest and the skirt move as one
+    jacket =build_jacket_whole()  # not exported: the one surface the thighs and the arms are held against while the chest and the skirt move as one
     parts["jacket"] = jacket
     total = report_parts(parts)
     check_proportions(parts)
