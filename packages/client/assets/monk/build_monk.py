@@ -68,6 +68,7 @@ import colorsys
 import json
 import math
 import os
+import struct
 import sys
 import tempfile
 import warnings
@@ -582,11 +583,28 @@ def build_hair():
 
 JACKET_DROP = RIG["jacketDrop"]
 PELVIS_DROP = RIG["pelvisDrop"]
-HEM_ROLL = {"height": 0.030, "side": 0.022, "front": 0.022, "back": 0.040}  # the hem turns under over this height, and this far in at the sides, the front and the back (the back tucks the furthest, where the thighs are not): a bevel, so the lower edge shades into the trousers below it instead of ending in a flat shelf, and the thighs still lie inside it walking
+HEM_ROLL = {"height": 0.030, "side": 0.022, "front": 0.022, "back": 0.040}  # the hem turns under over this height, and this far in at the sides, the front and the back (the back tucks the furthest, where the thighs are not): a roll, so the lower edge shades into the trousers below it instead of ending in a flat shelf, and the thighs still lie inside it walking
+HEM_ROLL_ANGLES = (90.0, 60.0, 30.0, 0.0)  # the roll is a quarter of an ellipse, one ring at each of these angles round it from the lower edge (90) up to where it joins the tunic (0): one straight bevel read as a diagonal where the hem corner meets the sky, three facets of 30 degrees read as the corner they stand for
+
+
+def hem_roll():
+    """The rolled hem's rings, lowest first, and the back's extra depth at each (BACK_PROFILE form): at angle t round the quarter ellipse a
+    ring is 1 - cos t of the way in from the tunic's full size, and sin t of the way down the roll's height."""
+    rows, back = [], {}
+    for degree in HEM_ROLL_ANGLES:
+        t = radians(degree)
+        z = -JACKET_DROP + HEM_ROLL["height"] * (1.0 - sin(t))
+        inset = 1.0 - cos(t)
+        rows.append((z, 0.198 - HEM_ROLL["side"] * inset, 0.176 - HEM_ROLL["front"] * inset, 2.4))
+        if inset > 0.0:
+            back[z] = ((HEM_ROLL["front"] - HEM_ROLL["back"]) * inset, 2.4)
+    return rows, back
+
+
+HEM_ROWS, HEM_BACK = hem_roll()
 
 TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: a long tunic that flares from a narrow, shallow yoke under the head to its widest (1.2 H) over the lower body, so the splayed arms stay clear of it and the praying hands fit in front of the chest
-    (-JACKET_DROP, 0.198 - HEM_ROLL["side"], 0.176 - HEM_ROLL["front"], 2.4),
-    (-JACKET_DROP + HEM_ROLL["height"], 0.198, 0.176, 2.4),
+    *HEM_ROWS,
     (-0.150, 0.197, 0.172, 2.4),
     (-0.050, 0.188, 0.143, 2.4),
     (0.000, 0.1705, 0.1218, 2.46),  # the hinge, at the hip pivot: the bend ends here (on the line between its neighbours)
@@ -616,7 +634,7 @@ def torso_front(x, z):
 
 
 BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the tunic's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie. The hem's own back tucks in further than its front
-    -JACKET_DROP: (HEM_ROLL["front"] - HEM_ROLL["back"], 2.4),
+    **HEM_BACK,
     -0.050: (0.0, 2.8),
     0.000: (0.0, 3.6),
     0.030: (0.010, 3.4),
@@ -2091,6 +2109,43 @@ def export_glb(parts_coll, path):
         export_skins=False,
         export_extras=False,
     )
+    slim_glb_json(path)
+
+
+def shortest_float32(value):
+    """The shortest decimal that reads back as the same 32-bit float as value."""
+    for digits in range(1, 10):
+        text = "%.*g" % (digits, value)
+        if struct.unpack("<f", struct.pack("<f", float(text)))[0] == struct.unpack("<f", struct.pack("<f", value))[0]:
+            return float(text)
+    return value
+
+
+def slim_glb_json(path):
+    """Rewrites the glb's JSON chunk with every number as the shortest decimal of the same 32-bit float. The exporter prints
+    them as 17-digit doubles (0.8999999761581421 for the float 0.9), which spends about 1.2 KB of the byte budget on digits
+    no 32-bit float can tell apart; the binary chunk and every value the game reads are unchanged."""
+    with open(path, "rb") as handle:
+        data = handle.read()
+    json_length, json_type = struct.unpack_from("<II", data, 12)
+    assert json_type == 0x4E4F534A, "the first glb chunk is not JSON"
+    document = json.loads(data[20 : 20 + json_length])
+
+    def slim(node):
+        if isinstance(node, float):
+            return shortest_float32(node)
+        if isinstance(node, list):
+            return [slim(item) for item in node]
+        if isinstance(node, dict):
+            return {key: slim(item) for key, item in node.items()}
+        return node
+
+    text = json.dumps(slim(document), separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    text += b" " * (-len(text) % 4)
+    rest = data[20 + json_length :]
+    total = 12 + 8 + len(text) + len(rest)
+    with open(path, "wb") as handle:
+        handle.write(data[:8] + struct.pack("<I", total) + struct.pack("<II", len(text), json_type) + text + rest)
 
 
 # ---- poses (a copy of the three.js rig in monk-model.ts, only for previews) -----------------------------------------
