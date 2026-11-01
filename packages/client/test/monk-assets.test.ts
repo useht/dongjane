@@ -7,6 +7,7 @@ import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
 import { bendFrame, bendPoint } from "../src/game/monk-bend.ts";
 import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 import { shownGeometry } from "./bent-geometry.ts";
+import { crossingPairs, looseEdges, weld } from "./triangle-crossings.ts";
 
 const COPIES: Record<BodyPartName, number> = {
   head: 1,
@@ -99,6 +100,13 @@ function bowedAvatar(depth: number, seat?: { pose: SeatPose; top: number }): Mon
   avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
   return avatar;
 }
+
+// The seats a monk bows on: a cushion (kneeling), the bathhouse floor (cross-legged) and the church bench.
+const BOW_SEATS = [
+  { pose: "kneel", top: monkRig.seatTop },
+  { pose: "cross", top: SEAT_TOPS.bathhouse },
+  { pose: "bench", top: SEAT_TOPS.church },
+] as const satisfies readonly { pose: SeatPose; top: number }[];
 
 // A copy of BOW_SWEEP in build_monk.py: the back over the hip seen from the side, at every depth of the bow in steps. The outline is
 // worked out in the model's own frame (y forward, z up) as that script does; three's (y up, z back) is (-z, y) of it. The rays start
@@ -722,6 +730,111 @@ describe("monk assets", () => {
     }
   });
 
+  // The chest used to be its own mesh in a separate skirt, and four checks guarded that joint: the chest poked out of the skirt by 0.02 at
+  // most, its lower edge lay 0.05 inside it at least, the skirt's top was level with the chest's back within 0.004, and the skirt spread
+  // forward by 0.25 of its depth at most. The jacket is one closed surface bent by one curve now, so there is no chest edge to bury, no
+  // skirt top to level and no skirt to spread; what the four guarded is held by the next four tests: the surface is closed and does not
+  // pass through itself (the poke and the buried edge), its front is not folded past a limit, the back is continuous where the curve
+  // hands over to the rigid chest (the step), and the forearms and hands stay out of it (the spread).
+  it("bends the jacket as one closed surface that never passes through itself, on every seat at every depth of the bow", async () => {
+    const parts = await loadParts();
+    const mesh = weld(parts.jacket);
+    expect(looseEdges(mesh), "the jacket is closed: no chest edge shows or needs burying").toBe(0);
+    const position = parts.jacket.getAttribute("position");
+    const bentBy = (theta: number, gather: number): Vector3[] =>
+      Array.from({ length: position.count }, (_, i) => bendPoint(new Vector3().fromBufferAttribute(position as never, i), theta, gather, new Vector3()));
+    for (const seat of BOW_SEATS) {
+      for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
+        const { theta, gather } = bowedAvatar(step / BOW_SWEEP.depths, seat).bend;
+        expect(crossingPairs(mesh, bentBy(theta, gather)), `${seat.pose}: pairs of triangles that cross at bow ${step / BOW_SWEEP.depths}`).toBe(0);
+      }
+    }
+    // The count sees a fold through itself: measured on this jacket gathered kneeling, the first pairs cross between 3.3 and 3.6 radians
+    // (6 at 3.6, 74 at 4.0), twice the lean of 1.54, so the bow has that margin.
+    expect(crossingPairs(mesh, bentBy(3.3, monkRig.kneelSkirtScale)), "twice the lean is still clear").toBe(0);
+    expect(crossingPairs(mesh, bentBy(4.0, monkRig.kneelSkirtScale)), "a bend of 4 radians folds the front through itself").toBeGreaterThan(50);
+  });
+
+  // build_monk.py's RIG["bendFold"], the limit its bend_fold check holds the front of the bend to.
+  const BEND_FOLD = 0.8;
+  it("keeps the front of the bend from being squeezed past its limit: the curvature times the distance in front of the axis, standing, gathered kneeling and on the bench", async () => {
+    const parts = await loadParts();
+    const position = parts.jacket.getAttribute("position");
+    // The fold is measured on the bend itself: how much shorter a step up the jacket, at the jacket's vertices in the bend, is once bent.
+    const STEP = 1e-6;
+    const squeeze = (theta: number, gather: number): { worst: number; vertices: number } => {
+      const from = new Vector3();
+      const to = new Vector3();
+      let worst = -Infinity;
+      let vertices = 0;
+      for (let i = 0; i < position.count; i += 1) {
+        const point = new Vector3().fromBufferAttribute(position as never, i);
+        if (!(point.y * gather > -monkRig.bendLength && point.y * gather < 0)) continue;
+        vertices += 1;
+        bendPoint(point, theta, gather, from);
+        bendPoint(point.setY(point.y + STEP), theta, gather, to);
+        worst = Math.max(worst, 1 - from.distanceTo(to) / (STEP * gather));
+      }
+      return { worst, vertices };
+    };
+    const gathers = [1, ...BOW_SEATS.map((seat) => bowedAvatar(1, seat).bend.gather)];
+    for (const gather of gathers) {
+      const { worst, vertices } = squeeze(monkRig.bowLean, gather);
+      expect(vertices, `gather ${gather}: the jacket has vertices in the bend`).toBeGreaterThan(100);
+      // 0.5616 standing, 0.5689 gathered kneeling (build_monk.py prints 0.569) and 0.5852 on the bench, against 0.8.
+      expect(worst, `gather ${gather}: the front of the bend is squeezed to ${(1 - worst).toFixed(3)} of its length`).toBeLessThanOrEqual(BEND_FOLD);
+    }
+    expect(squeeze(2 * monkRig.bowLean, monkRig.kneelSkirtScale).worst, "twice the lean squeezes the front past the limit").toBeGreaterThan(BEND_FOLD);
+  });
+
+  it("carries the back over the hinge without a step: where the curve hands over to the rigid chest the two sides meet within 0.004", async () => {
+    const parts = await loadParts();
+    const position = parts.jacket.getAttribute("position");
+    // The old step compared the skirt's top with the back of the chest at the deepest bow and held them within 0.004; in one surface both
+    // sides of the hinge are the same bend_vertex, so this takes the ring of vertices at the hinge from just below it and from just above.
+    // The two samples lie 2e-6 apart and come out 3.7e-6 apart at the deepest bow: a jump of the bend there would show as millimetres.
+    const ring: Vector3[] = [];
+    for (let i = 0; i < position.count; i += 1) {
+      if (Math.abs(position.getY(i)) < 1e-4) ring.push(new Vector3().fromBufferAttribute(position as never, i));
+    }
+    expect(ring.length, "the hinge is a ring of vertices").toBeGreaterThan(10);
+    let worst = 0;
+    for (const gather of [1, monkRig.kneelSkirtScale]) {
+      for (const point of ring) {
+        const below = bendPoint(point.clone().setY(-1e-6), monkRig.bowLean, gather, new Vector3());
+        const above = bendPoint(point.clone().setY(1e-6), monkRig.bowLean, gather, new Vector3());
+        worst = Math.max(worst, below.distanceTo(above));
+      }
+    }
+    expect(worst, "the back of the skirt and the back of the chest meet at the hinge").toBeLessThanOrEqual(0.004);
+  });
+
+  it("keeps the hands and the forearms out of the bent jacket at every depth of the bow after the first tilt", async () => {
+    const parts = await loadParts();
+    const aim = new Vector3(0.31, 0.93, 0.19).normalize();
+    const raycaster = new Raycaster();
+    // build_monk.py's BOW_DEPTHS: the first tilt to the deepest. Before the first tilt, in prayer, the cuffs touch the chest.
+    const depths = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+    for (const depth of depths) {
+      const avatar = bowedAvatar(depth);
+      const jacket = new Mesh(shownGeometry(avatar, "jacket", parts.jacket), new MeshBasicMaterial({ side: DoubleSide }));
+      const toJacket = nodeOf(avatar, "jacket", 0).matrixWorld.clone().invert();
+      const insideLocal = (point: Vector3): boolean => {
+        raycaster.set(point, aim);
+        return raycaster.intersectObject(jacket).length % 2 === 1;
+      };
+      const inside = (point: Vector3): boolean => insideLocal(point.clone().applyMatrix4(toJacket));
+      expect(insideLocal(new Vector3(0, -0.08, 0)), `bow ${depth}: the middle of the skirt is inside the jacket`).toBe(true);
+      expect(insideLocal(new Vector3(0, -0.08, -2)), `bow ${depth}: a point far in front of the jacket is outside it`).toBe(false);
+      for (const part of ["hand", "sleeveLower"] as const) {
+        for (let copy = 0; copy < COPIES[part]; copy += 1) {
+          const sunk = worldVertices(nodeOf(avatar, part, copy), parts[part]).filter(inside);
+          expect(sunk.length, `${part} ${copy} sinks into the bent jacket at bow ${depth}`).toBe(0);
+        }
+      }
+    }
+  });
+
   it("walks exactly as build_monk.py checked it: the legs hang from hips that slide against the stride, the arms swing clear", async () => {
     const parts = await loadParts();
     const probe = JSON.parse(readFileSync(new URL("../assets/monk/monk-poses.json", import.meta.url), "utf8")) as { walk: WalkProbe };
@@ -794,10 +907,7 @@ describe("monk assets", () => {
     const parts = await loadParts();
     const aim = new Vector3(0.31, 0.93, 0.19).normalize();
     const raycaster = new Raycaster();
-    const kneel = { pose: "kneel" as SeatPose, top: monkRig.seatTop };
-    const cross = { pose: "cross" as SeatPose, top: SEAT_TOPS.bathhouse };
-    const bench = { pose: "bench" as SeatPose, top: SEAT_TOPS.church };
-    for (const seat of [kneel, cross, bench]) {
+    for (const seat of BOW_SEATS) {
       const exposed: number[] = [];
       let covered = 0;
       for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
@@ -821,12 +931,12 @@ describe("monk assets", () => {
           }
         }
         exposed.push(outside);
-        if (seat === kneel) {
+        if (seat.pose === "kneel") {
           expect(-monkRig.bendLength - top, `the trousers' top lies under where the bend begins at bow ${step / BOW_SWEEP.depths}`).toBeGreaterThanOrEqual(0.06);
         }
       }
       expect(covered, `${seat.pose}: some of the seat reaches above the hem, so this measures something`).toBeGreaterThan(0);
-      if (seat === bench) {
+      if (seat.pose === "bench") {
         // On the bench the thigh tops stand out of the jacket's front at every depth, upright included: the bow adds none.
         for (const [step, count] of exposed.entries()) expect(count, `${seat.pose}: vertices outside the jacket at bow ${step / BOW_SWEEP.depths}`).toBeLessThanOrEqual(exposed[0] as number);
       } else {
@@ -974,8 +1084,14 @@ describe("monk assets", () => {
     const hinge = bendFrame(avatar.bend.theta, new Vector3()).applyMatrix4(avatar.waistNode.matrixWorld);
     const waist = new Vector3().setFromMatrixPosition(avatar.torsoNode.matrixWorld);
     expect(waist.distanceTo(hinge), "the chest sits where the bend ends").toBeLessThan(1e-5);
+    // The bend turns the waist about the centre of its curve, bendLength under the pivot, on a circle through the pivot: the pivot sits
+    // bendForward behind the curve's axis, so the circle's radius is the curve's own, bendLength / lean, plus that. At the full lean of
+    // 1.54 the radius is 0.2299, and the waist has swung radius * (1 - cos lean) = 0.2228 forward and risen radius * sin lean - bendLength
+    // = 0.0298 (the old pivot a hip joint under the waist let it fall a little instead: the bend's circle is wider than the bend is long).
     const waistKneeling = new Vector3().setFromMatrixPosition(kneeling.torsoNode.matrixWorld);
-    expect(waistKneeling.z - waist.z, "the waist swings forward over the thighs").toBeGreaterThan(0.2);
+    const radius = monkRig.bendLength / monkRig.bowLean + monkRig.bendForward;
+    expect(waistKneeling.z - waist.z, "the waist swings forward over the thighs about the bend").toBeCloseTo(radius * (1 - Math.cos(monkRig.bowLean)), 7);
+    expect(waist.y - waistKneeling.y, "and a little up").toBeCloseTo(radius * Math.sin(monkRig.bowLean) - monkRig.bendLength, 7);
 
     const hem = Math.min(...shownVertices(avatar, parts, "jacket", 0).map((v) => v.y));
     const hemKneeling = Math.min(...shownVertices(kneeling, parts, "jacket", 0).map((v) => v.y));
