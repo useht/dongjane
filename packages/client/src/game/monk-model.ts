@@ -108,11 +108,6 @@ const BENCH_BOW = 0.35;
 // The jacket below the waist is gathered this far on a chair or a log (the hips sit lower over the seat than on the heels), so its hem
 // stays above the seat.
 const BENCH_SKIRT_SCALE = 0.72;
-// On a chair or a log the legs start at the underside of the squashed seat, a little behind the hips: the thighs lie along the seat and
-// the knees stay behind the front of the skirt that hangs over them, where a leg hung from the standing pivot (0.12 below the hips)
-// would lean 52 degrees and push its knee 1 to 3 cm out through it.
-const BENCH_LEG_TOP_DROP = 0.21;
-const BENCH_LEG_BACK = 0.05;
 // How far the seat of the trousers rests above a mat, chair or log it sits on: just clear of it, kept under a squashed seat too.
 const SEAT_CLEARANCE = 0.007;
 // Where the feet go while seated, in the monk's frame (forward is -z): x is the distance from the middle line to the foot on its
@@ -297,10 +292,8 @@ export class MonkAvatar {
     const bench = this.seatPose === "bench";
     const kneeling = this.seatPose === "kneel";
     const sit = SIT_FEET[this.seatPose];
-    // Only the 정좌 folds the legs under the body; a cross-legged monk keeps the legs hung from the standing pivot, a benched one hangs
-    // them from a lower, slightly rearward one (BENCH_LEG_TOP_DROP).
+    // Only the 정좌 folds the legs under the body; a cross-legged or benched monk keeps the legs hung from the standing pivot.
     const folded = kneeling ? kneel : 0;
-    const benched = bench ? kneel : 0;
     const depth = this.mode === "bow" ? bowDepth(nowMs - this.modeSince, !reduceMotion, BOW_MS) * (bench ? BENCH_BOW : 1) : 0;
     const breathe = reduceMotion ? 0 : Math.sin(this.clock * 1.7);
     this.chantMix = reduceMotion ? 0 : approach(this.chantMix, this.chanting ? 1 : 0, dt, 4);
@@ -411,12 +404,11 @@ export class MonkAvatar {
       // strides, bobbing and the folded kneel. Kneeling, the pivot sits low, forward and wide so the thigh runs flat under the skirt to a
       // knee a hand-span from the other in front of the hip, and the shin folds back from it, flattened, to the ankle.
       const leg = this.legs[side] as Object3D;
-      const topDrop = LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * folded + (BENCH_LEG_TOP_DROP - LEG_TOP_DROP) * benched;
-      const topY = this.hips.position.y - topDrop;
+      const topY = this.hips.position.y - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * folded);
       const topX = sign * (FOOT_X + (LEG_KNEEL_TOP_X - FOOT_X) * folded);
       const reachX = foot.position.x - topX;
       const reachY = foot.position.y + sit.legLift * kneel - topY;
-      const walkTopZ = seatBack - stride * WALK_HIP_SHIFT + BENCH_LEG_BACK * benched;
+      const walkTopZ = seatBack - stride * WALK_HIP_SHIFT;
       const topZ = walkTopZ + (-LEG_KNEEL_TOP_FORWARD - walkTopZ) * folded;
       const reachZ = foot.position.z - topZ;
       const reach = Math.hypot(reachX, reachY, reachZ);
