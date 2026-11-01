@@ -110,7 +110,9 @@ const BOW_SEATS = [
 
 // A copy of BOW_SWEEP in build_monk.py: the back over the hip seen from the side, at every depth of the bow in steps. The outline is
 // worked out in the model's own frame (y forward, z up) as that script does; three's (y up, z back) is (-z, y) of it. The rays start
-// at `joint` (forward, height) in the upright jacket, which the bend carries along.
+// at `joint` (forward, height) in the upright jacket, which the bend carries along. From (0, -0.15) neighbouring rays land 0.0222 apart
+// at most; from the bend's base point (0, -0.20) they land up to 0.0837 apart at bow 0.65 to 0.95, a graze along one straight strip of
+// the chest and not a step (the evidence is in the note on "joint" in build_monk.py).
 const BOW_SWEEP = {
   depths: 20,
   planes: [0, 0.07],

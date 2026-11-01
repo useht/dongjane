@@ -1720,7 +1720,17 @@ def check_trousers_hidden(parts):
 BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a copy of this is in packages/client/test/monk-assets.test.ts)
     "depths": 20,  # the bow's depth from 0 to 1 in this many steps
     "planes": (0.0, 0.07),  # slices of the jacket along its length, this far from the middle line (the middle of the back and half-way to its edge)
-    "joint": (0.0, -0.15),  # the rays start from this point of the upright jacket (forward, height from the hip pivot), carried by the bend: the middle of the waist, where the chest's old hip joint was. From the base point of the bend instead, the rays at -65.5 and -65.6 degrees of the deepest bow run along the lying chest's front (within 0.1 degrees of its line) and land 0.19 apart on one continuous, straight stretch of it: a jump of 0.208 that is a graze of the viewpoint, not a step in the surface
+    # Where the rays start, in the upright jacket (forward, height from the hip pivot), carried by the bend: the middle of the waist, where the
+    # chest's old hip joint was. The biggest gap between neighbouring rays over the 21 depths and both planes, from
+    #   (0, -0.15), this point:            0.0222 at most (bow 0.80, plane 0.07), under "jump"
+    #   (0, -0.20), the bend's base point: 0.0293 to 0.0837 from bow 0.65 to 0.95 (0.0837 at bow 0.95, plane 0.07), 0.0095 and 0.0110 at bow 1.00
+    #   (0, -0.20) fixed in the waist's frame, not carried: 0.0499 at bow 0.65, 0.1861 at 0.95, 0.2079 at 1.00 (plane 0)
+    # The base point's jumps at bow 0.65 to 0.95 are a graze of the viewpoint, not a step: every hit is on the jacket (no other part is in front),
+    # the first hit is 7 to 20 degrees off the surface where it is 39 to 55 at bow 1.00, and the two hits of a worst pair lie on one straight strip
+    # of the chest (bow 0.95, plane 0.07: the cut's triangles 647, 686, 687, 726, 0.065 long, every hit within 2 mm of the line between the two,
+    # 3.6 degrees from the rays' own direction, and 686 and 687 within 1 degree of it, so the rays slide past them). From this point the worst
+    # pair's strip is 13.3 to 18.3 degrees off the rays at bow 0.65 to 0.80, not square to them, and its gap stays under "jump".
+    "joint": (0.0, -0.15),
     "rays": (-70, 100),  # one ray a degree from the joint, from this far forward of straight up to this far back
     "jump": 0.03,  # no two neighbouring points of the outline lie further apart than this: no step, no gap
     "grid": 0.002,  # the outline is walked in steps of this, and a dent is how far a point lies inside the chord to the points this far each way along it
