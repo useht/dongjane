@@ -101,7 +101,7 @@ function bowedAvatar(depth: number, seat?: { pose: SeatPose; top: number }): Mon
   return avatar;
 }
 
-// The seats a monk bows on: a cushion (kneeling), the bathhouse floor (cross-legged) and the church bench.
+// The seats a monk bows on: a 방석 (kneeling), the bathhouse floor (cross-legged) and the church bench.
 const BOW_SEATS = [
   { pose: "kneel", top: monkRig.seatTop },
   { pose: "cross", top: SEAT_TOPS.bathhouse },
