@@ -3,7 +3,7 @@
     "C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b --factory-startup --python packages/client/assets/monk/build_monk.py
     (add "-- --no-render" after the script to skip the preview PNGs)
 
-Writes next to this script (or into $MONK_OUT_DIR, for a trial build that leaves the committed files alone):
+Writes next to this script:
     monk.blend     editable source. Parts sit at their pivots in the hidden "monk_parts" collection; the visible
                     "monk_pose_standing" collection holds linked copies in rest pose, so editing either edits both.
                     To re-export by hand: unhide monk_parts, make it the active collection, glTF export with
@@ -11,7 +11,7 @@ Writes next to this script (or into $MONK_OUT_DIR, for a trial build that leaves
     monk.glb        what the game loads (Y-up; the face ends up on three.js -Z)
     monk-rig.json   pivot and length numbers the TypeScript rig reads (generated from the same config below)
     monk-poses.json where each part's bounds fall in the bow, walk and fishing poses (probes for the TypeScript tests)
-and, always next to this script, monk-bend-samples.json: where bend_vertex puts a dozen jacket vertices at each depth, the numbers
+and monk-bend-samples.json: where bend_vertex puts a dozen jacket vertices at each depth, the numbers
 the TypeScript copy of the bend is held to; and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo).
 
 Parts (one mesh object each, named exactly like the slot in monk-model.ts), each built in the local frame of its pivot:
@@ -268,7 +268,6 @@ SKULL_CY = 0.02  # the skull sits a little forward of the neck, which also keeps
 
 COLOR_LAYER = "Col"
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR = os.environ.get("MONK_OUT_DIR") or HERE  # where monk.glb, monk-rig.json, monk-poses.json and monk.blend are written
 PREVIEW_DIR = os.environ.get("MONK_PREVIEW_DIR") or os.path.join(tempfile.gettempdir(), "monk-preview")
 PART_ORDER = ["head", "face", "hair", "pelvis", "jacket", "trim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
 SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
@@ -2383,19 +2382,17 @@ def main():
     check_fish(parts)
     check_sleeves_clear_head(parts)
     check_standing_hands(parts)
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    glb = os.path.join(OUT_DIR, "monk.glb")
+    glb = os.path.join(HERE, "monk.glb")
     export_glb(parts_coll, glb)
     print("WROTE", glb, os.path.getsize(glb), "bytes")
 
-    rig_path = os.path.join(OUT_DIR, "monk-rig.json")
+    rig_path = os.path.join(HERE, "monk-rig.json")
     with open(rig_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(rig_dict(), fh, indent=2)
         fh.write("\n")
     print("WROTE", rig_path)
 
-    poses_path = os.path.join(OUT_DIR, "monk-poses.json")
+    poses_path = os.path.join(HERE, "monk-poses.json")
     with open(poses_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"_source": "packages/client/assets/monk/build_monk.py", **pose_probe(parts)}, fh, separators=(",", ":"))
         fh.write("\n")
@@ -2414,7 +2411,7 @@ def main():
     if "--no-render" not in args:
         render_previews(parts)
 
-    blend = os.path.join(OUT_DIR, "monk.blend")
+    blend = os.path.join(HERE, "monk.blend")
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=blend, compress=True)
     print("WROTE", blend)
