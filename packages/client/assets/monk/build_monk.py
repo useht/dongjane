@@ -869,6 +869,7 @@ PELVIS_PROFILE = [  # z, half-width, half-depth. The seat of the trousers: tucke
     (-PELVIS_DROP, 0.050, 0.044),
     (-PELVIS_DROP + 0.014, 0.100, 0.082),
     (-0.320, 0.130, 0.100),
+    (-0.290, 0.140, 0.108),
     (-RIG["bendLength"], 0.140, 0.108),
 ]
 
@@ -877,7 +878,7 @@ def build_pelvis():
     p = Part("pelvis")
     n = SEGMENTS["pelvis"]
     rings = [ring_xy(0.0, 0.0, z, w, d, n, 2.3) for z, w, d in PELVIS_PROFILE]
-    p.loft(rings, "trousers", cap_first=True)  # the top is inside the jacket, which the bend never lets in: no cap
+    p.loft(rings, "trousers", cap_first=True, cap_last=True)
     return p.to_object()
 
 
@@ -892,16 +893,14 @@ def build_trousers():
     knee = -length + RATIO["knee"] * HEAD_H - RIG["footY"]  # the human knee height: the widest point of the leg
     stations = [  # z, half-width (x), half-depth (y)
         (cuff, 0.0420, 0.0400),  # the cuff hugs the sock inside; shallow front to back, so its rim stays up when the leg swings
-        (cuff + 0.005, 0.0455, 0.0440),
         (cuff + 0.026, 0.0580, 0.0620),  # the fabric billows out of the gather ...
         (cuff + 0.080, 0.0640, 0.0720),  # ... and hangs full to the knee
         (knee, 0.0665, 0.0840),
-        (-0.110, 0.0660, 0.0950),
         (-0.050, 0.0650, 0.1020),  # thigh: as deep as the seat it hangs from, so legs and seat read as one garment
         (0.000, 0.0630, 0.1000),
     ]
     rings = [ring_xy(0.0, 0.0, z, w, d, n, 2.3) for z, w, d in stations]
-    p.loft(rings, "trousers")  # open at the cuff, and at the top inside the seat
+    p.loft(rings, "trousers", cap_last=Vector((0.0, 0.0, 0.012)))  # open at the cuff; the top shows as the knee when kneeling
     return p.to_object()
 
 
@@ -1090,7 +1089,7 @@ def build_hand():
     stretch = -HAND["reach"] / tip  # the part below the wrist is lengthened to the wrist-to-fingertip reach ...
     grow = HAND["reach"] / HAND_DRAWN_REACH * 1.5  # ... and grows sideways a bit more than that, so it reads as a stubby mitt
     rings = [ring_xy(0.0, 0.0, z * stretch if z < 0 else z, w * grow, d * grow, n) for z, w, d in profile]
-    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, tip * stretch)))  # the wrist end is inside the sleeve
+    p.loft(rings, "skin", cap_first=Vector((0.0, 0.0, tip * stretch)))  # the wrist end stays open: a cap is 20 triangles, the budget has none left
     return p.to_object()
 
 
@@ -1165,7 +1164,7 @@ def build_leg():
         ring(cuff - 0.005, r * 1.20),
         ring(cuff, r * 1.08),
     ]
-    p.loft(sock, "sock", cap_last=True)
+    p.loft(sock, "sock", cap_first=True, cap_last=True)
     calf = [ring(cuff - 0.012, r * 0.95), ring(0.25, r * 0.97), ring(length - 0.03, r * 1.0), ring(length - 0.008, r * 0.9)]
     p.loft(calf, "skin")
     return p.to_object()
