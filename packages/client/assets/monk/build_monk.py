@@ -1579,10 +1579,12 @@ def bend_fold(parts):
 
 
 def bend_facets():
-    """The most any facet of a meridian of the jacket turns against its neighbour beyond the turn it has upright (stretching the back
-    smooths a kink, so only a sharper turn counts), at the deepest bow, standing and gathered."""
+    """How far the facets of the jacket's meridians turn against their neighbours at the deepest bow, standing and gathered. Four
+    numbers: the most any facet turns beyond the turn it has upright (stretching the back smooths a kink, so only a sharper turn
+    counts; this is the one JACKET_BEND limits), the sharpest turn of a facet in the bend (the rings from BEND_RINGS_FROM to the hinge)
+    bent and upright, and the sharpest turn of any facet of the jacket bent (the hem's roll and the collar, which the bend does not touch)."""
     rings = jacket_rings()
-    worst = 0.0
+    worst = bent_in_bend = upright_in_bend = bent_anywhere = 0.0
 
     def aim(line, i):
         return atan2(line[i + 1].y - line[i].y, line[i + 1].z - line[i].z)
@@ -1596,7 +1598,10 @@ def bend_facets():
             bent = [bend_point(ring[j], POSE["bow_lean"], gather) for ring in rings]
             for i in range(1, len(upright) - 1):
                 worst = max(worst, abs(turn(bent, i)) - abs(turn(upright, i)))
-    return worst
+                bent_anywhere = max(bent_anywhere, abs(turn(bent, i)))
+                if BEND_RINGS_FROM - 1e-9 <= rings[i][j].z <= 1e-9:
+                    bent_in_bend, upright_in_bend = max(bent_in_bend, abs(turn(bent, i))), max(upright_in_bend, abs(turn(upright, i)))
+    return worst, bent_in_bend, upright_in_bend, bent_anywhere
 
 
 def check_jacket_bend(parts):
@@ -1612,8 +1617,9 @@ def check_jacket_bend(parts):
         crossings[bow] = self_crossings(parts["jacket"], pose_matrices(1.0, cushion, bow=bow)["jacket"][0], triangles)
     print("BEND triangles of the jacket crossing each other by depth: %s" % " ".join("%.2f:%d" % item for item in crossings.items()))
     assert not any(crossings.values()), "the bent jacket crosses itself at bow %s" % ", ".join("%.2f" % b for b, c in crossings.items() if c)
-    fold, facet = bend_fold(parts), bend_facets()
+    fold, (facet, bent_in_bend, upright_in_bend, bent_anywhere) = bend_fold(parts), bend_facets()
     print("BEND the front is folded by %.3f (it may be %.3f), the facets turn %.1f degrees more than upright at the sharpest (they may turn %.1f)" % (fold, JACKET_BEND["fold"], degrees(facet), degrees(JACKET_BEND["facet"])))
+    print("BEND absolute facet turn at the deepest bow: %.1f degrees at the sharpest facet in the bend (%.1f upright there) and %.1f anywhere in the jacket (the hem's roll and the collar, unchanged by the bend); the limit of %.1f applies to the excess over upright of each facet (%.1f), not to these" % (degrees(bent_in_bend), degrees(upright_in_bend), degrees(bent_anywhere), degrees(JACKET_BEND["facet"]), degrees(facet)))
     assert fold <= JACKET_BEND["fold"], "the front of the bend is folded by %.3f (it may be %.3f)" % (fold, JACKET_BEND["fold"])
     assert facet <= JACKET_BEND["facet"], "the bend turns a facet %.1f degrees sharper than upright (it may turn it %.1f)" % (degrees(facet), degrees(JACKET_BEND["facet"]))
     chest = [v.co for v in parts["jacket"].data.vertices if v.co.z >= HINGE_Z]
@@ -1642,7 +1648,9 @@ def check_jacket_bend(parts):
         deeper = max(r - clearance_of(jacket, pose["trim"][0] @ v.co) for r, v in zip(rest, parts["trim"].data.vertices))
         assert deeper <= JACKET_BEND["trim"], "the trim sinks %.4f deeper into the jacket than upright at bow %.3f (it may sink %.4f)" % (deeper, bow, JACKET_BEND["trim"])
         if bow == BOW_DEPTHS[-1]:
+            lowest = min(clearance_of(jacket, pose["trim"][0] @ v.co) for v in parts["trim"].data.vertices)
             print("BEND the trim sits %.4f deeper in the jacket than upright at the worst (it may sit %.4f)" % (deeper, JACKET_BEND["trim"]))
+            print("BEND absolute trim height at the deepest bow: the lowest vertex lies %.4f above the bent jacket's surface (upright %.4f; negative is below it, as the collar and the tie are laid into it); the limit of %.4f applies to the per-vertex change from upright (%.4f), not to the height" % (lowest, min(rest), JACKET_BEND["trim"], deeper))
 
 
 def check_leg_skirt(parts):
