@@ -13,6 +13,7 @@ export const BODY_PART_NAMES = [
   "pelvis",
   "torso",
   "skirt",
+  "backRamp",
   "trim",
   "skirtTrim",
   "sleeveUpper",
@@ -35,6 +36,7 @@ const PART_COPIES: Record<PartName, number> = {
   pelvis: 1,
   torso: 1,
   skirt: 1,
+  backRamp: 1,
   trim: 1,
   skirtTrim: 1,
   sleeveUpper: 2,
@@ -51,7 +53,7 @@ const PART_COPIES: Record<PartName, number> = {
 };
 
 // The jacket (chest, skirt, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
-export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "skirt", "trousers", "sleeveUpper", "sleeveLower"]);
+export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "skirt", "backRamp", "trousers", "sleeveUpper", "sleeveLower"]);
 
 // Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
 // so the model and the animation always agree. Only pose angles and walk timing live in animate().
@@ -92,8 +94,16 @@ const BOW_SKIRT_FOLLOW = rig.bowSkirtFollow;
 const BOW_SKIRT_SQUASH = rig.bowSkirtSquash;
 const BOW_SKIRT_SPREAD = rig.bowSkirtSpread;
 const SKIRT_REAR = rig.skirtRear;
+const SKIRT_CROWN_TOP = rig.skirtCrownTop;
+const BOW_RAMP_DEPTH = rig.bowRampDepth;
+const BOW_RAMP_SHARP = rig.bowRampSharp;
+const BOW_RAMP_SHIFT = rig.bowRampShift;
+const BOW_RAMP_SINK = rig.bowRampSink;
+// The back ramp lies flat inside the skirt, never scaled to nothing, so its matrix stays invertible.
+const RAMP_FLAT = 1e-4;
 const BOW_PELVIS_SQUASH = rig.bowPelvisSquash;
 const BOW_PELVIS_LIFT = rig.bowPelvisLift;
+const BOW_PELVIS_LIFT_POWER = rig.bowPelvisLiftPower;
 const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
@@ -188,6 +198,7 @@ export class MonkAvatar {
   private readonly pelvisNode = new Object3D();
   private readonly torsoNode = new Object3D();
   private readonly skirtNode = new Object3D();
+  private readonly rampNode = new Object3D();
   private readonly headNode = new Object3D();
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
@@ -218,6 +229,7 @@ export class MonkAvatar {
 
     this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
     this.hips.add(this.pelvisNode, this.torsoNode, this.skirtNode);
+    this.skirtNode.add(this.rampNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
@@ -248,6 +260,7 @@ export class MonkAvatar {
     bind("pelvis", this.pelvisNode);
     bind("torso", this.torsoNode);
     bind("skirt", this.skirtNode);
+    bind("backRamp", this.rampNode);
     bind("trim", this.torsoNode);
     bind("skirtTrim", this.skirtNode);
     for (let side = 0; side < 2; side += 1) {
@@ -333,7 +346,7 @@ export class MonkAvatar {
     const pelvisSquash = 1 + (BOW_PELVIS_SQUASH - 1) * depth;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
     this.pelvisNode.scale.set(pelvisXZ, pelvisY * pelvisSquash, pelvisXZ);
-    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash) + BOW_PELVIS_LIFT * depth * folded, waistForward);
+    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash) + BOW_PELVIS_LIFT * depth ** BOW_PELVIS_LIFT_POWER * folded, waistForward);
 
     // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
     const biting = this.bite && fish > 0.5;
@@ -359,6 +372,12 @@ export class MonkAvatar {
       waistForward * (1 - BOW_SKIRT_FOLLOW) + spreadShift * Math.cos(lean),
     );
     this.skirtNode.scale.set(1, skirtY * skirtSquash, skirtSpread);
+    // The back ramp lies hidden under the skirt's crown and rises out of it while the chest folds, to fill the dent between the skirt's
+    // top and the chest's back, hidden again standing and in the full bow (a copy of ramp_rise in build_monk.py). Its height and its
+    // sink are its own, not the skirt's.
+    const rampRise = Math.max(Math.sin(Math.PI * depth ** BOW_RAMP_DEPTH) ** BOW_RAMP_SHARP, RAMP_FLAT);
+    this.rampNode.position.set(0, SKIRT_CROWN_TOP - BOW_RAMP_SINK / (skirtY * skirtSquash), -BOW_RAMP_SHIFT * depth);
+    this.rampNode.scale.set(1, rampRise / (skirtY * skirtSquash), 1);
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;
 

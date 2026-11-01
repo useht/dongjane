@@ -13,6 +13,7 @@ const COPIES: Record<BodyPartName, number> = {
   pelvis: 1,
   torso: 1,
   skirt: 1,
+  backRamp: 1,
   trim: 1,
   skirtTrim: 1,
   sleeveUpper: 2,
@@ -23,13 +24,13 @@ const COPIES: Record<BodyPartName, number> = {
   trousers: 2,
 };
 // The jacket (chest, skirt, sleeves) and the trousers (pelvis seat, trouser legs) are the tinted garment.
-const JACKET_PARTS: BodyPartName[] = ["torso", "skirt", "sleeveUpper", "sleeveLower"];
+const JACKET_PARTS: BodyPartName[] = ["torso", "skirt", "backRamp", "sleeveUpper", "sleeveLower"];
 const TROUSER_PARTS: BodyPartName[] = ["pelvis", "trousers"];
 const ROBE_PARTS: BodyPartName[] = [...JACKET_PARTS, ...TROUSER_PARTS];
 
 // monk-poses.json, written by build_monk.py: world bounds [min x, y, z, max x, y, z] of one copy of each part, per probed pose.
 // The right (second) copy of the arm and leg parts is probed too: a pose is right only if both sides are.
-const BOW_PROBED = ["head", "pelvis", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const;
+const BOW_PROBED = ["head", "pelvis", "torso", "skirt", "backRamp", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const;
 const BOW_PROBED_RIGHT = ["sleeveUpper", "sleeveLower", "hand", "foot", "trousers"] as const;
 type BowProbe = { bows: number[] } & Record<(typeof BOW_PROBED)[number] | `${(typeof BOW_PROBED_RIGHT)[number]}Right`, number[][]>;
 type WalkProbe = { phases: number[] } & Record<"head" | "torso" | "skirt" | "sleeveUpper" | "sleeveLower" | "hand" | "foot" | "trousers", number[][]>;
@@ -87,6 +88,112 @@ function worldNormals(node: Object3D, geometry: BufferGeometry): Vector3[] {
   const normal = geometry.getAttribute("normal");
   const matrix = new Matrix3().getNormalMatrix(node.matrixWorld);
   return Array.from({ length: normal.count }, (_, i) => new Vector3().fromBufferAttribute(normal as never, i).applyMatrix3(matrix).normalize());
+}
+
+// A copy of BOW_SWEEP in build_monk.py: the back over the hip seen from the side, at every depth of the bow in steps. The outline is
+// worked out in the model's own frame (y forward, z up) as that script does; three's (y up, z back) is (-z, y) of it.
+const BOW_SWEEP = {
+  depths: 20,
+  planes: [0, 0.07],
+  rays: [-70, 100],
+  jump: 0.03,
+  grid: 0.002,
+  reach: [0.05, 0.08],
+  dent: [0.0135, 0.013],
+} as const;
+const SWEEP_PARTS = ["torso", "skirt", "backRamp", "pelvis"] as const;
+type OutlinePoint = readonly [number, number];
+
+// For one ray a degree from the hip joint, from forward over the chest round to the seat: the farthest of the parts' outer faces.
+function backOutline(meshes: Mesh[], hip: Vector3, plane: number): (OutlinePoint | null)[] {
+  const raycaster = new Raycaster();
+  const origin = hip.clone().add(new Vector3(plane, 0, 0));
+  const outline: (OutlinePoint | null)[] = [];
+  const [low, high] = BOW_SWEEP.rays;
+  for (let degree = high; degree >= low; degree -= 1) {
+    const out = new Vector3(0, Math.cos((degree * Math.PI) / 180), Math.sin((degree * Math.PI) / 180));
+    raycaster.set(origin.clone().add(out), out.clone().negate());
+    let far: Vector3 | null = null;
+    for (const mesh of meshes) {
+      const hit = raycaster.intersectObject(mesh)[0];
+      if (!hit?.face) continue;
+      const normal = hit.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
+      if (normal.dot(out) > 0 && (far === null || hit.point.distanceTo(origin) > far.distanceTo(origin))) far = hit.point;
+    }
+    outline.push(far === null ? null : [-far.z, far.y]);
+  }
+  return outline;
+}
+
+// The outline walked in even steps along its length, and the longest step between two neighbouring points before that (infinite where
+// a ray in between found nothing).
+function walkOutline(outline: (OutlinePoint | null)[]): { walked: OutlinePoint[]; jump: number } {
+  const hits = outline.flatMap((point, i) => (point ? [i] : []));
+  const between = outline.slice(hits[0], (hits[hits.length - 1] as number) + 1);
+  const run = between.filter((point): point is OutlinePoint => point !== null);
+  let jump = 0;
+  const walked: OutlinePoint[] = [run[0] as OutlinePoint];
+  for (let i = 1; i < run.length; i += 1) {
+    const before = run[i - 1] as OutlinePoint;
+    const point = run[i] as OutlinePoint;
+    jump = Math.max(jump, Math.hypot(point[0] - before[0], point[1] - before[1]));
+    for (;;) {
+      const at = walked[walked.length - 1] as OutlinePoint;
+      const gap = Math.hypot(point[0] - at[0], point[1] - at[1]);
+      if (gap < BOW_SWEEP.grid) break;
+      const share = BOW_SWEEP.grid / gap;
+      walked.push([at[0] + (point[0] - at[0]) * share, at[1] + (point[1] - at[1]) * share]);
+    }
+  }
+  return { walked, jump: run.length < between.length ? Number.POSITIVE_INFINITY : jump };
+}
+
+// How far the outline lies inside the chord between the points `reach` each way along it, at its worst, seen from the hip joint (a
+// bulge outward is no dent): a concave waist, a step or a crease shows here whatever its angle.
+function outlineDent(walked: OutlinePoint[], joint: OutlinePoint, reach: number): number {
+  const k = Math.round(reach / BOW_SWEEP.grid);
+  let worst = 0;
+  for (let i = k; i < walked.length - k; i += 1) {
+    const a = walked[i - k] as OutlinePoint;
+    const b = walked[i + k] as OutlinePoint;
+    const p = walked[i] as OutlinePoint;
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    let ny = (b[1] - a[1]) / length;
+    let nz = -(b[0] - a[0]) / length;
+    if (ny * ((a[0] + b[0]) / 2 - joint[0]) + nz * ((a[1] + b[1]) / 2 - joint[1]) < 0) {
+      ny = -ny;
+      nz = -nz;
+    }
+    worst = Math.max(worst, -((p[0] - a[0]) * ny + (p[1] - a[1]) * nz));
+  }
+  return worst;
+}
+
+// The worst jump and dents of the outline in each slice at each depth of the bow, over the named parts: [depth, jump, ...dents].
+function sweepBow(geometries: Record<BodyPartName, BufferGeometry>, names: readonly BodyPartName[]): number[][] {
+  const meshes = names.map((name) => new Mesh(geometries[name], new MeshBasicMaterial({ side: DoubleSide })));
+  for (const mesh of meshes) mesh.matrixAutoUpdate = false;
+  const kneeling = new MonkAvatar("bower", 0, false);
+  kneeling.setMode("bow", 0);
+  kneeling.animate(0.016, 0, 0, true);
+  const waist = new Vector3().setFromMatrixPosition(nodeOf(kneeling, "torso", 0).matrixWorld);
+  const hip = new Vector3(0, waist.y - monkRig.bowHipJoint, 0);
+  const worst: number[][] = [];
+  for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
+    const depth = step / BOW_SWEEP.depths;
+    const avatar = new MonkAvatar("bower", 0, false);
+    avatar.setMode("bow", 0);
+    avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
+    for (const [index, mesh] of meshes.entries()) mesh.matrixWorld.copy(nodeOf(avatar, names[index] as BodyPartName, 0).matrixWorld);
+    const row = [depth, 0, ...BOW_SWEEP.reach.map(() => 0)];
+    for (const plane of BOW_SWEEP.planes) {
+      const { walked, jump } = walkOutline(backOutline(meshes, hip, plane));
+      row[1] = Math.max(row[1] as number, jump);
+      for (const [i, reach] of BOW_SWEEP.reach.entries()) row[2 + i] = Math.max(row[2 + i] as number, outlineDent(walked, [-hip.z, hip.y], reach));
+    }
+    worst.push(row);
+  }
+  return worst;
 }
 
 describe("monk assets", () => {
@@ -201,7 +308,7 @@ describe("monk assets", () => {
 
   it("stays mirror-symmetric where one geometry serves both sides", async () => {
     const parts = await loadParts();
-    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers", "pelvis", "torso", "skirt"] as const) {
+    for (const name of ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers", "pelvis", "torso", "skirt", "backRamp"] as const) {
       const box = bounds(parts[name]);
       expect(box.min.x, name).toBeCloseTo(-box.max.x, 4);
     }
@@ -303,10 +410,16 @@ describe("monk assets", () => {
       "skirtRear",
       "bowPelvisSquash",
       "bowPelvisLift",
+      "bowPelvisLiftPower",
       "bowLean",
       "bowHead",
       "kneelSkirtScale",
       "seatTop",
+      "skirtCrownTop",
+      "bowRampDepth",
+      "bowRampSharp",
+      "bowRampShift",
+      "bowRampSink",
       "robeTintSaturation",
       "robeTintLightness",
     ] as const) {
@@ -571,6 +684,26 @@ describe("monk assets", () => {
         }
       }
     }
+  });
+
+  it("bows as one body at every depth, not only the full one: no step, gap or dent in the outline over the hip", async () => {
+    const parts = await loadParts();
+    const rows = sweepBow(parts, SWEEP_PARTS);
+    expect(rows, "the sweep covers the whole bow").toHaveLength(BOW_SWEEP.depths + 1);
+    for (const [depth, jump, ...dents] of rows) {
+      expect(jump, `the outline's biggest step or gap at bow ${depth}`).toBeLessThanOrEqual(BOW_SWEEP.jump);
+      for (const [i, dent] of dents.entries()) {
+        expect(dent, `the waist's dent over ${BOW_SWEEP.reach[i]} m at bow ${depth}`).toBeLessThanOrEqual(BOW_SWEEP.dent[i] as number);
+      }
+    }
+  });
+
+  it("would see the waist split in two without the ramp over the hip: the sweep finds a dent deeper than it allows", async () => {
+    const parts = await loadParts();
+    const rows = sweepBow(parts, SWEEP_PARTS.filter((name) => name !== "backRamp"));
+    const split = rows.filter(([, , ...dents]) => dents.some((dent, i) => dent > (BOW_SWEEP.dent[i] as number)));
+    expect(split.length, "the depths where the waist is dented too deep").toBeGreaterThanOrEqual(3);
+    expect(split.every(([depth]) => (depth as number) > 0 && (depth as number) < 1), "standing and in the full bow the waist is one body already").toBe(true);
   });
 
   it("walks exactly as build_monk.py checked it: the legs hang from hips that slide against the stride, the arms swing clear", async () => {
