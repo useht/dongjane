@@ -660,6 +660,8 @@ def jacket_specs():
         steps = math.ceil(bend_turn(a[0], b[0]) / BEND_FACET - 1e-9) if BEND_RINGS_FROM - 1e-9 <= a[0] and b[0] <= 1e-9 else 1
         specs += [mix_specs(a, b, k / steps) for k in range(1, steps)] + [b]
     return specs
+
+
 def ring_of(spec):
     z, w, d, power, extra, back_power = spec
     return ring_xy(0.0, -extra / 2, z, w, d + extra / 2, SEGMENTS["torso"], power, back_power=back_power)
@@ -1659,7 +1661,7 @@ def check_leg_skirt(parts):
 BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a copy of this is in packages/client/test/monk-assets.test.ts)
     "depths": 20,  # the bow's depth from 0 to 1 in this many steps
     "planes": (0.0, 0.07),  # slices of the jacket along its length, this far from the middle line (the middle of the back and half-way to its edge)
-    "joint": (0.0, -0.15),  # the rays start from this point of the upright jacket (forward, height from the hip pivot), carried by the bend: the middle of the waist, where the chest's old hip joint was
+    "joint": (0.0, -0.15),  # the rays start from this point of the upright jacket (forward, height from the hip pivot), carried by the bend: the middle of the waist, where the chest's old hip joint was. From the base point of the bend instead, the rays at -65.5 and -65.6 degrees of the deepest bow run along the lying chest's front (within 0.1 degrees of its line) and land 0.19 apart on one continuous, straight stretch of it: a jump of 0.208 that is a graze of the viewpoint, not a step in the surface
     "rays": (-70, 100),  # one ray a degree from the joint, from this far forward of straight up to this far back
     "jump": 0.03,  # no two neighbouring points of the outline lie further apart than this: no step, no gap
     "grid": 0.002,  # the outline is walked in steps of this, and a dent is how far a point lies inside the chord to the points this far each way along it
