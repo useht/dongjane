@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type BufferGeometry, Box3, Color, DoubleSide, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
+import { type BufferGeometry, Box3, Color, DoubleSide, Matrix3, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BOW_MS, ITEM_ROD } from "@dongjane/shared";
@@ -81,6 +81,12 @@ function nodeOf(avatar: MonkAvatar, part: PartName, copy: number): Object3D {
 function worldVertices(node: Object3D, geometry: BufferGeometry): Vector3[] {
   const position = geometry.getAttribute("position");
   return Array.from({ length: position.count }, (_, i) => new Vector3().fromBufferAttribute(position as never, i).applyMatrix4(node.matrixWorld));
+}
+
+function worldNormals(node: Object3D, geometry: BufferGeometry): Vector3[] {
+  const normal = geometry.getAttribute("normal");
+  const matrix = new Matrix3().getNormalMatrix(node.matrixWorld);
+  return Array.from({ length: normal.count }, (_, i) => new Vector3().fromBufferAttribute(normal as never, i).applyMatrix3(matrix).normalize());
 }
 
 describe("monk assets", () => {
@@ -775,6 +781,31 @@ describe("monk assets", () => {
     expect(hem - lowest(kneeling, "pelvis"), "kneeling, the seat of the trousers still rests on the heels, below the hem").toBeGreaterThan(0.05);
     expect(hem - lowest(avatar, "pelvis"), "bowing, the seat of the trousers is lifted up to the hem and does not hang below it as a band").toBeLessThan(0.01);
     expect(lowest(avatar, "pelvis") - monkRig.seatTop, "and the buttocks stay above the 방석").toBeGreaterThan(0.06);
+  });
+
+  it("shades the chest on into the skirt where it comes out of it when bowing, so no crease shows at the waist", async () => {
+    const parts = await loadParts();
+    const avatar = new MonkAvatar("bower", 0, false);
+    avatar.setMode("bow", 0);
+    avatar.animate(0.016, BOW_MS * 0.32, 0, true);
+    const chest = { points: worldVertices(nodeOf(avatar, "torso", 0), parts.torso), normals: worldNormals(nodeOf(avatar, "torso", 0), parts.torso) };
+    const skirt = { points: worldVertices(nodeOf(avatar, "skirt", 0), parts.skirt), normals: worldNormals(nodeOf(avatar, "skirt", 0), parts.skirt) };
+    const angles: number[] = [];
+    chest.points.forEach((point, i) => {
+      let gap = Infinity;
+      let nearest = 0;
+      skirt.points.forEach((other, j) => {
+        const d = point.distanceTo(other);
+        if (d < gap) {
+          gap = d;
+          nearest = j;
+        }
+      });
+      if (gap < 0.02) angles.push((chest.normals[i]!.angleTo(skirt.normals[nearest]!) * 180) / Math.PI);
+    });
+    expect(angles.length, "the chest has vertices on the skirt to compare").toBeGreaterThanOrEqual(8);
+    expect(angles.reduce((sum, a) => sum + a, 0) / angles.length, "on average the chest and the skirt face the same way where they meet").toBeLessThan(5);
+    expect(Math.max(...angles), "and nowhere do their normals part by more than a few degrees").toBeLessThan(12);
   });
 
   it("folds the kneeling leg under the body: a thigh in front, a knee, a flattened shin back to the foot, and the foot lying under the seat", async () => {

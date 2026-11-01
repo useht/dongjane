@@ -673,6 +673,33 @@ def build_jacket_whole():
     return p.to_object()
 
 
+JUNCTION_REACH = 0.12  # how far from the skirt, at the deepest bow, the chest's normals still follow the skirt's
+
+
+def blend_junction_normals(chest, skirt):
+    """Bowing, the chest comes out of the skirt's rounded corner at a shallow angle, and the two surfaces' own normals differ by a
+    few degrees there, which shows as a crease. The chest takes the skirt's normal wherever it lies on the skirt at the deepest bow,
+    fading out over JUNCTION_REACH, so the shading runs on from one into the other. The skirt keeps its own normals: they are what
+    the standing monk's hips show, and the standing waist is smoother with the chest following them as well."""
+    mats = pose_matrices(1.0, RIG["seatTop"], bow=BOW_DEPTHS[-1])
+    chest_m, skirt_m = mats["torso"][0], mats["skirt"][0]
+    tree = world_bvh(skirt, skirt_m)
+    chest_to_world, skirt_to_world = chest_m.to_3x3().inverted().transposed(), skirt_m.to_3x3().inverted().transposed()
+    skirt_normals = [(skirt_to_world @ Vector(n.vector)).normalized() for n in skirt.data.vertex_normals]
+    skirt_points = [skirt_m @ v.co for v in skirt.data.vertices]
+    normals = []
+    for v, n in zip(chest.data.vertices, chest.data.vertex_normals):
+        mine = (chest_to_world @ Vector(n.vector)).normalized()
+        hit, _, face, dist = tree.find_nearest(chest_m @ v.co)
+        follow = 1.0 - smoothstep(dist / JUNCTION_REACH)
+        if follow > 0.0:
+            weights = [(1.0 / ((skirt_points[i] - hit).length + 1e-4) ** 2, i) for i in skirt.data.polygons[face].vertices]
+            theirs = sum((skirt_normals[i] * w for w, i in weights), Vector()).normalized()
+            mine = mine.lerp(theirs, follow).normalized()
+        normals.append((chest_m.to_3x3().transposed() @ mine).normalized())
+    chest.data.normals_split_custom_set_from_vertices(normals)
+
+
 PARITY_RAY = Vector((0.371, 0.613, 0.696)).normalized()
 
 
@@ -1962,6 +1989,7 @@ def main():
         obj = BUILDERS[name]()
         parts_coll.objects.link(obj)
         parts[name] = obj
+    blend_junction_normals(parts["torso"], parts["skirt"])
     jacket = build_jacket_whole()  # not exported: the one surface the thighs and the arms are held against while the chest and the skirt move as one
     parts["jacket"] = jacket
     total = report_parts(parts)
