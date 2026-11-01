@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type BufferGeometry, Box3, Color, DoubleSide, Matrix3, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
+import { type BufferGeometry, Box3, Color, DoubleSide, type Intersection, Matrix3, Mesh, MeshBasicMaterial, type Object3D, Raycaster, SRGBColorSpace, Vector3 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BOW_MS, ITEM_ROD } from "@dongjane/shared";
@@ -100,11 +100,28 @@ const BOW_SWEEP = {
   grid: 0.002,
   reach: [0.05, 0.08],
   dent: [0.0135, 0.013],
+  span: 0.01,
+  turn: 20,
+  zone: 0.28,
 } as const;
 const SWEEP_PARTS = ["torso", "skirt", "backRamp", "pelvis"] as const;
-type OutlinePoint = readonly [number, number];
+// A point of the outline in the model's frame (y forward, z up), and the shading normal there (in three's frame: only its turns count).
+type OutlinePoint = readonly [number, number, Vector3];
 
-// For one ray a degree from the hip joint, from forward over the chest round to the seat: the farthest of the parts' outer faces.
+// The shading normal at a hit: the exported vertex normals of its triangle mixed by where the point lies in it.
+function shadingNormal(mesh: Mesh, hit: Intersection): Vector3 {
+  const normals = mesh.geometry.getAttribute("normal");
+  const face = hit.face as NonNullable<Intersection["face"]>;
+  const weights = hit.barycoord as Vector3;
+  const mixed = new Vector3();
+  for (const [index, weight] of [[face.a, weights.x], [face.b, weights.y], [face.c, weights.z]] as const) {
+    mixed.addScaledVector(new Vector3().fromBufferAttribute(normals as never, index), weight);
+  }
+  return mixed.applyMatrix3(new Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
+}
+
+// For one ray a degree from the hip joint, from forward over the chest round to the seat: the farthest of the parts' outer faces, and
+// its shading normal.
 function backOutline(meshes: Mesh[], hip: Vector3, plane: number): (OutlinePoint | null)[] {
   const raycaster = new Raycaster();
   const origin = hip.clone().add(new Vector3(plane, 0, 0));
@@ -113,20 +130,24 @@ function backOutline(meshes: Mesh[], hip: Vector3, plane: number): (OutlinePoint
   for (let degree = high; degree >= low; degree -= 1) {
     const out = new Vector3(0, Math.cos((degree * Math.PI) / 180), Math.sin((degree * Math.PI) / 180));
     raycaster.set(origin.clone().add(out), out.clone().negate());
-    let far: Vector3 | null = null;
+    let far: Intersection | null = null;
+    let shading: Vector3 | null = null;
     for (const mesh of meshes) {
       const hit = raycaster.intersectObject(mesh)[0];
       if (!hit?.face) continue;
       const normal = hit.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
-      if (normal.dot(out) > 0 && (far === null || hit.point.distanceTo(origin) > far.distanceTo(origin))) far = hit.point;
+      if (normal.dot(out) > 0 && (far === null || hit.point.distanceTo(origin) > far.point.distanceTo(origin))) {
+        far = hit;
+        shading = shadingNormal(mesh, hit);
+      }
     }
-    outline.push(far === null ? null : [-far.z, far.y]);
+    outline.push(far === null || shading === null ? null : [-far.point.z, far.point.y, shading]);
   }
   return outline;
 }
 
-// The outline walked in even steps along its length, and the longest step between two neighbouring points before that (infinite where
-// a ray in between found nothing).
+// The outline walked in even steps along its length (the shading normal mixed along with them), and the longest step between two
+// neighbouring points before that (infinite where a ray in between found nothing).
 function walkOutline(outline: (OutlinePoint | null)[]): { walked: OutlinePoint[]; jump: number } {
   const hits = outline.flatMap((point, i) => (point ? [i] : []));
   const between = outline.slice(hits[0], (hits[hits.length - 1] as number) + 1);
@@ -142,7 +163,7 @@ function walkOutline(outline: (OutlinePoint | null)[]): { walked: OutlinePoint[]
       const gap = Math.hypot(point[0] - at[0], point[1] - at[1]);
       if (gap < BOW_SWEEP.grid) break;
       const share = BOW_SWEEP.grid / gap;
-      walked.push([at[0] + (point[0] - at[0]) * share, at[1] + (point[1] - at[1]) * share]);
+      walked.push([at[0] + (point[0] - at[0]) * share, at[1] + (point[1] - at[1]) * share, at[2].clone().lerp(point[2], share)]);
     }
   }
   return { walked, jump: run.length < between.length ? Number.POSITIVE_INFINITY : jump };
@@ -169,7 +190,23 @@ function outlineDent(walked: OutlinePoint[], joint: OutlinePoint, reach: number)
   return worst;
 }
 
-// The worst jump and dents of the outline in each slice at each depth of the bow, over the named parts: [depth, jump, ...dents].
+// How far the shading normal turns, in degrees, between two points of the outline BOW_SWEEP.span apart, at its worst within
+// BOW_SWEEP.zone of the hip joint: the light can draw a ledge or a seam the shape has not got.
+function outlineTurn(walked: OutlinePoint[], joint: OutlinePoint): number {
+  const k = Math.round(BOW_SWEEP.span / BOW_SWEEP.grid);
+  let worst = 0;
+  for (let i = 0; i + k < walked.length; i += 1) {
+    const a = walked[i] as OutlinePoint;
+    const b = walked[i + k] as OutlinePoint;
+    if (Math.max(Math.hypot(a[0] - joint[0], a[1] - joint[1]), Math.hypot(b[0] - joint[0], b[1] - joint[1])) <= BOW_SWEEP.zone) {
+      worst = Math.max(worst, (a[2].angleTo(b[2]) * 180) / Math.PI);
+    }
+  }
+  return worst;
+}
+
+// The worst jump, dents and shading turn of the outline in each slice at each depth of the bow, over the named parts: [depth, jump,
+// ...dents, turn].
 function sweepBow(geometries: Record<BodyPartName, BufferGeometry>, names: readonly BodyPartName[]): number[][] {
   const meshes = names.map((name) => new Mesh(geometries[name], new MeshBasicMaterial({ side: DoubleSide })));
   for (const mesh of meshes) mesh.matrixAutoUpdate = false;
@@ -185,11 +222,14 @@ function sweepBow(geometries: Record<BodyPartName, BufferGeometry>, names: reado
     avatar.setMode("bow", 0);
     avatar.animate(0.016, BOW_MS * 0.32 * depth, 0, true);
     for (const [index, mesh] of meshes.entries()) mesh.matrixWorld.copy(nodeOf(avatar, names[index] as BodyPartName, 0).matrixWorld);
-    const row = [depth, 0, ...BOW_SWEEP.reach.map(() => 0)];
+    const row = [depth, 0, ...BOW_SWEEP.reach.map(() => 0), 0];
+    const turn = row.length - 1;
     for (const plane of BOW_SWEEP.planes) {
       const { walked, jump } = walkOutline(backOutline(meshes, hip, plane));
+      const joint: OutlinePoint = [-hip.z, hip.y, new Vector3()];
       row[1] = Math.max(row[1] as number, jump);
-      for (const [i, reach] of BOW_SWEEP.reach.entries()) row[2 + i] = Math.max(row[2 + i] as number, outlineDent(walked, [-hip.z, hip.y], reach));
+      for (const [i, reach] of BOW_SWEEP.reach.entries()) row[2 + i] = Math.max(row[2 + i] as number, outlineDent(walked, joint, reach));
+      row[turn] = Math.max(row[turn] as number, outlineTurn(walked, joint));
     }
     worst.push(row);
   }
@@ -418,7 +458,9 @@ describe("monk assets", () => {
       "skirtCrownTop",
       "bowRampDepth",
       "bowRampSharp",
-      "bowRampShift",
+      "bowRampStretch",
+      "bowRampStretchDepth",
+      "bowRampBack",
       "bowRampSink",
       "robeTintSaturation",
       "robeTintLightness",
@@ -690,20 +732,32 @@ describe("monk assets", () => {
     const parts = await loadParts();
     const rows = sweepBow(parts, SWEEP_PARTS);
     expect(rows, "the sweep covers the whole bow").toHaveLength(BOW_SWEEP.depths + 1);
-    for (const [depth, jump, ...dents] of rows) {
+    for (const [depth, jump, ...rest] of rows) {
+      const turn = rest.pop() as number;
       expect(jump, `the outline's biggest step or gap at bow ${depth}`).toBeLessThanOrEqual(BOW_SWEEP.jump);
-      for (const [i, dent] of dents.entries()) {
+      for (const [i, dent] of rest.entries()) {
         expect(dent, `the waist's dent over ${BOW_SWEEP.reach[i]} m at bow ${depth}`).toBeLessThanOrEqual(BOW_SWEEP.dent[i] as number);
       }
+      expect(turn, `the shading's biggest turn over ${BOW_SWEEP.span * 1000} mm at bow ${depth}, a ledge or a seam in the light`).toBeLessThanOrEqual(BOW_SWEEP.turn);
     }
   });
 
   it("would see the waist split in two without the ramp over the hip: the sweep finds a dent deeper than it allows", async () => {
     const parts = await loadParts();
     const rows = sweepBow(parts, SWEEP_PARTS.filter((name) => name !== "backRamp"));
-    const split = rows.filter(([, , ...dents]) => dents.some((dent, i) => dent > (BOW_SWEEP.dent[i] as number)));
+    const split = rows.filter(([, , ...rest]) => rest.slice(0, BOW_SWEEP.reach.length).some((dent, i) => dent > (BOW_SWEEP.dent[i] as number)));
     expect(split.length, "the depths where the waist is dented too deep").toBeGreaterThanOrEqual(3);
     expect(split.every(([depth]) => (depth as number) > 0 && (depth as number) < 1), "standing and in the full bow the waist is one body already").toBe(true);
+  });
+
+  it("would see ledges and seams in the light with the skirt and the ramp shaded by their own faces: the sweep finds the shading turning faster than it allows", async () => {
+    const parts = await loadParts();
+    const own = { ...parts, skirt: parts.skirt.clone(), backRamp: parts.backRamp.clone() };
+    own.skirt.computeVertexNormals();
+    own.backRamp.computeVertexNormals();
+    const rows = sweepBow(own, SWEEP_PARTS);
+    const seamed = rows.filter((row) => (row[row.length - 1] as number) > BOW_SWEEP.turn);
+    expect(seamed.length, "the depths where the light draws a ledge or a seam").toBeGreaterThanOrEqual(3);
   });
 
   it("walks exactly as build_monk.py checked it: the legs hang from hips that slide against the stride, the arms swing clear", async () => {

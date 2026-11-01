@@ -97,7 +97,9 @@ const SKIRT_REAR = rig.skirtRear;
 const SKIRT_CROWN_TOP = rig.skirtCrownTop;
 const BOW_RAMP_DEPTH = rig.bowRampDepth;
 const BOW_RAMP_SHARP = rig.bowRampSharp;
-const BOW_RAMP_SHIFT = rig.bowRampShift;
+const BOW_RAMP_STRETCH = rig.bowRampStretch;
+const BOW_RAMP_STRETCH_DEPTH = rig.bowRampStretchDepth;
+const BOW_RAMP_BACK = rig.bowRampBack;
 const BOW_RAMP_SINK = rig.bowRampSink;
 // The back ramp lies flat inside the skirt, never scaled to nothing, so its matrix stays invertible.
 const RAMP_FLAT = 1e-4;
@@ -374,10 +376,11 @@ export class MonkAvatar {
     this.skirtNode.scale.set(1, skirtY * skirtSquash, skirtSpread);
     // The back ramp lies hidden under the skirt's crown and rises out of it while the chest folds, to fill the dent between the skirt's
     // top and the chest's back, hidden again standing and in the full bow (a copy of ramp_rise in build_monk.py). Its height and its
-    // sink are its own, not the skirt's.
+    // sink are its own, not the skirt's, and it grows longer from its back end, which stays on the skirt's back wall.
     const rampRise = Math.max(Math.sin(Math.PI * depth ** BOW_RAMP_DEPTH) ** BOW_RAMP_SHARP, RAMP_FLAT);
-    this.rampNode.position.set(0, SKIRT_CROWN_TOP - BOW_RAMP_SINK / (skirtY * skirtSquash), -BOW_RAMP_SHIFT * depth);
-    this.rampNode.scale.set(1, rampRise / (skirtY * skirtSquash), 1);
+    const rampStretch = 1 + BOW_RAMP_STRETCH * Math.sin(Math.PI * depth ** BOW_RAMP_STRETCH_DEPTH);
+    this.rampNode.position.set(0, SKIRT_CROWN_TOP - BOW_RAMP_SINK / (skirtY * skirtSquash), BOW_RAMP_BACK * (1 - rampStretch));
+    this.rampNode.scale.set(1, rampRise / (skirtY * skirtSquash), rampStretch);
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;
 

@@ -70,6 +70,7 @@ import warnings
 from math import asin, atan2, cos, degrees, pi, radians, sin, sqrt
 from mathutils import Euler, Matrix, Vector
 from mathutils.bvhtree import BVHTree
+from mathutils.interpolate import poly_3d_calc
 
 # ----------------------------------------------------------------------------------------------------------------------
 # CONFIG - change numbers here and rebuild. Lengths are scene units (1 unit = the game's world unit).
@@ -135,10 +136,11 @@ RIG = {  # pivots and lengths the animation code uses
     "bowPelvisLiftPower": 3.0,  # ... the lift following this power of the bow's depth, so the seat stays low while the chest folds over it and its top rim does not stand out of the tunic on the way down
     "kneelSkirtScale": 0.86,  # kneeling gathers the skirt to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
     "skirtCrownTop": 0.026,  # the skirt closes in a crown this far above the hinge ...
-    "bowRampDepth": 0.4797,  # ... and bowing, the ramp (backRamp) rises on it, its height the sine of this power of the bow's depth over a half turn: the chest passes over the hip well before the full bow, so it is highest at about a quarter of it ...
-    "bowRampSharp": 0.7505,  # ... and flat again by the full bow, the sine raised to this power ...
-    "bowRampShift": 0.0518,  # ... as it slides this far forward along the skirt ...
-    "bowRampSink": 0.0282,  # ... out of the skirt, where it lies this far under the crown's top, hidden, standing and in the full bow
+    "bowRampDepth": 0.4283,  # ... and bowing, the ramp (backRamp) rises on it, its height the sine of this power of the bow's depth over a half turn: the chest passes over the hip well before the full bow, so it is highest at about a quarter of it ...
+    "bowRampSharp": 0.7726,  # ... and flat again by the full bow, the sine raised to this power ...
+    "bowRampStretch": 0.5218,  # ... as it grows longer from its back end, which stays on the skirt's back wall, up to this much of its length, the sine of this power of the depth over a half turn: the skirt's top is a shelf, and the chest comes out of it further forward the deeper the bow, so the ramp reaches on with it ...
+    "bowRampStretchDepth": 1.4541,
+    "bowRampSink": 0.033,  # ... out of the skirt, where it lies this far under the crown's top, hidden, standing and in the full bow
     "seatTop": 0.13,
     "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
     "robeTintLightness": 0.78,
@@ -674,12 +676,12 @@ def build_skirt():
 
 BACK_RAMP = {  # the half arch that fills the back over the hip while the chest folds, in the skirt's frame (y forward, z up from where it lies in the pose)
     "y": (-0.1218, 0.0003),  # from the skirt's back wall to just short of the hinge, where it ends inside the chest
-    "half_width": 0.1578,  # its width at the front end; it narrows to the back along a power of the share of the way
+    "half_width": 0.1335,  # its width at the front end; it narrows to the back along a power of the share of the way
     "widen": 0.2348,
-    "height": 0.0866,  # its height at the front end, and the share of it that rises along the way
-    "rise": 0.7406,
+    "height": 0.1243,  # its height at the front end, and the share of it that rises along the way
+    "rise": 0.5355,
     "power": 2.6,  # the arch's squareness (2 is an ellipse)
-    "spacing": 1.2781,  # the rings lie at this power of their share of the way: more than 1 crowds them toward the back
+    "spacing": 1.1527,  # the rings lie at this power of their share of the way: more than 1 crowds them toward the back
     "rings": 5,  # the rings along the way (the first is the point at the back), and the points over the arch of each (an odd number gives the arch a ridge on the middle line)
     "points": 5,
 }
@@ -719,12 +721,16 @@ def build_jacket_whole():
 
 
 HEM_TILT = radians(30)  # how far below the horizontal the hem's lowest ring is shaded: it turns under, it does not face down
+CROWN_TILT = (radians(35), radians(50), radians(60))  # how far above the horizontal the skirt's top is shaded, at the hinge's ring, at the crown's ring and at the crown's cap (tilted back): it is a shelf, the ramp and the chest come out of it
 
 
-def soften_hem_normals(skirt):
+def shade_skirt_normals(skirt):
     """The skirt's lowest ring shares its vertices with the flat bottom cap, so its smooth normals point almost straight down and
     shade near black: bowing, the hem's turned-under back catches the light as a hard dark rim across the thighs. It is shaded as
-    the tucked edge it is instead, its horizontal direction kept and tilted HEM_TILT below the horizontal. The cap's own centre,
+    the tucked edge it is instead, its horizontal direction kept and tilted HEM_TILT below the horizontal. The skirt's top is
+    shaded as the long slope it is, not as a flat lid: the crown's ring and cap share their smooth normals with a cap that points
+    straight up, so the shelf shows a bright rim the ramp and the chest, which lie at a slant, do not continue and the back of the
+    waist shows a ledge. Their horizontal directions are kept and tilted CROWN_TILT above the horizontal. The cap's own centre,
     the other rings and the geometry are left as they are."""
     mesh = skirt.data
     low = min(v.co.z for v in mesh.vertices)
@@ -734,7 +740,23 @@ def soften_hem_normals(skirt):
         if abs(v.co.z - low) < 1e-6 and flat.length > 0.1:
             flat.normalize()
             normals[v.index] = Vector((flat.x * cos(HEM_TILT), flat.y * cos(HEM_TILT), -sin(HEM_TILT)))
+        elif v.co.z > -1e-6:
+            if flat.length < 0.05:
+                normals[v.index] = Vector((0.0, -cos(CROWN_TILT[2]), sin(CROWN_TILT[2])))
+            else:
+                flat.normalize()
+                tilt = CROWN_TILT[0] if v.co.z < RIG["skirtCrownTop"] / 5 else CROWN_TILT[1]
+                normals[v.index] = Vector((flat.x * cos(tilt), flat.y * cos(tilt), sin(tilt)))
     mesh.normals_split_custom_set_from_vertices(normals)
+
+
+def corner_normals_by_vertex(part):
+    """The shading normal of each of the part's vertices (the mean of its corners', which are one where the normals are set per vertex)."""
+    mesh = part.data
+    sums = [Vector() for _ in mesh.vertices]
+    for loop in mesh.loops:
+        sums[loop.vertex_index] += Vector(mesh.corner_normals[loop.index].vector)
+    return [total.normalized() for total in sums]
 
 
 JUNCTION_REACH = 0.12  # how far from the skirt, at the deepest bow, the chest's normals still follow the skirt's
@@ -749,7 +771,7 @@ def blend_junction_normals(chest, skirt):
     chest_m, skirt_m = mats["torso"][0], mats["skirt"][0]
     tree = world_bvh(skirt, skirt_m)
     chest_to_world, skirt_to_world = chest_m.to_3x3().inverted().transposed(), skirt_m.to_3x3().inverted().transposed()
-    skirt_normals = [(skirt_to_world @ Vector(n.vector)).normalized() for n in skirt.data.vertex_normals]
+    skirt_normals = [(skirt_to_world @ n).normalized() for n in corner_normals_by_vertex(skirt)]
     skirt_points = [skirt_m @ v.co for v in skirt.data.vertices]
     normals = []
     for v, n in zip(chest.data.vertices, chest.data.vertex_normals):
@@ -762,6 +784,45 @@ def blend_junction_normals(chest, skirt):
             mine = mine.lerp(theirs, follow).normalized()
         normals.append((chest_m.to_3x3().transposed() @ mine).normalized())
     chest.data.normals_split_custom_set_from_vertices(normals)
+
+
+RAMP_SHADE_BOW = 0.4  # the depth of the bow at which the ramp is laid on the skirt and the chest to take its shading from them
+
+
+def shade_back_ramp(ramp, skirt, chest):
+    """The ramp rises out of the skirt's top and the chest comes out of it, so its shading is theirs, run on: each vertex takes the
+    normal the skirt has at the point under it at its back end and the chest's nearest to it at its front end, mixed along the way,
+    with the ramp laid on them as it lies at RAMP_SHADE_BOW. Its own smooth normals lean the other way, and where it comes out of
+    the skirt's top and goes into the chest's back the shading breaks in a line."""
+    mats = pose_matrices(1.0, RIG["seatTop"], bow=RAMP_SHADE_BOW)
+    ramp_m, skirt_m, chest_m = mats["backRamp"][0], mats["skirt"][0], mats["torso"][0]
+    to_skirt = skirt_m.inverted() @ ramp_m
+    skirt_mesh = skirt.data
+    skirt_mesh.calc_loop_triangles()
+    triangles = list(skirt_mesh.loop_triangles)
+    skirt_tree = BVHTree.FromPolygons([v.co.copy() for v in skirt_mesh.vertices], [tuple(t.vertices) for t in triangles])
+    skirt_normals = corner_normals_by_vertex(skirt)
+    chest_tree = world_bvh(chest, chest_m)
+    chest_points = [chest_m @ v.co for v in chest.data.vertices]
+    chest_normals = [(chest_m.to_3x3().inverted().transposed() @ n).normalized() for n in corner_normals_by_vertex(chest)]
+    skirt_to_world = skirt_m.to_3x3().inverted().transposed()
+    ramp_to_local = ramp_m.to_3x3().transposed()
+    back, front = BACK_RAMP["y"]
+    normals = []
+    for v in ramp.data.vertices:
+        p = to_skirt @ v.co
+        hit, _, index, _ = skirt_tree.ray_cast(Vector((p.x, p.y, 1.0)), Vector((0.0, 0.0, -1.0)))
+        if hit is None:
+            hit, _, index, _ = skirt_tree.find_nearest(p)
+        corners = triangles[index].vertices
+        weights = poly_3d_calc([skirt_mesh.vertices[i].co for i in corners], hit)
+        from_skirt = (skirt_to_world @ sum((skirt_normals[i] * weight for i, weight in zip(corners, weights)), Vector())).normalized()
+        near, _, face, _ = chest_tree.find_nearest(ramp_m @ v.co)
+        nearest = [(1.0 / ((chest_points[i] - near).length + 1e-4) ** 2, i) for i in chest.data.polygons[face].vertices]
+        from_chest = sum((chest_normals[i] * weight for weight, i in nearest), Vector()).normalized()
+        along = from_skirt.lerp(from_chest, smoothstep((v.co.y - back) / (front - back))).normalized()
+        normals.append((ramp_to_local @ along).normalized())
+    ramp.data.normals_split_custom_set_from_vertices(normals)
 
 
 PARITY_RAY = Vector((0.371, 0.613, 0.696)).normalized()
@@ -1591,32 +1652,54 @@ BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a co
     "jump": 0.03,  # no two neighbouring points of the outline lie further apart than this: no step, no gap
     "grid": 0.002,  # the outline is walked in steps of this, and a dent is how far a point lies inside the chord to the points this far each way along it
     "reach": (0.05, 0.08),
-    "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the bow measures 0.0123 and 0.0119 at worst (a tenth of slack); with no ramp under the chest's back it is 0.0207 and 0.0284 at worst, and a seated monk's own seat and thighs show 0.0055 and 0.0041
+    "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the bow measures 0.0123 and 0.0115 at worst (a tenth of slack); with no ramp under the chest's back it is 0.0207 and 0.0284 at worst, and a seated monk's own seat and thighs show 0.0055 and 0.0041
+    "span": 0.01,  # the shading turns by at most "turn" degrees between two points of the outline this far apart, within "zone" of the hip joint: the light can draw a ledge or a seam the shape has not got (a bright rim on the skirt's top, shading that stops short of the chest's), and a band of it is a line at any zoom
+    "turn": 20.0,  # a chest of 10 cm radius turns 6 degrees over 10 mm; the bands that read as a seam when the monk is looked at from close by turn 20 and more (24 to 32 in the bow's first half before the skirt's top and the ramp were shaded to match the chest; the bow measures 16 at worst now)
+    "zone": 0.28,
 }
 SWEEP_PARTS = ("torso", "skirt", "backRamp", "pelvis")
 
 
+def shaded_bvh(obj, matrix):
+    """The part's faces in the world as a BVH tree, and a function that gives the shading normal (in the world) at a point of one of
+    its triangles: the corners' normals (the ones the exported file carries) mixed by where the point lies in it."""
+    mesh = obj.data
+    mesh.calc_loop_triangles()
+    normal_matrix = matrix.to_3x3().inverted().transposed()
+    points = [matrix @ v.co for v in mesh.vertices]
+    triangles = list(mesh.loop_triangles)
+    tree = BVHTree.FromPolygons(points, [tuple(t.vertices) for t in triangles])
+
+    def shade(index, point):
+        triangle = triangles[index]
+        weights = poly_3d_calc([points[i] for i in triangle.vertices], point)
+        mixed = sum((Vector(mesh.corner_normals[loop].vector) * weight for loop, weight in zip(triangle.loops, weights)), Vector())
+        return (normal_matrix @ mixed).normalized()
+
+    return tree, shade
+
+
 def back_outline(trees, joint, plane):
     """The back and the top of the jacket as seen from the side, in the slice of the body this far from the middle line: for one ray a
-    degree from the hip joint, from forward over the chest round to the seat, the farthest of the parts' outer faces (None where none
-    is hit)."""
+    degree from the hip joint, from forward over the chest round to the seat, the farthest of the parts' outer faces and its shading
+    normal there (None where none is hit)."""
     low, high = BOW_SWEEP["rays"]
     origin = joint + Vector((plane, 0.0, 0.0))
     outline = []
     for degree in range(high, low - 1, -1):
         out = Vector((0.0, -sin(radians(degree)), cos(radians(degree))))
         far = None
-        for tree in trees:
-            hit, normal, _, _ = tree.ray_cast(origin + out, -out)
-            if hit is not None and normal.dot(out) > 0 and (far is None or (hit - origin).length > (far - origin).length):
-                far = hit
-        outline.append(None if far is None else (far.y, far.z))
+        for tree, shade in trees:
+            hit, normal, index, _ = tree.ray_cast(origin + out, -out)
+            if hit is not None and normal.dot(out) > 0 and (far is None or (hit - origin).length > (far[0] - origin).length):
+                far = (hit, shade(index, hit))
+        outline.append(None if far is None else (far[0].y, far[0].z, far[1]))
     return outline
 
 
 def walk_outline(outline):
-    """The outline's points walked in even steps of BOW_SWEEP["grid"] along its length, and the longest step between two neighbouring
-    points before that (infinity where a ray in between found nothing)."""
+    """The outline's points walked in even steps of BOW_SWEEP["grid"] along its length (the shading normal mixed along with them), and
+    the longest step between two neighbouring points before that (infinity where a ray in between found nothing)."""
     hits = [i for i, point in enumerate(outline) if point is not None]
     between = outline[hits[0] : hits[-1] + 1]
     run = [point for point in between if point is not None]
@@ -1624,9 +1707,9 @@ def walk_outline(outline):
     walked = [run[0]]
     for point in run[1:]:
         while math.hypot(point[0] - walked[-1][0], point[1] - walked[-1][1]) >= BOW_SWEEP["grid"]:
-            ay, az = walked[-1]
+            ay, az, an = walked[-1]
             share = BOW_SWEEP["grid"] / math.hypot(point[0] - ay, point[1] - az)
-            walked.append((ay + (point[0] - ay) * share, az + (point[1] - az) * share))
+            walked.append((ay + (point[0] - ay) * share, az + (point[1] - az) * share, an + (point[2] - an) * share))
     return walked, jump
 
 
@@ -1646,34 +1729,51 @@ def outline_dent(walked, joint, reach):
     return worst
 
 
+def outline_turn(walked, joint):
+    """How far the shading normal turns, in degrees, between two points of the outline BOW_SWEEP["span"] apart, at its worst within
+    BOW_SWEEP["zone"] of the hip joint."""
+    k = round(BOW_SWEEP["span"] / BOW_SWEEP["grid"])
+    worst = 0.0
+    for i in range(len(walked) - k):
+        a, b = walked[i], walked[i + k]
+        if max(math.hypot(a[0] - joint.y, a[1] - joint.z), math.hypot(b[0] - joint.y, b[1] - joint.z)) <= BOW_SWEEP["zone"]:
+            worst = max(worst, math.degrees(a[2].angle(b[2], 0.0)))
+    return worst
+
+
 def sweep_bow(parts):
-    """The worst jump and dents of the jacket's outline in each slice at each depth: {depth: (jump, dent over each reach)}."""
+    """The worst jump, dents and shading turn of the jacket's outline in each slice at each depth: {depth: (jump, dent over each reach, turn)}."""
     cushion = RIG["seatTop"]
     joint = Vector((0.0, 0.0, pose_matrices(1.0, cushion)["torso"][0].translation.z - RIG["bowHipJoint"]))
     worst = {}
     for step in range(BOW_SWEEP["depths"] + 1):
         bow = step / BOW_SWEEP["depths"]
         mats = pose_matrices(1.0, cushion, bow=bow)
-        trees = [world_bvh(parts[name], mats[name][0]) for name in SWEEP_PARTS]
-        jump, dents = 0.0, [0.0 for _ in BOW_SWEEP["reach"]]
+        trees = [shaded_bvh(parts[name], mats[name][0]) for name in SWEEP_PARTS]
+        jump, dents, turn = 0.0, [0.0 for _ in BOW_SWEEP["reach"]], 0.0
         for plane in BOW_SWEEP["planes"]:
             walked, gap = walk_outline(back_outline(trees, joint, plane))
             jump = max(jump, gap)
             dents = [max(dent, outline_dent(walked, joint, reach)) for dent, reach in zip(dents, BOW_SWEEP["reach"])]
-        worst[bow] = (jump,) + tuple(dents)
+            turn = max(turn, outline_turn(walked, joint))
+        worst[bow] = (jump,) + tuple(dents) + (turn,)
     return worst
 
 
 def check_bow_sweep(parts):
     """The waist is one body at every depth of the bow, not only at the full depth: the jacket's outline over the hip, from the chest
     round the back to the seat, has no step and no gap between the chest, the skirt and the seat of the trousers (neighbouring
-    points never further apart than a few centimetres), and no dent or crease, at every step of the way down."""
+    points never further apart than a few centimetres), no dent or crease, and no ledge or seam in its shading either, at every
+    step of the way down."""
     worst = sweep_bow(parts)
     print("SWEEP the outline's biggest dent over %s by depth: %s" % ("/".join("%.2f" % r for r in BOW_SWEEP["reach"]), " ".join("%.3f:%.4f/%.4f" % (b, d[1], d[2]) for b, d in worst.items())))
-    for bow, (jump, *dents) in worst.items():
+    print("SWEEP the outline's biggest jump by depth: %s" % " ".join("%.3f:%.4f" % (b, d[0]) for b, d in worst.items()))
+    print("SWEEP the shading's biggest turn over %.0f mm, in degrees, by depth: %s" % (BOW_SWEEP["span"] * 1000, " ".join("%.3f:%.1f" % (b, d[-1]) for b, d in worst.items())))
+    for bow, (jump, *dents, turn) in worst.items():
         assert jump <= BOW_SWEEP["jump"], "the jacket's outline has a step or a gap of %.4f at bow %.3f (it may have %.4f)" % (jump, bow, BOW_SWEEP["jump"])
         for dent, reach, most in zip(dents, BOW_SWEEP["reach"], BOW_SWEEP["dent"]):
             assert dent <= most, "the waist is dented %.4f deep over %.2f at bow %.3f (it may be %.4f)" % (dent, reach, bow, most)
+        assert turn <= BOW_SWEEP["turn"], "the jacket's shading turns %.1f degrees over %.0f mm at bow %.3f, a ledge or a seam (it may turn %.1f)" % (turn, BOW_SWEEP["span"] * 1000, bow, BOW_SWEEP["turn"])
 
 
 WALK_POSES =(None,) + tuple(k * pi / 8 for k in range(16))  # standing, then the walk cycle in sixteenths (a leg's swing, a lifted foot and the bob all peak within it)
@@ -1884,7 +1984,9 @@ def rig_dict():
         "skirtCrownTop": RIG["skirtCrownTop"],
         "bowRampDepth": RIG["bowRampDepth"],
         "bowRampSharp": RIG["bowRampSharp"],
-        "bowRampShift": RIG["bowRampShift"],
+        "bowRampStretch": RIG["bowRampStretch"],
+        "bowRampStretchDepth": RIG["bowRampStretchDepth"],
+        "bowRampBack": -BACK_RAMP["y"][0],
         "bowRampSink": RIG["bowRampSink"],
         "seatTop": RIG["seatTop"],
         "robeTintSaturation": RIG["robeTintSaturation"],
@@ -1990,7 +2092,8 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     skirt = hips @ tmat((0, waist_down * stay - JACKET_DROP * skirt_y * (1 - skirt_squash), waist_forward * stay), (lean, 0, 0), (1, skirt_y * skirt_squash, 1))
     skirt = skirt @ tmat((0, 0, SKIRT_REAR * (1 - skirt_spread)), scale=(1, 1, skirt_spread))  # spread forward from the back wall, which stays put
     rise = ramp_rise(bow)
-    ramp = skirt @ tmat((0, RIG["skirtCrownTop"] - RIG["bowRampSink"] / (skirt_y * skirt_squash), -RIG["bowRampShift"] * bow), scale=(1, rise / (skirt_y * skirt_squash), 1))  # its height and its sink are its own, not the skirt's: only the squash it would take on is undone
+    stretch = 1 + RIG["bowRampStretch"] * sin(pi * bow ** RIG["bowRampStretchDepth"])
+    ramp = skirt @ tmat((0, RIG["skirtCrownTop"] - RIG["bowRampSink"] / (skirt_y * skirt_squash), -BACK_RAMP["y"][0] * (1 - stretch)), scale=(1, rise / (skirt_y * skirt_squash), stretch))  # its height and its sink are its own, not the skirt's: only the squash it would take on is undone; it grows about its back end
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "skirt": [skirt], "backRamp": [ramp], "trim": [torso], "skirtTrim": [skirt]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
@@ -2163,8 +2266,9 @@ def main():
         obj = BUILDERS[name]()
         parts_coll.objects.link(obj)
         parts[name] = obj
-    soften_hem_normals(parts["skirt"])
+    shade_skirt_normals(parts["skirt"])
     blend_junction_normals(parts["torso"], parts["skirt"])
+    shade_back_ramp(parts["backRamp"], parts["skirt"], parts["torso"])
     jacket =build_jacket_whole()  # not exported: the one surface the thighs and the arms are held against while the chest and the skirt move as one
     parts["jacket"] = jacket
     total = report_parts(parts)
