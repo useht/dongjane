@@ -34,8 +34,7 @@ import { KNOCK_AUDIBLE_GAIN, knockGain } from "./audio/knock-gain.ts";
 import clickUrl from "./assets/audio/click.mp3?url";
 import coinUrl from "./assets/audio/coin.mp3?url";
 import jackpotUrl from "./assets/audio/jackpot.mp3?url";
-import sutraUrl from "./assets/audio/sutra.mp3?url";
-import { SyncedLoop, areaMix, chantMix } from "./audio/music.ts";
+import { areaMix, chantMix } from "./audio/music.ts";
 import { CasinoSounds } from "./audio/casino.ts";
 import { SILENCE, ambienceAt, placeAt } from "./audio/soundscape.ts";
 import { CasinoBank } from "./casino/bank.ts";
@@ -87,6 +86,7 @@ import { StageHint } from "./ui/stage-hint.ts";
 import { StageScreen } from "./ui/stage-screen.ts";
 import type { Quad } from "./ui/stage-quad.ts";
 import { hintAction, screenModeFor } from "./ui/stage-video.ts";
+import { TempleScreen } from "./ui/temple-screen.ts";
 import { TouchIntro } from "./ui/touch-intro.ts";
 import { VisitorTitles } from "./ui/visitor-titles.ts";
 
@@ -142,7 +142,7 @@ export class App {
   private readonly stageHint: StageHint;
   private readonly stage: StageScreen;
   private readonly soundChip: SoundChip;
-  private readonly sutra: SyncedLoop;
+  private readonly temple: TempleScreen;
   private readonly visitorTitles: VisitorTitles;
   private readonly emoteBubbles: EmoteBubbles;
   private readonly hintPoint = { x: 0, y: 0 };
@@ -177,6 +177,10 @@ export class App {
   private videoAudible = false;
   private weather: Weather | null = null;
   private stageToasted = false;
+  private templeToasted = false;
+  private stageTap = false;
+  private templeTap = false;
+  private templeMix = 0;
   private inSolo = false;
   private soloReturnWorld: number | null = null;
   private returnHeld = false;
@@ -242,7 +246,10 @@ export class App {
           }
           this.syncZoneSound();
         },
-        onTapNeeded: (needed) => this.soundChip.show(needed),
+        onTapNeeded: (needed) => {
+          this.stageTap = needed;
+          this.showSoundChip();
+        },
         onPlayback: () => this.syncZoneSound(),
         onAudible: (audible) => {
           this.videoAudible = audible;
@@ -251,7 +258,19 @@ export class App {
       },
     );
     this.stage.setReduceMotion(this.settings.reduceMotion);
-    this.sutra = new SyncedLoop(this.audio, () => this.world.serverNowAt(performance.now()), sutraUrl);
+    this.temple = new TempleScreen(this.canvas, () => this.world.serverNowAt(performance.now()), {
+      onStatus: (status) => {
+        if (status === "blocked" && !this.templeToasted) {
+          this.templeToasted = true;
+          this.hud.toast("법당 소리를 열 수 없어요");
+        }
+        this.syncZoneSound();
+      },
+      onTapNeeded: (needed) => {
+        this.templeTap = needed;
+        this.showSoundChip();
+      },
+    });
 
     this.settingsPanel = new SettingsPanel(this.settings, {
       onChange: (next) => this.updateSettings(next),
@@ -281,8 +300,9 @@ export class App {
     this.soundChip = new SoundChip(this.ui, () => {
       this.audio.unlock();
       this.stage.userGesture();
-      this.sutra.prime();
-      this.stage.openTapWindow();
+      this.temple.userGesture();
+      if (this.templeTap) this.temple.openTapWindow();
+      else this.stage.openTapWindow();
     });
     const hints = hintLayer(this.ui);
     this.seatHints = new SeatHints(hints, (id) => this.sitAt(id));
@@ -659,7 +679,12 @@ export class App {
     if (live && !this.stage.mounted && this.stage.status !== "blocked") this.stage.mount();
     else if (!live && this.stage.mounted) this.stage.unmount();
     this.world.setScreenMode(screenModeFor(this.stage.playback, this.settings.reduceMotion));
-    this.sutra.setActive(this.session !== null);
+    if (this.session !== null && !this.temple.mounted && this.temple.status !== "blocked") this.temple.mount();
+    else if (this.session === null && this.temple.mounted) this.temple.unmount();
+  }
+
+  private showSoundChip(): void {
+    this.soundChip.show(this.stageTap || this.templeTap);
   }
 
   private handleLink(link: LinkState): void {
@@ -850,6 +875,7 @@ export class App {
   private applyAudio(): void {
     this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume);
     this.stage.setSound(true, this.settings.ambientVolume);
+    this.temple.setVolume(this.settings.ambientVolume);
   }
 
   private bindAudioUnlock(): void {
@@ -861,7 +887,7 @@ export class App {
         this.stage.userGesture();
         stageReady = this.audio.unlocked;
       }
-      this.sutra.prime();
+      this.temple.userGesture();
     };
     window.addEventListener("pointerdown", unlock, true);
     window.addEventListener("keydown", unlock, true);
@@ -905,8 +931,7 @@ export class App {
       worldNumber: () => this.currentWorld,
       bellCount: () => this.audio.bellCount,
       stage: () => ({ status: this.stage.status, playback: this.stage.playback, mounted: this.stage.mounted, audible: this.videoAudible }),
-      sutraPlaying: () => this.sutra.playing,
-      sutraMix: () => this.sutra.mix,
+      temple: () => ({ status: this.temple.status, mounted: this.temple.mounted, playing: this.temple.playing, mix: this.templeMix }),
       zone: () => this.zone,
       sit: (zone: Zone, seatId: number) => this.session?.sit(zone, seatId),
       serverNow: () => this.world.serverNowAt(performance.now()),
@@ -1005,8 +1030,8 @@ export class App {
   private tickMix(): void {
     const at = this.world.selfPosition;
     const mix = this.session !== null && at ? areaMix(at.x, at.z) : 0;
-    const indoors = this.session !== null && at ? chantMix(at.x, at.z) : 0;
-    this.sutra.setMix(indoors);
+    this.templeMix = this.session !== null && at ? chantMix(at.x, at.z) : 0;
+    this.temple.setInside(this.templeMix > 0);
     this.stage.setLevel(1 - mix);
     this.audio.setAmbience(this.session !== null && at ? ambienceAt(placeAt(at.x, at.z), at.x, at.z, this.weather, this.videoAudible) : SILENCE);
   }
@@ -1127,7 +1152,7 @@ export class App {
     const now = Date.now();
     this.chantBell.observe(chant, now);
     if (this.chantBell.shouldRing(chant, now)) {
-      this.audio.bell(this.sutra.mix);
+      this.audio.bell(this.templeMix);
       this.hud.toast(`${chant.label}이 시작됐어요`);
     }
     const status = describeChant(chant, now);

@@ -1,9 +1,9 @@
 import { button } from "./dom.ts";
 
 export const CHIP_LABEL = "소리 켜기";
-export const CHIP_TAP_LABEL = "영상 화면을 눌러 주세요";
+export const CHIP_TAP_LABEL = "화면을 눌러 주세요";
 
-// Shown when the browser keeps the concert video muted until someone taps the player itself.
+// Shown when the browser keeps a video muted or stopped until someone taps the player itself.
 export class SoundChip {
   private readonly node: HTMLButtonElement;
 
