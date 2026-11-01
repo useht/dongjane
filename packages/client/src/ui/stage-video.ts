@@ -368,7 +368,9 @@ export class StageVideoController {
       this.out.send("pauseVideo");
       return;
     }
+    this.started = false;
     this.askedAt = now;
+    this.updatePlayback();
     this.sync.recheck();
     this.sync.jump(this.duration);
     this.out.send("playVideo");

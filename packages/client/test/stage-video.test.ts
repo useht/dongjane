@@ -796,7 +796,25 @@ describe("StageVideoController level", () => {
     expect(t.funcs()).toEqual(["seekTo", "playVideo", "setVolume", "unMute"]);
     expect(t.sent[0]?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_005_300, 100), 100), 6);
     expect(t.sent[2]).toEqual({ func: "setVolume", args: [25] });
+    expect(t.controller.playback).toBe("starting");
+    t.controller.receive(info({ state: 1 }));
     expect(t.controller.playback).toBe("playing");
+  });
+
+  it("gives up a restart the player refuses, so the play does not sit wanted but silent", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.controller.setLevel(0.5);
+    expect(t.controller.playback).toBe("starting");
+    t.clear();
+    t.advance(START_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["pauseVideo", "mute"]);
+    expect(t.controller.playback).toBe("waiting");
   });
 
   it("does not take its own pause for the visitor's, however often or late the player reports it", () => {
@@ -815,7 +833,7 @@ describe("StageVideoController level", () => {
     expect(t.controller.playback).toBe("playing");
     t.controller.setLevel(0.5);
     t.controller.receive(info({ state: 2 }));
-    expect(t.controller.playback).toBe("playing");
+    expect(t.controller.playback).toBe("starting");
     t.controller.receive(info({ state: 1, time: loopPosition(1_000_000 + 300 + OWN_PAUSE_MS * 4 - 1, 100) }));
     expect(t.controller.playback).toBe("playing");
     expect(t.funcs()).not.toContain("pauseVideo");
@@ -918,6 +936,7 @@ describe("StageVideoController level", () => {
     t.controller.setLevel(0);
     t.advance(QUIET_PAUSE_MS - 1000);
     t.controller.setLevel(0.3);
+    t.controller.receive(info({ state: 1 }));
     t.clear();
     t.advance(QUIET_PAUSE_MS);
     t.controller.tick();
