@@ -151,21 +151,20 @@ describe("the rod", () => {
   });
 
   it("stays outside the jacket, steady and through every jerk and sway of a bite", async () => {
-    const { torso, skirt } = (await loadAssets()).parts;
-    const jacket = [torso, skirt].map((part) => new Mesh(part, new MeshBasicMaterial({ side: DoubleSide })));
+    const jacket = new Mesh((await loadAssets()).parts.jacket, new MeshBasicMaterial({ side: DoubleSide }));
     const geometry = buildItemGeometries().rod;
     const aim = new Vector3(0.31, 0.93, 0.19).normalize();
     const raycaster = new Raycaster();
     const avatar = newAngler({ ...AT_ORIGIN, bite: true });
     for (let step = 0; step < 220; step += 1) {
       avatar.animate(0.016, 5000 + step * 16, 0, false);
-      const toJacket = nodeOf(avatar, "torso").matrixWorld.clone().invert();
-      // A point is inside a closed, convex piece of the jacket (the chest or the skirt) when a ray from it crosses the surface an odd number of times.
+      const toJacket = nodeOf(avatar, "jacket").matrixWorld.clone().invert();
+      // A point is inside the jacket, a closed mesh, when a ray from it crosses the surface an odd number of times.
       const inside = worldVertices(nodeOf(avatar, "rod"), geometry)
         .map((v) => v.applyMatrix4(toJacket))
         .filter((v) => {
           raycaster.set(v, aim);
-          return jacket.some((piece) => raycaster.intersectObject(piece).length % 2 === 1);
+          return raycaster.intersectObject(jacket).length % 2 === 1;
         });
       expect(inside.length, `the rod sinks into the jacket at step ${step}`).toBe(0);
     }

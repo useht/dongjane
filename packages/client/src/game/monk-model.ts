@@ -1,6 +1,7 @@
-import { Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
+import { BufferGeometry, Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
 import { BENCH_HIPS_BACK, BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X, type SeatPose } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
+import { bendFrame, bentDepthMaterial, bentMaterial } from "./monk-bend.ts";
 import type { MonkAssets } from "./monk-assets.ts";
 import { ROD, ROD_POSE } from "./monk-items.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
@@ -11,11 +12,8 @@ export const BODY_PART_NAMES = [
   "face",
   "hair",
   "pelvis",
-  "torso",
-  "skirt",
-  "backRamp",
+  "jacket",
   "trim",
-  "skirtTrim",
   "sleeveUpper",
   "sleeveLower",
   "hand",
@@ -34,11 +32,8 @@ const PART_COPIES: Record<PartName, number> = {
   face: 1,
   hair: 1,
   pelvis: 1,
-  torso: 1,
-  skirt: 1,
-  backRamp: 1,
+  jacket: 1,
   trim: 1,
-  skirtTrim: 1,
   sleeveUpper: 2,
   sleeveLower: 2,
   hand: 2,
@@ -52,14 +47,13 @@ const PART_COPIES: Record<PartName, number> = {
   bobber: 1,
 };
 
-// The jacket (chest, skirt, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
-export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "torso", "skirt", "backRamp", "trousers", "sleeveUpper", "sleeveLower"]);
+// The jacket (body, sleeves) and the trousers (pelvis seat, legs) take the per-monk tint; everything else keeps its own colours.
+export const ROBE_PARTS: ReadonlySet<PartName> = new Set(["pelvis", "jacket", "trousers", "sleeveUpper", "sleeveLower"]);
 
 // Pivots, lengths and every kneel offset that depends on the mesh come from build_monk.py (assets/monk/monk-rig.json),
 // so the model and the animation always agree. Only pose angles and walk timing live in animate().
 const HIP_STAND = rig.hipStand;
 const HIP_KNEEL = rig.hipKneel;
-const JACKET_DROP = rig.jacketDrop;
 const PELVIS_DROP = rig.pelvisDrop;
 const NECK_Y = rig.neckY;
 const SHOULDER_X = rig.shoulderX;
@@ -89,23 +83,6 @@ const KNEEL_PELVIS_SCALE_Y = rig.kneelPelvisScaleY;
 const KNEEL_PELVIS_LIFT = rig.kneelPelvisLift;
 const BOW_LEAN = rig.bowLean;
 const BOW_HEAD = rig.bowHead;
-const BOW_HIP_JOINT = rig.bowHipJoint;
-const BOW_SKIRT_FOLLOW = rig.bowSkirtFollow;
-const BOW_SKIRT_SQUASH = rig.bowSkirtSquash;
-const BOW_SKIRT_SPREAD = rig.bowSkirtSpread;
-const SKIRT_REAR = rig.skirtRear;
-const SKIRT_CROWN_TOP = rig.skirtCrownTop;
-const BOW_RAMP_DEPTH = rig.bowRampDepth;
-const BOW_RAMP_SHARP = rig.bowRampSharp;
-const BOW_RAMP_STRETCH = rig.bowRampStretch;
-const BOW_RAMP_STRETCH_DEPTH = rig.bowRampStretchDepth;
-const BOW_RAMP_BACK = rig.bowRampBack;
-const BOW_RAMP_SINK = rig.bowRampSink;
-// The back ramp lies flat inside the skirt, never scaled to nothing, so its matrix stays invertible.
-const RAMP_FLAT = 1e-4;
-const BOW_PELVIS_SQUASH = rig.bowPelvisSquash;
-const BOW_PELVIS_LIFT = rig.bowPelvisLift;
-const BOW_PELVIS_LIFT_POWER = rig.bowPelvisLiftPower;
 const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
@@ -128,8 +105,8 @@ const HOP_HEIGHT = 0.35;
 const BENCH_PELVIS_SCALE_Y = 0.65;
 const BENCH_FOOT_REACH = 0.33;
 const BENCH_BOW = 0.35;
-// The jacket's skirt is gathered this far on a chair or a log (the hips sit lower over the seat than on the heels), so its hem stays
-// above the seat.
+// The jacket below the waist is gathered this far on a chair or a log (the hips sit lower over the seat than on the heels), so its hem
+// stays above the seat.
 const BENCH_SKIRT_SCALE = 0.72;
 // How far the seat of the trousers rests above a mat, chair or log it sits on: just clear of it, kept under a squashed seat too.
 const SEAT_CLEARANCE = 0.007;
@@ -195,12 +172,15 @@ export class MonkAvatar {
   // a bench is not, and sits on it with its feet on the floor.
   seatTop = SEAT_TOP;
   seatPose: SeatPose = "kneel";
+  // How the jacket is bent while bowing: the pool hands both to the vertex shader (the same bend as monk-bend.ts) once a frame.
+  readonly bend = { theta: 0, gather: 1 };
+  // The jacket and its trim hang on the waist, which leans; the chest, head and shoulders ride on the torso, which is the waist's frame
+  // carried to where the bend puts the hinge and turned forward by the bow.
+  readonly waistNode = new Object3D();
+  readonly torsoNode = new Object3D();
 
   private readonly hips = new Object3D();
   private readonly pelvisNode = new Object3D();
-  private readonly torsoNode = new Object3D();
-  private readonly skirtNode = new Object3D();
-  private readonly rampNode = new Object3D();
   private readonly headNode = new Object3D();
   private readonly shoulders: [Object3D, Object3D] = [new Object3D(), new Object3D()];
   private readonly elbows: [Object3D, Object3D] = [new Object3D(), new Object3D()];
@@ -230,8 +210,8 @@ export class MonkAvatar {
     this.isSelf = isSelf;
 
     this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
-    this.hips.add(this.pelvisNode, this.torsoNode, this.skirtNode);
-    this.skirtNode.add(this.rampNode);
+    this.hips.add(this.pelvisNode, this.waistNode);
+    this.waistNode.add(this.torsoNode);
     this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
@@ -260,11 +240,8 @@ export class MonkAvatar {
     bind("face", this.headNode);
     bind("hair", this.headNode);
     bind("pelvis", this.pelvisNode);
-    bind("torso", this.torsoNode);
-    bind("skirt", this.skirtNode);
-    bind("backRamp", this.rampNode);
-    bind("trim", this.torsoNode);
-    bind("skirtTrim", this.skirtNode);
+    bind("jacket", this.waistNode);
+    bind("trim", this.waistNode);
     for (let side = 0; side < 2; side += 1) {
       bind("sleeveUpper", this.shoulders[side] as Object3D, side);
       bind("sleeveLower", this.elbows[side] as Object3D, side);
@@ -329,58 +306,38 @@ export class MonkAvatar {
     const hop = reduceMotion ? 0 : hopArc(nowMs - this.hopStartedAt, JUMP_MS) * HOP_HEIGHT;
     this.root.position.y = (bench ? 0 : this.liftedBy * kneel) + hop;
     const bob = Math.abs(swing) * 0.03 * walk;
-    // Bowing, the chest folds about the hip joint, BOW_HIP_JOINT below the waist pivot: the waist swings forward (and a little down) while
-    // the seat of the trousers stays on the heels and the skirt on the thighs.
+    // Bowing, the jacket bends forward above the thighs (the bend in monk-bend.ts, done by the vertex shader) while the seat of the
+    // trousers stays on the heels and the hem on the thighs.
     const theta = BOW_LEAN * depth;
-    const waistDown = BOW_HIP_JOINT * (1 - Math.cos(theta));
-    const waistForward = BOW_HIP_JOINT * Math.sin(theta);
     // Kneeling (정좌) the monk sits on its heels, which lie on the 방석; cross-legged or on a bench it sits on the mat, chair or log
     // itself, with the seat of the trousers just clear of it.
     const seatHeight = bench ? this.liftedBy : 0;
     const sitHips = kneeling ? HIP_KNEEL : seatHeight + PELVIS_DROP * (bench ? BENCH_PELVIS_SCALE_Y : KNEEL_PELVIS_SCALE_Y) + SEAT_CLEARANCE;
     const seatBack = bench ? BENCH_HIPS_BACK * kneel : 0;
-    this.hips.position.y = HIP_STAND + (sitHips - HIP_STAND) * kneel + bob + breathe * 0.006 - waistDown;
-    this.hips.position.z = seatBack - waistForward;
+    this.hips.position.y = HIP_STAND + (sitHips - HIP_STAND) * kneel + bob + breathe * 0.006;
+    this.hips.position.z = seatBack;
 
-    // Seated, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing on the heels,
-    // it presses up into the settled skirt, so the hem hangs over the folded legs and no band of trousers shows below it.
+    // Seated, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs.
     const pelvisY = 1 + ((bench ? BENCH_PELVIS_SCALE_Y : KNEEL_PELVIS_SCALE_Y) - 1) * kneel;
-    const pelvisSquash = 1 + (BOW_PELVIS_SQUASH - 1) * depth;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
-    this.pelvisNode.scale.set(pelvisXZ, pelvisY * pelvisSquash, pelvisXZ);
-    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash) + BOW_PELVIS_LIFT * depth ** BOW_PELVIS_LIFT_POWER * folded, waistForward);
+    this.pelvisNode.scale.set(pelvisXZ, pelvisY, pelvisXZ);
+    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel, 0);
 
     // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
     const biting = this.bite && fish > 0.5;
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    // The jacket is cut at the hip pivot: the chest bows with the torso in one straight line from the hip joint to the neck, and the
-    // skirt below it keeps its place on the thighs (gathered a little kneeling, and settling lower still bowing, its hem fixed, and
-    // spreading forward from its back wall so its front reaches the chest's hip).
+    // The whole jacket is one surface that the shader bends from the thighs up to the waist (gathered a little over the thighs when
+    // kneeling or seated); the chest, head and shoulders above the waist are rigid, riding the bend's end frame.
     const lean = -0.05 * walk + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     const sway = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
-    this.torsoNode.rotation.x = lean - theta;
-    this.torsoNode.rotation.z = sway;
-    const skirtY = 1 + ((bench ? BENCH_SKIRT_SCALE : KNEEL_SKIRT_SCALE) - 1) * kneel;
-    const skirtSquash = 1 + (BOW_SKIRT_SQUASH - 1) * depth;
-    this.skirtNode.rotation.x = lean;
-    this.skirtNode.rotation.z = sway;
-    const skirtSpread = 1 + BOW_SKIRT_SPREAD * depth;
-    const spreadShift = SKIRT_REAR * (1 - skirtSpread);
-    this.skirtNode.position.set(
-      0,
-      waistDown * (1 - BOW_SKIRT_FOLLOW) - JACKET_DROP * skirtY * (1 - skirtSquash) - spreadShift * Math.sin(lean),
-      waistForward * (1 - BOW_SKIRT_FOLLOW) + spreadShift * Math.cos(lean),
-    );
-    this.skirtNode.scale.set(1, skirtY * skirtSquash, skirtSpread);
-    // The back ramp lies hidden under the skirt's crown and rises out of it while the chest folds, to fill the dent between the skirt's
-    // top and the chest's back, hidden again standing and in the full bow (a copy of ramp_rise in build_monk.py). Its height and its
-    // sink are its own, not the skirt's, and it grows longer from its back end, which stays on the skirt's back wall.
-    const rampRise = Math.max(Math.sin(Math.PI * depth ** BOW_RAMP_DEPTH) ** BOW_RAMP_SHARP, RAMP_FLAT);
-    const rampStretch = 1 + BOW_RAMP_STRETCH * Math.sin(Math.PI * depth ** BOW_RAMP_STRETCH_DEPTH);
-    this.rampNode.position.set(0, SKIRT_CROWN_TOP - BOW_RAMP_SINK / (skirtY * skirtSquash), BOW_RAMP_BACK * (1 - rampStretch));
-    this.rampNode.scale.set(1, rampRise / (skirtY * skirtSquash), rampStretch);
+    this.waistNode.rotation.x = lean;
+    this.waistNode.rotation.z = sway;
+    this.bend.theta = theta;
+    this.bend.gather = 1 + ((bench ? BENCH_SKIRT_SCALE : KNEEL_SKIRT_SCALE) - 1) * kneel;
+    bendFrame(theta, this.torsoNode.position);
+    this.torsoNode.rotation.x = -theta;
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;
 
@@ -442,7 +399,7 @@ export class MonkAvatar {
       // strides, bobbing and the folded kneel. Kneeling, the pivot sits low, forward and wide so the thigh runs flat under the skirt to a
       // knee a hand-span from the other in front of the hip, and the shin folds back from it, flattened, to the ankle.
       const leg = this.legs[side] as Object3D;
-      const topY = this.hips.position.y + waistDown - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * folded);
+      const topY = this.hips.position.y - (LEG_TOP_DROP + (LEG_KNEEL_TOP_DROP - LEG_TOP_DROP) * folded);
       const topX = sign * (FOOT_X + (LEG_KNEEL_TOP_X - FOOT_X) * folded);
       const reachX = foot.position.x - topX;
       const reachY = foot.position.y + sit.legLift * kneel - topY;
@@ -507,10 +464,28 @@ export function robeColor(hue: number, into: Color): Color {
   return into.setHSL((((hue % 360) + 360) % 360) / 360, ROBE_TINT_SATURATION, ROBE_TINT_LIGHTNESS);
 }
 
+// The parts the vertex shader bends (the jacket and its trim), each with the bend (theta, gather) of every instance.
+const BENT_PARTS: ReadonlySet<PartName> = new Set(["jacket", "trim"]);
+
+// The part's geometry again, sharing its vertex data, with a room of its own for the instances' bend: the geometry the avatars share is left as it is.
+function bendableGeometry(source: BufferGeometry, size: number): { geometry: BufferGeometry; bends: InstancedBufferAttribute } {
+  const geometry = new BufferGeometry();
+  for (const name of Object.keys(source.attributes)) geometry.setAttribute(name, source.getAttribute(name));
+  geometry.setIndex(source.index);
+  const array = new Float32Array(size * 2);
+  for (let i = 0; i < size; i += 1) array[i * 2 + 1] = 1;
+  const bends = new InstancedBufferAttribute(array, 2);
+  bends.setUsage(DynamicDrawUsage);
+  geometry.setAttribute("instanceBend", bends);
+  return { geometry, bends };
+}
+
 export class MonkPool {
   readonly group = new Group();
   readonly capacity: number;
   private readonly meshes = new Map<PartName, InstancedMesh>();
+  private readonly bends = new Map<PartName, InstancedBufferAttribute>();
+  private readonly owned: { dispose(): void }[] = [];
   private readonly avatars: MonkAvatar[] = [];
   private readonly robe = new Color();
   private readonly white = new Color(1, 1, 1);
@@ -523,9 +498,20 @@ export class MonkPool {
     this.capacity = capacity;
     host.add(this.group);
     const material = new MeshLambertMaterial({ vertexColors: true });
+    const bent = bentMaterial();
+    const bentDepth = bentDepthMaterial();
+    this.owned.push(bent, bentDepth);
     for (const part of PART_NAMES) {
       const size = capacity * PART_COPIES[part];
-      const mesh = new InstancedMesh(assets.parts[part], material, size);
+      let geometry = assets.parts[part];
+      if (BENT_PARTS.has(part)) {
+        const bendable = bendableGeometry(geometry, size);
+        geometry = bendable.geometry;
+        this.bends.set(part, bendable.bends);
+        this.owned.push(geometry);
+      }
+      const mesh = new InstancedMesh(geometry, BENT_PARTS.has(part) ? bent : material, size);
+      if (BENT_PARTS.has(part)) mesh.customDepthMaterial = bentDepth;
       mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(size * 3).fill(1), 3);
       mesh.instanceColor.setUsage(DynamicDrawUsage);
@@ -576,10 +562,13 @@ export class MonkPool {
       for (const { part, copy, node, item, fishing } of avatar.bindings) {
         const mesh = this.meshes.get(part) as InstancedMesh;
         const shown = !avatar.hidden && (item === undefined || item === avatar.item) && (!fishing || avatar.mode === "fish");
-        mesh.setMatrixAt(avatar.slot * PART_COPIES[part] + copy, shown ? node.matrixWorld : HIDDEN_MATRIX);
+        const index = avatar.slot * PART_COPIES[part] + copy;
+        mesh.setMatrixAt(index, shown ? node.matrixWorld : HIDDEN_MATRIX);
+        this.bends.get(part)?.setXY(index, avatar.bend.theta, avatar.bend.gather);
       }
     }
     for (const mesh of this.meshes.values()) mesh.instanceMatrix.needsUpdate = true;
+    for (const bends of this.bends.values()) bends.needsUpdate = true;
   }
 
   private paint(avatar: MonkAvatar): void {
@@ -598,6 +587,7 @@ export class MonkPool {
   dispose(): void {
     for (const avatar of [...this.avatars]) this.remove(avatar);
     for (const mesh of this.meshes.values()) mesh.dispose();
+    for (const resource of this.owned) resource.dispose();
     this.group.removeFromParent();
   }
 }

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { BENCH_HIPS_BACK, BOW_MS, SEAT_POSES, SEAT_TOPS, type SeatPose } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
 import { MonkAvatar, type PartName } from "../src/game/monk-model.ts";
+import { shownGeometry } from "./bent-geometry.ts";
 
 function nodeOf(avatar: MonkAvatar, part: PartName, copy = 0): Object3D {
   const binding = avatar.bindings.find((b) => b.part === part && b.copy === copy);
@@ -27,7 +28,7 @@ function seated(pose: SeatPose, top: number, mode = "kneel", nowMs = 5000): Monk
   return avatar;
 }
 
-const hipsOf = (avatar: MonkAvatar): Vector3 => positionOf(nodeOf(avatar, "torso"));
+const hipsOf = (avatar: MonkAvatar): Vector3 => positionOf(avatar.waistNode);
 const footOf = (avatar: MonkAvatar, side: number): Vector3 => positionOf(nodeOf(avatar, "foot", side));
 
 describe("the seated poses", () => {
@@ -85,9 +86,9 @@ describe("the seated poses", () => {
       const deepest = 0.45 * BOW_MS;
       const bench = seated("bench", top, "bow", deepest);
       const knees = seated("kneel", top, "bow", deepest);
-      const lean = Math.abs(nodeOf(bench, "torso").rotation.x);
+      const lean = Math.abs(bench.torsoNode.rotation.x);
       expect(lean).toBeGreaterThan(0.3);
-      expect(lean).toBeLessThan(Math.abs(nodeOf(knees, "torso").rotation.x) / 2);
+      expect(lean).toBeLessThan(Math.abs(knees.torsoNode.rotation.x) / 2);
     });
   });
 
@@ -128,8 +129,8 @@ describe("the seated poses", () => {
     const file = readFileSync(new URL("../assets/monk/monk.glb", import.meta.url));
     const gltf = await new GLTFLoader().parseAsync(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, "");
     const parts = extractMonkParts(gltf.scene);
-    const lowest = (avatar: MonkAvatar, part: "skirt" | "pelvis"): number => {
-      const position = parts[part].getAttribute("position");
+    const lowest = (avatar: MonkAvatar, part: "jacket" | "pelvis"): number => {
+      const position = shownGeometry(avatar, part, parts[part]).getAttribute("position");
       let low = Infinity;
       for (let i = 0; i < position.count; i += 1) {
         low = Math.min(low, new Vector3().fromBufferAttribute(position as never, i).applyMatrix4(nodeOf(avatar, part).matrixWorld).y);
@@ -140,7 +141,7 @@ describe("the seated poses", () => {
     for (const [pose, top] of sittings) {
       for (const mode of ["kneel", "bow"]) {
         const avatar = seated(pose, top, mode, mode === "bow" ? BOW_MS * 0.45 : 5000);
-        expect(lowest(avatar, "skirt") - top, `the skirt of a monk sitting ${pose} on ${top} (${mode}) stays above the seat`).toBeGreaterThanOrEqual(0.005);
+        expect(lowest(avatar, "jacket") - top, `the jacket of a monk sitting ${pose} on ${top} (${mode}) stays above the seat`).toBeGreaterThanOrEqual(0.005);
         expect(lowest(avatar, "pelvis") - top, `the trousers of a monk sitting ${pose} on ${top} (${mode}) stay above the seat`).toBeGreaterThanOrEqual(0);
       }
     }
