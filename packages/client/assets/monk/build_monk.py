@@ -3,31 +3,35 @@
     "C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b --factory-startup --python packages/client/assets/monk/build_monk.py
     (add "-- --no-render" after the script to skip the preview PNGs)
 
-Writes next to this script:
-    monk.blend      editable source. Parts sit at their pivots in the hidden "monk_parts" collection; the visible
+Writes next to this script (or into $MONK_OUT_DIR, for a trial build that leaves the committed files alone):
+    monk.blend     editable source. Parts sit at their pivots in the hidden "monk_parts" collection; the visible
                     "monk_pose_standing" collection holds linked copies in rest pose, so editing either edits both.
                     To re-export by hand: unhide monk_parts, make it the active collection, glTF export with
                     "Active Collection" ticked, Vertex Color = Material.
     monk.glb        what the game loads (Y-up; the face ends up on three.js -Z)
     monk-rig.json   pivot and length numbers the TypeScript rig reads (generated from the same config below)
-and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo).
+    monk-poses.json where each part's bounds fall in the bow, walk and fishing poses (probes for the TypeScript tests)
+and, always next to this script, monk-bend-samples.json: where bend_vertex puts a dozen jacket vertices at each depth, the numbers
+the TypeScript copy of the bend is held to; and previews to <temp>/monk-preview/ (or $MONK_PREVIEW_DIR; never into the repo).
 
 Parts (one mesh object each, named exactly like the slot in monk-model.ts), each built in the local frame of its pivot:
-    head, face, hair, torso, skirt, backRamp, pelvis, trousers, trim, skirtTrim, sleeveUpper, sleeveLower, hand, foot, leg
+    head, face, hair, pelvis, jacket, trim, sleeveUpper, sleeveLower, hand, foot, leg, trousers
 sleeveUpper, sleeveLower, hand, foot, leg and trousers are mirror-symmetric about x = 0 because one geometry serves both sides.
 The head is shaved: the scalp shade is a smooth vertex-colour gradient on the head itself (no cap mesh, so there is no
 edge to show). "hair" stays as a swappable slot but holds only a tiny scalp-coloured core buried inside the skull, so
 nothing sits above the scalp until a hairstyle is dropped in.
 The outfit is a Korean child-monk set taken from a reference photograph (kept outside this repository): an ash-grey jacket and darker grey
-baggy trousers. The jacket is two parts that meet at the hip pivot: "torso" is the chest (crossed front with the left panel over
-the right, long sleeves in sleeveUpper / sleeveLower) and ends in a rounded hinge below the pivot, "skirt" is the tunic below it,
-which bends back less when bowing, and "backRamp" is the arch on its crown that fills the back over the hip halfway down the bow; "trim" and "skirtTrim" are the collar, crossing edges and side tie, cut at the same height. The trousers are two parts: "trousers" is one baggy
+baggy trousers. The jacket is one part, "jacket": the chest (crossed front with the left panel over the right, long sleeves in
+sleeveUpper / sleeveLower) and the tunic below it in a single closed surface, modelled upright. Bowing, every vertex of it is bent
+by one position-based curve (bend_vertex): below RIG bendLength under the hip pivot it stays where it is, between there and the pivot it
+curves forward at a constant rate, above the pivot it is stiff and turns with the chest. "trim" is the collar, crossing edges and
+side tie, laid on the same surface and bent with it. The trousers are two parts: "trousers" is one baggy
 leg that hangs from the same pivot as "leg" (the bare calf + cream knee sock inside it, mostly hidden) and is stretched with it,
 so it follows strides, bobbing and the folded kneeling feet; "pelvis" is the seat of the trousers below the jacket hem,
 bound to the hips, which closes the gap between the two legs and rests on the cushion when kneeling.
 The jacket ends JACKET_HEM below the hip pivot, the trouser cuff stops CUFF_ABOVE_ANKLE above the ankle, and the cream sock
 shows below it.
-Robe parts (torso, skirt, backRamp, pelvis, trousers, sleeveUpper, sleeveLower) are light and dark grey; the game tints them per monk by
+Robe parts (jacket, pelvis, trousers, sleeveUpper, sleeveLower) are light and dark grey; the game tints them per monk by
 multiplying a muted hue (HSL(hue, robeTintSaturation, robeTintLightness)) into that grey (robe_tint below mirrors monk-model.ts).
 Colours are written to the "Col" vertex-colour layer from PALETTE, and the materials read that layer.
 
@@ -127,20 +131,10 @@ RIG = {  # pivots and lengths the animation code uses
     "kneelPelvisGrow": 0.25,  # kneeling spreads the trousers' pelvis sideways ...
     "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the heels
     "kneelPelvisLift": 0.0,
-    "bowHipJoint": 0.17,  # bowing, the chest folds at the hip joint, this far below the waist pivot, so the waist swings forward (and a little down) while the seat stays on the heels
-    "bowSkirtFollow": 0.0,  # the skirt does not turn with the chest: it keeps this share of the waist's swing, 0 = it stays put on the thighs
-    "bowSkirtSquash": 0.76,  # ... only it settles: the hem stays where it is and the tunic above it presses down to this share of its kneeling height, so it no longer stands over the level back
-    "bowSkirtSpread": 0.17,  # ... and spreads forward from its back wall by this share of its depth, so its front reaches the plane of the chest's hip and the chest does not sit on a narrower block
-    "bowPelvisSquash": 0.52,  # ... and the seat of the trousers presses up under the settled tunic (its top stays where it was) to this share of its height ...
-    "bowPelvisLift": 0.085,  # ... until its underside is lifted this far, up into the tunic, so the hem hangs over the folded legs as the one edge of the garment and the trousers no longer show as a darker band below it ...
-    "bowPelvisLiftPower": 3.0,  # ... the lift following this power of the bow's depth, so the seat stays low while the chest folds over it and its top rim does not stand out of the tunic on the way down
-    "kneelSkirtScale": 0.86,  # kneeling gathers the skirt to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
-    "skirtCrownTop": 0.026,  # the skirt closes in a crown this far above the hinge ...
-    "bowRampDepth": 0.4283,  # ... and bowing, the ramp (backRamp) rises on it, its height the sine of this power of the bow's depth over a half turn: the chest passes over the hip well before the full bow, so it is highest at about a quarter of it ...
-    "bowRampSharp": 0.7726,  # ... and flat again by the full bow, the sine raised to this power ...
-    "bowRampStretch": 0.5218,  # ... as it grows longer from its back end, which stays on the skirt's back wall, up to this much of its length, the sine of this power of the depth over a half turn: the skirt's top is a shelf, and the chest comes out of it further forward the deeper the bow, so the ramp reaches on with it ...
-    "bowRampStretchDepth": 1.4541,
-    "bowRampSink": 0.033,  # ... out of the skirt, where it lies this far under the crown's top, hidden, standing and in the full bow
+    "bendLength": 0.20,  # bowing, the jacket bends in one smooth curve from this far below the hip pivot up to the pivot (its base stays on the thighs); above the pivot the chest is stiff and turns with it
+    "bendForward": 0.10,  # the curve runs along an axis this far in front of the hip pivot's origin: the jacket's front folds on the inside of the bend, its back stretches on the outside
+    "bendFold": 0.8,  # the front of the bend may fold by this much at most: the curvature times the distance in front of the axis
+    "kneelSkirtScale": 0.86,  # kneeling gathers the jacket below the hip pivot to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
     "seatTop": 0.13,
     "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
     "robeTintLightness": 0.78,
@@ -273,8 +267,9 @@ SKULL_CY = 0.02  # the skull sits a little forward of the neck, which also keeps
 
 COLOR_LAYER = "Col"
 HERE = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.environ.get("MONK_OUT_DIR") or HERE  # where monk.glb, monk-rig.json, monk-poses.json and monk.blend are written
 PREVIEW_DIR = os.environ.get("MONK_PREVIEW_DIR") or os.path.join(tempfile.gettempdir(), "monk-preview")
-PART_ORDER = ["head", "face", "hair", "pelvis", "torso", "skirt", "backRamp", "trim", "skirtTrim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
+PART_ORDER = ["head", "face", "hair", "pelvis", "jacket", "trim", "sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
 SYMMETRIC_PARTS = ["sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"]
 COPIES = {"sleeveUpper": 2, "sleeveLower": 2, "hand": 2, "foot": 2, "leg": 2, "trousers": 2}
 
@@ -594,7 +589,7 @@ TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: 
     (-JACKET_DROP + HEM_ROLL["height"], 0.198, 0.176, 2.4),
     (-0.150, 0.197, 0.172, 2.4),
     (-0.050, 0.188, 0.143, 2.4),
-    (0.000, 0.1705, 0.1218, 2.46),  # the hinge: the chest and the skirt meet here, at the hip pivot (on the line between its neighbours)
+    (0.000, 0.1705, 0.1218, 2.46),  # the hinge, at the hip pivot: the bend ends here (on the line between its neighbours)
     (0.030, 0.160, 0.109, 2.5),
     (0.100, 0.132, 0.080, 2.6),
     (0.140, 0.118, 0.068, 2.8),
@@ -602,9 +597,6 @@ TORSO_PROFILE = [  # z, half-width, half-depth, superellipse power. The jacket: 
     (0.170, 0.086, 0.052, 2.2),
     (TORSO_H, 0.060, 0.044, 2.0),
 ]
-
-
-SKIRT_REAR = TORSO_PROFILE[1][2]  # the back wall of the tunic, the widest it runs behind the pivot: the anchor the skirt spreads forward from
 
 
 def torso_at(z):
@@ -623,7 +615,7 @@ def torso_front(x, z):
     return hd * (1 - xn**power) ** (1 / power)
 
 
-BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the skirt's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie. The hem's own back tucks in further than its front
+BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth there, and the power of the back half of the ring. The back is squarer over the hip, so the chest comes out of the tunic's square back as one body, and rounder at the shoulder blade, so no corner stands out of it; the front is the profile's, where the arms and the trim lie. The hem's own back tucks in further than its front
     -JACKET_DROP: (HEM_ROLL["front"] - HEM_ROLL["back"], 2.4),
     -0.050: (0.0, 2.8),
     0.000: (0.0, 3.6),
@@ -632,107 +624,167 @@ BACK_PROFILE = {  # z: how much deeper the back runs behind the profile's depth 
 }
 
 
-def profile_ring(z, w, d, power):
+def mix_specs(a, b, t):
+    return tuple(lerp(x, y, t) for x, y in zip(a, b))
+
+
+def ring_spec(z, w, d, power):
+    """A profile row with the back's extra depth and power: (z, half-width, half-depth, power, extra, back power)."""
     extra, back_power = BACK_PROFILE.get(z, (0.0, power))
+    return (z, w, d, power, extra, back_power)
+
+
+BEND_FACET = radians(10.6)  # the bend turns each facet of the jacket by this much at most at the deepest bow; the front, which the bend compresses and shears, turns up to two degrees more (JACKET_BEND facet). Tuned so the rings fit the monk's byte budget
+BEND_RINGS_FROM = -round(RIG["bendLength"] / RIG["kneelSkirtScale"], 4)  # the rings are dense from here up to the hinge: the kneeling jacket is gathered, so this is where its curve begins
+
+
+def bend_turn(low, high):
+    """How far the bend turns between the heights low and high of the upright jacket at the deepest bow: the larger of standing, where
+    it covers bendLength below the hinge, and gathered, where it covers more of the upright jacket and turns less of it per metre."""
+    length, gather = RIG["bendLength"], RIG["kneelSkirtScale"]
+    standing = max(0.0, min(high, 0.0) - max(low, -length)) * POSE["bow_lean"] / length
+    gathered = max(0.0, min(high, 0.0) - max(low, -length / gather)) * gather * POSE["bow_lean"] / length
+    return max(standing, gathered)
+
+
+def jacket_specs():
+    """The jacket's rings, bottom to top: the profile's own rows (the silhouette is drawn straight between them) and, from
+    BEND_RINGS_FROM up to the hinge, rows on those lines in between, so that the bend turns no facet by more than BEND_FACET."""
+    rows = [ring_spec(*row) for row in TORSO_PROFILE]
+    for a, b in zip(rows, rows[1:]):
+        if a[0] < BEND_RINGS_FROM < b[0]:
+            rows.insert(rows.index(b), mix_specs(a, b, (BEND_RINGS_FROM - a[0]) / (b[0] - a[0])))
+            break
+    specs = [rows[0]]
+    for a, b in zip(rows, rows[1:]):
+        steps = math.ceil(bend_turn(a[0], b[0]) / BEND_FACET - 1e-9) if BEND_RINGS_FROM - 1e-9 <= a[0] and b[0] <= 1e-9 else 1
+        specs += [mix_specs(a, b, k / steps) for k in range(1, steps)] + [b]
+    return specs
+def ring_of(spec):
+    z, w, d, power, extra, back_power = spec
     return ring_xy(0.0, -extra / 2, z, w, d + extra / 2, SEGMENTS["torso"], power, back_power=back_power)
 
 
-def torso_rings():
-    return [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE]
+def jacket_rings():
+    return [ring_of(spec) for spec in jacket_specs()]
 
 
-HINGE_Z = 0.0  # the jacket is cut here, at the hip pivot: the chest above it bows with the torso, the skirt below it follows only part of the way
-HINGE_TAIL = [(-0.084, 0.85, 0.1195, 0.060), (-0.050, 1.0, 0.1218, 0.090)]  # how the chest rounds off below the hinge: z, its share of the hinge's width, and its depth behind and in front of the pivot (the back's deep, the belly's short: bowing, the belly side comes down to the hem; the back reaches as deep as the skirt's, so bowing the chest comes out of the skirt's dome early and the silhouette has no dip where they meet)
-HINGE_TAIL_POWER = 3.0
-HINGE_TAIL_CAP = Vector((0.0, -0.010, -0.097))
+HINGE_Z = 0.0  # the hip pivot: the jacket's bend ends here, and everything above it is stiff
+UP = Vector((0.0, 0.0, 1.0))
 
 
-def build_torso():
-    """The chest, from the base of the neck down to the hinge at the hip pivot. Below the hinge it rounds off into a tail that lies
-    inside the skirt standing and, bowing, fills the angle that opens between the chest and the skirt over the hip."""
-    p = Part("torso")
-    n = SEGMENTS["torso"]
-    hinge = next(ring for ring in TORSO_PROFILE if ring[0] == HINGE_Z)
-    tail = [ring_xy(0.0, (front - back) / 2, z, hinge[1] * k, (back + front) / 2, n, HINGE_TAIL_POWER) for z, k, back, front in HINGE_TAIL]
-    chest = [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE if z >= HINGE_Z]
-    p.loft(tail + chest, "jacket", cap_first=HINGE_TAIL_CAP, cap_last=True)
-    return p.to_object()
+def bend_vertex(co, n, theta, gather=1.0):
+    """The one bend the jacket takes when bowing: where the point `co` (with the shading normal `n`) of the upright jacket goes, and
+    its normal, with the chest turned forward by `theta`. gather (kneeling: 1 standing, less when the jacket is gathered on the
+    thighs) shortens everything below the hinge first. The bend works in the waist frame: h the height, f the forward distance
+    (+Y), x untouched. Below the base (h = -bendLength) nothing moves. From there up to the hinge the jacket curves forward at the
+    constant rate theta / bendLength about the axis f = bendForward: arc length along the axis is kept, the front (f above the
+    axis) is compressed and the back stretched, and a point keeps its distance from the axis, so a facet never leaves the curve.
+    Above the hinge it is one rigid body with the chest (bend_frame), which keeps the curve's end tangent."""
+    length, forward = RIG["bendLength"], RIG["bendForward"]
+    f, h = co.y, co.z
+    n_f, n_h = n.y, n.z
+    if h < 0.0:
+        h *= gather
+        n_h /= gather
+    if theta < 1e-4:
+        return Vector((co.x, f, h)), Vector((n.x, n_f, n_h)).normalized()
+    u = h + length
+    s = clamp(u, 0.0, length)
+    o = f - forward
+    k = theta / length
+    phi = k * s
+    c, sn = cos(phi), sin(phi)
+    stretch = 1.0 - k * o if 0.0 < u < length else 1.0
+    n_o, n_s = n_f, n_h / stretch
+    position = Vector((co.x, forward + (1 - c) / k + o * c + (u - s) * sn, -length + sn / k - o * sn + (u - s) * c))
+    return position, Vector((n.x, n_o * c + n_s * sn, -n_o * sn + n_s * c)).normalized()
 
 
-HINGE_CROWN = [(0.020, 0.62)]  # how the skirt rounds off above the hinge, inside the chest: z, and its share of the hinge ring
-HINGE_CROWN_POWER = 3.0
+def bend_point(co, theta, gather=1.0):
+    return bend_vertex(co, UP, theta, gather)[0]
 
 
-def build_skirt():
-    """The tunic below the hip pivot, down to the hem. Above the hinge it closes in a rounded crown that stays inside the chest."""
-    p = Part("skirt")
-    n = SEGMENTS["torso"]
-    hinge = next(ring for ring in TORSO_PROFILE if ring[0] == HINGE_Z)
-    tunic = [profile_ring(z, w, d, power) for z, w, d, power in TORSO_PROFILE if z <= HINGE_Z]
-    crown = [ring_xy(0.0, 0.0, z, hinge[1] * k, hinge[2] * k, n, HINGE_CROWN_POWER) for z, k in HINGE_CROWN]
-    p.loft(tunic + crown, "jacket", cap_first=True, cap_last=Vector((0.0, 0.0, RIG["skirtCrownTop"])))
-    return p.to_object()
+def bend_frame(theta):
+    """The frame of everything above the hinge once the jacket is bent (Blender axes, in the jacket's own): the hinge's origin where
+    the bend puts it, turned forward by theta. The head, the shoulders and the sleeves ride on it."""
+    return Matrix.Translation(bend_point(Vector((0.0, 0.0, HINGE_Z)), theta)) @ Matrix.Rotation(-theta, 4, "X")
 
 
-BACK_RAMP = {  # the half arch that fills the back over the hip while the chest folds, in the skirt's frame (y forward, z up from where it lies in the pose)
-    "y": (-0.1218, 0.0003),  # from the skirt's back wall to just short of the hinge, where it ends inside the chest
-    "half_width": 0.1335,  # its width at the front end; it narrows to the back along a power of the share of the way
-    "widen": 0.2348,
-    "height": 0.1243,  # its height at the front end, and the share of it that rises along the way
-    "rise": 0.5355,
-    "power": 2.6,  # the arch's squareness (2 is an ellipse)
-    "spacing": 1.1527,  # the rings lie at this power of their share of the way: more than 1 crowds them toward the back
-    "rings": 5,  # the rings along the way (the first is the point at the back), and the points over the arch of each (an odd number gives the arch a ridge on the middle line)
-    "points": 5,
-}
+class BentMatrix:
+    """The jacket's pose as the checks and the previews see it, in place of a matrix: the bend about the waist, then `node`, the
+    matrix that carries the waist (the hips, leaning when it walks). `m @ co` is a point of the jacket in the world."""
+
+    def __init__(self, theta, gather, node):
+        self.theta, self.gather, self.node = theta, gather, node
+        self.straight = theta < 1e-4 and gather == 1.0
+
+    def __matmul__(self, co):
+        return self.node @ (co if self.straight else bend_point(co, self.theta, self.gather))
+
+    def normal(self, co, n):
+        return (self.node.to_3x3() @ (n if self.straight else bend_vertex(co, n, self.theta, self.gather)[1])).normalized()
+
+    @property
+    def chest(self):
+        """The matrix of everything above the hinge: the head, the shoulders and the sleeves ride on it."""
+        return self.node @ bend_frame(self.theta)
+
+    def converted(self, c4):
+        return BentMatrix(self.theta, self.gather, c4 @ self.node @ c4.inverted())
 
 
-def build_back_ramp():
-    """The skirt's top is a flat shelf that stays on the thighs, the chest a body that turns over the hip joint, and halfway down
-    the chest's back leaves the shelf well forward of the skirt's back wall: the waist is split in two by a dent and a step. This
-    half arch lies on the skirt from the back wall forward and rises out of it to meet the chest's back: it is hidden in the
-    skirt standing and in the full bow, where the chest's back and the skirt already run on in one line, and highest in between,
-    and it ends inside the chest."""
-    r = BACK_RAMP
-    p = Part("backRamp")
-    y0, y1 = r["y"]
-    n = r["points"]
-    rings = []
-    for k in range(1, r["rings"]):
-        t = (k / (r["rings"] - 1)) ** r["spacing"]
-        grow = sin(pi * t / 2) ** r["rise"]
-        w, h = r["half_width"] * grow ** r["widen"], r["height"] * grow
-        arch = [i * pi / (n - 1) for i in range(n)]
-        rings.append([p.bm.verts.new(Vector((w * smooth_pow(cos(a), r["power"]), lerp(y0, y1, t), h * smooth_pow(sin(a), r["power"])))) for a in arch])
-    for near, far in zip(rings, rings[1:]):
-        for j in range(n - 1):
-            p.face([near[j], far[j], far[j + 1], near[j + 1]], "jacket")
-    tip = p.bm.verts.new(Vector((0.0, y0, 0.0)))
-    for j in range(n - 1):
-        p.face([tip, rings[0][j], rings[0][j + 1]], "jacket")
-    return p.to_object()
+def check_bend():
+    """The bend is the identity upright, one rigid body above the hinge, keeps the arc along its axis and keeps the normals normal."""
+    samples = [Vector((x, f, h)) for x in (0.0, 0.1) for f in (-0.15, 0.0, 0.08, 0.15) for h in (-0.28, -0.2, -0.12, -0.04, 0.0, 0.05, 0.17)]
+    normals = [Vector(v).normalized() for v in ((0, 1, 0), (0, 0.6, 0.8), (0.3, -0.7, 0.2), (0, 0, 1), (0, 0, -1))]
+    thetas, gathers = (0.4, 1.0, POSE["bow_lean"]), (1.0, RIG["kneelSkirtScale"])
+    worst_still = worst_rigid = worst_length = worst_normal = 0.0
+    for p in samples:
+        for n in normals:
+            q, m = bend_vertex(p, n, 0.0)
+            worst_still = max(worst_still, (q - p).length, (m - n).length)
+            if p.z < HINGE_Z:
+                continue
+            for theta in thetas:
+                for gather in gathers:
+                    frame = bend_frame(theta)
+                    q, m = bend_vertex(p, n, theta, gather)
+                    worst_rigid = max(worst_rigid, (q - frame @ p).length, (m - frame.to_3x3() @ n).length)
+    length, forward = RIG["bendLength"], RIG["bendForward"]
+    for theta in thetas:
+        for gather in gathers:
+            steps = 4000
+            axis = [bend_point(Vector((0.0, forward, -length + length * i / steps)), theta, gather) for i in range(steps + 1)]
+            worst_length = max(worst_length, abs(sum((b - a).length for a, b in zip(axis, axis[1:])) - length))
+            for f, slope in ((0.12, 0.0), (0.12, 0.3), (-0.1, -0.2), (0.17, 0.5)):
+                for h in (-0.19, -0.1, -0.02):
+                    eps = 1e-6
+                    p0, p1 = Vector((0.0, f + slope * h, h)), Vector((0.0, f + slope * (h + eps), h + eps))
+                    n = Vector((0.0, 1.0, -slope)).normalized()
+                    q0, m0 = bend_vertex(p0, n, theta, gather)
+                    worst_normal = max(worst_normal, abs((bend_point(p1, theta, gather) - q0).normalized().dot(m0)))
+    print("BEND identity upright %.1e, rigid above the hinge %.1e, arc length off by %.1e, normal against tangent %.1e" % (worst_still, worst_rigid, worst_length, worst_normal))
+    assert worst_still < 1e-9 and worst_rigid < 1e-9, "the bend must be the identity upright and one rigid body above the hinge"
+    assert worst_length < 1e-4, "the bend must keep the arc length along its axis"
+    assert worst_normal < 1e-3, "the bent normals must stay perpendicular to the bent surface"
 
 
-def build_jacket_whole():
-    """The two halves as one closed jacket (standing, they are): the surface the thighs, the sleeves and the hands are held against."""
+def build_jacket():
+    """The chest and the tunic as one closed jacket, upright: the surface the thighs, the sleeves and the hands are held against."""
     p = Part("jacket")
-    p.loft(torso_rings(), "jacket", cap_first=True, cap_last=True)
+    p.loft(jacket_rings(), "jacket", cap_first=True, cap_last=True)
     return p.to_object()
 
 
 HEM_TILT = radians(30)  # how far below the horizontal the hem's lowest ring is shaded: it turns under, it does not face down
-CROWN_TILT = (radians(35), radians(50), radians(60))  # how far above the horizontal the skirt's top is shaded, at the hinge's ring, at the crown's ring and at the crown's cap (tilted back): it is a shelf, the ramp and the chest come out of it
 
 
-def shade_skirt_normals(skirt):
-    """The skirt's lowest ring shares its vertices with the flat bottom cap, so its smooth normals point almost straight down and
-    shade near black: bowing, the hem's turned-under back catches the light as a hard dark rim across the thighs. It is shaded as
-    the tucked edge it is instead, its horizontal direction kept and tilted HEM_TILT below the horizontal. The skirt's top is
-    shaded as the long slope it is, not as a flat lid: the crown's ring and cap share their smooth normals with a cap that points
-    straight up, so the shelf shows a bright rim the ramp and the chest, which lie at a slant, do not continue and the back of the
-    waist shows a ledge. Their horizontal directions are kept and tilted CROWN_TILT above the horizontal. The cap's own centre,
-    the other rings and the geometry are left as they are."""
-    mesh = skirt.data
+def shade_hem_normals(jacket):
+    """The lowest ring shares its vertices with the flat bottom cap, so its smooth normals point almost straight down and shade
+    near black: the hem's turned-under back would catch the light as a hard dark rim across the thighs. It is shaded as the tucked
+    edge it is instead, its horizontal direction kept and tilted HEM_TILT below the horizontal."""
+    mesh = jacket.data
     low = min(v.co.z for v in mesh.vertices)
     normals = [Vector(n.vector) for n in mesh.vertex_normals]
     for v in mesh.vertices:
@@ -740,89 +792,7 @@ def shade_skirt_normals(skirt):
         if abs(v.co.z - low) < 1e-6 and flat.length > 0.1:
             flat.normalize()
             normals[v.index] = Vector((flat.x * cos(HEM_TILT), flat.y * cos(HEM_TILT), -sin(HEM_TILT)))
-        elif v.co.z > -1e-6:
-            if flat.length < 0.05:
-                normals[v.index] = Vector((0.0, -cos(CROWN_TILT[2]), sin(CROWN_TILT[2])))
-            else:
-                flat.normalize()
-                tilt = CROWN_TILT[0] if v.co.z < RIG["skirtCrownTop"] / 5 else CROWN_TILT[1]
-                normals[v.index] = Vector((flat.x * cos(tilt), flat.y * cos(tilt), sin(tilt)))
     mesh.normals_split_custom_set_from_vertices(normals)
-
-
-def corner_normals_by_vertex(part):
-    """The shading normal of each of the part's vertices (the mean of its corners', which are one where the normals are set per vertex)."""
-    mesh = part.data
-    sums = [Vector() for _ in mesh.vertices]
-    for loop in mesh.loops:
-        sums[loop.vertex_index] += Vector(mesh.corner_normals[loop.index].vector)
-    return [total.normalized() for total in sums]
-
-
-JUNCTION_REACH = 0.12  # how far from the skirt, at the deepest bow, the chest's normals still follow the skirt's
-
-
-def blend_junction_normals(chest, skirt):
-    """Bowing, the chest comes out of the skirt's rounded corner at a shallow angle, and the two surfaces' own normals differ by a
-    few degrees there, which shows as a crease. The chest takes the skirt's normal wherever it lies on the skirt at the deepest bow,
-    fading out over JUNCTION_REACH, so the shading runs on from one into the other. The skirt keeps its own normals: they are what
-    the standing monk's hips show, and the standing waist is smoother with the chest following them as well."""
-    mats = pose_matrices(1.0, RIG["seatTop"], bow=BOW_DEPTHS[-1])
-    chest_m, skirt_m = mats["torso"][0], mats["skirt"][0]
-    tree = world_bvh(skirt, skirt_m)
-    chest_to_world, skirt_to_world = chest_m.to_3x3().inverted().transposed(), skirt_m.to_3x3().inverted().transposed()
-    skirt_normals = [(skirt_to_world @ n).normalized() for n in corner_normals_by_vertex(skirt)]
-    skirt_points = [skirt_m @ v.co for v in skirt.data.vertices]
-    normals = []
-    for v, n in zip(chest.data.vertices, chest.data.vertex_normals):
-        mine = (chest_to_world @ Vector(n.vector)).normalized()
-        hit, _, face, dist = tree.find_nearest(chest_m @ v.co)
-        follow = 1.0 - smoothstep(dist / JUNCTION_REACH)
-        if follow > 0.0:
-            weights = [(1.0 / ((skirt_points[i] - hit).length + 1e-4) ** 2, i) for i in skirt.data.polygons[face].vertices]
-            theirs = sum((skirt_normals[i] * w for w, i in weights), Vector()).normalized()
-            mine = mine.lerp(theirs, follow).normalized()
-        normals.append((chest_m.to_3x3().transposed() @ mine).normalized())
-    chest.data.normals_split_custom_set_from_vertices(normals)
-
-
-RAMP_SHADE_BOW = 0.4  # the depth of the bow at which the ramp is laid on the skirt and the chest to take its shading from them
-
-
-def shade_back_ramp(ramp, skirt, chest):
-    """The ramp rises out of the skirt's top and the chest comes out of it, so its shading is theirs, run on: each vertex takes the
-    normal the skirt has at the point under it at its back end and the chest's nearest to it at its front end, mixed along the way,
-    with the ramp laid on them as it lies at RAMP_SHADE_BOW. Its own smooth normals lean the other way, and where it comes out of
-    the skirt's top and goes into the chest's back the shading breaks in a line."""
-    mats = pose_matrices(1.0, RIG["seatTop"], bow=RAMP_SHADE_BOW)
-    ramp_m, skirt_m, chest_m = mats["backRamp"][0], mats["skirt"][0], mats["torso"][0]
-    to_skirt = skirt_m.inverted() @ ramp_m
-    skirt_mesh = skirt.data
-    skirt_mesh.calc_loop_triangles()
-    triangles = list(skirt_mesh.loop_triangles)
-    skirt_tree = BVHTree.FromPolygons([v.co.copy() for v in skirt_mesh.vertices], [tuple(t.vertices) for t in triangles])
-    skirt_normals = corner_normals_by_vertex(skirt)
-    chest_tree = world_bvh(chest, chest_m)
-    chest_points = [chest_m @ v.co for v in chest.data.vertices]
-    chest_normals = [(chest_m.to_3x3().inverted().transposed() @ n).normalized() for n in corner_normals_by_vertex(chest)]
-    skirt_to_world = skirt_m.to_3x3().inverted().transposed()
-    ramp_to_local = ramp_m.to_3x3().transposed()
-    back, front = BACK_RAMP["y"]
-    normals = []
-    for v in ramp.data.vertices:
-        p = to_skirt @ v.co
-        hit, _, index, _ = skirt_tree.ray_cast(Vector((p.x, p.y, 1.0)), Vector((0.0, 0.0, -1.0)))
-        if hit is None:
-            hit, _, index, _ = skirt_tree.find_nearest(p)
-        corners = triangles[index].vertices
-        weights = poly_3d_calc([skirt_mesh.vertices[i].co for i in corners], hit)
-        from_skirt = (skirt_to_world @ sum((skirt_normals[i] * weight for i, weight in zip(corners, weights)), Vector())).normalized()
-        near, _, face, _ = chest_tree.find_nearest(ramp_m @ v.co)
-        nearest = [(1.0 / ((chest_points[i] - near).length + 1e-4) ** 2, i) for i in chest.data.polygons[face].vertices]
-        from_chest = sum((chest_normals[i] * weight for weight, i in nearest), Vector()).normalized()
-        along = from_skirt.lerp(from_chest, smoothstep((v.co.y - back) / (front - back))).normalized()
-        normals.append((ramp_to_local @ along).normalized())
-    ramp.data.normals_split_custom_set_from_vertices(normals)
 
 
 PARITY_RAY = Vector((0.371, 0.613, 0.696)).normalized()
@@ -849,13 +819,13 @@ def clearance_of(tree, point):
     return -dist if inside_surface(tree, point) else dist
 
 
-class TorsoSurface:
-    """The faceted torso mesh itself (not the smooth curve it is sampled from), so trim can sit exactly on it."""
+class JacketSurface:
+    """The faceted jacket mesh itself (not the smooth curve it is sampled from), so trim can sit exactly on it."""
 
     def __init__(self):
         self.bm = bmesh.new()
         n = SEGMENTS["torso"]
-        vr = [[self.bm.verts.new(v) for v in ring] for ring in torso_rings()]
+        vr = [[self.bm.verts.new(v) for v in ring] for ring in jacket_rings()]
         for i in range(len(vr) - 1):
             for j in range(n):
                 k = (j + 1) % n
@@ -876,15 +846,12 @@ class TorsoSurface:
         return dist if (point - hit).dot(normal) >= 0 else -dist
 
 
-PELVIS_PROFILE = [  # z, half-width, half-depth. The seat of the trousers: tucked under the jacket (never wider than its hem), a little of it showing below the hem, then rounding off into the crotch
+PELVIS_PROFILE = [  # z, half-width, half-depth. The seat of the trousers: tucked under the jacket (never wider than its hem), a little of it showing below the hem, then rounding off into the crotch. It ends where the jacket's bend begins: above that the jacket curves forward and nothing of the seat stands in it
     (-PELVIS_DROP, 0.050, 0.044),
     (-PELVIS_DROP + 0.014, 0.100, 0.082),
     (-0.320, 0.130, 0.100),
     (-0.290, 0.140, 0.108),
-    (-0.200, 0.140, 0.108),
-    (-0.100, 0.130, 0.100),
-    (-0.020, 0.115, 0.090),
-    (0.030, 0.100, 0.080),
+    (-RIG["bendLength"], 0.140, 0.108),
 ]
 
 
@@ -920,29 +887,14 @@ def build_trousers():
     return p.to_object()
 
 
-def cut_at_hinge(p, name, above):
-    """A copy of a part with everything above (or below) the hinge plane removed; the cut leaves an edge exactly on the plane."""
-    q = Part(name)
-    q.bm = p.bm.copy()
-    q.keys = list(p.keys)
-    geom = q.bm.verts[:] + q.bm.edges[:] + q.bm.faces[:]
-    bmesh.ops.bisect_plane(q.bm, geom=geom, plane_co=Vector((0.0, 0.0, HINGE_Z)), plane_no=Vector((0.0, 0.0, 1.0)), clear_inner=above, clear_outer=not above)
-    bmesh.ops.delete(q.bm, geom=[v for v in q.bm.verts if not v.link_faces], context="VERTS")
-    return q
-
-
 def build_trim():
-    """The collar and the crossed front above the hinge; build_skirt_trim is what reaches below it."""
-    return cut_at_hinge(trim_decals(), "trim", True).to_object()
-
-
-def build_skirt_trim():
-    return cut_at_hinge(trim_decals(), "skirtTrim", False).to_object()
+    """The collar, the crossed front and the tie, laid on the jacket and bent with it."""
+    return trim_decals().to_object()
 
 
 def trim_decals():
     p = Part("trim")
-    surface = TorsoSurface()
+    surface = JacketSurface()
     if OUTFIT["collar_ring"]:
         collar = []
         for z, grow in ((TORSO_H - 0.012, 0.007), (TORSO_H - 0.003, 0.006), (TORSO_H + 0.009, 0.0)):
@@ -973,7 +925,7 @@ def under_edge_x(z):
 
 
 def torso_ring_heights(lo, hi):
-    return [z for z, *_ in reversed(TORSO_PROFILE) if lo + 0.008 < z < hi - 0.004]
+    return [spec[0] for spec in reversed(jacket_specs()) if lo + 0.008 < spec[0] < hi - 0.004]
 
 
 def build_lapels(p, surface):
@@ -1219,11 +1171,8 @@ BUILDERS = {
     "face": build_face,
     "hair": build_hair,
     "pelvis": build_pelvis,
-    "torso": build_torso,
-    "skirt": build_skirt,
-    "backRamp": build_back_ramp,
+    "jacket": build_jacket,
     "trim": build_trim,
-    "skirtTrim": build_skirt_trim,
     "sleeveUpper": build_sleeve_upper,
     "sleeveLower": build_sleeve_lower,
     "hand": build_hand,
@@ -1377,7 +1326,7 @@ def check_proportions(parts):
     crown = max(v.z for v in head)
     chin = min(v.z for v in head if v.y > JAW_FRONT)  # Blender +Y is the face side
     size = crown - chin
-    jacket_bottom = min(v.co.z for v in parts["skirt"].data.vertices)
+    jacket_bottom = min(v.co.z for v in parts["jacket"].data.vertices)
     pelvis_bottom = min(v.co.z for v in parts["pelvis"].data.vertices)
     cuff_bottom = min(v.co.z for v in parts["trousers"].data.vertices)
     foot = [v.co.z for v in parts["foot"].data.vertices]
@@ -1422,7 +1371,7 @@ def check_proportions(parts):
         "shin / H (knee to ankle)": ((knee - ankle) / size, RATIO["knee"] - RATIO["ankle"], 0.02),
         "head width / H": ((max(v.x for v in head) - min(v.x for v in head)) / size, RATIO["head_width"], 0.03),
         "head depth / H": ((max(v.y for v in head) - min(v.y for v in head)) / size, RATIO["head_depth"], 0.03),
-        "robe width / H": ((max(v.co.x for v in parts["skirt"].data.vertices) - min(v.co.x for v in parts["skirt"].data.vertices)) / size, RATIO["robe_width"], 0.02),
+        "robe width / H": ((max(v.co.x for v in parts["jacket"].data.vertices) - min(v.co.x for v in parts["jacket"].data.vertices)) / size, RATIO["robe_width"], 0.02),
         "foot width / H": ((max(foot_x) - min(foot_x)) / size, 0.45, 0.02),
         "hip joints apart / H": (hip_joints / size, RATIO["hip_joints"], 0.01),
         "sleeve to sleeve / H": (span / size, RATIO["shoulder_breadth"], 0.05),
@@ -1459,8 +1408,8 @@ def check_kneel_clearance(parts):
 def check_kneel_hands(parts):
     """The praying hands stay outside the robe and the neck, below the chin, and do not cross the middle of the chest."""
     mats = pose_matrices(1.0, RIG["seatTop"])
-    to_torso = mats["torso"][0].inverted()
-    torso = TorsoSurface()
+    to_torso = mats["jacket"][0].chest.inverted()
+    torso = JacketSurface()
     chin = NECK_Y + CHIN_Z
     worst_torso, worst_neck = 1.0, 1.0
     for side, m in enumerate(mats["hand"]):
@@ -1475,22 +1424,31 @@ def check_kneel_hands(parts):
     assert worst_neck >= -0.002, "the praying hands sink %.4f into the neck" % -worst_neck
 
 
-def world_bvh(obj, matrix):
+def world_bvh(obj, matrix, below=None):
+    """The part's faces in the world as a BVH tree; the matrix may be a BentMatrix. below: only the faces of the upright part whose
+    vertices all lie at or under this height, closed by a lid (the tunic of the jacket, from the hip pivot down)."""
     bm = bmesh.new()
     bm.from_mesh(obj.data)
-    bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
+    if below is not None:
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if max(v.co.z for v in f.verts) > below + 1e-9], context="FACES")
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context="VERTS")
+        rim = [e for e in bm.edges if e.is_boundary]
+        bmesh.ops.holes_fill(bm, edges=rim, sides=len(rim))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if isinstance(matrix, BentMatrix):
+        for v in bm.verts:
+            v.co = matrix @ v.co
+    else:
+        bmesh.ops.transform(bm, matrix=matrix, verts=bm.verts)
     bm.normal_update()
     tree = BVHTree.FromBMesh(bm)
     bm.free()
     return tree
-
-
 BOW_DEPTHS = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0)  # the bow's way down (and back up), from the first tilt to the deepest
 BOW_CLEARANCE = {  # what each arm part must stay clear of, in metres: a margin of 0 only forbids sinking in
     "head": {"hand": 0.004, "sleeveLower": 0.0, "sleeveUpper": 0.001},
-    "torso": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": -0.03},  # the root of the sleeve sits inside the shoulder: 27 mm deep at the first tilt, and the bow brings it back out to 19 mm
-    "skirt": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": 0.0},  # the tunic below the hip pivot
-    "backRamp": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": 0.0},  # the arch that fills the back over the hip
+    "jacket": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": -0.03},  # the root of the sleeve sits inside the shoulder: 27 mm deep at the first tilt, and the bow brings it back out to 19 mm
+    "tunic": {"hand": 0.0, "sleeveLower": 0.0, "sleeveUpper": 0.0},  # the jacket from the hip pivot down, bent: nothing sinks into it
     "pelvis": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # the seat of the trousers
     "trousers": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # both trouser legs
 }
@@ -1516,7 +1474,7 @@ def check_bow(parts):
             low = min((m @ v.co).z - cushion for m in matrices for v in parts[part].data.vertices)
             assert low >= -0.0005, "%s sinks %.4f into the seat at bow %.3f" % (part, -low, bow)
         for target, margins in BOW_CLEARANCE.items():
-            trees = [world_bvh(parts[target], m) for m in mats[target]]
+            trees = [world_bvh(parts["jacket"], m, HINGE_Z) for m in mats["jacket"]] if target == "tunic" else [world_bvh(parts[target], m) for m in mats[target]]
             for part, margin in margins.items():
                 near = min(clearance_of(tree, m @ v.co) for tree in trees for m in mats[part] for v in parts[part].data.vertices)
                 if bow == BOW_DEPTHS[-1]:
@@ -1585,96 +1543,153 @@ def check_kneel_seat(parts):
     assert lean <= KNEEL_SEAT["upright"], "the seated back leans: the head is %.4f off the middle of the seat" % lean
 
 
-CHEST_SKIRT = {  # the chest against the skirt and the legs, at every depth of the bow, in metres
-    "poke": 0.02,  # the part of the chest below the hinge shows outside the tunic by this much at most
-    "buried": 0.05,  # and its lowest edge lies this deep inside the tunic at least, so no seam shows
-    "legs": 0.02,  # the chest stays this far from the thighs at least
-    "step": 0.004,  # at the deepest bow the top of the skirt is level with the back of the chest within this
+JACKET_BEND = {  # the bent jacket at every depth of the bow, in metres and radians
+    "legs": 0.02,  # the chest (the jacket from the hip pivot up) stays this far from the thighs at least
     "arc": 0.012,  # the back of the chest departs from the straight line from the hinge to the neck by this much at most (the jacket's own taper, the same standing)
     "lean": (radians(85), radians(90)),  # the chest lies this far over at the deepest bow
+    "fold": RIG["bendFold"],  # the curvature times the distance in front of the bend's axis: the front of the bend is compressed to 1 - this of its length at most
+    "facet": radians(13),  # no facet of a meridian is more than this sharper against its neighbour than it is upright, at the deepest bow
+    "trim": 0.001,  # the trim sits no deeper in the jacket, at any depth of the bow, than it does upright, by more than this
 }
-LEG_SKIRT = (0.005, 0.02)  # the thighs against the skirt, kneeling and bowing: the skirt lies on them, this far off at least, and no further than this
+LEG_SKIRT = (0.005, 0.02)  # the thighs against the jacket, kneeling and bowing: the jacket lies on them, this far off at least, and no further than this
 
 
-def check_chest_skirt(parts):
-    """The chest bows about the hip joint while the skirt stays on the thighs: the part of the chest below the hinge sits inside the
-    tunic (it shows outside it by a few millimetres at most), the chest never sinks into the thighs, and at the deepest bow the back
-    runs level across the top of the skirt."""
+def jacket_triangles(obj):
+    obj.data.calc_loop_triangles()
+    return [tuple(t.vertices) for t in obj.data.loop_triangles]
+
+
+def self_crossings(obj, matrix, triangles):
+    """How many pairs of the posed part's triangles cross, not counting the pairs that share a corner."""
+    tree = BVHTree.FromPolygons([matrix @ v.co for v in obj.data.vertices], triangles, all_triangles=True)
+    return sum(1 for a, b in tree.overlap(tree) if a < b and not set(triangles[a]) & set(triangles[b]))
+
+
+def bend_fold(parts):
+    """The curvature times the distance in front of the axis, at its largest over the jacket's vertices in the bend: standing, and
+    kneeling with the jacket gathered."""
+    worst = 0.0
+    for gather in (1.0, RIG["kneelSkirtScale"]):
+        for v in parts["jacket"].data.vertices:
+            if -RIG["bendLength"] < v.co.z * gather < HINGE_Z:
+                worst = max(worst, POSE["bow_lean"] / RIG["bendLength"] * (v.co.y - RIG["bendForward"]))
+    return worst
+
+
+def bend_facets():
+    """The most any facet of a meridian of the jacket turns against its neighbour beyond the turn it has upright (stretching the back
+    smooths a kink, so only a sharper turn counts), at the deepest bow, standing and gathered."""
+    rings = jacket_rings()
+    worst = 0.0
+
+    def aim(line, i):
+        return atan2(line[i + 1].y - line[i].y, line[i + 1].z - line[i].z)
+
+    def turn(line, i):
+        return (aim(line, i) - aim(line, i - 1) + pi) % (2 * pi) - pi
+
+    for gather in (1.0, RIG["kneelSkirtScale"]):
+        for j in range(SEGMENTS["torso"]):
+            upright = [bend_point(ring[j], 0.0, gather) for ring in rings]
+            bent = [bend_point(ring[j], POSE["bow_lean"], gather) for ring in rings]
+            for i in range(1, len(upright) - 1):
+                worst = max(worst, abs(turn(bent, i)) - abs(turn(upright, i)))
+    return worst
+
+
+def check_jacket_bend(parts):
+    """The jacket is one surface bent by one curve, so there is no seam to check, only that the curve is a good one: no two of its
+    triangles cross at any depth of the bow (the front folds in, and a fold that went too far would pass through itself), the front
+    is not compressed past the fold limit, the facets are small enough to read as a curve, the chest keeps clear of the thighs and
+    lies straight and level at the deepest bow, and the trim lies on the jacket."""
     cushion = RIG["seatTop"]
-    tail = [v.co for v in parts["torso"].data.vertices if v.co.z < 0.0]
-    low_edge = min(v.z for v in tail)
-    worst_poke, worst_buried, worst_legs = {}, {}, {}
+    triangles = jacket_triangles(parts["jacket"])
+    crossings = {}
+    for step in range(BOW_SWEEP["depths"] + 1):
+        bow = step / BOW_SWEEP["depths"]
+        crossings[bow] = self_crossings(parts["jacket"], pose_matrices(1.0, cushion, bow=bow)["jacket"][0], triangles)
+    print("BEND triangles of the jacket crossing each other by depth: %s" % " ".join("%.2f:%d" % item for item in crossings.items()))
+    assert not any(crossings.values()), "the bent jacket crosses itself at bow %s" % ", ".join("%.2f" % b for b, c in crossings.items() if c)
+    fold, facet = bend_fold(parts), bend_facets()
+    print("BEND the front is folded by %.3f (it may be %.3f), the facets turn %.1f degrees more than upright at the sharpest (they may turn %.1f)" % (fold, JACKET_BEND["fold"], degrees(facet), degrees(JACKET_BEND["facet"])))
+    assert fold <= JACKET_BEND["fold"], "the front of the bend is folded by %.3f (it may be %.3f)" % (fold, JACKET_BEND["fold"])
+    assert facet <= JACKET_BEND["facet"], "the bend turns a facet %.1f degrees sharper than upright (it may turn it %.1f)" % (degrees(facet), degrees(JACKET_BEND["facet"]))
+    chest = [v.co for v in parts["jacket"].data.vertices if v.co.z >= HINGE_Z]
+    worst_legs = {}
     for bow in (0.0,) + BOW_DEPTHS:
         mats = pose_matrices(1.0, cushion, bow=bow)
-        skirt = world_bvh(parts["skirt"], mats["skirt"][0])
-        poke = max(clearance_of(skirt, mats["torso"][0] @ p) for p in tail)
-        buried = -max(clearance_of(skirt, mats["torso"][0] @ p) for p in tail if p.z <= low_edge + 0.01)
         thighs = [world_bvh(parts["trousers"], m) for m in mats["trousers"]]
-        legs = min(clearance_of(tree, mats["torso"][0] @ v.co) for tree in thighs for v in parts["torso"].data.vertices)
-        worst_poke[bow], worst_buried[bow], worst_legs[bow] = poke, buried, legs
-        assert poke <= CHEST_SKIRT["poke"], "the chest shows %.4f outside the skirt at bow %.3f (it may show %.4f)" % (poke, bow, CHEST_SKIRT["poke"])
-        assert buried >= CHEST_SKIRT["buried"], "the chest's lower edge is only %.4f inside the skirt at bow %.3f (it needs %.4f)" % (buried, bow, CHEST_SKIRT["buried"])
-        assert legs >= CHEST_SKIRT["legs"], "the chest comes within %.4f of the thighs at bow %.3f (it needs %.4f)" % (legs, bow, CHEST_SKIRT["legs"])
+        node = mats["jacket"][0].chest
+        worst_legs[bow] = min(clearance_of(tree, node @ p) for tree in thighs for p in chest)
+        assert worst_legs[bow] >= JACKET_BEND["legs"], "the chest comes within %.4f of the thighs at bow %.3f (it needs %.4f)" % (worst_legs[bow], bow, JACKET_BEND["legs"])
+    print("BEND the chest is %.4f from the thighs at the nearest (it needs %.4f)" % (min(worst_legs.values()), JACKET_BEND["legs"]))
+    node = pose_matrices(1.0, cushion, bow=BOW_DEPTHS[-1])["jacket"][0].chest
+    back = [node @ min(ring, key=lambda v: v.y) for ring in jacket_rings() if ring[0].z >= HINGE_Z]
+    (y0, z0), (y1, z1) = (back[0].y, back[0].z), (back[-1].y, back[-1].z)
+    length = math.hypot(y1 - y0, z1 - z0)
+    arc = max(abs((p.y - y0) * (z1 - z0) - (p.z - z0) * (y1 - y0)) / length for p in back)
+    lean = POSE["bow_lean"]
+    print("BEND the chest lies %.1f degrees over (it needs %.0f to %.0f), its back %.4f off straight (it may be %.4f)" % (degrees(lean), degrees(JACKET_BEND["lean"][0]), degrees(JACKET_BEND["lean"][1]), arc, JACKET_BEND["arc"]))
+    assert arc <= JACKET_BEND["arc"], "the back of the chest is %.4f off a straight line at the deepest bow (it may be %.4f)" % (arc, JACKET_BEND["arc"])
+    assert JACKET_BEND["lean"][0] <= lean <= JACKET_BEND["lean"][1], "the chest lies %.1f degrees over at the deepest bow" % degrees(lean)
+    upright = world_bvh(parts["jacket"], Matrix.Identity(4))
+    rest = [clearance_of(upright, v.co) for v in parts["trim"].data.vertices]
+    for bow in (0.0,) + BOW_DEPTHS:
+        pose = pose_matrices(1.0, cushion, bow=bow)
+        jacket = world_bvh(parts["jacket"], pose["jacket"][0])
+        deeper = max(r - clearance_of(jacket, pose["trim"][0] @ v.co) for r, v in zip(rest, parts["trim"].data.vertices))
+        assert deeper <= JACKET_BEND["trim"], "the trim sinks %.4f deeper into the jacket than upright at bow %.3f (it may sink %.4f)" % (deeper, bow, JACKET_BEND["trim"])
         if bow == BOW_DEPTHS[-1]:
-            top_chest = max((mats["torso"][0] @ v.co).z for v in parts["torso"].data.vertices)
-            top_skirt = max((mats["skirt"][0] @ v.co).z for v in parts["skirt"].data.vertices)
-            print("BOW the chest shows %.4f outside the skirt (it may show %.4f), its lower edge %.4f inside (it needs %.4f), %.4f from the thighs (it needs %.4f), the skirt top %.4f off the back's"
-                  % (poke, CHEST_SKIRT["poke"], buried, CHEST_SKIRT["buried"], legs, CHEST_SKIRT["legs"], top_skirt - top_chest))
-            assert abs(top_skirt - top_chest) <= CHEST_SKIRT["step"], "the skirt top is %.4f off the back of the chest at the deepest bow (it may be %.4f)" % (top_skirt - top_chest, CHEST_SKIRT["step"])
-            back = [mats["torso"][0] @ min(ring, key=lambda v: v.y) for ring in torso_rings() if ring[0].z >= HINGE_Z]
-            (y0, z0), (y1, z1) = (back[0].y, back[0].z), (back[-1].y, back[-1].z)
-            length = math.hypot(y1 - y0, z1 - z0)
-            arc = max(abs((p.y - y0) * (z1 - z0) - (p.z - z0) * (y1 - y0)) / length for p in back)
-            lean = POSE["bow_lean"]
-            print("BOW the chest lies %.1f degrees over (it needs %.0f to %.0f), its back %.4f off straight (it may be %.4f)" % (degrees(lean), degrees(CHEST_SKIRT["lean"][0]), degrees(CHEST_SKIRT["lean"][1]), arc, CHEST_SKIRT["arc"]))
-            assert arc <= CHEST_SKIRT["arc"], "the back of the chest is %.4f off a straight line at the deepest bow (it may be %.4f)" % (arc, CHEST_SKIRT["arc"])
-            assert CHEST_SKIRT["lean"][0] <= lean <= CHEST_SKIRT["lean"][1], "the chest lies %.1f degrees over at the deepest bow" % degrees(lean)
-    print("KNEEL the chest shows %.4f outside the skirt, its lower edge %.4f inside, %.4f from the thighs" % (worst_poke[0.0], worst_buried[0.0], worst_legs[0.0]))
+            print("BEND the trim sits %.4f deeper in the jacket than upright at the worst (it may sit %.4f)" % (deeper, JACKET_BEND["trim"]))
 
 
 def check_leg_skirt(parts):
-    """The skirt lies on the thighs, kneeling and at every depth of the bow: the legs never sink into it, and it never hovers above them."""
+    """The jacket lies on the thighs, kneeling and at every depth of the bow: the legs never sink into it, and it never hovers above them."""
     cushion = RIG["seatTop"]
     low, high = LEG_SKIRT
     for bow in (0.0,) + BOW_DEPTHS:
         mats = pose_matrices(1.0, cushion, bow=bow)
-        skirt = world_bvh(parts["skirt"], mats["skirt"][0])
-        near = min(clearance_of(skirt, m @ v.co) for m in mats["trousers"] for v in parts["trousers"].data.vertices)
+        jacket = world_bvh(parts["jacket"], mats["jacket"][0])
+        near = min(clearance_of(jacket, m @ v.co) for m in mats["trousers"] for v in parts["trousers"].data.vertices)
         if bow in (0.0, BOW_DEPTHS[-1]):
-            print("%s the thighs lie %.4f from the skirt (it needs %.4f to %.4f)" % ("KNEEL" if bow == 0.0 else "BOW", near, low, high))
-        assert low <= near <= high, "the thighs are %.4f from the skirt at bow %.3f (it needs %.4f to %.4f)" % (near, bow, low, high)
+            print("%s the thighs lie %.4f from the jacket (it needs %.4f to %.4f)" % ("KNEEL" if bow == 0.0 else "BOW", near, low, high))
+        assert low <= near <= high, "the thighs are %.4f from the jacket at bow %.3f (it needs %.4f to %.4f)" % (near, bow, low, high)
 
 
 BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a copy of this is in packages/client/test/monk-assets.test.ts)
     "depths": 20,  # the bow's depth from 0 to 1 in this many steps
     "planes": (0.0, 0.07),  # slices of the jacket along its length, this far from the middle line (the middle of the back and half-way to its edge)
-    "rays": (-70, 100),  # one ray a degree from the hip joint, from this far forward of straight up to this far back
+    "joint": (0.0, -0.15),  # the rays start from this point of the upright jacket (forward, height from the hip pivot), carried by the bend: the middle of the waist, where the chest's old hip joint was
+    "rays": (-70, 100),  # one ray a degree from the joint, from this far forward of straight up to this far back
     "jump": 0.03,  # no two neighbouring points of the outline lie further apart than this: no step, no gap
     "grid": 0.002,  # the outline is walked in steps of this, and a dent is how far a point lies inside the chord to the points this far each way along it
     "reach": (0.05, 0.08),
-    "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the bow measures 0.0123 and 0.0115 at worst (a tenth of slack); with no ramp under the chest's back it is 0.0207 and 0.0284 at worst, and a seated monk's own seat and thighs show 0.0055 and 0.0041
-    "span": 0.01,  # the shading turns by at most "turn" degrees between two points of the outline this far apart, within "zone" of the hip joint: the light can draw a ledge or a seam the shape has not got (a bright rim on the skirt's top, shading that stops short of the chest's), and a band of it is a line at any zoom
-    "turn": 19.5,  # a chest of 10 cm radius turns 6 degrees over 10 mm; the middle of the measured gap: the bow turns 16.2 at worst (bow 0.75, where the ramp's shading, baked once for every depth, meets the skirt's: a seam on the flank 8 grey levels deep at 3x zoom, no ledge), the skirt and the ramp shaded by their own faces 22.5 to 34.4 over the bow 0.05 to 0.55 (ledges that show at any zoom: the last of the sweep's tests in monk-assets.test.ts), so 3.3 over the one and 3.0 under the other
+    "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the one bent jacket measures 0.0054 and 0.0041 at worst (upright, kneeling); a seated monk's own seat and thighs show 0.0055 and 0.0041, and a back that dents shows at any zoom
+    "span": 0.01,  # the shading turns by at most "turn" degrees between two points of the outline this far apart, within "zone" of the hip joint: the light can draw a ledge or a seam the shape has not got, and a band of it is a line at any zoom
+    "turn": 19.5,  # a chest of 10 cm radius turns 6 degrees over 10 mm; the one bent jacket's shading turns 7.0 at worst (kneeling upright), and a seam or ledge of two surfaces shaded apart turned 16 to 34 over the bow, so this is the middle of that gap
     "zone": 0.28,
 }
-SWEEP_PARTS = ("torso", "skirt", "backRamp", "pelvis")
+SWEEP_PARTS = ("jacket", "pelvis")
 
 
 def shaded_bvh(obj, matrix):
     """The part's faces in the world as a BVH tree, and a function that gives the shading normal (in the world) at a point of one of
-    its triangles: the corners' normals (the ones the exported file carries) mixed by where the point lies in it."""
+    its triangles: the corners' normals (the ones the exported file carries, bent with the jacket) mixed by where the point lies in it."""
     mesh = obj.data
     mesh.calc_loop_triangles()
-    normal_matrix = matrix.to_3x3().inverted().transposed()
     points = [matrix @ v.co for v in mesh.vertices]
     triangles = list(mesh.loop_triangles)
     tree = BVHTree.FromPolygons(points, [tuple(t.vertices) for t in triangles])
+    if isinstance(matrix, BentMatrix):
+        normals = [matrix.normal(mesh.vertices[loop.vertex_index].co, mesh.corner_normals[i].vector) for i, loop in enumerate(mesh.loops)]
+    else:
+        normal_matrix = matrix.to_3x3().inverted().transposed()
+        normals = [(normal_matrix @ Vector(n.vector)).normalized() for n in mesh.corner_normals]
 
     def shade(index, point):
         triangle = triangles[index]
         weights = poly_3d_calc([points[i] for i in triangle.vertices], point)
-        mixed = sum((Vector(mesh.corner_normals[loop].vector) * weight for loop, weight in zip(triangle.loops, weights)), Vector())
-        return (normal_matrix @ mixed).normalized()
+        return sum((normals[loop] * weight for loop, weight in zip(triangle.loops, weights)), Vector()).normalized()
 
     return tree, shade
 
@@ -1742,13 +1757,14 @@ def outline_turn(walked, joint):
 
 
 def sweep_bow(parts):
-    """The worst jump, dents and shading turn of the jacket's outline in each slice at each depth: {depth: (jump, dent over each reach, turn)}."""
+    """The worst jump, dents and shading turn of the jacket's outline in each slice at each depth: {depth: (jump, dent over each reach, turn)}.
+    The rays start at BOW_SWEEP["joint"], a point of the waist that the bend carries with it."""
     cushion = RIG["seatTop"]
-    joint = Vector((0.0, 0.0, pose_matrices(1.0, cushion)["torso"][0].translation.z - RIG["bowHipJoint"]))
     worst = {}
     for step in range(BOW_SWEEP["depths"] + 1):
         bow = step / BOW_SWEEP["depths"]
         mats = pose_matrices(1.0, cushion, bow=bow)
+        joint = mats["jacket"][0] @ Vector((0.0, *BOW_SWEEP["joint"]))
         trees = [shaded_bvh(parts[name], mats[name][0]) for name in SWEEP_PARTS]
         jump, dents, turn = 0.0, [0.0 for _ in BOW_SWEEP["reach"]], 0.0
         for plane in BOW_SWEEP["planes"]:
@@ -1762,7 +1778,7 @@ def sweep_bow(parts):
 
 def check_bow_sweep(parts):
     """The waist is one body at every depth of the bow, not only at the full depth: the jacket's outline over the hip, from the chest
-    round the back to the seat, has no step and no gap between the chest, the skirt and the seat of the trousers (neighbouring
+    round the back to the seat, has no step and no gap between the chest, the tunic and the seat of the trousers (neighbouring
     points never further apart than a few centimetres), no dent or crease, and no ledge or seam in its shading either, at every
     step of the way down."""
     worst = sweep_bow(parts)
@@ -1786,14 +1802,6 @@ WALK_CLEARANCE = {  # what each arm part must stay clear of at every point of th
 }
 
 
-def target_of(parts, mats, target):
-    """The mesh and the matrices a clearance target stands for. "jacket" is the chest and the skirt as the one closed garment they are
-    until the torso bows (walking, fishing and standing all keep them in step)."""
-    if target != "jacket":
-        return parts[target], mats[target]
-    assert all(a == b for a, b in zip(mats["torso"], mats["skirt"])), "the chest and the skirt are in different poses: no single jacket to hold the arms against"
-    return parts["jacket"], mats["torso"]
-
 
 def walk_clearances(parts, poses=WALK_POSES):
     """The least clearance of each arm part from each target, over standing and every sixteenth of the walk cycle."""
@@ -1801,8 +1809,7 @@ def walk_clearances(parts, poses=WALK_POSES):
     for phase in poses:
         mats = pose_matrices(0.0, 0.0, phase)
         for target, margins in WALK_CLEARANCE.items():
-            mesh, matrices = target_of(parts, mats, target)
-            trees = [world_bvh(mesh, m) for m in matrices]
+            trees = [world_bvh(parts[target], m) for m in mats[target]]
             for part in margins:
                 near = min(clearance_of(tree, m @ v.co) for tree in trees for m in mats[part] for v in parts[part].data.vertices)
                 worst[target, part] = min(worst.get((target, part), 1.0), near)
@@ -1820,8 +1827,8 @@ def check_walk(parts):
     poke, ground, cuff_above = 0.0, 1.0, 1.0
     for phase in WALK_POSES:
         mats = pose_matrices(0.0, 0.0, phase)
-        jacket = world_bvh(parts["jacket"], target_of(parts, mats, "jacket")[1][0])
-        to_jacket = mats["torso"][0].inverted()
+        jacket = world_bvh(parts["jacket"], mats["jacket"][0])
+        to_jacket = mats["jacket"][0].node.inverted()
         for part in ("pelvis", "trousers", "leg"):
             for m in mats[part]:
                 for v in parts[part].data.vertices:
@@ -1881,8 +1888,7 @@ def fish_clearances(parts, jerks=FISH_JERKS):
     for jerk in jerks:
         mats = pose_matrices(0.0, 0.0, fish=1.0, jerk=jerk)
         for target, margins in FISH_CLEARANCE.items():
-            mesh_of, matrices = target_of(parts, mats, target)
-            trees = [world_bvh(mesh_of, m) for m in matrices]
+            trees = [world_bvh(parts[target], m) for m in mats[target]]
             for part in margins:
                 for m in mats[part]:
                     mesh = world_bvh(parts[part], m)
@@ -1970,36 +1976,23 @@ def rig_dict():
         "kneelPelvisGrow": RIG["kneelPelvisGrow"],
         "kneelPelvisScaleY": RIG["kneelPelvisScaleY"],
         "kneelPelvisLift": RIG["kneelPelvisLift"],
-        "bowHipJoint": RIG["bowHipJoint"],
-        "bowSkirtFollow": RIG["bowSkirtFollow"],
-        "bowSkirtSquash": RIG["bowSkirtSquash"],
-        "bowSkirtSpread": RIG["bowSkirtSpread"],
-        "skirtRear": SKIRT_REAR,
-        "bowPelvisSquash": RIG["bowPelvisSquash"],
-        "bowPelvisLift": RIG["bowPelvisLift"],
-        "bowPelvisLiftPower": RIG["bowPelvisLiftPower"],
+        "bendLength": RIG["bendLength"],
+        "bendForward": RIG["bendForward"],
         "bowLean": POSE["bow_lean"],
         "bowHead": POSE["bow_head"],
         "kneelSkirtScale": RIG["kneelSkirtScale"],
-        "skirtCrownTop": RIG["skirtCrownTop"],
-        "bowRampDepth": RIG["bowRampDepth"],
-        "bowRampSharp": RIG["bowRampSharp"],
-        "bowRampStretch": RIG["bowRampStretch"],
-        "bowRampStretchDepth": RIG["bowRampStretchDepth"],
-        "bowRampBack": -BACK_RAMP["y"][0],
-        "bowRampSink": RIG["bowRampSink"],
         "seatTop": RIG["seatTop"],
         "robeTintSaturation": RIG["robeTintSaturation"],
         "robeTintLightness": RIG["robeTintLightness"],
     }
 
 
-PROBE_PARTS = ("head", "pelvis", "torso", "skirt", "backRamp", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
+PROBE_PARTS = ("head", "pelvis", "jacket", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
 PROBE_RIGHT = ("sleeveUpper", "sleeveLower", "hand", "foot", "trousers")  # the second copy of these too, the right side (sign +1) of the arms and legs
 PROBE_BOWS = (0.0, 0.25, 0.5, 0.75, 1.0)
-PROBE_WALK_PARTS = ("head", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
+PROBE_WALK_PARTS = ("head", "jacket", "sleeveUpper", "sleeveLower", "hand", "foot", "trousers")
 PROBE_PHASES = tuple(k * pi / 4 for k in range(8))  # a copy walks the other half of the cycle half a turn on, so these cover both
-PROBE_FISH_PARTS = ("head", "torso", "skirt", "sleeveUpper", "sleeveLower", "hand")
+PROBE_FISH_PARTS = ("head", "jacket", "sleeveUpper", "sleeveLower", "hand")
 
 
 def probe_bounds(parts, part, matrix):
@@ -2024,6 +2017,50 @@ def pose_probe(parts):
         walk[part] = [probe_bounds(parts, part, pose_matrices(0.0, 0.0, p)[part][0]) for p in PROBE_PHASES]
     fish = {part: [probe_bounds(parts, part, m) for m in pose_matrices(0.0, 0.0, fish=1.0)[part]] for part in PROBE_FISH_PARTS}
     return {"bow": bow, "walk": walk, "fish": fish}
+
+
+BEND_SAMPLE_HEIGHTS = (-0.28, -0.23, -0.15, -0.12, -0.10, -0.07, -0.05, -0.025, 0.0, 0.03, 0.10, 0.17)  # the rings the sample points are taken from
+BEND_SAMPLE_DEPTHS = (0.0, 0.25, 0.5, 0.75, 1.0)
+BEND_SAMPLE_GATHERS = (1.0, RIG["kneelSkirtScale"], 0.72)  # standing, kneeling, and sitting on a bench (0.72: the client's, which the jacket has no part of)
+
+
+def bend_samples(parts):
+    """A dozen vertices of the upright jacket with their shading normals and where bend_vertex puts them at each depth of the bow,
+    gathered and not: the numbers the TypeScript copy of the bend is held to. Axes are three.js's: x right, y up, z backward
+    (a Blender point (x, f, h) is [x, h, -f]); positions are in the waist frame, before the waist's own matrix."""
+    mesh = parts["jacket"].data
+    first = {}
+    for k, loop in enumerate(mesh.loops):
+        first.setdefault(loop.vertex_index, k)
+    levels = sorted({round(v.co.z, 6) for v in mesh.vertices})
+    pick = []
+    for i, height in enumerate(BEND_SAMPLE_HEIGHTS):
+        level = min(levels, key=lambda z: abs(z - height))
+        ring = [v for v in mesh.vertices if abs(v.co.z - level) < 1e-5]
+        pick.append((max(ring, key=lambda v: v.co.y), min(ring, key=lambda v: v.co.y), max(ring, key=lambda v: v.co.x))[i % 3])  # the front, the back, the flank
+
+    def three(v):
+        return [round(v.x, 6), round(v.z, 6), round(-v.y, 6)]
+
+    rest = [{"position": three(v.co), "normal": three(Vector(mesh.corner_normals[first[v.index]].vector))} for v in pick]
+    posed = {}
+    for gather in BEND_SAMPLE_GATHERS:
+        for depth in BEND_SAMPLE_DEPTHS:
+            out = []
+            for v in pick:
+                position, normal = bend_vertex(v.co, Vector(mesh.corner_normals[first[v.index]].vector), POSE["bow_lean"] * depth, gather)
+                out.append({"position": three(position), "normal": three(normal)})
+            posed["gather %.2f depth %.2f" % (gather, depth)] = out
+    return {
+        "_source": "packages/client/assets/monk/build_monk.py",
+        "bendLength": RIG["bendLength"],
+        "bendForward": RIG["bendForward"],
+        "bowLean": POSE["bow_lean"],
+        "gathers": list(BEND_SAMPLE_GATHERS),
+        "depths": list(BEND_SAMPLE_DEPTHS),
+        "rest": rest,
+        "posed": posed,
+    }
 
 
 def export_glb(parts_coll, path):
@@ -2056,46 +2093,31 @@ def tmat(pos=(0, 0, 0), rot=(0, 0, 0), scale=(1, 1, 1)):
     return Matrix.Translation(Vector(pos)) @ three_euler @ Matrix.Diagonal(Vector((*scale, 1.0)))
 
 
-RAMP_FLAT = 1e-4  # the ramp's height standing and in the full bow: it is never a singular matrix, only a sheet hidden in the skirt
-
-
-def ramp_rise(bow):
-    """How tall the ramp stands, as a multiple of its modelled height, at this depth of the bow: nothing at the start and at the end."""
-    return max(sin(pi * bow ** RIG["bowRampDepth"]) ** RIG["bowRampSharp"], RAMP_FLAT)
-
-
 def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     """World matrices (Blender axes) for every part copy in the idle (kneel=0) or praying (kneel=1) rest pose.
     phase (radians, standing only) puts the monk at that point of the walk cycle: the swings, the foot lifts, the bob and the lean
-    of animate() at sin(phase); bow (0 .. 1, kneeling only) folds the chest and head forward at the hip joint with the arms reaching
-    out, like the bow animation: the seat stays on the heels and the skirt on the thighs (spreading a little forward from its back wall) while the waist swings forward; fish (0 .. 1,
-    standing) holds the rod, and jerk (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-)."""
+    of animate() at sin(phase); bow (0 .. 1, kneeling only) bends the one jacket forward about the waist (bend_vertex: curving over
+    the bendLength under the hip pivot, stiff above it) with the head and arms riding its upper end and the arms reaching out, like
+    the bow animation: the seat stays on the heels and the jacket on the thighs while the waist swings forward; fish (0 .. 1,
+    standing) holds the rod, and jerk (-1 .. 1) is how far the rod is swayed and tugged by a fish at that moment, up (+) or down (-).
+    The jacket and its trim carry a BentMatrix, which the build bakes into their vertices, and the exported pose, which is the end
+    frame of the bend, for the head, the face, the hair and the arms."""
     lift = cushion * kneel
     walking = phase is not None
     swing = sin(phase) if walking else 0.0
     theta = POSE["bow_lean"] * bow
-    waist_down = RIG["bowHipJoint"] * (1 - cos(theta))  # the chest turns about the hip joint, bowHipJoint below the waist pivot: the waist goes forward and a little down
-    waist_forward = RIG["bowHipJoint"] * sin(theta)
     rest_y = lift + lerp(RIG["hipStand"], RIG["hipKneel"], kneel) + abs(swing) * POSE["walk_bob"]
-    hips = tmat((0, rest_y - waist_down, -waist_forward))
+    hips = tmat((0, rest_y, 0))
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
     pelvis_y = lerp(1, RIG["kneelPelvisScaleY"], kneel)
-    pelvis_squash = lerp(1, RIG["bowPelvisSquash"], bow)
-    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel + waist_down - PELVIS_DROP * pelvis_y * (1 - pelvis_squash) + RIG["bowPelvisLift"] * bow ** RIG["bowPelvisLiftPower"], waist_forward), scale=(grow, pelvis_y * pelvis_squash, grow))
+    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel, 0), scale=(grow, pelvis_y, grow))
     fish_lean = POSE["fish_lean"] + jerk * POSE["fish_tug"] * POSE["fish_tug_lean"]
     lean = -POSE["walk_lean"] * walking + fish_lean * fish
-    torso = hips @ tmat((0, 0, 0), (lean - theta, 0, 0))
-    stay = 1 - RIG["bowSkirtFollow"]
-    skirt_y = lerp(1, RIG["kneelSkirtScale"], kneel)
-    skirt_squash = lerp(1, RIG["bowSkirtSquash"], bow)
-    skirt_spread = 1 + RIG["bowSkirtSpread"] * bow
-    skirt = hips @ tmat((0, waist_down * stay - JACKET_DROP * skirt_y * (1 - skirt_squash), waist_forward * stay), (lean, 0, 0), (1, skirt_y * skirt_squash, 1))
-    skirt = skirt @ tmat((0, 0, SKIRT_REAR * (1 - skirt_spread)), scale=(1, 1, skirt_spread))  # spread forward from the back wall, which stays put
-    rise = ramp_rise(bow)
-    stretch = 1 + RIG["bowRampStretch"] * sin(pi * bow ** RIG["bowRampStretchDepth"])
-    ramp = skirt @ tmat((0, RIG["skirtCrownTop"] - RIG["bowRampSink"] / (skirt_y * skirt_squash), -BACK_RAMP["y"][0] * (1 - stretch)), scale=(1, rise / (skirt_y * skirt_squash), stretch))  # its height and its sink are its own, not the skirt's: only the squash it would take on is undone; it grows about its back end
+    waist = hips @ tmat((0, 0, 0), (lean, 0, 0))
+    jacket = BentMatrix(theta, lerp(1, RIG["kneelSkirtScale"], kneel), waist)  # the jacket is gathered when kneeling, then bent about the waist
+    torso = waist @ (C4.inverted() @ bend_frame(theta) @ C4)  # everything above the hinge: the bend's end frame
     head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
-    out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "torso": [torso], "skirt": [skirt], "backRamp": [ramp], "trim": [torso], "skirtTrim": [skirt]}
+    out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "jacket": [jacket], "trim": [jacket]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
     for side in (0, 1):
@@ -2140,7 +2162,7 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
         out["sleeveLower"].append(elbow)
         out["hand"].append(hand)
         out["foot"].append(foot)
-    return {k: [C4 @ m @ C4.inverted() for m in v] for k, v in out.items()}
+    return {k: [m.converted(C4) if isinstance(m, BentMatrix) else C4 @ m @ C4.inverted() for m in v] for k, v in out.items()}
 
 
 def robe_tint(hue):
@@ -2150,15 +2172,30 @@ def robe_tint(hue):
     return (r, g, b, 1.0)
 
 
+def bent_data(data, bent):
+    """A copy of the jacket's mesh bent the way `bent` (a BentMatrix) bends it, with the bent shading normals; the node carries it on."""
+    data = data.copy()
+    normals = [bend_vertex(data.vertices[loop.vertex_index].co, Vector(data.corner_normals[k].vector), bent.theta, bent.gather)[1] for k, loop in enumerate(data.loops)]
+    for v in data.vertices:
+        v.co = bend_point(v.co, bent.theta, bent.gather)
+    data.normals_split_custom_set(normals)
+    return data
+
+
 def build_pose(name, parts, kneel, tint_hue=None, cushion=RIG["seatTop"], phase=None, bow=0.0, fish=0.0):
     coll = new_collection(name)
     mats = pose_matrices(kneel, cushion, phase, bow, fish)
-    robe = {"torso", "skirt", "backRamp", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
+    robe = {"jacket", "pelvis", "trousers", "sleeveUpper", "sleeveLower"}
     for part, matrices in mats.items():
         src = parts[part]
         data = src.data
-        if tint_hue is not None and part in robe:
+        bent = matrices[0] if isinstance(matrices[0], BentMatrix) else None
+        if bent is not None:
+            data = bent_data(data, bent)
+            matrices = [bent.node]
+        elif tint_hue is not None and part in robe:
             data = src.data.copy()
+        if tint_hue is not None and part in robe:
             tint = robe_tint(tint_hue)
             attr = data.color_attributes[COLOR_LAYER]
             for item in attr.data:
@@ -2266,11 +2303,7 @@ def main():
         obj = BUILDERS[name]()
         parts_coll.objects.link(obj)
         parts[name] = obj
-    shade_skirt_normals(parts["skirt"])
-    blend_junction_normals(parts["torso"], parts["skirt"])
-    shade_back_ramp(parts["backRamp"], parts["skirt"], parts["torso"])
-    jacket =build_jacket_whole()  # not exported: the one surface the thighs and the arms are held against while the chest and the skirt move as one
-    parts["jacket"] = jacket
+    shade_hem_normals(parts["jacket"])
     total = report_parts(parts)
     check_proportions(parts)
     check_face_on_head(parts)
@@ -2278,29 +2311,36 @@ def main():
     check_kneel_hands(parts)
     check_kneel_seat(parts)
     check_bow(parts)
-    check_chest_skirt(parts)
+    check_jacket_bend(parts)
     check_leg_skirt(parts)
     check_bow_sweep(parts)
     check_walk(parts)
     check_fish(parts)
     check_sleeves_clear_head(parts)
     check_standing_hands(parts)
+    os.makedirs(OUT_DIR, exist_ok=True)
 
-    glb = os.path.join(HERE, "monk.glb")
+    glb = os.path.join(OUT_DIR, "monk.glb")
     export_glb(parts_coll, glb)
     print("WROTE", glb, os.path.getsize(glb), "bytes")
 
-    rig_path = os.path.join(HERE, "monk-rig.json")
+    rig_path = os.path.join(OUT_DIR, "monk-rig.json")
     with open(rig_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump(rig_dict(), fh, indent=2)
         fh.write("\n")
     print("WROTE", rig_path)
 
-    poses_path = os.path.join(HERE, "monk-poses.json")
+    poses_path = os.path.join(OUT_DIR, "monk-poses.json")
     with open(poses_path, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"_source": "packages/client/assets/monk/build_monk.py", **pose_probe(parts)}, fh, separators=(",", ":"))
         fh.write("\n")
     print("WROTE", poses_path)
+
+    samples_path = os.path.join(HERE, "monk-bend-samples.json")
+    with open(samples_path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(bend_samples(parts), fh, indent=1)
+        fh.write("\n")
+    print("WROTE", samples_path)
 
     standing = build_pose("monk_pose_standing", parts, 0.0)
     layer_collection(parts_coll).hide_viewport = True
@@ -2309,7 +2349,7 @@ def main():
     if "--no-render" not in args:
         render_previews(parts)
 
-    blend = os.path.join(HERE, "monk.blend")
+    blend = os.path.join(OUT_DIR, "monk.blend")
     bpy.context.preferences.filepaths.save_version = 0
     bpy.ops.wm.save_as_mainfile(filepath=blend, compress=True)
     print("WROTE", blend)
