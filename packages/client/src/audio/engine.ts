@@ -40,7 +40,6 @@ export class AudioEngine {
   private ambientVolume = 0.7;
   private effectVolume = 0.7;
   private readonly beds = BEDS.map((bed) => new AmbientBed(bed, BED_SPECS[bed]));
-  private readonly unlockListeners = new Set<() => void>();
   private moktSample: AudioBuffer | null = null;
   private moktLoad: Promise<void> | null = null;
   bellCount = 0;
@@ -53,19 +52,9 @@ export class AudioEngine {
     return this.ctx;
   }
 
-  // Recordings (the sutra) join the ambience bus, so the ambient volume covers them.
-  get output(): AudioNode | null {
-    return this.ambience;
-  }
-
   // Short effects from other modules (the casino's) join the effects bus, so the effect volume covers them.
   get effectsOutput(): AudioNode | null {
     return this.effects;
-  }
-
-  // Called each time the context starts running, which is when a browser first lets sound out after a gesture.
-  onUnlock(listener: () => void): void {
-    this.unlockListeners.add(listener);
   }
 
   // The beds ride on the ambience bus; levels set before unlock are the ones they start at.
@@ -94,11 +83,9 @@ export class AudioEngine {
       this.ambience.connect(this.ctx.destination);
       for (const bed of this.beds) bed.start(this.ctx, this.ambience);
       this.applyLevels();
-      this.ctx.addEventListener("statechange", () => this.announce());
     }
     this.loadMoktSample();
     if (this.ctx.state !== "running") void this.ctx.resume().catch(() => undefined);
-    this.announce();
   }
 
   bell(volume = 1): void {
@@ -154,15 +141,9 @@ export class AudioEngine {
     this.effects = null;
     this.ambience = null;
     for (const bed of this.beds) bed.stop();
-    this.unlockListeners.clear();
     this.moktSample = null;
     this.moktLoad = null;
     if (ctx) void ctx.close().catch(() => undefined);
-  }
-
-  private announce(): void {
-    if (!this.unlocked) return;
-    for (const listener of [...this.unlockListeners]) listener();
   }
 
   // Fetched and decoded at most once per context; a missing or undecodable file leaves the synthesized knock in place.

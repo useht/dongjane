@@ -2,12 +2,6 @@ import { describe, expect, it } from "vitest";
 import { CREDITS, creditLine } from "../src/ui/credits.ts";
 
 describe("credits", () => {
-  it("name the Korean chant's author and licence", () => {
-    const chant = CREDITS.find((credit) => credit.title === "염불소리1");
-    expect(chant?.author).toBe("김용배");
-    expect(chant?.licence).toBe("CC BY");
-  });
-
   it("name the museum's seated Buddha, free to use with its name credited", () => {
     const buddha = CREDITS.find((credit) => credit.title === "부여 군수리 석조여래좌상");
     expect(buddha?.author).toBe("국립중앙박물관");

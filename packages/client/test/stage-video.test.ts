@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../src/audio/music.ts";
 import {
+  OWN_PAUSE_MS,
   PLAYER_ORIGIN,
   type HintInput,
   type Playback,
@@ -777,20 +778,120 @@ describe("StageVideoController level", () => {
     expect(t.sent).toEqual([]);
   });
 
-  it("mutes at level 0 at once, and asks for sound again when the level comes back", () => {
+  it("pauses at level 0 in the same tick, because a phone ignores the volume", () => {
     const t = rig();
     listening(t);
     t.controller.setLevel(0);
-    expect(t.funcs()).toEqual(["mute"]);
-    t.clear();
-    t.controller.setLevel(0.5);
-    expect(t.sent).toEqual([
-      { func: "setVolume", args: [25] },
-      { func: "unMute", args: [] },
-    ]);
+    expect(t.funcs()).toEqual(["pauseVideo", "mute"]);
+    expect(t.controller.playback).toBe("playing");
   });
 
-  it("pauses the video after twenty seconds at level 0, and goes back to waiting", () => {
+  it("plays on from the loop's place, with sound again, when the visitor steps out within the twenty seconds", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.clear();
+    t.advance(5000);
+    t.controller.setLevel(0.5);
+    expect(t.funcs()).toEqual(["seekTo", "playVideo", "setVolume", "unMute"]);
+    expect(t.sent[0]?.args[0]).toBeCloseTo(aimAhead(loopPosition(1_005_300, 100), 100), 6);
+    expect(t.sent[2]).toEqual({ func: "setVolume", args: [25] });
+    expect(t.controller.playback).toBe("starting");
+    t.controller.receive(info({ state: 1 }));
+    expect(t.controller.playback).toBe("playing");
+  });
+
+  it("gives up a restart the player refuses, so the play does not sit wanted but silent", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.controller.setLevel(0.5);
+    expect(t.controller.playback).toBe("starting");
+    t.clear();
+    t.advance(START_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual([]);
+    t.advance(1);
+    t.controller.tick();
+    expect(t.funcs()).toEqual(["pauseVideo", "mute"]);
+    expect(t.controller.playback).toBe("waiting");
+  });
+
+  it("does not take its own pause for the visitor's, however often or late the player reports it", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    t.advance(OWN_PAUSE_MS - 1);
+    t.controller.receive(info({ state: 2 }));
+    t.controller.receive(info({ state: 3 }));
+    t.controller.receive(info({ state: 2 }));
+    expect(t.controller.playback).toBe("playing");
+    t.advance(OWN_PAUSE_MS * 3);
+    t.controller.receive(info({ state: 2 }));
+    expect(t.controller.playback).toBe("playing");
+    t.controller.setLevel(0.5);
+    t.controller.receive(info({ state: 2 }));
+    expect(t.controller.playback).toBe("starting");
+    t.controller.receive(info({ state: 1, time: loopPosition(1_000_000 + 300 + OWN_PAUSE_MS * 4 - 1, 100) }));
+    expect(t.controller.playback).toBe("playing");
+    expect(t.funcs()).not.toContain("pauseVideo");
+  });
+
+  it("still ends the play when the visitor pauses it after stepping back out", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.advance(3000);
+    t.controller.setLevel(0.5);
+    t.controller.receive(info({ state: 1, time: loopPosition(1_003_300, 100) }));
+    t.advance(OWN_PAUSE_MS);
+    t.clear();
+    t.controller.receive(info({ state: 2 }));
+    expect(t.controller.playback).toBe("waiting");
+    expect(t.funcs()).toEqual(["mute"]);
+    t.advance(60_000);
+    t.controller.tick();
+    t.controller.setLevel(0);
+    t.controller.setLevel(0.5);
+    expect(t.funcs()).toEqual(["mute"]);
+  });
+
+  it("does not give up a play that is held paused, and counts its wait again on stepping out", () => {
+    const t = rig();
+    t.controller.setLevel(0);
+    waiting(t);
+    t.controller.setSound(true, 0.5);
+    t.controller.play();
+    expect(t.funcs()).not.toContain("playVideo");
+    expect(t.controller.playback).toBe("starting");
+    t.advance(START_TIMEOUT_MS + 1000);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("starting");
+    t.controller.setLevel(0.5);
+    expect(t.funcs()).toContain("playVideo");
+    t.advance(START_TIMEOUT_MS - 1);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("starting");
+    t.advance(1);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("waiting");
+  });
+
+  it("does not play again when the level comes back after the twenty seconds have ended the play", () => {
+    const t = rig();
+    listening(t);
+    t.controller.setLevel(0);
+    t.advance(QUIET_PAUSE_MS);
+    t.controller.tick();
+    expect(t.controller.playback).toBe("waiting");
+    t.clear();
+    t.controller.setLevel(0.5);
+    expect(t.funcs()).toEqual([]);
+  });
+
+  it("ends the play after twenty seconds at level 0, and goes back to waiting", () => {
     const t = rig();
     listening(t);
     t.controller.setLevel(0);
@@ -835,6 +936,7 @@ describe("StageVideoController level", () => {
     t.controller.setLevel(0);
     t.advance(QUIET_PAUSE_MS - 1000);
     t.controller.setLevel(0.3);
+    t.controller.receive(info({ state: 1 }));
     t.clear();
     t.advance(QUIET_PAUSE_MS);
     t.controller.tick();
@@ -852,20 +954,22 @@ describe("StageVideoController level", () => {
     expect(t.sent).toEqual([]);
   });
 
-  it("counts the twenty seconds from the press of play when it is pressed at level 0", () => {
+  it("counts the twenty seconds from the press of play when it is pressed at level 0, which holds the video paused", () => {
     const t = rig();
     t.controller.setLevel(0);
     waiting(t);
     t.advance(QUIET_PAUSE_MS * 3);
     t.controller.tick();
-    t.controller.play();
-    t.controller.receive(info({ state: 1, duration: 100, time: loopPosition(1_000_000 + QUIET_PAUSE_MS * 3, 100) }));
     t.clear();
+    t.controller.play();
+    expect(t.funcs()).not.toContain("playVideo");
     t.advance(QUIET_PAUSE_MS - 1);
     t.controller.tick();
-    expect(t.funcs()).toEqual([]);
+    expect(t.funcs()).not.toContain("pauseVideo");
+    expect(t.controller.playback).toBe("starting");
     t.advance(1);
     t.controller.tick();
-    expect(t.funcs()).toEqual(["pauseVideo"]);
+    expect(t.funcs()).toContain("pauseVideo");
+    expect(t.controller.playback).toBe("waiting");
   });
 });

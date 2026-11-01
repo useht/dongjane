@@ -19,7 +19,7 @@ beforeAll(async () => {
   writeFileSync(join(dir, "index.html"), INDEX);
   writeFileSync(join(dir, "assets", "app-abc.js"), "console.log(1);");
   writeFileSync(join(dir, "manifest.webmanifest"), "{}");
-  writeFileSync(join(dir, "assets", "sutra-abc.mp3"), "0123456789");
+  writeFileSync(join(dir, "assets", "chime-abc.mp3"), "0123456789");
   game = await startGameServer({ port: 0, handleSignals: false, clientDir: dir });
   base = `http://127.0.0.1:${game.port}`;
 });
@@ -50,29 +50,29 @@ describe("client static serving", () => {
   });
 
   it("answers a byte range with 206 and the matching slice", async () => {
-    const response = await fetch(`${base}/assets/sutra-abc.mp3`, { headers: { range: "bytes=2-5" } });
+    const response = await fetch(`${base}/assets/chime-abc.mp3`, { headers: { range: "bytes=2-5" } });
     expect(response.status).toBe(206);
     expect(response.headers.get("content-range")).toBe("bytes 2-5/10");
     expect(response.headers.get("content-length")).toBe("4");
     expect(response.headers.get("content-type")).toBe("audio/mpeg");
     expect(await response.text()).toBe("2345");
 
-    const tail = await fetch(`${base}/assets/sutra-abc.mp3`, { headers: { range: "bytes=7-" } });
+    const tail = await fetch(`${base}/assets/chime-abc.mp3`, { headers: { range: "bytes=7-" } });
     expect(tail.status).toBe(206);
     expect(await tail.text()).toBe("789");
 
-    const last = await fetch(`${base}/assets/sutra-abc.mp3`, { headers: { range: "bytes=-3" } });
+    const last = await fetch(`${base}/assets/chime-abc.mp3`, { headers: { range: "bytes=-3" } });
     expect(last.headers.get("content-range")).toBe("bytes 7-9/10");
     expect(await last.text()).toBe("789");
   });
 
   it("offers ranges, serves the whole file without one and refuses a range past the end", async () => {
-    const whole = await fetch(`${base}/assets/sutra-abc.mp3`);
+    const whole = await fetch(`${base}/assets/chime-abc.mp3`);
     expect(whole.status).toBe(200);
     expect(whole.headers.get("accept-ranges")).toBe("bytes");
     expect(await whole.text()).toBe("0123456789");
 
-    const past = await fetch(`${base}/assets/sutra-abc.mp3`, { headers: { range: "bytes=40-50" } });
+    const past = await fetch(`${base}/assets/chime-abc.mp3`, { headers: { range: "bytes=40-50" } });
     expect(past.status).toBe(416);
     expect(past.headers.get("content-range")).toBe("bytes */10");
     await past.arrayBuffer();

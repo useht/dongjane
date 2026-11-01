@@ -1,4 +1,5 @@
-import { QUIET_PAUSE_MS, aimAhead, loopPosition } from "../audio/music.ts";
+import { QUIET_PAUSE_MS } from "../audio/music.ts";
+import { LoopSync } from "./loop-sync.ts";
 
 export const STAGE_VIDEO_ID = "ykT0Ezc9k-E";
 export const PLAYER_ORIGIN = "https://www.youtube-nocookie.com";
@@ -11,15 +12,14 @@ export const TAP_WINDOW_MS = 6000;
 export const START_TIMEOUT_MS = 8000;
 // How near the stage a visitor must be for the play and stop button to float over its screen.
 export const STAGE_HINT_REACH = 10;
-// The player only plays at whole speeds, so drift is cured by jumping, and not more often than this.
-const DRIFT_SECONDS = 1;
-const RESYNC_MIN_MS = 10_000;
-// The crossfade with the sutra moves the volume every frame; the player is told at most this often.
+// Walking moves the level all the time; the player is told at most this often.
 const VOLUME_GAP_MS = 250;
-const PAUSE_GAP_MS = 1000;
+export const PAUSE_GAP_MS = 1000;
+// Reports of a pause or play of ours keep arriving, some of them stale, for about this long; a pause among them is not the visitor's.
+export const OWN_PAUSE_MS = 2000;
 
 // The player reports these when the video cannot be shown here at all.
-const BLOCKING_ERRORS: ReadonlySet<number> = new Set([2, 5, 100, 101, 150, 153]);
+export const BLOCKING_ERRORS: ReadonlySet<number> = new Set([2, 5, 100, 101, 150, 153]);
 
 export type PlayerEvent =
   | { kind: "ready" }
@@ -135,13 +135,13 @@ export interface StageVideoOutput {
   audible(audible: boolean): void;
 }
 
-const PLAYING = 1;
-const ENDED = 0;
-const PAUSED = 2;
+export const ENDED = 0;
+export const PLAYING = 1;
+export const PAUSED = 2;
 
 // Decides what to tell the embedded player. It knows nothing about the DOM: time arrives through the two clocks
 // (`now` for local timeouts, `serverNow` for the shared position in the loop). The video waits, muted, until `play()`;
-// nothing here starts it again once it has stopped.
+// nothing here starts it again once it has stopped, except stepping back out of the 법당 within the grace of its pause.
 export class StageVideoController {
   private current: StageStatus = "idle";
   private openedAt = 0;
@@ -165,15 +165,19 @@ export class StageVideoController {
   private unmuteAt: number | null = null;
   private tapShown = false;
   private audibleNow = false;
-  private needSeek = true;
-  private lastSeekAt = Number.NEGATIVE_INFINITY;
+  // Paused by us because the visitor is inside the 법당; the play is still wanted.
+  private held = false;
+  private ownPauseUntil = Number.NEGATIVE_INFINITY;
   private lastPauseAt = Number.NEGATIVE_INFINITY;
+  private readonly sync: LoopSync;
 
   constructor(
     private readonly out: StageVideoOutput,
     private readonly now: () => number,
-    private readonly serverNow: () => number,
-  ) {}
+    serverNow: () => number,
+  ) {
+    this.sync = new LoopSync(now, serverNow, (to) => out.send("seekTo", [to, true]));
+  }
 
   get status(): StageStatus {
     return this.current;
@@ -206,7 +210,7 @@ export class StageVideoController {
     if (event.time !== undefined) this.time = event.time;
     if (event.muted !== undefined) this.playerMuted = event.muted;
     if (event.state !== undefined) this.onState(event.state);
-    this.maybeSeek();
+    if (this.wanted && !this.held && this.state === PLAYING) this.sync.follow(this.time, this.duration);
     this.reportAudio();
   }
 
@@ -219,8 +223,8 @@ export class StageVideoController {
     if (this.current !== "loading" && this.current !== "ready") return;
     if (this.volumeDue) this.applyAudio(false);
     // A play that never reaches the player's PLAYING is given up, so the button reads "play" again.
-    if (this.wanted && !this.started && now - this.askedAt >= START_TIMEOUT_MS) this.endPlay(true);
-    // Nobody is in earshot of the concert: a playing video is paused, and it is the visitor's to start again.
+    if (this.wanted && !this.held && !this.started && now - this.askedAt >= START_TIMEOUT_MS) this.endPlay(true);
+    // Nobody is in earshot of the concert: a playing video is ended, and it is the visitor's to start again.
     if (this.wanted && this.quietSince !== null && now - this.quietSince >= QUIET_PAUSE_MS) this.endPlay(true);
     // Still muted a second after asking: the browser wants a tap on the player itself. Asking again is harmless
     // and is what lets the sound out once that tap has happened.
@@ -237,20 +241,22 @@ export class StageVideoController {
     this.applyAudio(false);
   }
 
-  // How much of the concert the visitor is meant to hear, 0 to 1: it is the sutra's share turned round. At 0 for long enough
-  // a playing video is paused.
+  // How much of the concert the visitor is meant to hear, 0 to 1: the 법당's share turned round. At 0 (deep inside the 법당)
+  // a playing video is paused at once, because a phone ignores the player's volume; it plays on if the visitor steps out
+  // again, and is ended if they stay long enough.
   setLevel(level: number): void {
     const next = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 0));
     if (next === this.level) return;
     this.level = next;
     if (next > 0) this.quietSince = null;
     else if (this.quietSince === null) this.quietSince = this.now();
+    this.syncHold();
     this.applyAudio(false, true);
   }
 
   userGesture(): void {
     this.gestured = true;
-    this.needSeek = true;
+    this.sync.recheck();
     this.applyAudio(true);
   }
 
@@ -264,9 +270,13 @@ export class StageVideoController {
     }
     if (this.level === 0) this.quietSince = this.now();
     this.userGesture();
-    // Seeking first, so the first sound is already the shared place in the loop; while the length is unknown it waits for PLAYING.
-    if (this.duration > 0) this.seekToLoop();
-    this.out.send("playVideo");
+    if (this.level === 0) {
+      this.held = true;
+    } else {
+      // Seeking first, so the first sound is already the shared place in the loop; while the length is unknown it waits for PLAYING.
+      this.sync.jump(this.duration);
+      this.out.send("playVideo");
+    }
     this.updatePlayback();
   }
 
@@ -284,8 +294,8 @@ export class StageVideoController {
     this.state = -1;
     this.appliedKey = "";
     this.unmuteAt = null;
-    this.needSeek = true;
-    this.lastSeekAt = Number.NEGATIVE_INFINITY;
+    this.held = false;
+    this.sync.reset();
     this.lastPauseAt = Number.NEGATIVE_INFINITY;
     this.lastVolumeAt = Number.NEGATIVE_INFINITY;
     this.volumeDue = false;
@@ -306,6 +316,7 @@ export class StageVideoController {
   private endPlay(pause: boolean): void {
     this.wanted = false;
     this.started = false;
+    this.held = false;
     if (pause) this.out.send("pauseVideo");
     this.applyAudio(false);
     this.updatePlayback();
@@ -332,17 +343,37 @@ export class StageVideoController {
   private onState(state: number): void {
     this.state = state;
     if (state === PLAYING) {
-      if (this.wanted) this.started = true;
+      if (this.wanted && !this.held) this.started = true;
       else this.pauseStray();
-    } else if (state === ENDED && this.wanted) {
+    } else if (state === ENDED && this.wanted && !this.held) {
       // The loop may report its end at every wrap; only a stop ends the play, so it goes on from the shared place.
-      this.seekToLoop();
+      this.sync.jump(this.duration);
       this.out.send("playVideo");
-    } else if (this.started && state === PAUSED) {
-      // A tap on the player or the browser paused it: that ends this play, and nothing restarts it.
+    } else if (this.started && !this.held && this.now() >= this.ownPauseUntil && state === PAUSED) {
+      // A tap on the player or the browser paused it: that ends this play, and nothing restarts it. Our own pauses do not.
       this.endPlay(false);
     }
     this.updatePlayback();
+  }
+
+  // Paused while the visitor is deep inside the 법당, and played on from the loop's place when they step out.
+  private syncHold(): void {
+    const hold = this.wanted && this.level === 0;
+    if (hold === this.held) return;
+    this.held = hold;
+    const now = this.now();
+    this.ownPauseUntil = now + OWN_PAUSE_MS;
+    if (hold) {
+      this.lastPauseAt = now;
+      this.out.send("pauseVideo");
+      return;
+    }
+    this.started = false;
+    this.askedAt = now;
+    this.updatePlayback();
+    this.sync.recheck();
+    this.sync.jump(this.duration);
+    this.out.send("playVideo");
   }
 
   // A player that plays unasked, or has not yet heard the stop, is told to pause: not more than once a second.
@@ -410,29 +441,5 @@ export class StageVideoController {
     if (audible === this.audibleNow) return;
     this.audibleNow = audible;
     this.out.audible(audible);
-  }
-
-  // Everyone's player is moved to the same spot of the loop; a live stream has no duration and is left alone.
-  private maybeSeek(): void {
-    if (!this.wanted || this.duration <= 0 || this.state !== PLAYING) return;
-    const now = this.now();
-    const target = loopPosition(this.serverNow(), this.duration);
-    const off = Math.abs(this.time - target);
-    const gap = Math.min(off, this.duration - off);
-    const due = this.needSeek || (gap > DRIFT_SECONDS && now - this.lastSeekAt >= RESYNC_MIN_MS);
-    if (!due) return;
-    if (gap > 0.5) {
-      this.seekToLoop();
-    } else {
-      this.needSeek = false;
-      this.lastSeekAt = now;
-    }
-  }
-
-  private seekToLoop(): void {
-    if (this.duration <= 0) return;
-    this.needSeek = false;
-    this.lastSeekAt = this.now();
-    this.out.send("seekTo", [aimAhead(loopPosition(this.serverNow(), this.duration), this.duration), true]);
   }
 }

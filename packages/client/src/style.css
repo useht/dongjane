@@ -94,11 +94,31 @@ textarea {
   pointer-events: auto;
 }
 
-.stage-frame {
+.stage-frame,
+.temple-frame {
   display: block;
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+.temple-video {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.temple-video.tap {
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
 }
 
 .sound-chip {
