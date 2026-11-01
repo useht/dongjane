@@ -130,7 +130,8 @@ RIG = {  # pivots and lengths the animation code uses
     "bowSkirtFollow": 0.0,  # the skirt does not turn with the chest: it keeps this share of the waist's swing, 0 = it stays put on the thighs
     "bowSkirtSquash": 0.76,  # ... only it settles: the hem stays where it is and the tunic above it presses down to this share of its kneeling height, so it no longer stands over the level back
     "bowSkirtSpread": 0.17,  # ... and spreads forward from its back wall by this share of its depth, so its front reaches the plane of the chest's hip and the chest does not sit on a narrower block
-    "bowPelvisSquash": 0.75,  # ... and the seat of the trousers presses down (its underside stays on the heels) to this share of its height, under the settled tunic
+    "bowPelvisSquash": 0.52,  # ... and the seat of the trousers presses up under the settled tunic (its top stays where it was) to this share of its height ...
+    "bowPelvisLift": 0.085,  # ... until its underside is lifted this far, up into the tunic, so the hem hangs over the folded legs as the one edge of the garment and the trousers no longer show as a darker band below it
     "kneelSkirtScale": 0.86,  # kneeling gathers the skirt to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
     "seatTop": 0.13,
     "robeTintSaturation": 1.0,  # the game multiplies HSL(hue, this, that) into the grey robe: a muted hue that still reads as grey 승복
@@ -1690,6 +1691,7 @@ def rig_dict():
         "bowSkirtSpread": RIG["bowSkirtSpread"],
         "skirtRear": SKIRT_REAR,
         "bowPelvisSquash": RIG["bowPelvisSquash"],
+        "bowPelvisLift": RIG["bowPelvisLift"],
         "bowLean": POSE["bow_lean"],
         "bowHead": POSE["bow_head"],
         "kneelSkirtScale": RIG["kneelSkirtScale"],
@@ -1778,7 +1780,7 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     grow = 1 + RIG["kneelPelvisGrow"] * kneel
     pelvis_y = lerp(1, RIG["kneelPelvisScaleY"], kneel)
     pelvis_squash = lerp(1, RIG["bowPelvisSquash"], bow)
-    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel + waist_down - PELVIS_DROP * pelvis_y * (1 - pelvis_squash), waist_forward), scale=(grow, pelvis_y * pelvis_squash, grow))
+    pelvis = hips @ tmat((0, RIG["kneelPelvisLift"] * kneel + waist_down - PELVIS_DROP * pelvis_y * (1 - pelvis_squash) + RIG["bowPelvisLift"] * bow, waist_forward), scale=(grow, pelvis_y * pelvis_squash, grow))
     fish_lean = POSE["fish_lean"] + jerk * POSE["fish_tug"] * POSE["fish_tug_lean"]
     lean = -POSE["walk_lean"] * walking + fish_lean * fish
     torso = hips @ tmat((0, 0, 0), (lean - theta, 0, 0))

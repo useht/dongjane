@@ -93,6 +93,7 @@ const BOW_SKIRT_SQUASH = rig.bowSkirtSquash;
 const BOW_SKIRT_SPREAD = rig.bowSkirtSpread;
 const SKIRT_REAR = rig.skirtRear;
 const BOW_PELVIS_SQUASH = rig.bowPelvisSquash;
+const BOW_PELVIS_LIFT = rig.bowPelvisLift;
 const KNEEL_SKIRT_SCALE = rig.kneelSkirtScale;
 const ROBE_TINT_SATURATION = rig.robeTintSaturation;
 const ROBE_TINT_LIGHTNESS = rig.robeTintLightness;
@@ -326,13 +327,13 @@ export class MonkAvatar {
     this.hips.position.y = HIP_STAND + (sitHips - HIP_STAND) * kneel + bob + breathe * 0.006 - waistDown;
     this.hips.position.z = seatBack - waistForward;
 
-    // Seated, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing, it presses
-    // down with its underside on the heels, under the settled skirt.
+    // Seated, the seat of the trousers spreads over the seat while the trouser legs fold behind with the legs. Bowing on the heels,
+    // it presses up into the settled skirt, so the hem hangs over the folded legs and no band of trousers shows below it.
     const pelvisY = 1 + ((bench ? BENCH_PELVIS_SCALE_Y : KNEEL_PELVIS_SCALE_Y) - 1) * kneel;
     const pelvisSquash = 1 + (BOW_PELVIS_SQUASH - 1) * depth;
     const pelvisXZ = 1 + KNEEL_PELVIS_GROW * kneel;
     this.pelvisNode.scale.set(pelvisXZ, pelvisY * pelvisSquash, pelvisXZ);
-    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash), waistForward);
+    this.pelvisNode.position.set(0, KNEEL_PELVIS_LIFT * kneel + waistDown - PELVIS_DROP * pelvisY * (1 - pelvisSquash) + BOW_PELVIS_LIFT * depth * folded, waistForward);
 
     // A fish on the line pulls the rod in jerks; with reduced motion the pull is a small steady lean instead.
     const biting = this.bite && fish > 0.5;

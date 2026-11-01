@@ -268,6 +268,7 @@ describe("monk assets", () => {
       "bowSkirtSpread",
       "skirtRear",
       "bowPelvisSquash",
+      "bowPelvisLift",
       "bowLean",
       "bowHead",
       "kneelSkirtScale",
@@ -761,6 +762,19 @@ describe("monk assets", () => {
     const waistKneeling = new Vector3().setFromMatrixPosition(nodeOf(kneeling, "torso", 0).matrixWorld);
     expect(waistKneeling.z - waist.z, "the waist swings forward about the hip joint").toBeCloseTo(monkRig.bowHipJoint * Math.sin(monkRig.bowLean), 2);
     expect(waistKneeling.y - waist.y, "and a little down").toBeCloseTo(monkRig.bowHipJoint * (1 - Math.cos(monkRig.bowLean)), 2);
+  });
+
+  it("lifts the seat of the trousers up into the tunic when bowing, so the hem hangs over the folded legs and no darker band shows below it", async () => {
+    const parts = await loadParts();
+    const kneeling = posedAvatar("kneel");
+    const avatar = new MonkAvatar("bower", 0, false);
+    avatar.setMode("bow", 0);
+    avatar.animate(0.016, BOW_MS * 0.32, 0, true);
+    const lowest = (a: MonkAvatar, name: "pelvis" | "skirt"): number => Math.min(...worldVertices(nodeOf(a, name, 0), parts[name]).map((v) => v.y));
+    const hem = lowest(avatar, "skirt");
+    expect(hem - lowest(kneeling, "pelvis"), "kneeling, the seat of the trousers still rests on the heels, below the hem").toBeGreaterThan(0.05);
+    expect(hem - lowest(avatar, "pelvis"), "bowing, the seat of the trousers is lifted up to the hem and does not hang below it as a band").toBeLessThan(0.01);
+    expect(lowest(avatar, "pelvis") - monkRig.seatTop, "and the buttocks stay above the 방석").toBeGreaterThan(0.06);
   });
 
   it("folds the kneeling leg under the body: a thigh in front, a knee, a flattened shin back to the foot, and the foot lying under the seat", async () => {
