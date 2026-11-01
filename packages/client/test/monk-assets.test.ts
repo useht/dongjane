@@ -905,11 +905,11 @@ describe("monk assets", () => {
   // The trouser top is bound only below the hip pivot (0.611) because the trousers cannot be cut back: their top is the visible knee when
   // kneeling (a cut to the old 0.411 left bare leg and broke build_monk.py's knee-to-ankle and thigh-clearance checks). This is what
   // keeps them hidden instead, at every depth of the bow in the sweep's steps, bent the way the shader bends the jacket.
-  it("keeps the seat and the trouser legs under the bent jacket at every depth of the bow, kneeling and cross-legged, and shows no more of them on a bench than upright", async () => {
+  it("keeps the seat and the trouser legs under the bent jacket at every depth of the bow, kneeling, cross-legged and on both benches", async () => {
     const parts = await loadParts();
     const aim = new Vector3(0.31, 0.93, 0.19).normalize();
     const raycaster = new Raycaster();
-    for (const seat of BOW_SEATS) {
+    for (const seat of [...BOW_SEATS, { pose: "bench", top: SEAT_TOPS.bonfire }] as const) {
       const exposed: number[] = [];
       let covered = 0;
       for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
@@ -938,12 +938,7 @@ describe("monk assets", () => {
         }
       }
       expect(covered, `${seat.pose}: some of the seat reaches above the hem, so this measures something`).toBeGreaterThan(0);
-      if (seat.pose === "bench") {
-        // On the bench the thigh tops stand out of the jacket's front at every depth, upright included: the bow adds none.
-        for (const [step, count] of exposed.entries()) expect(count, `${seat.pose}: vertices outside the jacket at bow ${step / BOW_SWEEP.depths}`).toBeLessThanOrEqual(exposed[0] as number);
-      } else {
-        expect(Math.max(...exposed), `${seat.pose}: a vertex of the seat or the legs pokes through the bent jacket`).toBe(0);
-      }
+      expect(Math.max(...exposed), `${seat.pose} at ${seat.top}: a vertex of the seat or the legs pokes through the bent jacket`).toBe(0);
     }
   }, 120_000);
 
