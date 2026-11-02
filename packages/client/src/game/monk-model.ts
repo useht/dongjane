@@ -363,14 +363,14 @@ export class MonkAvatar {
       const prayZ = -sign * 0.185;
       const prayElbow = 1.301;
       const prayTwist = -sign * 1.478;
-      const bowX = 1.457;
-      const bowY = -sign * 0.021;
-      const bowZ = -sign * 0.122;
-      const bowElbow = 0.12;
-      const bowTwist = sign * 1.455;
-      const bowDrop = 0.089;
+      const bowX = 1.836;
+      const bowY = -sign * 0.048;
+      const bowZ = -sign * 0.13;
+      const bowElbow = 0.186;
+      const bowTwist = sign * 1.41;
+      const bowDrop = 0.083;
       const bowDx = -0.024;
-      const bowDy = -0.094;
+      const bowDy = -0.105;
 
       // The arms get out of the prayer ahead of the chest, so the cuffs leave the chest as it starts to fold.
       const armBow = 1 - (1 - depth) * (1 - depth);

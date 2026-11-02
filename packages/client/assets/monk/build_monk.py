@@ -177,14 +177,14 @@ POSE = {  # arm angles of the idle, walking, praying and bowing poses (radians; 
     "pray_twist": 1.478,
     "bow_lean": 1.54,  # 88 degrees: the back is level at the deepest
     "bow_head": 0.2866,  # the head tucks down this far more at the deepest
-    "bow_x": 1.457,  # the arms hang from shoulders slid down the front of the folded chest, the hands together on the cushion under the face
-    "bow_z": 0.122,
-    "bow_y": -0.021,
-    "bow_twist": -1.455,
-    "bow_elbow": 0.12,
-    "bow_drop": 0.089,  # the shoulders slide this far toward the chest's front (down, once the back is level) ...
+    "bow_x": 1.836,  # the arms hang from shoulders slid down the front of the folded chest, the hands together on the cushion under the face
+    "bow_z": 0.13,
+    "bow_y": -0.048,
+    "bow_twist": -1.41,
+    "bow_elbow": 0.186,
+    "bow_drop": 0.083,  # the shoulders slide this far toward the chest's front (down, once the back is level) ...
     "bow_dx": -0.024,  # ... this far inward ...
-    "bow_dy": -0.094,  # ... and this far down the torso, so the straight arms reach the cushion past the jaw
+    "bow_dy": -0.105,  # ... and this far down the torso, so the straight arms reach the cushion past the jaw
 }
 
 LEG = {
