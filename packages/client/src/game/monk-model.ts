@@ -1,7 +1,7 @@
 import { BufferGeometry, Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
 import { BENCH_HIPS_BACK, BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X, type SeatPose } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
-import { bendFrameAt, bentDepthMaterial, bentMaterial } from "./monk-bend.ts";
+import { bendFrameAt, bendTilt, bentDepthMaterial, bentMaterial } from "./monk-bend.ts";
 import type { MonkAssets } from "./monk-assets.ts";
 import { ROD, ROD_POSE } from "./monk-items.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
@@ -174,8 +174,10 @@ export class MonkAvatar {
   seatPose: SeatPose = "kneel";
   // How the jacket is bent while bowing: the pool hands both to the vertex shader (the same bend as monk-bend.ts) once a frame.
   readonly bend = { theta: 0, gather: 1 };
-  // The jacket and its trim hang on the waist, which leans; the chest, head and shoulders ride on the torso, which is the waist's frame
-  // carried to where the bend puts the hinge and turned forward by the bow.
+  // The jacket and its trim hang on the waist, which leans. The head and the shoulders hang on the waist too, each carried by the bend
+  // to the frame of its own height: the head to the neck's, a shoulder to the one of the height it has slid to. The torso is the frame
+  // of the hinge, where the lean of the chest is measured: the waist's frame carried to where the bend puts the hinge and turned
+  // forward by the bow.
   readonly waistNode = new Object3D();
   readonly torsoNode = new Object3D();
 
@@ -211,8 +213,7 @@ export class MonkAvatar {
 
     this.root.add(this.hips, this.feet[0], this.feet[1], this.legs[0], this.legs[1]);
     this.hips.add(this.pelvisNode, this.waistNode);
-    this.waistNode.add(this.torsoNode);
-    this.torsoNode.add(this.headNode, this.shoulders[0], this.shoulders[1]);
+    this.waistNode.add(this.torsoNode, this.headNode, this.shoulders[0], this.shoulders[1]);
     this.headNode.position.y = NECK_Y;
     for (let side = 0; side < 2; side += 1) {
       const sign = side === 0 ? -1 : 1;
@@ -328,8 +329,9 @@ export class MonkAvatar {
     const tug = biting ? (reduceMotion ? TUG_REDUCED_SHARE : Math.sin(this.clock * Math.PI * 2 * TUG_HZ)) * TUG : 0;
     const rodSway = reduceMotion ? 0 : Math.sin(this.clock * Math.PI * 2 * ROD_SWAY_HZ) * ROD_SWAY;
 
-    // The whole jacket is one surface that the shader bends from the thighs up to the waist (gathered a little over the thighs when
-    // kneeling or seated); the chest, head and shoulders above the waist are rigid, riding the bend's end frame.
+    // The whole jacket is one surface that the shader bends from the thighs up to the neck (gathered a little over the thighs when
+    // kneeling or seated): the lower back, then the hump of the back. Above the neck it is rigid with the head, which rides the neck's
+    // frame; a shoulder rides the frame of the height it slid to.
     const lean = -0.05 * walk + breathe * 0.012 + ROD_POSE.lean * fish + tug * 0.4 * fish;
     const sway = Math.sin(this.clock * Math.PI * 2 * CHANT_SWAY_HZ) * CHANT_SWAY * chant;
     this.waistNode.rotation.x = lean;
@@ -337,8 +339,10 @@ export class MonkAvatar {
     this.bend.theta = theta;
     this.bend.gather = 1 + ((bench ? BENCH_SKIRT_SCALE : KNEEL_SKIRT_SCALE) - 1) * kneel;
     bendFrameAt(0, theta, this.torsoNode.position);
-    this.torsoNode.rotation.x = -theta;
-    this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
+    this.torsoNode.rotation.x = -bendTilt(0, theta);
+    bendFrameAt(NECK_Y, theta, this.headNode.position);
+    this.headNode.rotation.x =
+      breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth - bendTilt(NECK_Y, theta);
     this.headNode.rotation.z = swing * 0.035 * walk;
 
     for (let side = 0; side < 2; side += 1) {
@@ -374,8 +378,13 @@ export class MonkAvatar {
       const baseX = idleX + (prayX - idleX) * kneel;
       const strike = side === 1 ? knock * prayMix : 0;
       const slide = armBow * kneel;
-      shoulder.position.set(sign * (SHOULDER_X + bowDx * slide), SHOULDER_Y + bowDy * slide, -bowDrop * slide);
-      shoulder.rotation.x = baseX + (bowX - baseX) * armBow + armSwing * (1 - kneel) + strike * 0.12;
+      const slid = SHOULDER_Y + bowDy * slide;
+      const tilt = bendTilt(slid, theta);
+      bendFrameAt(slid, theta, shoulder.position);
+      shoulder.position.x += sign * (SHOULDER_X + bowDx * slide);
+      shoulder.position.y -= bowDrop * slide * Math.sin(tilt);
+      shoulder.position.z -= bowDrop * slide * Math.cos(tilt);
+      shoulder.rotation.x = baseX + (bowX - baseX) * armBow + armSwing * (1 - kneel) + strike * 0.12 - tilt;
       shoulder.rotation.y = prayY * prayMix + bowY * armBow * kneel;
       shoulder.rotation.z = idleZ + (prayZ - idleZ) * prayMix + (bowZ - idleZ) * armBow * kneel;
       const baseElbow = idleElbow + (prayElbow - idleElbow) * kneel;

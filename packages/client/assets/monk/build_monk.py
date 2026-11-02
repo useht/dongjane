@@ -660,17 +660,19 @@ BEND_RINGS_FROM = -round(RIG["bendLength"] / RIG["kneelSkirtScale"], 4)  # the r
 
 
 def bend_turn(low, high):
-    """How far the bend turns between the heights low and high of the upright jacket at the deepest bow: the larger of standing, where
-    it covers bendLength below the hinge, and gathered, where it covers more of the upright jacket and turns less of it per metre."""
+    """How far the bend turns between the heights low and high of the upright jacket at the deepest bow: below the hinge the larger of
+    standing, where it covers bendLength, and gathered, where it covers more of the upright jacket and turns less of it per metre;
+    above it the upper span's constant rate up to the neck (the gather does not reach there)."""
     length, gather = RIG["bendLength"], RIG["kneelSkirtScale"]
     standing = max(0.0, min(high, 0.0) - max(low, -length)) * POSE["bow_lean"] / length
     gathered = max(0.0, min(high, 0.0) - max(low, -length / gather)) * gather * POSE["bow_lean"] / length
-    return max(standing, gathered)
+    upper = max(0.0, min(high, NECK_Y) - max(low, 0.0)) * RIG["bendUpper"] / NECK_Y
+    return max(standing, gathered) + upper
 
 
 def jacket_specs():
     """The jacket's rings, bottom to top: the profile's own rows (the silhouette is drawn straight between them) and, from
-    BEND_RINGS_FROM up to the hinge, rows on those lines in between, so that the bend turns no facet by more than BEND_FACET."""
+    BEND_RINGS_FROM up to the neck, rows on those lines in between, so that the bend turns no facet by more than BEND_FACET."""
     rows = [ring_spec(*row) for row in TORSO_PROFILE]
     for a, b in zip(rows, rows[1:]):
         if a[0] < BEND_RINGS_FROM < b[0]:
@@ -678,7 +680,7 @@ def jacket_specs():
             break
     specs = [rows[0]]
     for a, b in zip(rows, rows[1:]):
-        steps = math.ceil(bend_turn(a[0], b[0]) / BEND_FACET - 1e-9) if BEND_RINGS_FROM - 1e-9 <= a[0] and b[0] <= 1e-9 else 1
+        steps = math.ceil(bend_turn(a[0], b[0]) / BEND_FACET - 1e-9) if BEND_RINGS_FROM - 1e-9 <= a[0] and b[0] <= NECK_Y + 1e-9 else 1
         specs += [mix_specs(a, b, k / steps) for k in range(1, steps)] + [b]
     return specs
 
@@ -1114,7 +1116,7 @@ def build_sleeve_upper():
         ring_xy(0.0, 0.0, -arm * 0.6, lerp(r, ELBOW_R, 0.5), lerp(r, ELBOW_R, 0.5), n),
         ring_xy(0.0, 0.0, -arm * 0.2, lerp(SHOULDER_CAP_R, r, SHOULDER_TAPER), lerp(SHOULDER_CAP_R, r, SHOULDER_TAPER), n),
     ]
-    dome = dome_rings(SHOULDER_CAP_R, n, 3, squash=SHOULDER_DOME)
+    dome = dome_rings(SHOULDER_CAP_R, n, 2, squash=SHOULDER_DOME)
     p.loft(tube + dome, "jacket", cap_last=Vector((0.0, 0.0, SHOULDER_CAP_R * SHOULDER_DOME)))  # no cap at the elbow: its flat normal would shade the last ring dark
     return p.to_object()
 
@@ -1796,6 +1798,11 @@ BOW_SWEEP = {  # the back over the hip, at every depth of the bow in steps (a co
     "joint": (0.0, -0.15),
     "rays": (-70, 100),  # one ray a degree from the joint, from this far forward of straight up to this far back
     "jump": 0.03,  # no two neighbouring points of the outline lie further apart than this: no step, no gap
+    # ... unless the rays graze one strip of one part edge-on, "graze" degrees or more off square-on at both hits: then the two hits lie on one
+    # surface that runs along the rays, and it is the viewpoint that has spread them, not a step. The bent chest does it: its front is the
+    # inside of the hump, a surface that runs on from the lower chest to the neck at a slant that sweeps through the rays as it bows (the
+    # two hits of each such pair lie on one smooth strip, within 4.2 mm of the straight line between them), up to 0.094 apart at bow 0.70.
+    "graze": 55.0,
     "grid": 0.002,  # the outline is walked in steps of this, and a dent is how far a point lies inside the chord to the points this far each way along it
     "reach": (0.05, 0.08),
     "dent": (0.0135, 0.013),  # a dent at most this deep over each reach: the one bent jacket measures 0.0054 and 0.0041 at worst (upright, kneeling); a seated monk's own seat and thighs show 0.0055 and 0.0041, and a back that dents shows at any zoom
@@ -1830,36 +1837,44 @@ def shaded_bvh(obj, matrix):
 
 def back_outline(trees, joint, plane):
     """The back and the top of the jacket as seen from the side, in the slice of the body this far from the middle line: for one ray a
-    degree from the hip joint, from forward over the chest round to the seat, the farthest of the parts' outer faces and its shading
-    normal there (None where none is hit)."""
+    degree from the hip joint, from forward over the chest round to the seat, the farthest of the parts' outer faces: where it is, its
+    shading normal there, which part it is on and how many degrees off square-on the ray meets it (None where none is hit)."""
     low, high = BOW_SWEEP["rays"]
     origin = joint + Vector((plane, 0.0, 0.0))
     outline = []
     for degree in range(high, low - 1, -1):
         out = Vector((0.0, -sin(radians(degree)), cos(radians(degree))))
         far = None
-        for tree, shade in trees:
+        for part, (tree, shade) in enumerate(trees):
             hit, normal, index, _ = tree.ray_cast(origin + out, -out)
             if hit is not None and normal.dot(out) > 0 and (far is None or (hit - origin).length > (far[0] - origin).length):
-                far = (hit, shade(index, hit))
-        outline.append(None if far is None else (far[0].y, far[0].z, far[1]))
+                far = (hit, shade(index, hit), part, degrees(math.acos(min(1.0, normal.dot(out)))))
+        outline.append(None if far is None else (far[0].y, far[0].z, far[1], far[2], far[3]))
     return outline
 
 
 def walk_outline(outline):
-    """The outline's points walked in even steps of BOW_SWEEP["grid"] along its length (the shading normal mixed along with them), and
-    the longest step between two neighbouring points before that (infinity where a ray in between found nothing)."""
+    """The outline's points walked in even steps of BOW_SWEEP["grid"] along its length (the shading normal mixed along with them), the
+    longest step between two neighbouring points before that (infinity where a ray in between found nothing) and the longest one that
+    was let go because the rays graze it (BOW_SWEEP["graze"]): two hits on one part, both that far off square-on."""
     hits = [i for i, point in enumerate(outline) if point is not None]
     between = outline[hits[0] : hits[-1] + 1]
     run = [point for point in between if point is not None]
-    jump = math.inf if len(run) < len(between) else max(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(run, run[1:]))
-    walked = [run[0]]
+    jump = math.inf if len(run) < len(between) else 0.0
+    excused = 0.0
+    for a, b in zip(run, run[1:]):
+        gap = math.hypot(b[0] - a[0], b[1] - a[1])
+        if gap > BOW_SWEEP["jump"] and a[3] == b[3] and min(a[4], b[4]) >= BOW_SWEEP["graze"]:
+            excused = max(excused, gap)
+        else:
+            jump = max(jump, gap)
+    walked = [run[0][:3]]
     for point in run[1:]:
         while math.hypot(point[0] - walked[-1][0], point[1] - walked[-1][1]) >= BOW_SWEEP["grid"]:
             ay, az, an = walked[-1]
             share = BOW_SWEEP["grid"] / math.hypot(point[0] - ay, point[1] - az)
             walked.append((ay + (point[0] - ay) * share, az + (point[1] - az) * share, an + (point[2] - an) * share))
-    return walked, jump
+    return walked, jump, excused
 
 
 def outline_dent(walked, joint, reach):
@@ -1891,7 +1906,8 @@ def outline_turn(walked, joint):
 
 
 def sweep_bow(parts):
-    """The worst jump, dents and shading turn of the jacket's outline in each slice at each depth: {depth: (jump, dent over each reach, turn)}.
+    """The worst jump, dents and shading turn of the jacket's outline in each slice at each depth, and the longest jump let go as a graze:
+    {depth: (jump, dent over each reach, turn, grazed)}.
     The rays start at BOW_SWEEP["joint"], a point of the waist that the bend carries with it."""
     cushion = RIG["seatTop"]
     worst = {}
@@ -1900,13 +1916,14 @@ def sweep_bow(parts):
         mats = pose_matrices(1.0, cushion, bow=bow)
         joint = mats["jacket"][0] @ Vector((0.0, *BOW_SWEEP["joint"]))
         trees = [shaded_bvh(parts[name], mats[name][0]) for name in SWEEP_PARTS]
-        jump, dents, turn = 0.0, [0.0 for _ in BOW_SWEEP["reach"]], 0.0
+        jump, dents, turn, grazed = 0.0, [0.0 for _ in BOW_SWEEP["reach"]], 0.0, 0.0
         for plane in BOW_SWEEP["planes"]:
-            walked, gap = walk_outline(back_outline(trees, joint, plane))
+            walked, gap, excused = walk_outline(back_outline(trees, joint, plane))
             jump = max(jump, gap)
+            grazed = max(grazed, excused)
             dents = [max(dent, outline_dent(walked, joint, reach)) for dent, reach in zip(dents, BOW_SWEEP["reach"])]
             turn = max(turn, outline_turn(walked, joint))
-        worst[bow] = (jump,) + tuple(dents) + (turn,)
+        worst[bow] = (jump,) + tuple(dents) + (turn, grazed)
     return worst
 
 
@@ -1918,8 +1935,9 @@ def check_bow_sweep(parts):
     worst = sweep_bow(parts)
     print("SWEEP the outline's biggest dent over %s by depth: %s" % ("/".join("%.2f" % r for r in BOW_SWEEP["reach"]), " ".join("%.3f:%.4f/%.4f" % (b, d[1], d[2]) for b, d in worst.items())))
     print("SWEEP the outline's biggest jump by depth: %s" % " ".join("%.3f:%.4f" % (b, d[0]) for b, d in worst.items()))
-    print("SWEEP the shading's biggest turn over %.0f mm, in degrees, by depth: %s" % (BOW_SWEEP["span"] * 1000, " ".join("%.3f:%.1f" % (b, d[-1]) for b, d in worst.items())))
-    for bow, (jump, *dents, turn) in worst.items():
+    print("SWEEP the outline's longest grazed gap (let go, rays %.0f degrees or more off square-on on one part) by depth: %s" % (BOW_SWEEP["graze"], " ".join("%.3f:%.4f" % (b, d[-1]) for b, d in worst.items())))
+    print("SWEEP the shading's biggest turn over %.0f mm, in degrees, by depth: %s" % (BOW_SWEEP["span"] * 1000, " ".join("%.3f:%.1f" % (b, d[-2]) for b, d in worst.items())))
+    for bow, (jump, *dents, turn, _) in worst.items():
         assert jump <= BOW_SWEEP["jump"], "the jacket's outline has a step or a gap of %.4f at bow %.3f (it may have %.4f)" % (jump, bow, BOW_SWEEP["jump"])
         for dent, reach, most in zip(dents, BOW_SWEEP["reach"], BOW_SWEEP["dent"]):
             assert dent <= most, "the waist is dented %.4f deep over %.2f at bow %.3f (it may be %.4f)" % (dent, reach, bow, most)
@@ -2289,8 +2307,11 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
     lean = -POSE["walk_lean"] * walking + fish_lean * fish
     waist = hips @ tmat((0, 0, 0), (lean, 0, 0))
     jacket = BentMatrix(theta, lerp(1, RIG["kneelSkirtScale"], kneel), waist)  # the jacket is gathered when kneeling, then bent about the waist
-    torso = waist @ (C4.inverted() @ bend_frame(theta) @ C4)  # everything above the hinge: the bend's end frame
-    head = torso @ tmat((0, NECK_Y, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))
+
+    def frame_at(h):  # the frame the bend gives the upright height h, in the waist's
+        return waist @ (C4.inverted() @ bend_frame_at(h, theta) @ C4)
+
+    head = frame_at(NECK_Y) @ tmat((0, 0, 0), (POSE["walk_head_tilt"] * walking - POSE["bow_head"] * bow, 0, swing * POSE["walk_head_roll"]))  # the head rides the neck's frame
     out = {"head": [head], "face": [head], "hair": [head], "pelvis": [pelvis], "jacket": [jacket], "trim": [jacket]}
     for key in ("sleeveUpper", "sleeveLower", "hand", "foot", "leg", "trousers"):
         out[key] = []
@@ -2309,7 +2330,8 @@ def pose_matrices(kneel, cushion, phase=None, bow=0.0, fish=0.0, jerk=0.0):
         arm_x += (POSE[hold + "_x"] + lead_jerk - arm_x) * fish
         arm_z += (-sign * POSE["fish_roll"] - arm_z) * fish
         folded = reach * kneel  # the bowing arm's shoulders slide down the folded chest
-        shoulder = torso @ tmat((sign * (RIG["shoulderX"] + POSE["bow_dx"] * folded), SHOULDER_Y + POSE["bow_dy"] * folded, -POSE["bow_drop"] * folded), (arm_x, arm_y, arm_z))
+        slid = SHOULDER_Y + POSE["bow_dy"] * folded
+        shoulder = frame_at(slid) @ tmat((sign * (RIG["shoulderX"] + POSE["bow_dx"] * folded), 0, -POSE["bow_drop"] * folded), (arm_x, arm_y, arm_z))
         elbow_x = lerp(POSE["idle_elbow"], POSE["pray_elbow"], kneel)
         elbow_x = elbow_x + (POSE["bow_elbow"] - elbow_x) * reach + max(0.0, -arm_swing) * POSE["walk_elbow"]
         elbow_x += (POSE[hold + "_elbow"] - elbow_x) * fish

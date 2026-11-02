@@ -112,13 +112,16 @@ const BOW_SEATS = [
 // worked out in the model's own frame (y forward, z up) as that script does; three's (y up, z back) is (-z, y) of it. The rays start
 // at `joint` (forward, height) in the upright jacket, which the bend carries along. From (0, -0.15) neighbouring rays land 0.0222 apart
 // at most; from the bend's base point (0, -0.20) they land up to 0.0837 apart at bow 0.65 to 0.95, a graze along one straight strip of
-// the chest and not a step (the evidence is in the note on "joint" in build_monk.py).
+// the chest and not a step (the evidence is in the note on "joint" in build_monk.py). The same graze shows from (0, -0.15) once the
+// hump bends the chest's front in: two neighbouring hits on one part that the rays meet "graze" degrees or more off square-on lie on
+// one strip that runs along the rays, and are not counted as a step (build_monk.py has the numbers).
 const BOW_SWEEP = {
   depths: 20,
   planes: [0, 0.07],
   joint: [0, -0.15],
   rays: [-70, 100],
   jump: 0.03,
+  graze: 55,
   grid: 0.002,
   reach: [0.05, 0.08],
   dent: [0.0135, 0.013],
@@ -127,8 +130,10 @@ const BOW_SWEEP = {
   zone: 0.28,
 } as const;
 const SWEEP_PARTS = ["jacket", "pelvis"] as const;
-// A point of the outline in the model's frame (y forward, z up), and the shading normal there (in three's frame: only its turns count).
+// A point of the outline in the model's frame (y forward, z up), and the shading normal there (in three's frame: only its turns
+// count); a point of the raw outline also has the part it is on and the degrees the ray meets it off square-on.
 type OutlinePoint = readonly [number, number, Vector3];
+type OutlineHit = readonly [number, number, Vector3, number, number];
 
 // The shading normal at a hit: the exported vertex normals of its triangle mixed by where the point lies in it.
 function shadingNormal(mesh: Mesh, hit: Intersection): Vector3 {
@@ -142,44 +147,53 @@ function shadingNormal(mesh: Mesh, hit: Intersection): Vector3 {
   return mixed.applyMatrix3(new Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
 }
 
-// For one ray a degree from the hip joint, from forward over the chest round to the seat: the farthest of the parts' outer faces, and
-// its shading normal.
-function backOutline(meshes: Mesh[], hip: Vector3, plane: number): (OutlinePoint | null)[] {
+// For one ray a degree from the hip joint, from forward over the chest round to the seat: the farthest of the parts' outer faces, its
+// shading normal, which part it is on and how many degrees off square-on the ray meets it.
+function backOutline(meshes: Mesh[], hip: Vector3, plane: number): (OutlineHit | null)[] {
   const raycaster = new Raycaster();
   const origin = hip.clone().add(new Vector3(plane, 0, 0));
-  const outline: (OutlinePoint | null)[] = [];
+  const outline: (OutlineHit | null)[] = [];
   const [low, high] = BOW_SWEEP.rays;
   for (let degree = high; degree >= low; degree -= 1) {
     const out = new Vector3(0, Math.cos((degree * Math.PI) / 180), Math.sin((degree * Math.PI) / 180));
     raycaster.set(origin.clone().add(out), out.clone().negate());
     let far: Intersection | null = null;
     let shading: Vector3 | null = null;
-    for (const mesh of meshes) {
+    let part = 0;
+    let incidence = 0;
+    for (const [i, mesh] of meshes.entries()) {
       const hit = raycaster.intersectObject(mesh)[0];
       if (!hit?.face) continue;
       const normal = hit.face.normal.clone().applyMatrix3(new Matrix3().getNormalMatrix(mesh.matrixWorld)).normalize();
       if (normal.dot(out) > 0 && (far === null || hit.point.distanceTo(origin) > far.point.distanceTo(origin))) {
         far = hit;
         shading = shadingNormal(mesh, hit);
+        part = i;
+        incidence = (Math.acos(Math.min(1, normal.dot(out))) * 180) / Math.PI;
       }
     }
-    outline.push(far === null || shading === null ? null : [-far.point.z, far.point.y, shading]);
+    outline.push(far === null || shading === null ? null : [-far.point.z, far.point.y, shading, part, incidence]);
   }
   return outline;
 }
 
-// The outline walked in even steps along its length (the shading normal mixed along with them), and the longest step between two
-// neighbouring points before that (infinite where a ray in between found nothing).
-function walkOutline(outline: (OutlinePoint | null)[]): { walked: OutlinePoint[]; jump: number } {
+// The outline walked in even steps along its length (the shading normal mixed along with them), the longest step between two
+// neighbouring points before that (infinite where a ray in between found nothing), and the longest one let go because the rays graze
+// it: two hits on one part, both BOW_SWEEP.graze degrees or more off square-on.
+function walkOutline(outline: (OutlineHit | null)[]): { walked: OutlinePoint[]; jump: number; grazed: number } {
   const hits = outline.flatMap((point, i) => (point ? [i] : []));
   const between = outline.slice(hits[0], (hits[hits.length - 1] as number) + 1);
-  const run = between.filter((point): point is OutlinePoint => point !== null);
+  const run = between.filter((point): point is OutlineHit => point !== null);
+  const first = run[0] as OutlineHit;
   let jump = 0;
-  const walked: OutlinePoint[] = [run[0] as OutlinePoint];
+  let grazed = 0;
+  const walked: OutlinePoint[] = [[first[0], first[1], first[2]]];
   for (let i = 1; i < run.length; i += 1) {
-    const before = run[i - 1] as OutlinePoint;
-    const point = run[i] as OutlinePoint;
-    jump = Math.max(jump, Math.hypot(point[0] - before[0], point[1] - before[1]));
+    const before = run[i - 1] as OutlineHit;
+    const point = run[i] as OutlineHit;
+    const step = Math.hypot(point[0] - before[0], point[1] - before[1]);
+    if (step > BOW_SWEEP.jump && before[3] === point[3] && Math.min(before[4], point[4]) >= BOW_SWEEP.graze) grazed = Math.max(grazed, step);
+    else jump = Math.max(jump, step);
     for (;;) {
       const at = walked[walked.length - 1] as OutlinePoint;
       const gap = Math.hypot(point[0] - at[0], point[1] - at[1]);
@@ -188,7 +202,7 @@ function walkOutline(outline: (OutlinePoint | null)[]): { walked: OutlinePoint[]
       walked.push([at[0] + (point[0] - at[0]) * share, at[1] + (point[1] - at[1]) * share, at[2].clone().lerp(point[2], share)]);
     }
   }
-  return { walked, jump: run.length < between.length ? Number.POSITIVE_INFINITY : jump };
+  return { walked, jump: run.length < between.length ? Number.POSITIVE_INFINITY : jump, grazed };
 }
 
 // How far the outline lies inside the chord between the points `reach` each way along it, at its worst, seen from the hip joint (a
@@ -228,7 +242,7 @@ function outlineTurn(walked: OutlinePoint[], joint: OutlinePoint): number {
 }
 
 // The worst jump, dents and shading turn of the outline in each slice at each depth of the bow, over the named parts: [depth, jump,
-// ...dents, turn]. The jacket is bent the way the shader bends it, and the rays start where the bend carries the joint.
+// ...dents, turn, grazed]. The jacket is bent the way the shader bends it, and the rays start where the bend carries the joint.
 function sweepBow(geometries: Record<BodyPartName, BufferGeometry>, names: readonly BodyPartName[]): number[][] {
   const worst: number[][] = [];
   for (let step = 0; step <= BOW_SWEEP.depths; step += 1) {
@@ -242,14 +256,15 @@ function sweepBow(geometries: Record<BodyPartName, BufferGeometry>, names: reado
     });
     const [forward, height] = BOW_SWEEP.joint;
     const hip = bendPoint(new Vector3(0, height, -forward), avatar.bend.theta, avatar.bend.gather, new Vector3()).applyMatrix4(avatar.waistNode.matrixWorld);
-    const row = [depth, 0, ...BOW_SWEEP.reach.map(() => 0), 0];
-    const turn = row.length - 1;
+    const row = [depth, 0, ...BOW_SWEEP.reach.map(() => 0), 0, 0];
+    const turn = row.length - 2;
     for (const plane of BOW_SWEEP.planes) {
-      const { walked, jump } = walkOutline(backOutline(meshes, hip, plane));
+      const { walked, jump, grazed } = walkOutline(backOutline(meshes, hip, plane));
       const joint: OutlinePoint = [-hip.z, hip.y, new Vector3()];
       row[1] = Math.max(row[1] as number, jump);
       for (const [i, reach] of BOW_SWEEP.reach.entries()) row[2 + i] = Math.max(row[2 + i] as number, outlineDent(walked, joint, reach));
       row[turn] = Math.max(row[turn] as number, outlineTurn(walked, joint));
+      row[turn + 1] = Math.max(row[turn + 1] as number, grazed);
     }
     worst.push(row);
   }
@@ -723,6 +738,7 @@ describe("monk assets", () => {
     const rows = sweepBow(parts, SWEEP_PARTS);
     expect(rows, "the sweep covers the whole bow").toHaveLength(BOW_SWEEP.depths + 1);
     for (const [depth, jump, ...rest] of rows) {
+      rest.pop();
       const turn = rest.pop() as number;
       expect(jump, `the outline's biggest step or gap at bow ${depth}`).toBeLessThanOrEqual(BOW_SWEEP.jump);
       for (const [i, dent] of rest.entries()) {
