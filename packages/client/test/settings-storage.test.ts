@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadSettings } from "../src/storage.ts";
+import { defaultSettings, loadSettings } from "../src/storage.ts";
 
 function stubSettings(saved: unknown): void {
   const store = new Map<string, string>([["dongjane:settings", JSON.stringify(saved)]]);
@@ -61,5 +61,42 @@ describe("loadSettings volumes", () => {
     const settings = loadSettings();
     expect(settings.ambientVolume).toBe(0.7);
     expect(settings.effectVolume).toBe(0.7);
+  });
+});
+
+describe("loadSettings muted", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is off by default", () => {
+    expect(defaultSettings().muted).toBe(false);
+    stubSettings({ ambientVolume: 0.5 });
+    expect(loadSettings().muted).toBe(false);
+  });
+
+  it("round-trips a stored mute without touching the saved volumes", () => {
+    stubSettings({ ambientVolume: 0.3, effectVolume: 0.6, muted: true });
+    const settings = loadSettings();
+    expect(settings.muted).toBe(true);
+    expect(settings.ambientVolume).toBe(0.3);
+    expect(settings.effectVolume).toBe(0.6);
+  });
+
+  it("reads a stored false as not muted", () => {
+    stubSettings({ muted: false });
+    expect(loadSettings().muted).toBe(false);
+  });
+
+  it("reads anything that is not a boolean as not muted", () => {
+    for (const muted of ["true", 1, null, {}]) {
+      stubSettings({ muted });
+      expect(loadSettings().muted, JSON.stringify(muted)).toBe(false);
+    }
+  });
+
+  it("keeps a legacy sound-off switch as zero volume rather than the new flag", () => {
+    stubSettings({ volume: 0.4, sound: false });
+    expect(loadSettings().muted).toBe(false);
   });
 });

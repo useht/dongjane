@@ -4,7 +4,7 @@ import type { LinkState } from "../net/session.ts";
 import { type HeldAction, heldAction, isSeated } from "../game/held-action.ts";
 import type { QuestView } from "../game/quest-tracker.ts";
 import { ClockWidget } from "./clock.ts";
-import { button, h, iconButton } from "./dom.ts";
+import { button, h, iconButton, swapIcon } from "./dom.ts";
 import { EmotePicker } from "./emote-picker.ts";
 import { type ChantStatus, describeSky, modeLabel, zoneName } from "./format.ts";
 import { icon } from "./icons.ts";
@@ -48,6 +48,7 @@ export interface HudHandlers {
   onInvite(): void;
   onCancelReturn(): void;
   onReturnNow(): void;
+  onToggleSound(): void;
 }
 
 export type SoloStatus = { kind: "idle" } | { kind: "countdown"; seconds: number } | { kind: "held" };
@@ -66,6 +67,7 @@ export class Hud {
   readonly root = h("div", "hud");
   private readonly worldButton = h("button", "world-button");
   private readonly worldLabel = h("span", "world-label", "월드");
+  private readonly soundButton = h("button", "icon-button sound-button");
   private readonly clock: ClockWidget;
   private readonly phone: Phone;
   private readonly quests: QuestPanel;
@@ -116,7 +118,15 @@ export class Hud {
     this.phone = new Phone(host, { onInvite: () => handlers.onInvite() }, { visitors: this.visitorList, settings });
     this.clock = new ClockWidget(() => this.phone.toggle());
     this.quests = new QuestPanel(host);
-    const top = h("div", "topbar", h("div", "topbar-start", h("div", "world-stack", this.worldButton, this.quests.button)), this.clock.button);
+    this.soundButton.type = "button";
+    this.soundButton.addEventListener("click", () => handlers.onToggleSound());
+    this.setSoundOn(true);
+    const top = h(
+      "div",
+      "topbar",
+      h("div", "topbar-start", h("div", "world-stack", this.worldButton, this.quests.button)),
+      h("div", "topbar-end", this.soundButton, this.clock.button),
+    );
 
     this.standButton = iconButton("stand", "일어서기", () => handlers.onStand(), "icon-button stand-button");
     this.bowButton = h("button", "bow-button", artImage(BOW_IMAGE));
@@ -312,6 +322,14 @@ export class Hud {
 
   setReduceMotion(on: boolean): void {
     this.root.classList.toggle("reduce-motion", on);
+  }
+
+  // The label names what a tap does, so it reads "turn off" while the sound is on.
+  setSoundOn(on: boolean): void {
+    const label = on ? "소리 끄기" : "소리 켜기";
+    swapIcon(this.soundButton, on ? "sound" : "soundOff");
+    this.soundButton.setAttribute("aria-label", label);
+    this.soundButton.title = label;
   }
 
   toast(text: string): void {

@@ -231,6 +231,13 @@ button:disabled {
   min-width: 0;
 }
 
+.topbar-end {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+}
+
 .world-stack {
   display: flex;
   flex-direction: column;
