@@ -851,7 +851,7 @@ def check_bend():
                     tangent = direction(plane(f + slope * h, h, theta, gather), plane(f + slope * (h + eps), h + eps, theta, gather))
                     worst_normal = max(worst_normal, abs(tangent[0] * m0.y + tangent[1] * m0.z))
     print("BEND identity upright %.1e, rigid above the neck %.1e, axis through the seams %.1e off, arc length off by %.1e, normal against tangent %.1e" % (worst_still, worst_rigid, worst_join, worst_length, worst_normal))
-    assert worst_still < 1e-9 and worst_rigid < 1e-6, "the bend must be the identity upright and one rigid body above the neck"  # (mathutils' matrices are single precision)
+    assert worst_still < 1e-9 and worst_rigid < 1e-6, "the bend must be the identity upright and one rigid body above the neck"  # (mathutils' matrices are single precision: the rigid error measures 1.1e-07, about two steps of a float32 near 1, and the identity 0)
     assert worst_join < 1e-4, "the bend's axis must run on without a kink where its spans meet"
     assert worst_length < 1e-4, "the bend must keep the arc length along its axis"
     assert worst_normal < 1e-3, "the bent normals must stay perpendicular to the bent surface"
