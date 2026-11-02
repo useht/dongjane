@@ -292,10 +292,12 @@ export class App {
         onInvite: () => void this.copyInvite(),
         onCancelReturn: () => this.holdReturn(),
         onReturnNow: () => void this.enter(this.soloReturnWorld),
+        onToggleSound: () => this.updateSettings({ ...this.settings, muted: !this.settings.muted }),
       },
       this.settingsPanel.root,
     );
     this.hud.setReduceMotion(this.settings.reduceMotion);
+    this.hud.setSoundOn(!this.settings.muted);
     this.hud.setCollection(this.bows);
     this.soundChip = new SoundChip(this.ui, () => {
       this.audio.unlock();
@@ -865,6 +867,7 @@ export class App {
     saveSettings(next);
     this.settingsPanel.sync(next);
     this.hud.setReduceMotion(next.reduceMotion);
+    this.hud.setSoundOn(!next.muted);
     this.world.setReduceMotion(next.reduceMotion);
     this.stage.setReduceMotion(next.reduceMotion);
     this.casino.setReduceMotion(next.reduceMotion);
@@ -872,10 +875,14 @@ export class App {
     this.syncZoneSound();
   }
 
+  // Muting is volume 0 everywhere; the saved sliders stay as they are, so unmuting brings the old levels back.
   private applyAudio(): void {
-    this.audio.configure(this.settings.ambientVolume, this.settings.effectVolume);
-    this.stage.setSound(true, this.settings.ambientVolume);
-    this.temple.setVolume(this.settings.ambientVolume);
+    const { muted } = this.settings;
+    const ambient = muted ? 0 : this.settings.ambientVolume;
+    const effect = muted ? 0 : this.settings.effectVolume;
+    this.audio.configure(ambient, effect);
+    this.stage.setSound(true, ambient);
+    this.temple.setVolume(ambient);
   }
 
   private bindAudioUnlock(): void {

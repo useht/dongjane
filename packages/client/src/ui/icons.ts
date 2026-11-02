@@ -25,6 +25,8 @@ const PATHS = {
   equip: '<path d="M8.5 8V6.5a3.5 3.5 0 0 1 7 0V8"/><path d="M6 8h12l1.2 12H4.8z"/><path d="M9.5 13h5"/>',
   emote:
     '<circle cx="12" cy="12" r="9"/><path d="M8.2 14.2a4.6 4.6 0 0 0 7.6 0"/><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>',
+  sound: '<path d="M4.5 9.5h3L12 5.5v13l-4.5-4h-3z"/><path d="M15.5 9.5a3.5 3.5 0 0 1 0 5M18 7a7 7 0 0 1 0 10"/>',
+  soundOff: '<path d="M4.5 9.5h3L12 5.5v13l-4.5-4h-3z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;
