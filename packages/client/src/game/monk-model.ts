@@ -1,7 +1,7 @@
 import { BufferGeometry, Color, Group, InstancedMesh, MeshLambertMaterial, Object3D, DynamicDrawUsage, InstancedBufferAttribute, Matrix4, Vector3 } from "three";
 import { BENCH_HIPS_BACK, BOW_MS, ITEM_CHANT, ITEM_MOKT, ITEM_ROD, JUMP_MS, SEA_LINE_X, type SeatPose } from "@dongjane/shared";
 import rig from "../../assets/monk/monk-rig.json";
-import { bendFrame, bentDepthMaterial, bentMaterial } from "./monk-bend.ts";
+import { bendFrameAt, bentDepthMaterial, bentMaterial } from "./monk-bend.ts";
 import type { MonkAssets } from "./monk-assets.ts";
 import { ROD, ROD_POSE } from "./monk-items.ts";
 import { PoseBlend, approach, bowDepth, hopArc } from "./pose.ts";
@@ -336,7 +336,7 @@ export class MonkAvatar {
     this.waistNode.rotation.z = sway;
     this.bend.theta = theta;
     this.bend.gather = 1 + ((bench ? BENCH_SKIRT_SCALE : KNEEL_SKIRT_SCALE) - 1) * kneel;
-    bendFrame(theta, this.torsoNode.position);
+    bendFrameAt(0, theta, this.torsoNode.position);
     this.torsoNode.rotation.x = -theta;
     this.headNode.rotation.x = breathe * 0.015 + 0.03 * walk + Math.sin(this.clock * Math.PI * 2 * CHANT_NOD_HZ) * CHANT_NOD * chant - BOW_HEAD * depth;
     this.headNode.rotation.z = swing * 0.035 * walk;

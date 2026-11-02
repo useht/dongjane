@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BOW_MS, ITEM_ROD, SEAT_TOPS, type SeatPose } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
-import { bendFrame, bendPoint } from "../src/game/monk-bend.ts";
+import { bendFrameAt, bendPoint } from "../src/game/monk-bend.ts";
 import { BODY_PART_NAMES, type BodyPartName, MonkAvatar, ROBE_PARTS as MODEL_ROBE_PARTS, type PartName, robeColor } from "../src/game/monk-model.ts";
 import { shownGeometry } from "./bent-geometry.ts";
 import { crossingPairs, looseEdges, weld } from "./triangle-crossings.ts";
@@ -1083,7 +1083,7 @@ describe("monk assets", () => {
     expect(Math.abs(tilt(nodeOf(avatar, "pelvis", 0))), "the seat of the trousers stays level on the heels").toBeLessThan(0.01);
 
     // The chest, the head and the sleeves ride one frame: the bend's end, where the curve leaves the jacket's frame at its hinge.
-    const hinge = bendFrame(avatar.bend.theta, new Vector3()).applyMatrix4(avatar.waistNode.matrixWorld);
+    const hinge = bendFrameAt(0, avatar.bend.theta, new Vector3()).applyMatrix4(avatar.waistNode.matrixWorld);
     const waist = new Vector3().setFromMatrixPosition(avatar.torsoNode.matrixWorld);
     expect(waist.distanceTo(hinge), "the chest sits where the bend ends").toBeLessThan(1e-5);
     // The bend turns the waist about the centre of its curve, bendLength under the pivot, on a circle through the pivot: the pivot sits

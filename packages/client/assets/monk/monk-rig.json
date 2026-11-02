@@ -35,6 +35,7 @@
   "kneelPelvisScaleY": 1.0,
   "kneelPelvisLift": 0.0,
   "bendLength": 0.2,
+  "bendUpper": 0.8,
   "bendForward": 0.1,
   "bowLean": 1.54,
   "bowHead": 0.2866,

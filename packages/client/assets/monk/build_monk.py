@@ -24,7 +24,7 @@ The outfit is a Korean child-monk set taken from a reference photograph (kept ou
 baggy trousers. The jacket is one part, "jacket": the chest (crossed front with the left panel over the right, long sleeves in
 sleeveUpper / sleeveLower) and the tunic below it in a single closed surface, modelled upright. Bowing, every vertex of it is bent
 by one position-based curve (bend_vertex): below RIG bendLength under the hip pivot it stays where it is, between there and the pivot it
-curves forward at a constant rate, above the pivot it is stiff and turns with the chest. "trim" is the collar, crossing edges and
+curves forward at a constant rate, and from the pivot up to the neck it goes on curving at a slower one (the back's hump); above the neck it is stiff and turns with the head. "trim" is the collar, crossing edges and
 side tie, laid on the same surface and bent with it. The trousers are two parts: "trousers" is one baggy
 leg that hangs from the same pivot as "leg" (the bare calf + cream knee sock inside it, mostly hidden) and is stretched with it,
 so it follows strides, bobbing and the folded kneeling feet; "pelvis" is the seat of the trousers below the jacket hem,
@@ -132,7 +132,8 @@ RIG = {  # pivots and lengths the animation code uses
     "kneelPelvisGrow": 0.25,  # kneeling spreads the trousers' pelvis sideways ...
     "kneelPelvisScaleY": 1.0,  # ... and keeps its height, so its underside rests on the heels
     "kneelPelvisLift": 0.0,
-    "bendLength": 0.20,  # bowing, the jacket bends in one smooth curve from this far below the hip pivot up to the pivot (its base stays on the thighs); above the pivot the chest is stiff and turns with it
+    "bendLength": 0.20,  # bowing, the jacket bends in one smooth curve from this far below the hip pivot up to the pivot (its base stays on the thighs) ...
+    "bendUpper": 0.80,  # ... and goes on bending, from the pivot up to the neck, by this many radians more at the deepest bow (the bow_lean of the lower span): the back rounds into the hump of a 큰절 and the head hangs from the neck at its end; above the neck everything is stiff and turns with it
     "bendForward": 0.10,  # the curve runs along an axis this far in front of the hip pivot's origin: the jacket's front folds on the inside of the bend, its back stretches on the outside
     "bendFold": 0.8,  # the front of the bend may fold by this much at most: the curvature times the distance in front of the axis
     "kneelSkirtScale": 0.86,  # kneeling gathers the jacket below the hip pivot to this share of its length: the hem comes to rest on the thighs and the folded legs show below it
@@ -691,19 +692,55 @@ def jacket_rings():
     return [ring_of(spec) for spec in jacket_specs()]
 
 
-HINGE_Z = 0.0  # the hip pivot: the jacket's bend ends here, and everything above it is stiff
+HINGE_Z = 0.0  # the hip pivot: where the lower span of the jacket's bend ends and the upper one begins
+BEND_UPPER = RIG["bendUpper"] / POSE["bow_lean"]  # the upper span turns this share of what the lower one does, at every depth
+BEND_NECK = round(NECK_Y, 5)  # the upper span ends here (the rig's neckY): the jacket's top ring is at NECK_Y, a hair under it at most
+BEND_MEET = 1e-5  # a height this close to where two spans meet is that height (a vertex is a float32, the rig's numbers are rounded)
 UP = Vector((0.0, 0.0, 1.0))
+
+
+def bend_curve(h, theta):
+    """The bend's axis (f = bendForward in the waist frame) at the upright height h, already gathered: where it is as (f, h), the
+    angle phi it has turned to there, and the rate at which it turns there (a surface squeezed along the axis stretches by 1 - rate
+    times its distance in front of the axis; at the height where two spans meet it is their mean, so a ring of the jacket there is
+    shaded as the seam between them). Two spans of constant rate: from bendLength under the hinge up to it, theta over bendLength;
+    from the hinge up to the neck, theta * BEND_UPPER over BEND_NECK. Below the base the axis stays put, above the neck it goes on
+    straight."""
+    length, forward = RIG["bendLength"], RIG["bendForward"]
+    low, high = theta / length, theta * BEND_UPPER / BEND_NECK
+    if abs(h - HINGE_Z) < BEND_MEET:
+        rate = (low + high) / 2
+    elif abs(h - BEND_NECK) < BEND_MEET:
+        rate = high / 2
+    elif -length < h < HINGE_Z:
+        rate = low
+    elif HINGE_Z < h < BEND_NECK:
+        rate = high
+    else:
+        rate = 0.0
+    if h <= HINGE_Z:
+        u = h + length
+        s = clamp(u, 0.0, length)
+        phi = low * s
+        c, sn = cos(phi), sin(phi)
+        return (forward + (1 - c) / low + (u - s) * sn, -length + sn / low + (u - s) * c), phi, rate
+    v = min(h, BEND_NECK)
+    phi = theta + high * v
+    c, sn = cos(phi), sin(phi)
+    ca, sa = cos(theta), sin(theta)
+    return (forward + (1 - ca) / low + (ca - c) / high + (h - v) * sn, -length + sa / low + (sn - sa) / high + (h - v) * c), phi, rate
 
 
 def bend_vertex(co, n, theta, gather=1.0):
     """The one bend the jacket takes when bowing: where the point `co` (with the shading normal `n`) of the upright jacket goes, and
-    its normal, with the chest turned forward by `theta`. gather (kneeling: 1 standing, less when the jacket is gathered on the
-    thighs) shortens everything below the hinge first. The bend works in the waist frame: h the height, f the forward distance
-    (+Y), x untouched. Below the base (h = -bendLength) nothing moves. From there up to the hinge the jacket curves forward at the
-    constant rate theta / bendLength about the axis f = bendForward: arc length along the axis is kept, the front (f above the
-    axis) is compressed and the back stretched, and a point keeps its distance from the axis, so a facet never leaves the curve.
-    Above the hinge it is one rigid body with the chest (bend_frame), which keeps the curve's end tangent."""
-    length, forward = RIG["bendLength"], RIG["bendForward"]
+    its normal, with the chest turned forward by `theta` below the hinge and BEND_UPPER of it more up to the neck. gather (kneeling:
+    1 standing, less when the jacket is gathered on the thighs) shortens everything below the hinge first. The bend works in the
+    waist frame: h the height, f the forward distance (+Y), x untouched. Below the base (h = -bendLength) nothing moves. From there
+    up to the hinge the jacket curves forward at the constant rate theta / bendLength about the axis f = bendForward, and from the
+    hinge up to the neck at the constant rate theta * BEND_UPPER / NECK_Y (bend_curve): arc length along the axis is kept, the front
+    (f above the axis) is compressed and the back stretched, and a point keeps its distance from the axis, so a facet never leaves
+    the curve. Above the neck it is one rigid body with the head (bend_frame_at), which keeps the curve's end tangent."""
+    forward = RIG["bendForward"]
     f, h = co.y, co.z
     n_f, n_h = n.y, n.z
     if h < 0.0:
@@ -711,15 +748,11 @@ def bend_vertex(co, n, theta, gather=1.0):
         n_h /= gather
     if theta < 1e-4:
         return Vector((co.x, f, h)), Vector((n.x, n_f, n_h)).normalized()
-    u = h + length
-    s = clamp(u, 0.0, length)
+    (axis_f, axis_h), phi, rate = bend_curve(h, theta)
     o = f - forward
-    k = theta / length
-    phi = k * s
     c, sn = cos(phi), sin(phi)
-    stretch = 1.0 - k * o if 0.0 < u < length else 1.0
-    n_o, n_s = n_f, n_h / stretch
-    position = Vector((co.x, forward + (1 - c) / k + o * c + (u - s) * sn, -length + sn / k - o * sn + (u - s) * c))
+    n_o, n_s = n_f, n_h / (1.0 - rate * o)
+    position = Vector((co.x, axis_f + o * c, axis_h - o * sn))
     return position, Vector((n.x, n_o * c + n_s * sn, -n_o * sn + n_s * c)).normalized()
 
 
@@ -727,10 +760,17 @@ def bend_point(co, theta, gather=1.0):
     return bend_vertex(co, UP, theta, gather)[0]
 
 
+def bend_frame_at(h, theta):
+    """The frame the bend gives the upright height h (Blender axes, in the jacket's own): the point of the axis plane f = 0 at h
+    where the bend puts it, turned forward by the angle the bend has turned to there. The hinge's is the frame of the lean; the
+    neck's carries the head, and everything above the neck is rigid in it; the shoulders ride the frame of the height they slid to."""
+    turned = bend_curve(h, theta)[1] if theta >= 1e-4 else 0.0
+    return Matrix.Translation(bend_point(Vector((0.0, 0.0, h)), theta)) @ Matrix.Rotation(-turned, 4, "X")
+
+
 def bend_frame(theta):
-    """The frame of everything above the hinge once the jacket is bent (Blender axes, in the jacket's own): the hinge's origin where
-    the bend puts it, turned forward by theta. The head, the shoulders and the sleeves ride on it."""
-    return Matrix.Translation(bend_point(Vector((0.0, 0.0, HINGE_Z)), theta)) @ Matrix.Rotation(-theta, 4, "X")
+    """The frame of the hinge: what the lean of the chest is measured in."""
+    return bend_frame_at(HINGE_Z, theta)
 
 
 class BentMatrix:
@@ -747,47 +787,70 @@ class BentMatrix:
     def normal(self, co, n):
         return (self.node.to_3x3() @ (n if self.straight else bend_vertex(co, n, self.theta, self.gather)[1])).normalized()
 
+    def frame(self, h):
+        """The matrix of the frame the bend gives the upright height h (bend_frame_at): the head rides the neck's, the shoulders the
+        one of the height they slid to."""
+        return self.node @ bend_frame_at(h, self.theta)
+
     @property
     def chest(self):
-        """The matrix of everything above the hinge: the head, the shoulders and the sleeves ride on it."""
-        return self.node @ bend_frame(self.theta)
+        """The matrix of the hinge: the frame the lean of the chest is measured in."""
+        return self.frame(HINGE_Z)
 
     def converted(self, c4):
         return BentMatrix(self.theta, self.gather, c4 @ self.node @ c4.inverted())
 
 
 def check_bend():
-    """The bend is the identity upright, one rigid body above the hinge, keeps the arc along its axis and keeps the normals normal."""
-    samples = [Vector((x, f, h)) for x in (0.0, 0.1) for f in (-0.15, 0.0, 0.08, 0.15) for h in (-0.28, -0.2, -0.12, -0.04, 0.0, 0.05, 0.17)]
+    """The bend is the identity upright, one rigid body above the neck, continuous (position and axis direction) where its spans meet,
+    keeps the arc along its axis in both spans and keeps the normals normal."""
+    samples = [Vector((x, f, h)) for x in (0.0, 0.1) for f in (-0.15, 0.0, 0.08, 0.15) for h in (-0.28, -0.2, -0.12, -0.04, 0.0, 0.05, 0.17, 0.18, 0.3)]
     normals = [Vector(v).normalized() for v in ((0, 1, 0), (0, 0.6, 0.8), (0.3, -0.7, 0.2), (0, 0, 1), (0, 0, -1))]
     thetas, gathers = (0.4, 1.0, POSE["bow_lean"]), (1.0, RIG["kneelSkirtScale"])
-    worst_still = worst_rigid = worst_length = worst_normal = 0.0
+    worst_still = worst_rigid = worst_join = worst_length = worst_normal = 0.0
     for p in samples:
         for n in normals:
             q, m = bend_vertex(p, n, 0.0)
             worst_still = max(worst_still, (q - p).length, (m - n).length)
-            if p.z < HINGE_Z:
+            if p.z < BEND_NECK:
                 continue
             for theta in thetas:
                 for gather in gathers:
-                    frame = bend_frame(theta)
+                    frame = bend_frame_at(BEND_NECK, theta)
                     q, m = bend_vertex(p, n, theta, gather)
-                    worst_rigid = max(worst_rigid, (q - frame @ p).length, (m - frame.to_3x3() @ n).length)
+                    worst_rigid = max(worst_rigid, (q - frame @ (p - Vector((0.0, 0.0, BEND_NECK)))).length, (m - frame.to_3x3() @ n).length)
     length, forward = RIG["bendLength"], RIG["bendForward"]
+
+    def plane(f, h, theta, gather):  # bend_point in the plane of the bend and in double precision (mathutils' vectors are single)
+        axis, phi, _ = bend_curve(h * gather if h < 0.0 else h, theta)
+        return axis[0] + (f - forward) * cos(phi), axis[1] - (f - forward) * sin(phi)
+
+    def direction(a, b):
+        d = (b[0] - a[0], b[1] - a[1])
+        return d[0] / math.hypot(*d), d[1] / math.hypot(*d)
+
+    eps = 1e-6
     for theta in thetas:
         for gather in gathers:
             steps = 4000
-            axis = [bend_point(Vector((0.0, forward, -length + length * i / steps)), theta, gather) for i in range(steps + 1)]
-            worst_length = max(worst_length, abs(sum((b - a).length for a, b in zip(axis, axis[1:])) - length))
+            for low, high, arc in ((-length / gather, HINGE_Z, length), (HINGE_Z, BEND_NECK, BEND_NECK)):  # the arc of the axis in each span (the gather shortens the lower one's upright height to bendLength)
+                axis = [plane(forward, low + (high - low) * i / steps, theta, gather) for i in range(steps + 1)]
+                worst_length = max(worst_length, abs(sum(math.dist(a, b) for a, b in zip(axis, axis[1:])) - arc))
+            for seam in (HINGE_Z, BEND_NECK):  # one curve through where the spans meet: no step, no kink
+                axis = [plane(forward, seam + side * eps, theta, gather) for side in (-2, -1, 1, 2)]
+                a, b = direction(axis[0], axis[1]), direction(axis[2], axis[3])
+                step = eps * (1.0 + (gather if seam == HINGE_Z else 1.0))  # a micron either side: the gather shortens the jacket under the hinge only
+                worst_join = max(worst_join, math.dist(a, b), abs(math.dist(axis[1], axis[2]) / step - 1.0))
             for f, slope in ((0.12, 0.0), (0.12, 0.3), (-0.1, -0.2), (0.17, 0.5)):
-                for h in (-0.19, -0.1, -0.02):
-                    eps = 1e-6
-                    p0, p1 = Vector((0.0, f + slope * h, h)), Vector((0.0, f + slope * (h + eps), h + eps))
+                for h in (-0.19, -0.1, -0.02, 0.02, 0.08, 0.15):
+                    p0 = Vector((0.0, f + slope * h, h))
                     n = Vector((0.0, 1.0, -slope)).normalized()
                     q0, m0 = bend_vertex(p0, n, theta, gather)
-                    worst_normal = max(worst_normal, abs((bend_point(p1, theta, gather) - q0).normalized().dot(m0)))
-    print("BEND identity upright %.1e, rigid above the hinge %.1e, arc length off by %.1e, normal against tangent %.1e" % (worst_still, worst_rigid, worst_length, worst_normal))
-    assert worst_still < 1e-9 and worst_rigid < 1e-9, "the bend must be the identity upright and one rigid body above the hinge"
+                    tangent = direction(plane(f + slope * h, h, theta, gather), plane(f + slope * (h + eps), h + eps, theta, gather))
+                    worst_normal = max(worst_normal, abs(tangent[0] * m0.y + tangent[1] * m0.z))
+    print("BEND identity upright %.1e, rigid above the neck %.1e, axis through the seams %.1e off, arc length off by %.1e, normal against tangent %.1e" % (worst_still, worst_rigid, worst_join, worst_length, worst_normal))
+    assert worst_still < 1e-9 and worst_rigid < 1e-6, "the bend must be the identity upright and one rigid body above the neck"  # (mathutils' matrices are single precision)
+    assert worst_join < 1e-4, "the bend's axis must run on without a kink where its spans meet"
     assert worst_length < 1e-4, "the bend must keep the arc length along its axis"
     assert worst_normal < 1e-3, "the bent normals must stay perpendicular to the bent surface"
 
@@ -2048,6 +2111,7 @@ def rig_dict():
         "kneelPelvisScaleY": RIG["kneelPelvisScaleY"],
         "kneelPelvisLift": RIG["kneelPelvisLift"],
         "bendLength": RIG["bendLength"],
+        "bendUpper": RIG["bendUpper"],
         "bendForward": RIG["bendForward"],
         "bowLean": POSE["bow_lean"],
         "bowHead": POSE["bow_head"],
@@ -2090,7 +2154,7 @@ def pose_probe(parts):
     return {"bow": bow, "walk": walk, "fish": fish}
 
 
-BEND_SAMPLE_HEIGHTS = (-0.28, -0.23, -0.15, -0.12, -0.10, -0.07, -0.05, -0.025, 0.0, 0.03, 0.10, 0.17)  # the rings the sample points are taken from
+BEND_SAMPLE_HEIGHTS = (-0.28, -0.23, -0.15, -0.12, -0.10, -0.07, -0.05, -0.025, 0.0, 0.03, 0.10, 0.17, NECK_Y)  # the rings the sample points are taken from
 BEND_SAMPLE_DEPTHS = (0.0, 0.25, 0.5, 0.75, 1.0)
 BEND_SAMPLE_GATHERS = (1.0, RIG["kneelSkirtScale"], 0.72)  # standing, kneeling, and sitting on a bench (0.72: the client's, which the jacket has no part of)
 
@@ -2125,7 +2189,9 @@ def bend_samples(parts):
     return {
         "_source": "packages/client/assets/monk/build_monk.py",
         "bendLength": RIG["bendLength"],
+        "bendUpper": RIG["bendUpper"],
         "bendForward": RIG["bendForward"],
+        "neckY": round(NECK_Y, 5),
         "bowLean": POSE["bow_lean"],
         "gathers": list(BEND_SAMPLE_GATHERS),
         "depths": list(BEND_SAMPLE_DEPTHS),
@@ -2414,6 +2480,7 @@ def main():
         parts[name] = obj
     shade_hem_normals(parts["jacket"])
     total = report_parts(parts)
+    check_bend()
     check_proportions(parts)
     check_face_on_head(parts)
     check_kneel_clearance(parts)

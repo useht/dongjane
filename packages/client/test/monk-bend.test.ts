@@ -4,7 +4,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { describe, expect, it } from "vitest";
 import { BOW_MS } from "@dongjane/shared";
 import { extractMonkParts, monkRig } from "../src/game/monk-assets.ts";
-import { BEND_FORWARD, BEND_LENGTH, bendFrame, bendNormal, bendPoint, bendVertexShader } from "../src/game/monk-bend.ts";
+import { BEND_FORWARD, BEND_LENGTH, BEND_NECK, BEND_UPPER, bendFrameAt, bendNormal, bendPoint, bendTilt, bendVertexShader } from "../src/game/monk-bend.ts";
 import { MonkAvatar } from "../src/game/monk-model.ts";
 
 // monk-bend-samples.json, written by build_monk.py: where its bend_vertex puts a dozen vertices of the upright jacket, with their
@@ -12,7 +12,9 @@ import { MonkAvatar } from "../src/game/monk-model.ts";
 type Sample = { position: number[]; normal: number[] };
 type Samples = {
   bendLength: number;
+  bendUpper: number;
   bendForward: number;
+  neckY: number;
   bowLean: number;
   gathers: number[];
   depths: number[];
@@ -21,7 +23,7 @@ type Samples = {
 };
 
 const samples = JSON.parse(readFileSync(new URL("../assets/monk/monk-bend-samples.json", import.meta.url), "utf8")) as Samples;
-const TOLERANCE = 1e-4;
+const TOLERANCE = 1e-5;
 
 function vector(values: number[]): Vector3 {
   return new Vector3(values[0], values[1], values[2]);
@@ -66,17 +68,31 @@ describe("the jacket's bend", () => {
     expect(bendPoint(base, 1.54, 1, new Vector3()).distanceTo(base), "below the base of the bend nothing moves").toBeLessThan(1e-9);
   });
 
-  it("is rigid above the hinge: the bent point is the point carried by the frame the head and shoulders ride", () => {
+  it("is rigid above the neck: the bent point is the point carried by the frame the head rides", () => {
     for (const theta of [0.3, 0.8, 1.54]) {
       const frame = new Object3D();
-      bendFrame(theta, frame.position);
-      frame.rotation.copy(new Euler(-theta, 0, 0));
+      bendFrameAt(BEND_NECK, theta, frame.position);
+      frame.rotation.copy(new Euler(-bendTilt(BEND_NECK, theta), 0, 0));
       frame.updateMatrix();
-      for (const point of [new Vector3(0, 0, 0), new Vector3(0.07, 0.1, 0.12), new Vector3(-0.1, 0.175, -0.15)]) {
-        const carried = point.clone().applyMatrix4(frame.matrix);
+      for (const point of [new Vector3(0, BEND_NECK, 0), new Vector3(0.07, 0.25, 0.12), new Vector3(-0.1, 0.4, -0.15)]) {
+        const carried = point.clone().sub(new Vector3(0, BEND_NECK, 0)).applyMatrix4(frame.matrix);
         expect(bendPoint(point, theta, 1, new Vector3()).distanceTo(carried), `theta ${theta} at ${point.toArray()}`).toBeLessThan(1e-9);
         expect(bendPoint(point, theta, 0.86, new Vector3()).distanceTo(carried), `gathered, theta ${theta} at ${point.toArray()}`).toBeLessThan(1e-9);
       }
+    }
+  });
+
+  it("turns the hinge by the lean and the neck by the lean plus the hump, and runs on without a step where the spans meet", () => {
+    const lean = samples.bowLean;
+    expect(BEND_UPPER * lean, "the hump is the rig's bendUpper at the deepest bow").toBeCloseTo(monkRig.bendUpper, 9);
+    expect(bendTilt(-BEND_LENGTH, lean), "the base is where it was").toBe(0);
+    expect(bendTilt(0, lean)).toBeCloseTo(lean, 9);
+    expect(bendTilt(BEND_NECK, lean)).toBeCloseTo(lean + monkRig.bendUpper, 9);
+    expect(bendTilt(0.4, lean), "above the neck it turns no further").toBeCloseTo(lean + monkRig.bendUpper, 9);
+    expect(bendTilt(0.1, 0), "upright nothing turns").toBe(0);
+    const front = (h: number, side: number) => bendPoint(new Vector3(0.02, h + side * 1e-7, -0.12), lean, 1, new Vector3());
+    for (const seam of [0, BEND_NECK]) {
+      expect(front(seam, -1).distanceTo(front(seam, 1)), `no step at h = ${seam}`).toBeLessThan(1e-6);
     }
   });
 
@@ -86,14 +102,17 @@ describe("the jacket's bend", () => {
     avatar.animate(0.016, BOW_MS * 0.32, 0, true);
     expect(avatar.bend.theta).toBeCloseTo(samples.bowLean, 9);
     expect(avatar.torsoNode.rotation.x).toBeCloseTo(-samples.bowLean, 9);
-    expect(avatar.torsoNode.position.distanceTo(bendFrame(samples.bowLean, new Vector3()))).toBeLessThan(1e-9);
+    expect(avatar.torsoNode.position.distanceTo(bendFrameAt(0, samples.bowLean, new Vector3()))).toBeLessThan(1e-9);
   });
 
   it("is checked against samples of this rig and this jacket, so a changed script or model fails until the samples are rebuilt", async () => {
     expect(samples.bendLength).toBe(monkRig.bendLength);
+    expect(samples.bendUpper).toBe(monkRig.bendUpper);
     expect(samples.bendForward).toBe(monkRig.bendForward);
+    expect(samples.neckY).toBe(monkRig.neckY);
     expect(BEND_LENGTH).toBe(monkRig.bendLength);
     expect(BEND_FORWARD).toBe(monkRig.bendForward);
+    expect(BEND_NECK).toBe(monkRig.neckY);
     expect(samples.bowLean).toBe(monkRig.bowLean);
 
     // The gathers the client uses: kneeling, and sitting on a bench (which the avatar owns).
