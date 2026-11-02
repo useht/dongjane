@@ -291,12 +291,14 @@ describe("npc behaviour", () => {
     }
   });
 
-  it("walks only to reach a mat: a typical leg is a few metres, and now and then one is a long walk to another zone", () => {
+  it("walks in legs of a few metres, and a good share of its legs are long walks to a far mat or across the room", () => {
     for (const seed of [1, 2, 3]) {
       const legs = walkLegs(new World(seed), PRAYER_RUN_MS).sort((a, b) => a - b);
       expect(legs.length, `seed ${seed} legs`).toBeGreaterThan(NPC_TOTAL);
-      expect(legs[Math.floor(legs.length / 2)]!, `seed ${seed} median leg`).toBeLessThan(8);
-      expect(legs[legs.length - 1]!, `seed ${seed} longest leg`).toBeGreaterThan(8);
+      expect(legs[Math.floor(legs.length / 2)]!, `seed ${seed} median leg`).toBeLessThan(7);
+      const long = legs.filter((leg) => leg > 8).length / legs.length;
+      expect(long, `seed ${seed} long-leg share`).toBeGreaterThanOrEqual(0.2);
+      expect(long, `seed ${seed} long-leg share`).toBeLessThanOrEqual(0.6);
     }
   });
 
