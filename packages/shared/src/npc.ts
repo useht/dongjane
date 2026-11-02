@@ -64,12 +64,9 @@ export interface NpcBrain {
   seat: Seat | null;
   greetAt: number;
   seen: Map<string, number>;
-  // One prayer spans several mats: these clocks run from the first mat until the monk stands up for good (0 = not started).
+  // One prayer stays on one mat: these clocks run from sitting down until the monk stands up (0 = not started).
   leaveAt: number;
   devoutAt: number;
-  shiftAt: number;
-  // the mat under the monk was reached by shifting over, so it does not bow again for sitting down
-  shifted: boolean;
 }
 
 type Range = readonly [number, number];
@@ -80,10 +77,8 @@ const PAUSE_MS: Range = [1500, 5000];
 const STROLL_REACH_M: Range = [1.5, 3.5];
 const SETTLE_MS: Range = [1000, 3000];
 const SIT_MS: Range = [5 * 60_000, 15 * 60_000];
-// A long prayer is never still: the monk bows again every minute or two, and shifts to a mat a few steps off.
+// A long prayer is never still: the monk bows again every minute or two.
 const DEVOUT_MS: Range = [50_000, 130_000];
-const SHIFT_MS: Range = [18_000, 50_000];
-const SHIFT_REACH_M: Range = [2, 3.4];
 const DEVOUT_MULTI_CHANCE = 0.3;
 const LINGER_MS: Range = [0, 6000];
 const AFTER_STAND_MS: Range = [1000, 3000];
@@ -126,8 +121,6 @@ export function createNpcBrain(persona: Persona, random: () => number, now: numb
     seen: new Map(),
     leaveAt: 0,
     devoutAt: 0,
-    shiftAt: 0,
-    shifted: false,
   };
 }
 
@@ -142,8 +135,6 @@ export function thinkNpc(brain: NpcBrain, monk: NpcBody, world: NpcWorld, action
     brain.seat = null;
     brain.leaveAt = 0;
     brain.devoutAt = 0;
-    brain.shiftAt = 0;
-    brain.shifted = false;
   } else if (brain.seat?.seatId !== monk.seatId) {
     brain.seat = { seatId: monk.seatId, bows: -1, bowBase: 0, bowsAsked: false, greetBows: 0, settleAt: 0, bowingUntil: 0 };
     brain.greetAt = 0;
@@ -194,8 +185,7 @@ function thinkSeated(
   }
 
   if (seat.bows < 0) {
-    seat.bows = brain.shifted ? 0 : rollBows(brain, random);
-    brain.shifted = false;
+    seat.bows = rollBows(brain, random);
     seat.bowBase = monk.bowCount;
     seat.settleAt = now + span(random, SETTLE_MS);
     brain.nextThinkAt = seat.settleAt;
@@ -243,7 +233,6 @@ function thinkSeated(
 
   if (brain.leaveAt === 0) brain.leaveAt = now + sitMs(brain, random);
   if (brain.devoutAt === 0) brain.devoutAt = now + devoutMs(brain, random);
-  if (brain.shiftAt === 0) brain.shiftAt = now + shiftMs(brain, random);
 
   if (now >= brain.leaveAt) {
     if (world.chantEndsAt !== null && random() < brain.persona.devotion) {
@@ -257,7 +246,7 @@ function thinkSeated(
     return;
   }
 
-  // the chant is prayed still: bows and shifting wait until it is over
+  // the chant is prayed still: bows wait until it is over
   if (now >= brain.devoutAt) {
     if (world.chantEndsAt !== null) brain.devoutAt = world.chantEndsAt + devoutMs(brain, random);
     else if (devoutBow(brain, seat, monk, world, actions)) return;
@@ -267,12 +256,7 @@ function thinkSeated(
     }
   }
 
-  if (now >= brain.shiftAt) {
-    if (world.chantEndsAt !== null) brain.shiftAt = world.chantEndsAt + shiftMs(brain, random);
-    else if (shiftOver(brain, monk, world, actions)) return;
-  }
-
-  brain.nextThinkAt = Math.min(brain.leaveAt, brain.devoutAt, brain.shiftAt);
+  brain.nextThinkAt = Math.min(brain.leaveAt, brain.devoutAt);
 }
 
 function devoutBow(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld, actions: NpcActions): boolean {
@@ -283,21 +267,6 @@ function devoutBow(brain: NpcBrain, seat: Seat, monk: NpcBody, world: NpcWorld, 
   seat.bowingUntil = now + bowing + ARRIVE_SLACK_MS;
   brain.devoutAt = now + bowing + devoutMs(brain, random);
   brain.nextThinkAt = seat.bowingUntil;
-  return true;
-}
-
-// Gets up and kneels on a free mat a few steps off in the same zone, keeping the prayer going; false if there is none.
-function shiftOver(brain: NpcBrain, monk: NpcBody, world: NpcWorld, actions: NpcActions): boolean {
-  const { now, random } = world;
-  const spot = pickNearbySpot(brain.persona, monk, world);
-  if (!spot || !actions.sit(monk.id, world.zone, spot.id)) {
-    brain.shiftAt = now + shiftMs(brain, random);
-    return false;
-  }
-  brain.seat = null;
-  brain.shiftAt = 0;
-  brain.shifted = true;
-  brain.nextThinkAt = now + travelMs(monk, spot.x, spot.z) + ARRIVE_SLACK_MS;
   return true;
 }
 
@@ -419,18 +388,6 @@ function pickSpotIn(zone: Zone, persona: Persona, monk: NpcBody, world: NpcWorld
   return from[Math.floor(world.random() * from.length)];
 }
 
-// A free mat two or three metres off in the zone the monk kneels in, in the front half if it wants that and one is there.
-function pickNearbySpot(persona: Persona, monk: NpcBody, world: NpcWorld): SeatSpot | undefined {
-  const zone = world.zone;
-  const near = ZONE_SEATS[zone].filter((spot) => {
-    const distance = seatDistance(spot, monk);
-    return spot.id !== monk.seatId && distance >= SHIFT_REACH_M[0] && distance <= SHIFT_REACH_M[1] && world.isFree(zone, spot.id);
-  });
-  const front = world.random() < persona.frontRow ? near.filter((spot) => isFront(zone, spot)) : near;
-  const pool = front.length > 0 ? front : near;
-  return pool[Math.floor(world.random() * pool.length)];
-}
-
 function pickStrollTarget(monk: NpcBody, random: () => number): Point {
   if (random() < FAR_STROLL_CHANCE) return randomWalkable(random);
   const angle = random() * Math.PI * 2;
@@ -451,11 +408,6 @@ function rollBows(brain: NpcBrain, random: () => number): number {
 function devoutMs(brain: NpcBrain, random: () => number): number {
   const mix = Math.min(1, random() * 0.6 + (1 - brain.persona.devotion) * 0.6);
   return DEVOUT_MS[0] + (DEVOUT_MS[1] - DEVOUT_MS[0]) * mix;
-}
-
-// The more restless the monk, the sooner it moves on to another mat.
-function shiftMs(brain: NpcBrain, random: () => number): number {
-  return span(random, SHIFT_MS) * (1.3 - 0.7 * brain.persona.restless);
 }
 
 function sitMs(brain: NpcBrain, random: () => number): number {
