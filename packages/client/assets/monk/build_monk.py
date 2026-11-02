@@ -1538,6 +1538,7 @@ BOW_CLEARANCE = {  # what each arm part must stay clear of, in metres: a margin 
     "trousers": {"hand": 0.005, "sleeveLower": 0.005, "sleeveUpper": 0.005},  # both trouser legs
 }
 BOW_HANDS_GAP = 0.06  # the hands, palm to palm across the middle, stay at most this far apart: together under the face
+BOW_HANDS_REST = 0.05  # at the deepest bow the hands lie on the cushion: their lowest point is less than this above it
 BOW_CUFFS_CROSS = 0.002  # from the half bow on, a cuff crosses the middle by at most this much (before that, by no more than the prayer does)
 
 
@@ -1573,7 +1574,9 @@ def check_bow(parts):
         gap = -2 * hands
         assert gap <= BOW_HANDS_GAP, "the bowing hands are %.4f apart at bow %.3f" % (gap, bow)
         if bow == BOW_DEPTHS[-1]:
-            print("BOW cuffs cross the middle by %.4f (prayer %.4f), hands %.4f apart" % (cuffs, prayer_cuffs, gap))
+            rest = min((m @ v.co).z for m in mats["hand"] for v in parts["hand"].data.vertices) - cushion
+            print("BOW cuffs cross the middle by %.4f (prayer %.4f), hands %.4f apart, %.4f above the seat top (they may be %.2f)" % (cuffs, prayer_cuffs, gap, rest, BOW_HANDS_REST))
+            assert rest < BOW_HANDS_REST, "the hands hover %.4f above the seat at the deepest bow (they may hover %.2f)" % (rest, BOW_HANDS_REST)
 
 
 def down_gap(tree, point):
@@ -1630,8 +1633,11 @@ def check_kneel_seat(parts):
 
 JACKET_BEND = {  # the bent jacket at every depth of the bow, in metres and radians
     "legs": 0.02,  # the chest (the jacket from the hip pivot up) stays this far from the thighs at least
-    "arc": 0.012,  # the back of the chest departs from the straight line from the hinge to the neck by this much at most (the jacket's own taper, the same standing)
-    "lean": (radians(85), radians(90)),  # the chest lies this far over at the deepest bow
+    "round": (0.03, 0.06),  # the back from the hinge to the neck, at the deepest bow, bulges this far out from the straight line between them, and nowhere turns the other way: the hump of a bowing back
+    "lean": (radians(85), radians(90)),  # the hinge's frame lies this far over at the deepest bow: the lower back, level
+    "neck": (radians(125), radians(140)),  # the neck's frame, which the head rides, lies this far over: the upper back has turned on past the hinge, down toward the cushion
+    "slope": (radians(10), radians(30)),  # the line from the hinge down to the neck falls this far below the horizontal at the deepest bow
+    "forehead": (0.005, 0.03),  # the lowest point of the head at the deepest bow lies this far above the seat top: the forehead reaches the 방석 without sinking in
     "fold": RIG["bendFold"],  # the curvature times the distance in front of the bend's axis: the front of the bend is compressed to 1 - this of its length at most
     "facet": radians(13),  # no facet of a meridian is more than this sharper against its neighbour than it is upright, at the deepest bow
     "trim": 0.001,  # the trim sits no deeper in the jacket, at any depth of the bow, than it does upright, by more than this
@@ -1651,20 +1657,27 @@ def self_crossings(obj, matrix, triangles):
 
 
 def bend_fold(parts):
-    """The curvature times the distance in front of the axis, at its largest over the jacket's vertices in the bend: standing, and
-    kneeling with the jacket gathered."""
+    """The curvature times the distance in front of the axis, at its largest over the jacket's vertices in the bend, both spans up to
+    the neck: standing, and kneeling with the jacket gathered."""
+    low, high = POSE["bow_lean"] / RIG["bendLength"], POSE["bow_lean"] * BEND_UPPER / BEND_NECK
     worst = 0.0
     for gather in (1.0, RIG["kneelSkirtScale"]):
         for v in parts["jacket"].data.vertices:
-            if -RIG["bendLength"] < v.co.z * gather < HINGE_Z:
-                worst = max(worst, POSE["bow_lean"] / RIG["bendLength"] * (v.co.y - RIG["bendForward"]))
+            h = v.co.z * gather if v.co.z < 0.0 else v.co.z
+            if -RIG["bendLength"] < h <= HINGE_Z:
+                rate = low
+            elif HINGE_Z < h <= NECK_Y + 1e-9:
+                rate = high
+            else:
+                continue
+            worst = max(worst, rate * (v.co.y - RIG["bendForward"]))
     return worst
 
 
 def bend_facets():
     """How far the facets of the jacket's meridians turn against their neighbours at the deepest bow, standing and gathered. Four
     numbers: the most any facet turns beyond the turn it has upright (stretching the back smooths a kink, so only a sharper turn
-    counts; this is the one JACKET_BEND limits), the sharpest turn of a facet in the bend (the rings from BEND_RINGS_FROM to the hinge)
+    counts; this is the one JACKET_BEND limits), the sharpest turn of a facet in the bend (the rings from BEND_RINGS_FROM up to the neck)
     bent and upright, and the sharpest turn of any facet of the jacket bent (the hem's roll and the collar, which the bend does not touch)."""
     rings = jacket_rings()
     worst = bent_in_bend = upright_in_bend = bent_anywhere = 0.0
@@ -1682,7 +1695,7 @@ def bend_facets():
             for i in range(1, len(upright) - 1):
                 worst = max(worst, abs(turn(bent, i)) - abs(turn(upright, i)))
                 bent_anywhere = max(bent_anywhere, abs(turn(bent, i)))
-                if BEND_RINGS_FROM - 1e-9 <= rings[i][j].z <= 1e-9:
+                if BEND_RINGS_FROM - 1e-9 <= rings[i][j].z <= NECK_Y + 1e-9:
                     bent_in_bend, upright_in_bend = max(bent_in_bend, abs(turn(bent, i))), max(upright_in_bend, abs(turn(upright, i)))
     return worst, bent_in_bend, upright_in_bend, bent_anywhere
 
@@ -1690,8 +1703,9 @@ def bend_facets():
 def check_jacket_bend(parts):
     """The jacket is one surface bent by one curve, so there is no seam to check, only that the curve is a good one: no two of its
     triangles cross at any depth of the bow (the front folds in, and a fold that went too far would pass through itself), the front
-    is not compressed past the fold limit, the facets are small enough to read as a curve, the chest keeps clear of the thighs and
-    lies straight and level at the deepest bow, and the trim lies on the jacket."""
+    is not compressed past the fold limit in either span, the facets are small enough to read as a curve up to the neck, the bent
+    chest keeps clear of the thighs, the hinge lies level and the neck well past it with the forehead on the 방석, the back between
+    them is one convex hump, and the trim lies on the jacket."""
     cushion = RIG["seatTop"]
     triangles = jacket_triangles(parts["jacket"])
     crossings = {}
@@ -1710,19 +1724,30 @@ def check_jacket_bend(parts):
     for bow in (0.0,) + BOW_DEPTHS:
         mats = pose_matrices(1.0, cushion, bow=bow)
         thighs = [world_bvh(parts["trousers"], m) for m in mats["trousers"]]
-        node = mats["jacket"][0].chest
-        worst_legs[bow] = min(clearance_of(tree, node @ p) for tree in thighs for p in chest)
+        bent = mats["jacket"][0]
+        worst_legs[bow] = min(clearance_of(tree, bent @ p) for tree in thighs for p in chest)
         assert worst_legs[bow] >= JACKET_BEND["legs"], "the chest comes within %.4f of the thighs at bow %.3f (it needs %.4f)" % (worst_legs[bow], bow, JACKET_BEND["legs"])
     print("BEND the chest is %.4f from the thighs at the nearest (it needs %.4f)" % (min(worst_legs.values()), JACKET_BEND["legs"]))
-    node = pose_matrices(1.0, cushion, bow=BOW_DEPTHS[-1])["jacket"][0].chest
-    back = [node @ min(ring, key=lambda v: v.y) for ring in jacket_rings() if ring[0].z >= HINGE_Z]
+    mats = pose_matrices(1.0, cushion, bow=BOW_DEPTHS[-1])
+    bent = mats["jacket"][0]
+    lean, neck = ((frame.to_3x3() @ UP).angle(UP) for frame in (bent.chest, bent.frame(BEND_NECK)))
+    reach = bent.frame(BEND_NECK).translation - bent.chest.translation
+    slope = atan2(-reach.z, reach.y)
+    print("BEND the hinge lies %.1f degrees over (it needs %.0f to %.0f), the neck %.1f (it needs %.0f to %.0f), the line from the hinge to the neck falls %.1f degrees (it needs %.0f to %.0f)" % (degrees(lean), degrees(JACKET_BEND["lean"][0]), degrees(JACKET_BEND["lean"][1]), degrees(neck), degrees(JACKET_BEND["neck"][0]), degrees(JACKET_BEND["neck"][1]), degrees(slope), degrees(JACKET_BEND["slope"][0]), degrees(JACKET_BEND["slope"][1])))
+    assert JACKET_BEND["lean"][0] <= lean <= JACKET_BEND["lean"][1], "the hinge lies %.1f degrees over at the deepest bow" % degrees(lean)
+    assert JACKET_BEND["neck"][0] <= neck <= JACKET_BEND["neck"][1], "the neck lies %.1f degrees over at the deepest bow" % degrees(neck)
+    assert JACKET_BEND["slope"][0] <= slope <= JACKET_BEND["slope"][1], "the line from the hinge to the neck falls %.1f degrees at the deepest bow" % degrees(slope)
+    back = [bent @ min(ring, key=lambda v: v.y) for ring in jacket_rings() if HINGE_Z - 1e-9 <= ring[0].z <= NECK_Y + 1e-9]
     (y0, z0), (y1, z1) = (back[0].y, back[0].z), (back[-1].y, back[-1].z)
     length = math.hypot(y1 - y0, z1 - z0)
-    arc = max(abs((p.y - y0) * (z1 - z0) - (p.z - z0) * (y1 - y0)) / length for p in back)
-    lean = POSE["bow_lean"]
-    print("BEND the chest lies %.1f degrees over (it needs %.0f to %.0f), its back %.4f off straight (it may be %.4f)" % (degrees(lean), degrees(JACKET_BEND["lean"][0]), degrees(JACKET_BEND["lean"][1]), arc, JACKET_BEND["arc"]))
-    assert arc <= JACKET_BEND["arc"], "the back of the chest is %.4f off a straight line at the deepest bow (it may be %.4f)" % (arc, JACKET_BEND["arc"])
-    assert JACKET_BEND["lean"][0] <= lean <= JACKET_BEND["lean"][1], "the chest lies %.1f degrees over at the deepest bow" % degrees(lean)
+    bulge = [((p.z - z0) * (y1 - y0) - (p.y - y0) * (z1 - z0)) / length for p in back]
+    turns = [(b.y - a.y) * (c.z - b.z) - (b.z - a.z) * (c.y - b.y) for a, b, c in zip(back, back[1:], back[2:])]
+    print("BEND the back bulges %.4f from the line between the hinge and the neck (it needs %.2f to %.2f), %d points, the sharpest turn the wrong way %.1e" % (max(bulge), JACKET_BEND["round"][0], JACKET_BEND["round"][1], len(back), max(0.0, max(turns))))
+    assert JACKET_BEND["round"][0] <= max(bulge) <= JACKET_BEND["round"][1], "the back bulges %.4f from the line between the hinge and the neck (it needs %.2f to %.2f)" % ((max(bulge),) + JACKET_BEND["round"])
+    assert min(bulge) >= -1e-6 and max(turns) <= 1e-7, "the back between the hinge and the neck is not one convex hump"
+    top = min((m @ v.co).z for part in ("head", "face", "hair") for m in mats[part] for v in parts[part].data.vertices) - cushion
+    print("BEND the forehead lies %.4f above the seat top (it needs %.3f to %.3f)" % ((top,) + JACKET_BEND["forehead"]))
+    assert JACKET_BEND["forehead"][0] <= top <= JACKET_BEND["forehead"][1], "the head lies %.4f above the seat top at the deepest bow (it needs %.3f to %.3f)" % ((top,) + JACKET_BEND["forehead"])
     upright = world_bvh(parts["jacket"], Matrix.Identity(4))
     rest = [clearance_of(upright, v.co) for v in parts["trim"].data.vertices]
     for bow in (0.0,) + BOW_DEPTHS:
